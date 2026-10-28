@@ -116,6 +116,17 @@ impl Config {
         home: &Path,
         lookup: impl Fn(&str) -> Option<String>,
     ) -> Result<ResolvedSettings, ConfigError> {
+        self.resolve_snapshot(overrides, request, session, home)?
+            .with_credentials(lookup)
+    }
+
+    pub fn resolve_snapshot(
+        &self,
+        overrides: &RuntimeOverrides,
+        request: &ModelSelection,
+        session: &ModelSelection,
+        home: &Path,
+    ) -> Result<SettingsSnapshot, ConfigError> {
         self.validate()?;
         let default = ModelSelection {
             provider: self.default_provider.clone(),
@@ -146,14 +157,13 @@ impl Config {
         }
         execution.validate()?;
         let store = self.store_path(home, overrides.store.as_deref())?;
-        SettingsSnapshot {
+        Ok(SettingsSnapshot {
             profile_name: name,
             profile,
             execution,
             output: overrides.output.unwrap_or(self.output),
             store,
-        }
-        .with_credentials(lookup)
+        })
     }
 }
 

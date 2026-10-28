@@ -223,7 +223,7 @@ impl Ledger {
         self.session(&SessionSelector::Id(session))?;
         let mut statement = self
             .connection
-            .prepare("SELECT id FROM attempts WHERE session_id=?1 ORDER BY id")
+            .prepare("SELECT id FROM attempts WHERE session_id=?1 ORDER BY rowid")
             .map_err(|error| sql_error("list attempts", error))?;
         let ids = statement
             .query_map([session.to_string()], |row| row.get::<_, String>(0))

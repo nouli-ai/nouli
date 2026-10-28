@@ -252,7 +252,18 @@ fn interrupt(
         }
         let observed = match state.as_str() {
             "running" => RecoveryKind::OutcomeUnknown,
-            "failed" => RecoveryKind::KnownFailure,
+            "failed" => {
+                let progress: AttemptProgress = Ledger::decode_payload(&progress)?;
+                if progress
+                    .error
+                    .as_ref()
+                    .is_some_and(|error| error.code == "provider_outcome_unknown")
+                {
+                    RecoveryKind::OutcomeUnknown
+                } else {
+                    RecoveryKind::KnownFailure
+                }
+            }
             "interrupted" => {
                 let progress: AttemptProgress = Ledger::decode_payload(&progress)?;
                 match progress.error.as_ref().map(|error| error.code.as_str()) {
@@ -329,6 +340,24 @@ pub(super) fn validate_reserved_input(
 }
 
 impl Ledger {
+    /// Inspect validated frozen settings without acquiring ownership or credentials.
+    pub fn saved_request(
+        &self,
+        request: &EvaluationRequest,
+    ) -> Result<Option<FrozenRequest>, ReplayError> {
+        let Some(key) = request.request_id.as_deref() else {
+            return Ok(None);
+        };
+        let hash = fingerprint(request)?;
+        let saved = reservation(&self.connection, key)?;
+        if saved
+            .as_ref()
+            .is_some_and(|saved| saved.fingerprint != hash)
+        {
+            return Err(ReplayError::IntentConflict);
+        }
+        Ok(saved.map(|saved| saved.frozen))
+    }
     pub fn accept_request(
         &mut self,
         request: &EvaluationRequest,

@@ -8,6 +8,7 @@ mod schema;
 pub mod sessions;
 pub mod sources;
 pub mod turns;
+pub mod worker;
 
 use std::io::Read;
 use std::{
