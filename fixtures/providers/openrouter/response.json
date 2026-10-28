@@ -1,0 +1,43 @@
+{
+  "model": "openai/gpt-6-luna-decisions-fixture",
+  "answers": {
+    "travel": {
+      "type": "choice",
+      "choice": "train",
+      "probabilities": {
+        "train": 0.7,
+        "flight": 0.3
+      },
+      "confidence": 0.35
+    },
+    "on_time": {
+      "type": "noul",
+      "noul": 1.0
+    },
+    "quality": {
+      "type": "score",
+      "score": 1.43,
+      "probabilities": {
+        "0": 0.0,
+        "1": 0.57,
+        "2": 0.43
+      },
+      "confidence": 0.35,
+      "legend": {
+        "0": "Poor",
+        "1": {
+          "label": "Adequate",
+          "description": "Meets minimum requirements"
+        },
+        "2": "Excellent"
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 20,
+    "cost": 1.23e-05
+  },
+  "id": "fixture-router-request",
+  "provider": "OpenAI"
+}

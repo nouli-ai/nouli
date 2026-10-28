@@ -2,6 +2,7 @@
 
 mod confidence;
 pub mod openai;
+pub mod openrouter;
 pub mod typesafe;
 
 use crate::{decision::ContractError, limits::LimitError, transport::TransportError};

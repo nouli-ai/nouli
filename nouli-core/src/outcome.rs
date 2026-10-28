@@ -19,6 +19,10 @@ const EPSILON: f64 = f64::EPSILON * 16.0;
 pub struct ProviderIdentity {
     pub provider: String,
     pub model: String,
+    #[serde(default)]
+    pub upstream_provider: Option<String>,
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 /// Native provider uncertainty, whose meaning is explicitly named, not assumed.
@@ -38,6 +42,9 @@ pub struct Usage {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub exact: bool,
+    /// Optional native provider-reported cost, never estimated by Nouli.
+    #[serde(default)]
+    pub cost: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -239,6 +246,19 @@ impl TurnOutcome {
         }
         nonempty(&self.provider.provider, "provider")?;
         nonempty(&self.provider.model, "model")?;
+        if let Some(provider) = &self.provider.upstream_provider {
+            nonempty(provider, "upstream_provider")?;
+        }
+        if let Some(id) = &self.provider.request_id {
+            nonempty(id, "provider.request_id")?;
+        }
+        if self
+            .usage
+            .cost
+            .is_some_and(|cost| !cost.is_finite() || cost < 0.0)
+        {
+            return Err(ContractError::Number("usage.cost"));
+        }
         let mut seen = HashSet::new();
         for outcome in &self.outcomes {
             let question = request
@@ -470,5 +490,19 @@ mod tests {
         ] {
             assert!(answer.validate(question).is_err());
         }
+    }
+
+    #[test]
+    fn native_cost_requires_a_nonnegative_finite_value() {
+        let (request, mut outcome) = fixture();
+        for cost in [-1.0, f64::NAN, f64::INFINITY] {
+            outcome.usage.cost = Some(cost);
+            assert_eq!(
+                outcome.validate(&request),
+                Err(ContractError::Number("usage.cost"))
+            );
+        }
+        outcome.usage.cost = Some(0.0);
+        outcome.validate(&request).unwrap();
     }
 }

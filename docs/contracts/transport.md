@@ -21,7 +21,7 @@ not transport retries.
 typed failure, and caller-supplied current time, it returns the next permitted
 delay or none. Defaults allow three total attempts, starting at one second and
 doubling, capped at 30 seconds. Retryable failures are connection failures,
-timeouts, HTTP 429, and HTTP 500/502/503/504. Retry-After supports seconds and HTTP
+timeouts, HTTP 429, and HTTP 500/502/503/504/524/529. Retry-After supports seconds and HTTP
 dates, is capped, and never shortens normal backoff. Invalid hints are ignored.
 Authentication, schema/capability/capacity failures, cancellations, and refusals
 are not retried by this policy. Explicit model changes never occur here.
