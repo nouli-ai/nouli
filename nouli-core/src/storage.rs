@@ -6,6 +6,7 @@ pub mod guards;
 pub mod replay;
 mod schema;
 pub mod sessions;
+pub mod sources;
 pub mod turns;
 
 use std::io::Read;
