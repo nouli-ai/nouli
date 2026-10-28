@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use super::{Ledger, StorageError, sql_error};
 use crate::{
-    history::{HistoryEvent, ModelSelection},
+    history::{HistoryEvent, ModelSelection, SourcePoint},
     identity::{Id, SessionName, SessionSelector},
 };
 
@@ -50,7 +50,87 @@ fn decode(row: Row) -> Result<Session, SessionError> {
     })
 }
 
+pub(super) fn insert_session(
+    transaction: &rusqlite::Transaction<'_>,
+    session: &Session,
+    sources: &[SourcePoint],
+) -> Result<(), StorageError> {
+    let defaults = Ledger::encode_payload(&session.defaults)?;
+    let frontier = Ledger::encode_payload(&session.frontier)?;
+    transaction
+        .execute(
+            "INSERT INTO sessions(id,name,defaults_toon,frontier_toon) VALUES(?1,?2,?3,?4)",
+            params![
+                session.id.to_string(),
+                session.name.as_ref().map(SessionName::as_str),
+                defaults,
+                frontier
+            ],
+        )
+        .map_err(|error| sql_error("insert session", error))?;
+    let event = Ledger::encode_payload(&HistoryEvent::SessionCreated {
+        session: session.id,
+        sources: sources.to_vec(),
+    })?;
+    transaction
+        .execute(
+            "INSERT INTO session_events(session_id,sequence,payload_toon) VALUES(?1,0,?2)",
+            params![session.id.to_string(), event],
+        )
+        .map_err(|error| sql_error("record session creation", error))?;
+    for (position, source) in sources.iter().enumerate() {
+        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position as i64,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",error))?;
+    }
+    Ok(())
+}
+
+pub(super) fn read_session(
+    connection: &rusqlite::Connection,
+    selector: &SessionSelector,
+) -> Result<Session, SessionError> {
+    let (query, value) = match selector {
+        SessionSelector::Id(id) => (
+            "SELECT id,name,defaults_toon,frontier_toon,revision FROM sessions WHERE id=?1",
+            id.to_string(),
+        ),
+        SessionSelector::Name(name) => (
+            "SELECT id,name,defaults_toon,frontier_toon,revision FROM sessions WHERE name=?1",
+            name.as_str().to_owned(),
+        ),
+    };
+    let row: Option<Row> = connection
+        .query_row(query, [value], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .optional()
+        .map_err(|error| sql_error("read session", error))?;
+    decode(row.ok_or(SessionError::UnknownSession)?)
+}
+
 impl Ledger {
+    pub fn session_sources(&self, id: Id) -> Result<Vec<SourcePoint>, SessionError> {
+        self.session(&SessionSelector::Id(id))?;
+        let mut statement=self.connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",error))?;
+        let rows = statement
+            .query_map([id.to_string()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| sql_error("read source rows", error))?;
+        rows.map(|row| {
+            let (session, frontier) = row.map_err(|error| sql_error("decode source row", error))?;
+            Ok(SourcePoint {
+                session: Id::try_from(session).map_err(|_| StorageError::Payload)?,
+                frontier: Ledger::decode_payload(&frontier)?,
+            })
+        })
+        .collect()
+    }
     pub fn create_session(
         &mut self,
         name: Option<SessionName>,
@@ -69,31 +149,8 @@ impl Ledger {
             frontier: vec![],
             revision: 0,
         };
-        let default_payload = Self::encode_payload(&session.defaults)?;
-        let frontier = Self::encode_payload(&session.frontier)?;
-        let event = Self::encode_payload(&HistoryEvent::SessionCreated {
-            session: session.id,
-            sources: vec![],
-        })?;
-        self.transaction("create session", |transaction| {
-            transaction
-                .execute(
-                    "INSERT INTO sessions(id,name,defaults_toon,frontier_toon) VALUES(?1,?2,?3,?4)",
-                    params![
-                        session.id.to_string(),
-                        session.name.as_ref().map(SessionName::as_str),
-                        default_payload,
-                        frontier
-                    ],
-                )
-                .map_err(|error| sql_error("insert session", error))?;
-            transaction
-                .execute(
-                    "INSERT INTO session_events(session_id,sequence,payload_toon) VALUES(?1,0,?2)",
-                    params![session.id.to_string(), event],
-                )
-                .map_err(|error| sql_error("record session creation", error))?;
-            Ok(())
+        self.transaction::<_, StorageError>("create session", |transaction| {
+            insert_session(transaction, &session, &[])
         })
         .map_err(|error| {
             if session.name.is_some()
@@ -112,34 +169,9 @@ impl Ledger {
         })?;
         Ok(session)
     }
-
     pub fn session(&self, selector: &SessionSelector) -> Result<Session, SessionError> {
-        let (query, value) = match selector {
-            SessionSelector::Id(id) => (
-                "SELECT id,name,defaults_toon,frontier_toon,revision FROM sessions WHERE id=?1",
-                id.to_string(),
-            ),
-            SessionSelector::Name(name) => (
-                "SELECT id,name,defaults_toon,frontier_toon,revision FROM sessions WHERE name=?1",
-                name.as_str().to_owned(),
-            ),
-        };
-        let row: Option<Row> = self
-            .connection
-            .query_row(query, [value], |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            })
-            .optional()
-            .map_err(|error| sql_error("read session", error))?;
-        decode(row.ok_or(SessionError::UnknownSession)?)
+        read_session(&self.connection, selector)
     }
-
     pub fn list_sessions(&self) -> Result<Vec<Session>, SessionError> {
         let mut statement = self
             .connection
