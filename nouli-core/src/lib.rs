@@ -13,6 +13,8 @@ pub mod decision;
 pub mod history;
 pub mod identity;
 pub mod outcome;
+pub mod protocol;
+pub mod workflow;
 
 /// The version of the Nouli library in this build.
 pub const fn version() -> &'static str {
