@@ -1,0 +1,37 @@
+version: 1
+state[2]:
+  - type: "text"
+    text: "FOOD_ORIGINAL"
+  - type: "structured"
+    data:
+      guests: 2
+      available_minutes: 45
+      ingredients[2]:
+        - "lentils"
+        - "tomatoes"
+questions[3]:
+  - id: "meal"
+    prompt: "What should we cook?"
+    criteria[2]:
+      - "Prefer vegetarian meals"
+      - "Use available time"
+    answer_space:
+      type: "choice"
+      options[2]:
+        - id: "lentils"
+          description: "Lentil stew"
+        - id: "pasta"
+          description: "Pasta with tomato sauce"
+  - id: "available"
+    prompt: "Are the ingredients available?"
+    answer_space:
+      type: "noul"
+  - id: "quality"
+    prompt: "Rate dinner fit."
+    answer_space:
+      type: "score"
+      levels[3]:
+        - "Poor"
+        - label: "Adequate"
+          description: "Meets minimum requirements"
+        - "Excellent"
