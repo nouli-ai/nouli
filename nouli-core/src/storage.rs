@@ -1,6 +1,7 @@
 //! Blocking local ledger primitives. Call from an owned blocking worker when
 //! embedding in an async runtime; transactions never span a provider await.
 
+pub mod context;
 pub mod guards;
 pub mod replay;
 mod schema;
