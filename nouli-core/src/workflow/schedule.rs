@@ -327,7 +327,11 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
                 }
             }
             Err(error) => {
-                self.nodes[id].status = NodeStatus::Failed;
+                self.nodes[id].status = if error.category == ErrorCategory::Interrupted {
+                    NodeStatus::Interrupted
+                } else {
+                    NodeStatus::Failed
+                };
                 self.nodes[id].error = Some(error);
             }
         }
@@ -556,7 +560,12 @@ pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
         .iter()
         .any(|node| matches!(node.status, NodeStatus::Failed | NodeStatus::Blocked))
         || outputs.iter().any(|output| output.required_missing);
-    let status = if canceled {
+    let interrupted = canceled
+        || scheduler
+            .nodes
+            .iter()
+            .any(|node| node.status == NodeStatus::Interrupted);
+    let status = if interrupted {
         RunStatus::Interrupted
     } else if partial {
         if scheduler
@@ -985,5 +994,138 @@ mod tests {
                 .all(|node| node.status == NodeStatus::Interrupted)
         );
         assert_eq!(executor.active.load(Ordering::SeqCst), 0);
+    }
+    struct CancelAtCompletion {
+        cancel: CancellationToken,
+        category: Option<ErrorCategory>,
+        calls: AtomicUsize,
+    }
+    impl NodeExecutor for CancelAtCompletion {
+        async fn execute(
+            &self,
+            _call: NodeCall,
+            _cancel: CancellationToken,
+        ) -> Result<NodeOutput, ErrorReport> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            // No await between cancellation and return: on this current-thread
+            // runtime the task has completed before the scheduler drains it.
+            self.cancel.cancel();
+            if let Some(category) = self.category {
+                Err(error(category, "cooperative_result"))
+            } else {
+                Ok(NodeOutput {
+                    outcome: outcome(),
+                    source: None,
+                    evaluation: None,
+                })
+            }
+        }
+    }
+    fn cancellation_graph() -> Arc<CompiledWorkflow> {
+        let mut spec = fixture();
+        spec.nodes.truncate(1);
+        spec.outputs = vec![OutputBinding {
+            name: "score".into(),
+            reference: ResultReference {
+                node: "initial".into(),
+                question: "quality".into(),
+                field: ResultField::Score,
+                pointer: None,
+                on_missing: MissingPolicy::Optional,
+            },
+        }];
+        Arc::new(compile(&spec).unwrap())
+    }
+    #[tokio::test]
+    async fn cooperative_cancellation_preserves_interrupted_and_genuine_failure_categories() {
+        for (category, expected, absence) in [
+            (
+                ErrorCategory::Interrupted,
+                NodeStatus::Interrupted,
+                Absence::Interrupted,
+            ),
+            (
+                ErrorCategory::Transport,
+                NodeStatus::Failed,
+                Absence::Failed,
+            ),
+        ] {
+            let cancel = CancellationToken::new();
+            let executor = Arc::new(CancelAtCompletion {
+                cancel: cancel.clone(),
+                category: Some(category),
+                calls: AtomicUsize::new(0),
+            });
+            let result = schedule(cancellation_graph(), executor.clone(), 1, cancel)
+                .await
+                .unwrap();
+            assert_eq!(result.status, RunStatus::Interrupted);
+            assert_eq!(result.nodes[0].status, expected);
+            assert_eq!(result.nodes[0].error.as_ref().unwrap().category, category);
+            assert!(result.nodes[0].output.is_none());
+            assert_eq!(
+                result.outputs[0].value,
+                ReferenceValue::Absent { reason: absence }
+            );
+            assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        }
+    }
+    #[tokio::test]
+    async fn completed_success_drained_during_cancellation_remains_reusable() {
+        let cancel = CancellationToken::new();
+        let executor = Arc::new(CancelAtCompletion {
+            cancel: cancel.clone(),
+            category: None,
+            calls: AtomicUsize::new(0),
+        });
+        let graph = cancellation_graph();
+        let result = schedule(graph.clone(), executor.clone(), 1, cancel)
+            .await
+            .unwrap();
+        assert_eq!(result.status, RunStatus::Interrupted);
+        assert_eq!(result.nodes[0].status, NodeStatus::Completed);
+        assert!(result.nodes[0].error.is_none());
+        assert_eq!(result.completion_order, vec![0]);
+        assert_eq!(
+            result.outputs[0].value,
+            ReferenceValue::Present {
+                value: Data::new(serde_json::json!(1.43)).unwrap()
+            }
+        );
+        let resumed = schedule_resumed(
+            graph,
+            executor.clone(),
+            Arc::new(NoopObserver),
+            1,
+            CancellationToken::new(),
+            result.nodes,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resumed.status, RunStatus::Completed);
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        assert!(resumed.start_order.is_empty());
+    }
+    #[tokio::test]
+    async fn typed_interruption_without_parent_cancellation_never_reports_completed_run() {
+        let cancel = CancellationToken::new();
+        let executor = Arc::new(CancelAtCompletion {
+            cancel: CancellationToken::new(),
+            category: Some(ErrorCategory::Interrupted),
+            calls: AtomicUsize::new(0),
+        });
+        let result = schedule(cancellation_graph(), executor.clone(), 1, cancel.clone())
+            .await
+            .unwrap();
+        assert!(!cancel.is_cancelled());
+        assert_eq!(result.status, RunStatus::Interrupted);
+        assert_eq!(result.nodes[0].status, NodeStatus::Interrupted);
+        assert_eq!(
+            result.outputs[0].value,
+            ReferenceValue::Absent {
+                reason: Absence::Interrupted
+            }
+        );
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     }
 }
