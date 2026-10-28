@@ -3,12 +3,13 @@
 use super::{StorageError, sql_error};
 use rusqlite::{Connection, TransactionBehavior};
 
-pub(super) const VERSION: u32 = 3;
+pub(super) const VERSION: u32 = 4;
 const APPLICATION_ID: i64 = 0x4e4f554c;
 pub(super) const MIGRATIONS: &[&str] = &[
     include_str!("schema/0001.sql"),
     include_str!("schema/0002.sql"),
     include_str!("schema/0003.sql"),
+    include_str!("schema/0004.sql"),
 ];
 
 fn identity(connection: &Connection) -> Result<(i64, u32), StorageError> {
@@ -140,5 +141,70 @@ mod tests {
             .unwrap();
         assert_eq!(name, "kept");
         assert_eq!(identity(&connection).unwrap().1, VERSION);
+    }
+    #[test]
+    fn existing_v3_context_records_survive_shared_base_migration() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .unwrap();
+        connection
+            .pragma_update(None, "recursive_triggers", true)
+            .unwrap();
+        migrate(&mut connection, &MIGRATIONS[..3]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'state: retained')",[]).unwrap();
+        connection.execute("INSERT INTO context_records(id,turn_id,record_key,payload_toon) VALUES('r','t','budget','value: 18446744073709551615')",[]).unwrap();
+        migrate(&mut connection, MIGRATIONS).unwrap();
+        let row: (String, Option<String>, Option<String>, String, String) = connection
+            .query_row(
+                "SELECT id,turn_id,base_id,record_key,payload_toon FROM context_records",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                "r".into(),
+                Some("t".into()),
+                None,
+                "budget".into(),
+                "value: 18446744073709551615".into()
+            )
+        );
+        assert!(
+            connection
+                .execute(
+                    "UPDATE context_records SET record_key='lost' WHERE id='r'",
+                    []
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute("DELETE FROM context_records WHERE id='r'", [])
+                .is_err()
+        );
+        assert!(
+            !connection
+                .prepare("PRAGMA foreign_key_check")
+                .unwrap()
+                .exists([])
+                .unwrap()
+        );
     }
 }

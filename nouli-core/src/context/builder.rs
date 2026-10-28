@@ -30,6 +30,7 @@ pub struct RequiredItem {
 pub enum EntryKind {
     Decision,
     Context,
+    Base,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextEntry {
@@ -48,6 +49,8 @@ pub struct ContextPlan {
 }
 
 pub struct ContextInput<'a> {
+    pub context_base: Option<&'a crate::history::base::ContextBase>,
+    pub runtime_only: bool,
     pub history: &'a [FinalizedTurn],
     pub sources: &'a [SourcePoint],
     pub request: &'a TurnRequest,
@@ -109,6 +112,8 @@ fn data(value: &impl Serialize) -> Result<Data, BuildError> {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum RevisionSource {
     Finalized { session: Id, turn: Id, index: usize },
+    Run { session: Id, run: Id, index: usize },
+    Ephemeral { node: Option<String>, index: usize },
     Pending { index: usize },
 }
 #[derive(Serialize)]
@@ -118,15 +123,42 @@ struct ContextMaterial<'a> {
     pinned: bool,
     created_session: Option<Id>,
     created_turn: Option<Id>,
+    created_run: Option<Id>,
+    created_node: Option<String>,
     revision: Option<RevisionSource>,
 }
 fn context_entry(
     record: &super::ContextRecord,
     active: Option<&super::projection::ActiveRecord>,
-    created: Option<(Id, Id)>,
-    pending_turn: Id,
+    created: &super::projection::RevisionOrigin,
 ) -> Result<ContextEntry, BuildError> {
+    use super::projection::RevisionOrigin;
     let pinned = active.is_some_and(|record| record.pinned);
+    let (created_session, created_turn, created_run, created_node) = match created {
+        RevisionOrigin::Turn { session, turn } => (Some(*session), Some(*turn), None, None),
+        RevisionOrigin::Run { session, run } => (Some(*session), None, Some(*run), None),
+        RevisionOrigin::Ephemeral { node } => (None, None, None, node.clone()),
+        RevisionOrigin::Pending { .. } => (None, None, None, None),
+    };
+    let revision = active.map(|record| match &record.origin {
+        RevisionOrigin::Turn { session, turn } => RevisionSource::Finalized {
+            session: *session,
+            turn: *turn,
+            index: record.revision,
+        },
+        RevisionOrigin::Run { session, run } => RevisionSource::Run {
+            session: *session,
+            run: *run,
+            index: record.revision,
+        },
+        RevisionOrigin::Ephemeral { node } => RevisionSource::Ephemeral {
+            node: node.clone(),
+            index: record.revision,
+        },
+        RevisionOrigin::Pending { .. } => RevisionSource::Pending {
+            index: record.revision,
+        },
+    });
     Ok(ContextEntry {
         id: record.id,
         kind: EntryKind::Context,
@@ -136,23 +168,51 @@ fn context_entry(
             record,
             active: active.is_some(),
             pinned,
-            created_session: created.map(|source| source.0),
-            created_turn: created.map(|source| source.1),
-            revision: active.map(|record| {
-                if record.source_turn == pending_turn {
-                    RevisionSource::Pending {
-                        index: record.revision,
-                    }
-                } else {
-                    RevisionSource::Finalized {
-                        session: record.source_session,
-                        turn: record.source_turn,
-                        index: record.revision,
-                    }
-                }
-            }),
+            created_session,
+            created_turn,
+            created_run,
+            created_node,
+            revision,
         })?,
     })
+}
+fn append_base(
+    base: &crate::history::base::ContextBase,
+    active: &[super::projection::ActiveRecord],
+    protected: bool,
+    entries: &mut Vec<ContextEntry>,
+    records: &mut HashSet<Id>,
+    bases: &mut HashSet<Id>,
+) -> Result<(), BuildError> {
+    if !bases.insert(base.id) {
+        if protected && let Some(entry) = entries.iter_mut().find(|entry| entry.id == base.id) {
+            entry.protected = true;
+        }
+        return Ok(());
+    }
+    if !base.state.is_empty() {
+        entries.push(ContextEntry {id:base.id,kind:EntryKind::Base,protected,representation:Representation::Full,value:data(&serde_json::json!({"workflow_base":base.state,"run":if base.runtime_only {None} else {Some(base.id)},"runtime_only":base.runtime_only}))?});
+    }
+    let origin = if base.runtime_only {
+        super::projection::RevisionOrigin::Ephemeral { node: None }
+    } else {
+        super::projection::RevisionOrigin::Run {
+            session: base.session,
+            run: base.id,
+        }
+    };
+    for update in &base.updates {
+        if let Some(record) = update.new_record()
+            && records.insert(record.id)
+        {
+            entries.push(context_entry(
+                record,
+                active.iter().find(|active| active.record.id == record.id),
+                &origin,
+            )?);
+        }
+    }
+    Ok(())
 }
 fn pointer<'a>(
     value: &'a serde_json::Value,
@@ -241,6 +301,41 @@ fn capacity(error: &LimitError) -> bool {
     )
 }
 
+fn reported_sources(history: &[FinalizedTurn], sources: &[SourcePoint]) -> Vec<SourcePoint> {
+    if sources
+        .iter()
+        .flat_map(|source| source.frontier.iter())
+        .all(|head| {
+            history
+                .iter()
+                .any(|turn| turn.id == *head && !turn.runtime_only)
+        })
+    {
+        return sources.to_vec();
+    }
+    let mut reported = Vec::new();
+    for source in sources {
+        for head in &source.frontier {
+            if let Some(turn) = history.iter().find(|turn| turn.id == *head) {
+                let external = if turn.runtime_only {
+                    turn.manifest.sources.clone()
+                } else {
+                    vec![SourcePoint {
+                        session: source.session,
+                        frontier: vec![*head],
+                    }]
+                };
+                for source in external {
+                    if !reported.contains(&source) {
+                        reported.push(source);
+                    }
+                }
+            }
+        }
+    }
+    reported
+}
+
 pub struct ContextBuilder;
 impl ContextBuilder {
     pub fn build(
@@ -257,20 +352,53 @@ impl ContextBuilder {
         if ordered.iter().any(|turn| turn.id == input.turn) {
             return Err(HistoryError::DuplicateTurn.into());
         }
-        let active = projection::project(
+        let pending_origin = projection::RevisionOrigin::Pending {
+            session: if input.runtime_only {
+                None
+            } else {
+                Some(input.session)
+            },
+            token: input.turn,
+        };
+        let active = projection::project_with_base(
             input.history,
             input.sources,
+            input.context_base,
             input.updates,
-            input.session,
-            input.turn,
+            pending_origin.clone(),
         )?;
         let mut entries = Vec::new();
         let mut context_ids = HashSet::new();
+        let mut base_ids = HashSet::new();
         for turn in ordered {
+            if let Some(base) = &turn.context_base {
+                append_base(
+                    base,
+                    &active,
+                    input
+                        .context_base
+                        .is_some_and(|current| current.id == base.id),
+                    &mut entries,
+                    &mut context_ids,
+                    &mut base_ids,
+                )?;
+            }
+            let created = if turn.runtime_only {
+                projection::RevisionOrigin::Ephemeral {
+                    node: turn.workflow_node.clone(),
+                }
+            } else {
+                projection::RevisionOrigin::Turn {
+                    session: turn.session,
+                    turn: turn.id,
+                }
+            };
             #[derive(Serialize)]
             struct Decision<'a> {
-                session: Id,
-                turn: Id,
+                session: Option<Id>,
+                turn: Option<Id>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                workflow_node: Option<&'a str>,
                 request: &'a TurnRequest,
                 outcome: &'a crate::outcome::TurnOutcome,
             }
@@ -278,8 +406,17 @@ impl ContextBuilder {
                 id: turn.id,
                 kind: EntryKind::Decision,
                 value: data(&Decision {
-                    session: turn.session,
-                    turn: turn.id,
+                    session: if turn.runtime_only {
+                        None
+                    } else {
+                        Some(turn.session)
+                    },
+                    turn: if turn.runtime_only {
+                        None
+                    } else {
+                        Some(turn.id)
+                    },
+                    workflow_node: turn.workflow_node.as_deref(),
                     request: &turn.request,
                     outcome: &turn.outcome,
                 })?,
@@ -292,11 +429,20 @@ impl ContextBuilder {
                     entries.push(context_entry(
                         record,
                         active.iter().find(|active| active.record.id == record.id),
-                        Some((turn.session, turn.id)),
-                        input.turn,
+                        &created,
                     )?);
                 }
             }
+        }
+        if let Some(base) = input.context_base {
+            append_base(
+                base,
+                &active,
+                true,
+                &mut entries,
+                &mut context_ids,
+                &mut base_ids,
+            )?;
         }
         for update in input.updates {
             if let Some(record) = update.new_record()
@@ -305,8 +451,7 @@ impl ContextBuilder {
                 entries.push(context_entry(
                     record,
                     active.iter().find(|active| active.record.id == record.id),
-                    None,
-                    input.turn,
+                    &pending_origin,
                 )?);
             }
         }
@@ -344,7 +489,7 @@ impl ContextBuilder {
             match limits.assess(&context, input.request, counter) {
                 Ok(assessment) => {
                     let manifest = EvaluationManifest {
-                        sources: input.sources.to_vec(),
+                        sources: reported_sources(input.history, input.sources),
                         records: entries
                             .iter()
                             .map(|entry| RecordProjection {
@@ -431,6 +576,8 @@ mod tests {
         required: &'a [RequiredItem],
     ) -> ContextInput<'a> {
         ContextInput {
+            context_base: None,
+            runtime_only: false,
             history,
             sources,
             request,

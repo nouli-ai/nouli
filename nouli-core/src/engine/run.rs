@@ -26,6 +26,8 @@ use crate::{
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 pub(super) struct RunInput<'a> {
+    pub context_base: Option<&'a crate::history::base::ContextBase>,
+    pub runtime_only: bool,
     pub request: &'a EvaluationRequest,
     pub sources: &'a [SourcePoint],
     pub history: &'a [FinalizedTurn],
@@ -39,54 +41,109 @@ pub(super) enum Executed {
         manifest: Box<EvaluationManifest>,
     },
 }
+enum Target<'a> {
+    Evaluation {
+        worker: &'a LedgerWorker,
+        owner: Arc<RequestOwner>,
+    },
+    Workflow {
+        worker: &'a LedgerWorker,
+        owner: Arc<crate::storage::workflows::WorkflowOwner>,
+        intent: Arc<crate::storage::workflows::nodes::NodeIntent>,
+    },
+    Ephemeral,
+}
 pub(super) struct Recorder<'a> {
-    target: Option<(&'a LedgerWorker, Arc<RequestOwner>)>,
+    target: Target<'a>,
     attempt: Option<Id>,
 }
 impl<'a> Recorder<'a> {
     pub fn durable(worker: &'a LedgerWorker, owner: Arc<RequestOwner>) -> Self {
         Self {
-            target: Some((worker, owner)),
+            target: Target::Evaluation { worker, owner },
+            attempt: None,
+        }
+    }
+    pub fn workflow(
+        worker: &'a LedgerWorker,
+        owner: Arc<crate::storage::workflows::WorkflowOwner>,
+        intent: crate::storage::workflows::nodes::NodeIntent,
+    ) -> Self {
+        Self {
+            target: Target::Workflow {
+                worker,
+                owner,
+                intent: Arc::new(intent),
+            },
             attempt: None,
         }
     }
     pub fn ephemeral() -> Self {
         Self {
-            target: None,
+            target: Target::Ephemeral,
             attempt: None,
         }
     }
     async fn begin(&mut self, manifest: EvaluationManifest) -> Result<(), EngineError> {
-        if let Some((worker, owner)) = &self.target {
-            let writer = owner.clone();
-            self.attempt = Some(
-                worker
-                    .call(move |ledger| {
-                        let attempt = writer.prepare(ledger, manifest)?;
-                        ledger.record_attempt_progress(
-                            writer.guard(),
-                            attempt.id,
-                            AttemptProgress {
-                                state: AttemptStatus::Running,
-                                error: None,
-                            },
-                        )?;
-                        Ok::<_, EngineError>(attempt.id)
-                    })
-                    .await??,
-            );
-        }
+        self.attempt = match &self.target {
+            Target::Evaluation { worker, owner } => {
+                let writer = owner.clone();
+                Some(
+                    worker
+                        .call(move |ledger| {
+                            let attempt = writer.prepare(ledger, manifest)?;
+                            ledger.record_attempt_progress(
+                                writer.guard(),
+                                attempt.id,
+                                AttemptProgress {
+                                    state: AttemptStatus::Running,
+                                    error: None,
+                                },
+                            )?;
+                            Ok::<_, EngineError>(attempt.id)
+                        })
+                        .await??,
+                )
+            }
+            Target::Workflow {
+                worker,
+                owner,
+                intent,
+            } => {
+                let writer = owner.clone();
+                let intent = intent.clone();
+                Some(
+                    worker
+                        .call(move |ledger| {
+                            ledger.prepare_workflow_attempt(&writer, &intent, manifest)
+                        })
+                        .await??
+                        .id,
+                )
+            }
+            Target::Ephemeral => None,
+        };
         Ok(())
     }
     async fn fail(&self, progress: AttemptProgress) -> Result<(), EngineError> {
-        if let Some((worker, owner)) = &self.target {
-            let writer = owner.clone();
-            let attempt = self.attempt.ok_or(StorageError::Payload)?;
-            worker
-                .call(move |ledger| {
-                    ledger.record_attempt_progress(writer.guard(), attempt, progress)
-                })
-                .await??;
+        match &self.target {
+            Target::Evaluation { worker, owner } => {
+                let writer = owner.clone();
+                let attempt = self.attempt.ok_or(StorageError::Payload)?;
+                worker
+                    .call(move |ledger| {
+                        ledger.record_attempt_progress(writer.guard(), attempt, progress)
+                    })
+                    .await??;
+            }
+            Target::Workflow { worker, owner, .. } => {
+                let writer = owner.clone();
+                let attempt = self.attempt.ok_or(StorageError::Payload)?;
+                worker
+                    .call(move |ledger| ledger.fail_workflow_attempt(&writer, attempt, progress))
+                    .await??;
+            }
+            Target::Ephemeral => {}
         }
         Ok(())
     }
@@ -95,20 +152,37 @@ impl<'a> Recorder<'a> {
         outcome: TurnOutcome,
         mut manifest: EvaluationManifest,
     ) -> Result<Executed, EngineError> {
-        if let Some((worker, owner)) = &self.target {
-            let writer = owner.clone();
-            let attempt = self.attempt.ok_or(StorageError::Payload)?;
-            let turn = worker
-                .call(move |ledger| ledger.finalize_attempt(writer.guard(), attempt, outcome))
-                .await??;
-            Ok(Executed::Saved(Box::new(turn)))
-        } else {
-            manifest.provider = outcome.provider.clone();
-            manifest.validate()?;
-            Ok(Executed::Ephemeral {
-                outcome: Box::new(outcome),
-                manifest: Box::new(manifest),
-            })
+        match &self.target {
+            Target::Evaluation { worker, owner } => {
+                let writer = owner.clone();
+                let attempt = self.attempt.ok_or(StorageError::Payload)?;
+                Ok(Executed::Saved(Box::new(
+                    worker
+                        .call(move |ledger| {
+                            ledger.finalize_attempt(writer.guard(), attempt, outcome)
+                        })
+                        .await??,
+                )))
+            }
+            Target::Workflow { worker, owner, .. } => {
+                let writer = owner.clone();
+                let attempt = self.attempt.ok_or(StorageError::Payload)?;
+                Ok(Executed::Saved(Box::new(
+                    worker
+                        .call(move |ledger| {
+                            ledger.finalize_workflow_attempt(&writer, attempt, outcome)
+                        })
+                        .await??,
+                )))
+            }
+            Target::Ephemeral => {
+                manifest.provider = outcome.provider.clone();
+                manifest.validate()?;
+                Ok(Executed::Ephemeral {
+                    outcome: Box::new(outcome),
+                    manifest: Box::new(manifest),
+                })
+            }
         }
     }
 }
@@ -135,6 +209,8 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         let build = |limits: &ResolvedLimits| {
             ContextBuilder::build(
                 ContextInput {
+                    context_base: input.context_base,
+                    runtime_only: input.runtime_only,
                     history: input.history,
                     sources: input.sources,
                     request: &input.request.turn,

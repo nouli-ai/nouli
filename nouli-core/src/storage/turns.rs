@@ -31,6 +31,8 @@ pub struct AttemptInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedAttempt {
+    #[serde(default)]
+    pub workflow: Option<super::workflows::nodes::NodeAttemptScope>,
     pub id: Id,
     #[serde(default)]
     pub owner: Option<Id>,
@@ -114,7 +116,7 @@ fn write_error(error: StorageError) -> TurnError {
     }
 }
 
-fn progress_event(
+pub(super) fn progress_event(
     transaction: &Transaction<'_>,
     attempt: Id,
     progress: &AttemptProgress,
@@ -158,6 +160,7 @@ impl Ledger {
         let session = self.session(&SessionSelector::Id(session))?;
         super::replay::validate_reserved_input(self, guard, &input).map_err(write_error)?;
         let prepared = PreparedAttempt {
+            workflow: None,
             id: Id::generate(),
             owner: Some(guard.owner),
             session: session.id,
@@ -296,6 +299,9 @@ impl Ledger {
             return Err(TurnError::AttemptState);
         }
         let prepared = snapshot.intent;
+        if prepared.workflow.is_some() {
+            return Err(TurnError::Conflict);
+        }
         let current = self.session(&SessionSelector::Id(prepared.session))?;
         if current.revision != prepared.expected_revision
             || current.frontier != prepared.expected_frontier
@@ -321,6 +327,10 @@ impl Ledger {
             prepared.expected_frontier
         };
         let turn = FinalizedTurn {
+            context_base: None,
+            workflow_run: None,
+            runtime_only: false,
+            workflow_node: None,
             id: Id::generate(),
             session: prepared.session,
             parents,
@@ -331,7 +341,6 @@ impl Ledger {
         };
         turn.validate()?;
         let payload = Self::encode_payload(&turn)?;
-        let manifest = Self::encode_payload(&turn.manifest)?;
         let frontier = Self::encode_payload(&vec![turn.id])?;
         let event = Self::encode_payload(&HistoryEvent::TurnFinalized {
             session: turn.session,
@@ -341,18 +350,9 @@ impl Ledger {
         self.transaction::<_, StorageError>("finalize turn",|transaction| {
             let current:i64=transaction.query_row("SELECT revision FROM sessions WHERE id=?1",[turn.session.to_string()],|row|row.get(0)).map_err(|error|sql_error("check expected head",error))?;
             if current!=prepared.expected_revision {return Err(StorageError::Conflict);}
-            transaction.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES(?1,?2,?3,?4)",params![turn.id.to_string(),turn.session.to_string(),prepared.expected_revision,payload]).map_err(|error|sql_error("insert finalized turn",error))?;
-            for (position,parent) in turn.parents.iter().enumerate() {transaction.execute("INSERT INTO turn_parents(turn_id,parent_id,position) VALUES(?1,?2,?3)",params![turn.id.to_string(),parent.to_string(),position as i64]).map_err(|error|sql_error("record ancestry",error))?;}
-            for (position,update) in turn.updates.iter().enumerate() {
-                transaction.execute("INSERT INTO context_events(turn_id,position,payload_toon) VALUES(?1,?2,?3)",params![turn.id.to_string(),position as i64,Self::encode_payload(update)?]).map_err(|error|sql_error("record context event",error))?;
-                if let Some(record)=update.new_record() {transaction.execute("INSERT INTO context_records(id,turn_id,record_key,payload_toon) VALUES(?1,?2,?3,?4)",params![record.id.to_string(),turn.id.to_string(),record.key,Self::encode_payload(record)?]).map_err(|error|sql_error("insert context record",error))?;}
-            }
-            transaction.execute("INSERT INTO manifests(turn_id,payload_toon) VALUES(?1,?2)",params![turn.id.to_string(),manifest]).map_err(|error|sql_error("record manifest",error))?;
+            super::publication::insert_turn(transaction,&turn,id,prepared.expected_revision)?;
             let changed=transaction.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807",params![turn.session.to_string(),frontier,prepared.expected_revision]).map_err(|error|sql_error("publish session head",error))?;
             if changed!=1 {return Err(StorageError::Conflict);}
-            let changed=transaction.execute("UPDATE attempt_states SET state='completed',finalized_turn=?2 WHERE attempt_id=?1 AND state IN ('pending','running')",params![id.to_string(),turn.id.to_string()]).map_err(|error|sql_error("complete attempt",error))?;
-            if changed!=1 {return Err(StorageError::Conflict);}
-            progress_event(transaction,id,&AttemptProgress {state:AttemptStatus::Completed,error:None})?;
             if let Some(key)=&prepared.input.request_id {
                 let changed=transaction.execute("UPDATE request_reservations SET state='completed',result_toon=?2 WHERE request_id=?1 AND owner_id=?3 AND session_id=?4 AND state='pending'",params![key,payload,guard.owner.to_string(),turn.session.to_string()]).map_err(|error|sql_error("complete request reservation",error))?;
                 if changed!=1 {return Err(StorageError::Conflict);}

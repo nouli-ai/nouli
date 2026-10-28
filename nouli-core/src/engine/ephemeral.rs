@@ -69,6 +69,8 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         match self
             .execute(
                 RunInput {
+                    context_base: None,
+                    runtime_only: true,
                     request,
                     sources: &sources,
                     history: &history,

@@ -2,6 +2,7 @@
 pub mod ephemeral;
 pub mod execution;
 mod run;
+pub mod workflow;
 use crate::{
     config::{
         Config, ConfigError,
@@ -42,6 +43,8 @@ pub struct EvaluationResult {
 }
 #[derive(Debug, Error)]
 pub enum EngineError {
+    #[error(transparent)]
+    Workflow(#[from] crate::storage::workflows::WorkflowError),
     #[error(transparent)]
     Source(#[from] crate::storage::sources::SourceError),
     #[error("ephemeral evaluation cannot use continuation, names, or request replay")]
@@ -159,6 +162,8 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         match self
             .execute(
                 RunInput {
+                    context_base: None,
+                    runtime_only: false,
                     request: &frozen.request,
                     sources: &frozen.sources,
                     history: &history,

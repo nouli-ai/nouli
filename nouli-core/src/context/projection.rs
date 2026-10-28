@@ -2,7 +2,9 @@
 
 use super::{ContextError, ContextRecord, ContextUpdate, PinTarget};
 use crate::{
-    history::{FinalizedTurn, HistoryError, SourcePoint, order::canonical_history},
+    history::{
+        FinalizedTurn, HistoryError, SourcePoint, base::ContextBase, order::canonical_history,
+    },
     identity::Id,
 };
 use serde::{Deserialize, Serialize};
@@ -10,11 +12,19 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RevisionOrigin {
+    Turn { session: Id, turn: Id },
+    Run { session: Id, run: Id },
+    Ephemeral { node: Option<String> },
+    Pending { session: Option<Id>, token: Id },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActiveRecord {
     pub record: ContextRecord,
     pub pinned: bool,
-    pub source_session: Id,
-    pub source_turn: Id,
+    pub origin: RevisionOrigin,
     pub revision: usize,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,8 +100,7 @@ impl Projector {
         &mut self,
         heads: &mut Vec<usize>,
         updates: &[ContextUpdate],
-        session: Id,
-        turn: Id,
+        origin: RevisionOrigin,
     ) -> Result<(), ProjectionError> {
         for (index, update) in updates.iter().enumerate() {
             update.validate()?;
@@ -160,15 +169,14 @@ impl Projector {
                 active: ActiveRecord {
                     record,
                     pinned,
-                    source_session: session,
-                    source_turn: turn,
+                    origin: origin.clone(),
                     revision: index,
                 },
                 parents,
             });
             heads.push(id);
         }
-        self.ensure_resolved(heads)
+        Ok(())
     }
 }
 
@@ -181,25 +189,144 @@ pub fn project(
     session: Id,
     turn: Id,
 ) -> Result<Vec<ActiveRecord>, ProjectionError> {
+    project_with_base(
+        turns,
+        sources,
+        None,
+        updates,
+        RevisionOrigin::Pending {
+            session: Some(session),
+            token: turn,
+        },
+    )
+}
+
+fn apply_base(
+    projector: &mut Projector,
+    base: &ContextBase,
+    parents: &[Id],
+    index: &HashMap<Id, &FinalizedTurn>,
+    states: &HashMap<Id, Vec<usize>>,
+    cache: &mut HashMap<Id, (ContextBase, Vec<usize>)>,
+) -> Result<Vec<usize>, ProjectionError> {
+    base.validate()?;
+    if index.contains_key(&base.id) {
+        return Err(HistoryError::InvalidManifest.into());
+    }
+    let required: HashSet<_> = base
+        .sources
+        .iter()
+        .flat_map(|source| source.frontier.iter().copied())
+        .collect();
+    let mut reachable = HashSet::new();
+    let mut pending = parents.to_vec();
+    while let Some(id) = pending.pop() {
+        if reachable.insert(id) {
+            pending.extend(
+                index
+                    .get(&id)
+                    .ok_or(HistoryError::UnknownTurn)?
+                    .parents
+                    .iter()
+                    .copied(),
+            );
+        }
+    }
+    if !required.is_subset(&reachable) {
+        return Err(HistoryError::InvalidManifest.into());
+    }
+    for source in &base.sources {
+        for head in &source.frontier {
+            if index
+                .get(head)
+                .is_none_or(|turn| turn.session != source.session)
+            {
+                return Err(HistoryError::ForeignHead.into());
+            }
+        }
+    }
+    if let Some((existing, heads)) = cache.get(&base.id) {
+        if existing != base {
+            return Err(HistoryError::InvalidManifest.into());
+        }
+        return Ok(heads.clone());
+    }
+    if required.iter().any(|head| !states.contains_key(head)) {
+        return Err(HistoryError::UnknownTurn.into());
+    }
+    let mut heads = projector.merge(
+        base.sources
+            .iter()
+            .flat_map(|source| source.frontier.iter())
+            .flat_map(|head| states.get(head).into_iter().flatten().copied()),
+    );
+    let origin = if base.runtime_only {
+        RevisionOrigin::Ephemeral { node: None }
+    } else {
+        RevisionOrigin::Run {
+            session: base.session,
+            run: base.id,
+        }
+    };
+    projector.apply(&mut heads, &base.updates, origin)?;
+    cache.insert(base.id, (base.clone(), heads.clone()));
+    Ok(heads)
+}
+
+pub fn project_with_base(
+    turns: &[FinalizedTurn],
+    sources: &[SourcePoint],
+    base: Option<&ContextBase>,
+    updates: &[ContextUpdate],
+    origin: RevisionOrigin,
+) -> Result<Vec<ActiveRecord>, ProjectionError> {
     let ordered = canonical_history(turns, sources)?;
+    let index: HashMap<_, _> = ordered.iter().map(|turn| (turn.id, *turn)).collect();
     let mut projector = Projector::default();
     let mut states: HashMap<Id, Vec<usize>> = HashMap::new();
+    let mut bases = HashMap::new();
     for turn in ordered {
         let mut heads = projector.merge(
             turn.parents
                 .iter()
                 .flat_map(|parent| states[parent].iter().copied()),
         );
-        projector.apply(&mut heads, &turn.updates, turn.session, turn.id)?;
+        if let Some(base) = &turn.context_base {
+            let shared = apply_base(
+                &mut projector,
+                base,
+                &turn.parents,
+                &index,
+                &states,
+                &mut bases,
+            )?;
+            heads = projector.merge(heads.into_iter().chain(shared));
+        }
+        let origin = if turn.runtime_only {
+            RevisionOrigin::Ephemeral {
+                node: turn.workflow_node.clone(),
+            }
+        } else {
+            RevisionOrigin::Turn {
+                session: turn.session,
+                turn: turn.id,
+            }
+        };
+        projector.apply(&mut heads, &turn.updates, origin)?;
+        projector.ensure_resolved(&heads)?;
         states.insert(turn.id, heads);
     }
-    let mut heads = projector.merge(
-        sources
-            .iter()
-            .flat_map(|source| source.frontier.iter())
-            .flat_map(|head| states[head].iter().copied()),
-    );
-    projector.apply(&mut heads, updates, session, turn)?;
+    let parents: Vec<_> = sources
+        .iter()
+        .flat_map(|source| source.frontier.iter().copied())
+        .collect();
+    let mut heads = projector.merge(parents.iter().flat_map(|head| states[head].iter().copied()));
+    if let Some(base) = base {
+        let shared = apply_base(&mut projector, base, &parents, &index, &states, &mut bases)?;
+        heads = projector.merge(heads.into_iter().chain(shared));
+    }
+    projector.apply(&mut heads, updates, origin)?;
+    projector.ensure_resolved(&heads)?;
     Ok(heads
         .into_iter()
         .map(|id| projector.revisions[id].active.clone())
@@ -358,7 +485,13 @@ mod tests {
                         .collect::<Vec<_>>(),
                     vec![a.id, b.id]
                 );
-                assert_eq!(conflicts[0].revisions[0].source_session, left.session);
+                assert_eq!(
+                    conflicts[0].revisions[0].origin,
+                    RevisionOrigin::Turn {
+                        session: left.session,
+                        turn: left.id
+                    }
+                );
             }
             _ => panic!("expected structured conflict"),
         }
@@ -443,6 +576,73 @@ mod tests {
             Err(ProjectionError::Conflicts { .. })
         ));
     }
+    #[test]
+    fn shared_run_base_is_one_causal_event_across_independent_roots() {
+        let shared = record("shared", 8);
+        let mut a = turn(vec![], vec![]);
+        let mut b = turn(vec![], vec![]);
+        b.session = a.session;
+        let base = ContextBase {
+            id: Id::generate(),
+            session: a.session,
+            sources: vec![],
+            state: vec![],
+            updates: vec![ContextUpdate::Pin {
+                target: PinTarget::New {
+                    record: shared.clone(),
+                },
+            }],
+            runtime_only: false,
+        };
+        for (node, name) in [(&mut a, "a"), (&mut b, "b")] {
+            node.workflow_run = Some(base.id);
+            node.workflow_node = Some(name.into());
+            node.context_base = Some(base.clone());
+        }
+        let sources = [SourcePoint {
+            session: a.session,
+            frontier: vec![a.id, b.id],
+        }];
+        let active = selected(&[a.clone(), b.clone()], &sources, &[]).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].record, shared);
+        assert!(active[0].pinned);
+        assert_eq!(
+            active[0].origin,
+            RevisionOrigin::Run {
+                session: a.session,
+                run: base.id
+            }
+        );
+        b.context_base.as_mut().unwrap().state = vec![crate::data::Input::Text {
+            text: "changed base".into(),
+        }];
+        assert!(matches!(
+            selected(&[a, b], &sources, &[]),
+            Err(ProjectionError::History(HistoryError::InvalidManifest))
+        ));
+    }
+    #[test]
+    fn base_sources_cannot_import_an_unrelated_completed_sibling() {
+        let root = turn(vec![], vec![]);
+        let mut branch = turn(vec![], vec![]);
+        let base = ContextBase {
+            id: Id::generate(),
+            session: branch.session,
+            sources: vec![source(&root)],
+            state: vec![],
+            updates: vec![],
+            runtime_only: false,
+        };
+        branch.workflow_run = Some(base.id);
+        branch.workflow_node = Some("branch".into());
+        branch.context_base = Some(base);
+        assert!(matches!(
+            selected(&[root, branch.clone()], &[source(&branch)], &[]),
+            Err(ProjectionError::History(HistoryError::InvalidManifest))
+        ));
+    }
+
     #[test]
     fn invalid_targets_and_duplicate_keys_fail_without_content_deduplication() {
         let original = record("budget", 8);
