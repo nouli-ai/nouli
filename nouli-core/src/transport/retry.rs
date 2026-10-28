@@ -59,7 +59,7 @@ impl RetryPolicy {
             TransportError::Connect | TransportError::Timeout => None,
             TransportError::RateLimited { retry_after } => *retry_after,
             TransportError::Status {
-                status: 500 | 502 | 503 | 504,
+                status: 500 | 502 | 503 | 504 | 524 | 529,
                 retry_after,
             } => *retry_after,
             _ => return None,

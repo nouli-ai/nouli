@@ -102,6 +102,8 @@ pub fn normalize(
     let identity = ProviderIdentity {
         provider: profile_name.to_owned(),
         model: response.model,
+        upstream_provider: None,
+        request_id: None,
     };
     let mut answers = response.answers;
     let mut outcomes = Vec::with_capacity(request.questions.len());
@@ -212,6 +214,7 @@ pub fn normalize(
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
             exact: usage.input_tokens.is_some() || usage.output_tokens.is_some(),
+            cost: None,
         },
         None => Usage::default(),
     };
