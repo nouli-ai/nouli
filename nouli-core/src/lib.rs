@@ -7,6 +7,10 @@
 //! assert!(!nouli_core::version().is_empty());
 //! ```
 
+pub mod data;
+pub mod decision;
+pub mod outcome;
+
 /// The version of the Nouli library in this build.
 pub const fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
