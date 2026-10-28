@@ -35,6 +35,9 @@ Both checks allow a small floating arithmetic epsilon. Validation never renormal
 replaces the supplied score. Confidence is optional, finite native provider
 uncertainty with an explicit meaning. Its scale is provider-specific; it is
 neither the rubric score nor implicitly the probability of a proposition.
+Its `value` is optional when only a separately identified native
+`answer_confidence` is available; that maximum-answer probability never fills
+an absent distribution-confidence value.
 Provider/model identity and token usage accompany normalized outcomes. Missing
 usage is unknown, never invented as measured usage.
 
