@@ -7,6 +7,7 @@
 //! assert!(!nouli_core::version().is_empty());
 //! ```
 
+pub mod codec;
 pub mod context;
 pub mod data;
 pub mod decision;
