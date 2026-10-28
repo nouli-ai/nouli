@@ -17,6 +17,7 @@ pub struct CompiledReference {
     pub reference: ResultReference,
     pub node: usize,
     pub value_type: ValueType,
+    pub handles_missing: bool,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CompiledBinding {
@@ -125,6 +126,7 @@ impl Scope<'_> {
             reference: reference.clone(),
             node: index,
             value_type,
+            handles_missing,
         })
     }
     fn bindings(&self, bindings: &[OutputBinding]) -> Result<Vec<CompiledBinding>, CompileError> {
