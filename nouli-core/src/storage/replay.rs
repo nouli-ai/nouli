@@ -113,6 +113,8 @@ pub enum ReplayError {
     History(#[from] HistoryError),
     #[error("cannot fingerprint request intent")]
     Fingerprint,
+    #[error(transparent)]
+    Source(#[from] super::sources::SourceError),
 }
 
 /// Presentation/config defaults are not part of submitted intent. Resolve
@@ -195,7 +197,9 @@ fn sources(
     match selection {
         SessionSelection::New { .. } => {}
         SessionSelection::Continue { .. } => {
-            if !current.frontier.is_empty() {
+            if current.frontier.is_empty() {
+                result = super::sessions::read_sources(connection, current.id)?;
+            } else {
                 result.push(SourcePoint {
                     session: current.id,
                     frontier: current.frontier.clone(),
@@ -203,30 +207,7 @@ fn sources(
             }
         }
         SessionSelection::From { sources, .. } => {
-            for source in sources {
-                let session = read_session(connection, &source.session)?;
-                let frontier = source.frontier.clone().unwrap_or(session.frontier);
-                if frontier.is_empty() {
-                    return Err(HistoryError::InvalidFrontier.into());
-                }
-                for id in &frontier {
-                    let owner: Option<String> = connection
-                        .query_row(
-                            "SELECT session_id FROM turns WHERE id=?1",
-                            [id.to_string()],
-                            |row| row.get(0),
-                        )
-                        .optional()
-                        .map_err(|error| sql_error("verify frozen source", error))?;
-                    if owner.as_deref() != Some(session.id.to_string().as_str()) {
-                        return Err(HistoryError::ForeignHead.into());
-                    }
-                }
-                result.push(SourcePoint {
-                    session: session.id,
-                    frontier,
-                });
-            }
+            result = super::sources::resolve_on(connection, sources)?;
         }
     }
     Ok(result)

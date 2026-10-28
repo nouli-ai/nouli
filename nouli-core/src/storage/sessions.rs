@@ -50,6 +50,32 @@ fn decode(row: Row) -> Result<Session, SessionError> {
     })
 }
 
+pub(super) fn validate_defaults(defaults: &ModelSelection) -> Result<(), SessionError> {
+    if [&defaults.provider, &defaults.model]
+        .iter()
+        .any(|value| value.as_ref().is_some_and(|s| s.trim().is_empty()))
+    {
+        return Err(SessionError::InvalidDefaults);
+    }
+    Ok(())
+}
+
+pub(super) fn creation_error(error: StorageError, named: bool) -> SessionError {
+    if named
+        && matches!(
+            error,
+            StorageError::Sqlite {
+                code: Some(rusqlite::ErrorCode::ConstraintViolation),
+                ..
+            }
+        )
+    {
+        SessionError::NameCollision
+    } else {
+        SessionError::Storage(error)
+    }
+}
+
 pub(super) fn insert_session(
     transaction: &rusqlite::Transaction<'_>,
     session: &Session,
@@ -113,35 +139,37 @@ pub(super) fn read_session(
     decode(row.ok_or(SessionError::UnknownSession)?)
 }
 
+pub(super) fn read_sources(
+    connection: &rusqlite::Connection,
+    id: Id,
+) -> Result<Vec<SourcePoint>, SessionError> {
+    let mut statement=connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",error))?;
+    let rows = statement
+        .query_map([id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| sql_error("read source rows", error))?;
+    rows.map(|row| {
+        let (session, frontier) = row.map_err(|error| sql_error("decode source row", error))?;
+        Ok(SourcePoint {
+            session: Id::try_from(session).map_err(|_| StorageError::Payload)?,
+            frontier: Ledger::decode_payload(&frontier)?,
+        })
+    })
+    .collect()
+}
+
 impl Ledger {
     pub fn session_sources(&self, id: Id) -> Result<Vec<SourcePoint>, SessionError> {
         self.session(&SessionSelector::Id(id))?;
-        let mut statement=self.connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",error))?;
-        let rows = statement
-            .query_map([id.to_string()], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|error| sql_error("read source rows", error))?;
-        rows.map(|row| {
-            let (session, frontier) = row.map_err(|error| sql_error("decode source row", error))?;
-            Ok(SourcePoint {
-                session: Id::try_from(session).map_err(|_| StorageError::Payload)?,
-                frontier: Ledger::decode_payload(&frontier)?,
-            })
-        })
-        .collect()
+        read_sources(&self.connection, id)
     }
     pub fn create_session(
         &mut self,
         name: Option<SessionName>,
         defaults: ModelSelection,
     ) -> Result<Session, SessionError> {
-        if [&defaults.provider, &defaults.model]
-            .iter()
-            .any(|value| value.as_ref().is_some_and(|s| s.trim().is_empty()))
-        {
-            return Err(SessionError::InvalidDefaults);
-        }
+        validate_defaults(&defaults)?;
         let session = Session {
             id: Id::generate(),
             name,
@@ -152,21 +180,7 @@ impl Ledger {
         self.transaction::<_, StorageError>("create session", |transaction| {
             insert_session(transaction, &session, &[])
         })
-        .map_err(|error| {
-            if session.name.is_some()
-                && matches!(
-                    error,
-                    StorageError::Sqlite {
-                        code: Some(rusqlite::ErrorCode::ConstraintViolation),
-                        ..
-                    }
-                )
-            {
-                SessionError::NameCollision
-            } else {
-                SessionError::Storage(error)
-            }
-        })?;
+        .map_err(|error| creation_error(error, session.name.is_some()))?;
         Ok(session)
     }
     pub fn session(&self, selector: &SessionSelector) -> Result<Session, SessionError> {
