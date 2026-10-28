@@ -1,11 +1,4 @@
-//! Shared decision engine for Nouli.
-//!
-//! The workspace foundation exposes build identity; decision behavior is added
-//! through the portable contracts and engine modules.
-//!
-//! ```
-//! assert!(!nouli_core::version().is_empty());
-//! ```
+#![doc = include_str!("../../docs/embedding.md")]
 
 pub mod codec;
 pub mod config;
