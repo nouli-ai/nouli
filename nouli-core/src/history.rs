@@ -85,6 +85,28 @@ pub struct RecordProjection {
 pub struct TokenCount {
     pub tokens: u64,
     pub exact: bool,
+    #[serde(default)]
+    pub method: CountMethod,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CountMethod {
+    #[default]
+    ByteEstimate,
+    TokenizerEstimate,
+    VerifiedProtocol,
+    ProviderReported,
+}
+
+impl TokenCount {
+    pub fn is_consistent(&self) -> bool {
+        self.exact
+            == matches!(
+                self.method,
+                CountMethod::VerifiedProtocol | CountMethod::ProviderReported
+            )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -238,6 +260,7 @@ impl FinalizedTurn {
         }
         let mut projections = std::collections::HashSet::new();
         if self.manifest.provider != self.outcome.provider
+            || !self.manifest.input_count.is_consistent()
             || self.manifest.budget == 0
             || self
                 .manifest
@@ -272,6 +295,9 @@ mod tests {
         original.validate().unwrap();
         let mut changed = original.clone();
         changed.manifest.provider.model = "another".into();
+        assert_eq!(changed.validate(), Err(HistoryError::InvalidManifest));
+        let mut changed = original.clone();
+        changed.manifest.input_count.exact = true;
         assert_eq!(changed.validate(), Err(HistoryError::InvalidManifest));
         for (budget, input, output) in [(0, 0, 0), (10, 8, 3), (u64::MAX, u64::MAX, 1)] {
             let mut changed = original.clone();
