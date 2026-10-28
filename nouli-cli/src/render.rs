@@ -20,17 +20,18 @@ pub(crate) enum Format {
     Text,
     Json,
     Jsonl,
+    Toon,
 }
 #[derive(Debug, Default, Args)]
 pub(crate) struct OutputArgs {
     /// Emit a version-1 final JSON report.
-    #[arg(long,conflicts_with_all=["format","jsonl"])]
+    #[arg(long,global=true,conflicts_with_all=["format","jsonl"])]
     pub json: bool,
-    /// Select text, json, jsonl, or auto (text in a terminal, JSON otherwise).
-    #[arg(long, value_enum, conflicts_with = "jsonl")]
+    /// Select text, json, jsonl, toon, or auto (text in a terminal, JSON otherwise).
+    #[arg(long, global = true, value_enum, conflicts_with = "jsonl")]
     pub format: Option<Format>,
     /// Emit JSONL events ending with one result or error.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub jsonl: bool,
 }
 #[derive(Debug, Error)]
@@ -124,6 +125,11 @@ pub(crate) fn result(
             _ => text::result(stdout, result)?,
         },
         Format::Json => json_value(stdout, encoded)?,
+        Format::Toon => {
+            stdout.write_all(codec::encode_toon(&encoded)?.as_bytes())?;
+            stdout.write_all(b"\n")?;
+            stdout.flush()?;
+        }
         Format::Jsonl => {
             let run = match &result.result {
                 Report::Run(run) => run.run,
@@ -647,7 +653,7 @@ mod tests {
                         .collect::<Vec<_>>();
                     validate_events(&events).unwrap();
                 }
-                Format::Auto => unreachable!(),
+                Format::Auto | Format::Toon => unreachable!(),
             }
         }
     }

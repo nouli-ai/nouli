@@ -74,6 +74,40 @@ pub struct Config {
     pub providers: BTreeMap<String, ProviderProfile>,
 }
 
+/// Store/presentation discovery for inspection and saved-run recovery. Provider
+/// definitions are deliberately outside this read-only configuration boundary.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct StoreSettings {
+    pub output: OutputFormat,
+    pub store: Option<PathBuf>,
+}
+impl StoreSettings {
+    pub fn load(path: &Path, optional: bool) -> Result<Self, ConfigError> {
+        let input = match std::fs::read_to_string(path) {
+            Ok(input) => input,
+            Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default());
+            }
+            Err(source) => {
+                return Err(ConfigError::Read {
+                    path: path.to_owned(),
+                    source,
+                });
+            }
+        };
+        let settings: Self = toml::from_str(&input).map_err(|_| ConfigError::Syntax)?;
+        if settings
+            .store
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::Invalid("store"));
+        }
+        Ok(settings)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("cannot read configuration at {path}: {source}")]

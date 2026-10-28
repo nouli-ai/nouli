@@ -148,35 +148,42 @@ fn settled(mut nodes: Vec<NodeProgress>) -> Vec<NodeProgress> {
     }
     nodes
 }
+pub(in crate::storage) fn read_round_results(
+    connection: &Connection,
+    run: Id,
+) -> Result<Vec<RoundResult>, WorkflowError> {
+    let mut statement = connection.prepare(
+            "SELECT round,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id=?1 ORDER BY round"
+        ).map_err(|error| sql_error("list workflow retry rounds", error))?;
+    let rows = statement
+        .query_map([run.to_string()], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|error| sql_error("read workflow retry rounds", error))?;
+    rows.map(|row| {
+        let (round, frontier, published_revision, result) =
+            row.map_err(|error| sql_error("decode workflow retry round", error))?;
+        Ok(RoundResult {
+            round,
+            frontier: Ledger::decode_payload(&frontier)?,
+            published_revision,
+            result: Ledger::decode_payload(&result)?,
+        })
+    })
+    .collect()
+}
 impl Ledger {
     /// Immutable results of every settled retry round, in acceptance order.
     pub fn workflow_round_results(&self, run: Id) -> Result<Vec<RoundResult>, WorkflowError> {
         self.workflow_run(run)?;
-        let mut statement = self.connection.prepare(
-            "SELECT round,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id=?1 ORDER BY round"
-        ).map_err(|error| sql_error("list workflow retry rounds", error))?;
-        let rows = statement
-            .query_map([run.to_string()], |row| {
-                Ok((
-                    row.get::<_, u32>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })
-            .map_err(|error| sql_error("read workflow retry rounds", error))?;
-        rows.map(|row| {
-            let (round, frontier, published_revision, result) =
-                row.map_err(|error| sql_error("decode workflow retry round", error))?;
-            Ok(RoundResult {
-                round,
-                frontier: Self::decode_payload(&frontier)?,
-                published_revision,
-                result: Self::decode_payload(&result)?,
-            })
-        })
-        .collect()
+        read_round_results(&self.connection, run)
     }
+
     pub fn inspect_workflow(&self, run: Id) -> Result<RunInspection, WorkflowError> {
         let tx = self
             .connection
