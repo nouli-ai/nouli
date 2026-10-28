@@ -84,9 +84,11 @@ pub(super) fn migrate(
             .pragma_update(None, "user_version", (index + 1) as u32)
             .map_err(|error| sql_error("set schema version", error))?;
     }
-    transaction
-        .pragma_update(None, "application_id", APPLICATION_ID)
-        .map_err(|error| sql_error("set ledger identity", error))?;
+    if app != APPLICATION_ID {
+        transaction
+            .pragma_update(None, "application_id", APPLICATION_ID)
+            .map_err(|error| sql_error("set ledger identity", error))?;
+    }
     transaction
         .commit()
         .map_err(|error| sql_error("commit migration", error))

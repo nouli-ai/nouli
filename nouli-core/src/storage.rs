@@ -245,6 +245,19 @@ mod tests {
     }
 
     #[test]
+    fn reopening_current_writable_store_never_rewrites_the_database() {
+        let store = Store::new();
+        let ledger = Ledger::open(&store.0, OpenMode::ReadWriteCreate).unwrap();
+        drop(ledger);
+        let before = fs::read(store.0.join("ledger.sqlite3")).unwrap();
+        let ledger = Ledger::open(&store.0, OpenMode::ReadWriteCreate).unwrap();
+        drop(ledger);
+        assert!(
+            before == fs::read(store.0.join("ledger.sqlite3")).unwrap(),
+            "Opening an initialized store changed database bytes"
+        );
+    }
+    #[test]
     fn create_reopen_and_read_only_preserve_schema_and_files() {
         let store = Store::new();
         let ledger = store.open();

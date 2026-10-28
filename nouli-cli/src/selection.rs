@@ -74,17 +74,26 @@ impl SelectionArgs {
                 name: self.name.clone(),
             }
         };
-        if self.no_session
-            && (request_id
-                || matches!(
-                    selected,
-                    SessionSelection::Continue { .. }
-                        | SessionSelection::New { name: Some(_) }
-                        | SessionSelection::From { name: Some(_), .. }
-                ))
-        {
-            return Err(SelectionError::Ephemeral);
-        }
+        validate_mode(&selected, self.no_session, request_id)?;
         Ok(selected)
     }
+}
+
+pub(crate) fn validate_mode(
+    selected: &SessionSelection,
+    ephemeral: bool,
+    request_id: bool,
+) -> Result<(), SelectionError> {
+    if ephemeral
+        && (request_id
+            || matches!(
+                selected,
+                SessionSelection::Continue { .. }
+                    | SessionSelection::New { name: Some(_) }
+                    | SessionSelection::From { name: Some(_), .. }
+            ))
+    {
+        return Err(SelectionError::Ephemeral);
+    }
+    Ok(())
 }

@@ -17,6 +17,9 @@ pub struct Server {
 }
 impl Server {
     pub fn new(response: &'static str) -> Self {
+        Self::with_handler(move |_| (200, response.to_owned()))
+    }
+    pub fn with_handler(handler: impl Fn(&Value) -> (u16, String) + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let calls = Arc::new(Mutex::new(vec![]));
@@ -59,8 +62,19 @@ impl Server {
                     bytes.extend_from_slice(&buffer[..count]);
                 }
                 let body: Value = serde_json::from_slice(&bytes[end..end + length]).unwrap();
-                captured.lock().unwrap().push(body);
-                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+                captured.lock().unwrap().push(body.clone());
+                let (status, response) = handler(&body);
+                if let Err(error) = write!(
+                    stream,
+                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    response.len(),
+                    response
+                ) {
+                    assert!(matches!(
+                        error.kind(),
+                        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                    ));
+                }
             }
         });
         Self {

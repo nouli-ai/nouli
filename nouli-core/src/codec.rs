@@ -79,7 +79,11 @@ pub fn decode<T: DeserializeOwned>(bytes: &[u8], format: InputFormat) -> Result<
 }
 
 pub fn decode_request(bytes: &[u8], format: InputFormat) -> Result<Request, CodecError> {
-    let mut value = decode_value(bytes, format)?;
+    request_from_value(decode_value(bytes, format)?)
+}
+
+/// Normalize omitted v1 fields and validate a previously decoded request value.
+pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
     let object = value.as_object_mut().ok_or(CodecError::Kind)?;
     let turn = object.contains_key("questions");
     let workflow = object.contains_key("nodes");
