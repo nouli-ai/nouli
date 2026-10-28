@@ -6,7 +6,10 @@ rust-version.workspace = true
 
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
+serde-value = "0.7.0"
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 thiserror = "2.0.21"
+toon-format = { version = "0.7.0", default-features = false }
 uuid = { version = "1.29.0", features = ["v7", "serde"] }
 
