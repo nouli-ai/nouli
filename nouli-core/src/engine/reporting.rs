@@ -24,9 +24,55 @@ fn storage(error: &StorageError) -> ErrorReport {
         StorageError::Busy | StorageError::Conflict => {
             message(Category::Conflict, "ledger_conflict")
         }
+        StorageError::NewerSchema { found, supported } => ErrorReport {
+            category: Category::Storage,
+            code: "newer_ledger_schema".into(),
+            message: format!("Ledger schema {found} is newer than supported schema {supported}"),
+            retryable: false,
+        },
+        StorageError::MigrationRequired { found } => ErrorReport {
+            category: Category::Storage,
+            code: "ledger_migration_required".into(),
+            message: format!("Read-only ledger requires migration from schema {found}"),
+            retryable: false,
+        },
+        StorageError::WrongStore => message(Category::Storage, "not_a_nouli_ledger"),
+        StorageError::ReadOnly => message(Category::Storage, "read_only_ledger"),
+        StorageError::Payload => message(Category::Storage, "invalid_saved_payload"),
+        StorageError::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
+            message(Category::Storage, "missing_ledger")
+        }
         _ => message(Category::Storage, "ledger_unavailable"),
     }
 }
+impl StorageError {
+    pub fn report(&self) -> ErrorReport {
+        storage(self)
+    }
+}
+impl SessionError {
+    pub fn report(&self) -> ErrorReport {
+        session(self)
+    }
+}
+impl crate::storage::inspection::InspectionError {
+    pub fn report(&self) -> ErrorReport {
+        use crate::storage::inspection::InspectionError;
+        match self {
+            InspectionError::Storage(error) => storage(error),
+            InspectionError::Session(error) => session(error),
+            InspectionError::Turn(error) => turn(error),
+            InspectionError::Workflow(error) => error.report(),
+            InspectionError::Head | InspectionError::ForeignTurn => ErrorReport {
+                category: Category::Input,
+                code: "invalid_inspection_selection".into(),
+                message: self.to_string(),
+                retryable: false,
+            },
+        }
+    }
+}
+
 fn session(error: &SessionError) -> ErrorReport {
     match error {
         SessionError::Storage(error) => storage(error),

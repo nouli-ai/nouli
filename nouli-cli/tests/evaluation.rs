@@ -427,3 +427,288 @@ fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
     assert_eq!(server.count(), 1);
     assert!(!home.store().exists());
 }
+
+#[test]
+fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_later_or_unrelated_work()
+ {
+    use nouli_core::{
+        history::{Representation, SourceSelection},
+        identity::{SessionName, SessionSelector},
+        storage::inspection::{ContextView, SessionExport, TurnInspection},
+    };
+    let server = Server::new(include_str!(
+        "../../fixtures/providers/typesafe/response.json"
+    ));
+    let home = Home::new();
+    home.configure(&server, "typesafe", true);
+    let keyed = |args: &[&str]| {
+        home.command()
+            .args(args)
+            .env("NOULI_FIXTURE_KEY", "EXPORT_PRIVATE_TOKEN")
+            .output()
+            .unwrap()
+    };
+    let pinned = ContextRecord {
+        id: Id::generate(),
+        key: "budget".into(),
+        value: Data::new(serde_json::json!(8)).unwrap(),
+        kind: ContextKind::Commitment,
+    };
+    let original = "ARCHIVED_EVIDENCE_".repeat(3000);
+    let root = home.request(
+        "root.json",
+        SessionSelection::New {
+            name: Some(SessionName::try_from("Root".to_owned()).unwrap()),
+        },
+        &original,
+        vec![ContextUpdate::Pin {
+            target: nouli_core::context::PinTarget::New {
+                record: pinned.clone(),
+            },
+        }],
+    );
+    let root = report(keyed(&["--input", root.to_str().unwrap()]));
+    let mut branches = vec![];
+    for (name, kind) in [
+        ("Left", ContextKind::Evidence),
+        ("Right", ContextKind::Commitment),
+    ] {
+        let record = ContextRecord {
+            id: Id::generate(),
+            key: name.to_lowercase(),
+            value: Data::new(serde_json::json!(name)).unwrap(),
+            kind,
+        };
+        let path = home.request(
+            &format!("{name}.json"),
+            SessionSelection::From {
+                sources: vec![SourceSelection {
+                    session: SessionSelector::Id(root.session.unwrap()),
+                    frontier: None,
+                }],
+                name: Some(SessionName::try_from(name.to_owned()).unwrap()),
+            },
+            name,
+            vec![ContextUpdate::Append { record }],
+        );
+        branches.push(report(keyed(&["--input", path.to_str().unwrap()])));
+    }
+    let questions = questions();
+    let blend = report(keyed(&[
+        "-s",
+        "BLENDED",
+        "-q",
+        &questions,
+        "--from",
+        "Left",
+        "--from",
+        "Right",
+        "--name",
+        "Diamond",
+        "--context-budget",
+        "2500",
+    ]));
+    assert!(
+        blend
+            .manifest
+            .records
+            .iter()
+            .any(|record| record.record == root.turn.unwrap()
+                && record.representation != Representation::Full)
+    );
+    report(keyed(&[
+        "-s",
+        "AFTER_CAPTURE",
+        "-q",
+        &questions,
+        "--session",
+        "Root",
+    ]));
+    report(keyed(&[
+        "-s",
+        "UNRELATED_PRIVATE_STATE",
+        "-q",
+        &questions,
+        "--name",
+        "Unrelated",
+    ]));
+    let count = server.count();
+    let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    // A changed/invalid provider profile must not block store-only inspection.
+    let config = std::fs::read_to_string(home.0.join("config.toml"))
+        .unwrap()
+        .replace("protocol = \"typesafe\"", "protocol = \"removed-protocol\"");
+    std::fs::write(home.0.join("config.toml"), config).unwrap();
+    let output = home.run(&["sessions", "export", "Diamond", "--format", "json"]);
+    assert!(
+        output.status.success(),
+        "{:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let export: SessionExport = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(export.turns.len(), 4);
+    assert_eq!(export.provenance.len(), 4);
+    assert_eq!(export.session.id, blend.session.unwrap());
+    assert_eq!(export.sources.len(), 2);
+    assert_eq!(
+        export
+            .turns
+            .iter()
+            .filter(|turn| turn.id == root.turn.unwrap())
+            .count(),
+        1
+    );
+    let saved = export
+        .turns
+        .iter()
+        .find(|turn| turn.id == root.turn.unwrap())
+        .unwrap();
+    assert!(
+        saved
+            .request
+            .state
+            .iter()
+            .any(|input| matches!(input,Input::Text {text} if text==&original))
+    );
+    assert_eq!(
+        saved.request.questions[0].answer_space,
+        turn().questions[0].answer_space
+    );
+    assert_eq!(
+        saved.request.questions[2].answer_space,
+        turn().questions[2].answer_space
+    );
+    assert_eq!(saved.outcome.outcomes, root.outcome.outcomes);
+    let ContextView::Resolved { records } = &export.context else {
+        panic!("resolved context")
+    };
+    assert_eq!(records.len(), 3);
+    assert!(
+        records
+            .iter()
+            .any(|record| record.record.id == pinned.id && record.pinned)
+    );
+    assert!(
+        records
+            .iter()
+            .any(|record| record.record.kind == ContextKind::Evidence)
+    );
+    assert!(
+        records
+            .iter()
+            .any(|record| record.record.kind == ContextKind::Commitment)
+    );
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(!json.contains("AFTER_CAPTURE"));
+    assert!(!json.contains("UNRELATED_PRIVATE_STATE"));
+    assert!(json.contains("NOULI_FIXTURE_KEY"));
+    assert!(!json.contains("EXPORT_PRIVATE_TOKEN"));
+    assert_eq!(export.attempts.len(), 4);
+    assert_eq!(export.requests.len(), 4);
+    let toon = home.run(&["sessions", "export", "Diamond", "--format", "toon"]);
+    assert!(toon.status.success());
+    let decoded: SessionExport = codec::decode(&toon.stdout, codec::InputFormat::Toon).unwrap();
+    assert_eq!(decoded, export);
+    let context = home.run(&[
+        "context",
+        "Diamond",
+        "--turn",
+        &blend.turn.unwrap().to_string(),
+        "--json",
+    ]);
+    assert!(
+        context.status.success(),
+        "exit={:?} stdout={} stderr={}",
+        context.status.code(),
+        String::from_utf8_lossy(&context.stdout),
+        String::from_utf8_lossy(&context.stderr)
+    );
+    let context: TurnInspection = serde_json::from_slice(&context.stdout).unwrap();
+    assert_eq!(context.turn.manifest, blend.manifest);
+    assert_eq!(context.attempts.len(), 1);
+    assert_eq!(context.turn.outcome.usage, blend.outcome.usage);
+    let foreign = home.run(&[
+        "context",
+        "Diamond",
+        "--turn",
+        &root.turn.unwrap().to_string(),
+        "--json",
+    ]);
+    assert_eq!(foreign.status.code(), Some(2));
+    let list = home.run(&["sessions", "list", "--format", "text"]);
+    assert!(list.status.success());
+    let text = String::from_utf8(list.stdout).unwrap();
+    assert!(text.contains("Diamond"));
+    assert!(text.contains("Unrelated"));
+    let shown = home.run(&["sessions", "show", "Diamond", "--format", "text"]);
+    assert!(shown.status.success());
+    assert!(
+        String::from_utf8(shown.stdout)
+            .unwrap()
+            .contains("context_toon")
+    );
+    assert_eq!(
+        before,
+        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+    );
+    assert_eq!(server.count(), count);
+    let reopened = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    assert_eq!(
+        reopened
+            .export_session(&SessionSelector::Id(blend.session.unwrap()))
+            .unwrap(),
+        export
+    );
+}
+#[test]
+fn inspection_missing_store_never_creates_files_or_requires_provider_settings() {
+    let root = std::env::temp_dir().join(format!("nouli-inspect-missing-{}", Id::generate()));
+    let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
+        .env_clear()
+        .env("HOME", &root)
+        .arg("--store")
+        .arg(root.join("store"))
+        .args(["sessions", "list", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(6),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let error: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(matches!(error.result,Report::Error(error) if error.code=="missing_ledger"));
+    assert!(!root.exists());
+}
+
+#[test]
+fn readonly_inspection_rejects_newer_and_migration_required_stores_without_changes() {
+    for (version, code) in [
+        (999, "newer_ledger_schema"),
+        (1, "ledger_migration_required"),
+    ] {
+        let home = Home::new();
+        std::fs::write(home.0.join("config.toml"), "").unwrap();
+        let mut ledger = Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap();
+        ledger
+            .transaction::<_, nouli_core::storage::StorageError>("set test schema version", |tx| {
+                tx.pragma_update(None, "user_version", version).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        drop(ledger);
+        let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+        let output = home.run(&["sessions", "list", "--json"]);
+        assert_eq!(output.status.code(), Some(6));
+        let error: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(matches!(error.result,Report::Error(error) if error.code==code));
+        assert_eq!(
+            before,
+            std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+        );
+    }
+}

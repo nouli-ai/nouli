@@ -2301,6 +2301,25 @@ mod tests {
                 .iter()
                 .any(|event| event.event.turn == Some(initial))
         );
+        let session = done.session.unwrap();
+        let export = worker
+            .call(move |ledger| ledger.export_session(&SessionSelector::Id(session)))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(export.workflows.len(), 1);
+        assert_eq!(export.workflows[0].rounds.len(), 2);
+        assert_eq!(export.workflows[0].events, recorded);
+        assert_eq!(export.node_intents.len(), 5);
+        assert_eq!(export.attempts.len(), 5);
+        let final_turn = done.nodes[4].turn.unwrap();
+        let inspected = worker
+            .call(move |ledger| ledger.inspect_turn(final_turn))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inspected.node_intents.len(), 1);
+        assert!(inspected.workflow.is_some());
         let replay_sink = Arc::new(CollectEvents::default());
         let replay = restarted
             .resume_workflow_report(

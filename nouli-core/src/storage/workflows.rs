@@ -272,7 +272,7 @@ fn request_run(
     })
     .transpose()
 }
-fn frozen(connection: &Connection, run: Id) -> Result<FrozenWorkflow, WorkflowError> {
+pub(super) fn frozen(connection: &Connection, run: Id) -> Result<FrozenWorkflow, WorkflowError> {
     let row: Option<(String, String)> = connection
         .query_row(
             "SELECT definition_toon,settings_toon FROM workflow_runs WHERE id=?1",
@@ -312,7 +312,7 @@ fn frozen(connection: &Connection, run: Id) -> Result<FrozenWorkflow, WorkflowEr
         settings,
     })
 }
-fn read_run(
+pub(super) fn read_run(
     connection: &Connection,
     run: Id,
     before_nodes: impl FnOnce(),

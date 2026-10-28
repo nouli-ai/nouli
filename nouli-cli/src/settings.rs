@@ -10,6 +10,21 @@ pub(crate) struct Settings {
     pub store: PathBuf,
 }
 pub(crate) fn load(args: &super::Args) -> Result<Settings, ConfigError> {
+    discover(args, Config::load)
+}
+pub(crate) fn load_inspection(args: &super::Args) -> Result<Settings, ConfigError> {
+    discover(args, |path, optional| {
+        nouli_core::config::StoreSettings::load(path, optional).map(|settings| Config {
+            output: settings.output,
+            store: settings.store,
+            ..Default::default()
+        })
+    })
+}
+fn discover(
+    args: &super::Args,
+    loader: impl FnOnce(&std::path::Path, bool) -> Result<Config, ConfigError>,
+) -> Result<Settings, ConfigError> {
     let home = std::env::var_os("HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
@@ -18,7 +33,7 @@ pub(crate) fn load(args: &super::Args) -> Result<Settings, ConfigError> {
         .clone()
         .or_else(|| home.as_ref().map(|home| home.join(".nouli/config.toml")))
         .ok_or(ConfigError::Invalid("HOME or explicit --config"))?;
-    let config = Config::load(&path, args.config.is_none())?;
+    let config = loader(&path, args.config.is_none())?;
     if home.is_none() && args.store.is_none() && config.store.is_none() {
         return Err(ConfigError::Invalid("HOME or explicit store"));
     }

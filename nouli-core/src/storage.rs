@@ -3,6 +3,7 @@
 
 pub mod context;
 pub mod guards;
+pub mod inspection;
 mod publication;
 pub mod replay;
 mod schema;
