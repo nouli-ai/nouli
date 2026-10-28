@@ -11,4 +11,6 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 nouli-core = { version = "0.1.0", path = "../nouli-core" }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
 

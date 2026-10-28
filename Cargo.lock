@@ -816,6 +816,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "nouli-core",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

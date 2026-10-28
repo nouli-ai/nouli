@@ -47,6 +47,8 @@ pub struct ErrorReport {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TurnReport {
+    #[serde(default)]
+    pub questions: Vec<Question>,
     pub session: Option<Id>,
     pub turn: Option<Id>,
     pub outcome: TurnOutcome,
@@ -79,6 +81,13 @@ pub struct NodeReport {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SelectedChoice {
+    pub id: String,
+    pub probability: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectedOutput {
     pub name: String,
     pub value: ReferenceValue,
@@ -90,6 +99,8 @@ pub struct ProjectedOutput {
     pub provider: Option<ProviderIdentity>,
     #[serde(default)]
     pub confidence: Option<Confidence>,
+    #[serde(default)]
+    pub selected_choice: Option<SelectedChoice>,
     #[serde(default)]
     pub defaulted: bool,
     #[serde(default)]
@@ -197,6 +208,15 @@ fn terminal_matches(result: &ResultEnvelope, run: Option<Id>) -> bool {
             Report::Turn(_) => run.is_none(),
             Report::Error(_) => true,
         }
+}
+
+/// Validate a terminal envelope against an incremental stream's established run.
+pub fn validate_terminal(result: &ResultEnvelope, run: Option<Id>) -> Result<(), EventError> {
+    if terminal_matches(result, run) {
+        Ok(())
+    } else {
+        Err(EventError::InvalidStream)
+    }
 }
 
 pub fn validate_events(events: &[EngineEvent]) -> Result<(), EventError> {

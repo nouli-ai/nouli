@@ -143,6 +143,33 @@ pub fn workflow(
                         }
                         crate::outcome::QuestionOutcome::Refused { .. } => None,
                     }),
+                selected_choice: result.result.nodes[index]
+                    .output
+                    .as_ref()
+                    .and_then(|output| {
+                        output
+                            .outcome
+                            .outcomes
+                            .iter()
+                            .find(|outcome| outcome.question_id() == question.id)
+                    })
+                    .and_then(|outcome| match outcome {
+                        crate::outcome::QuestionOutcome::Answered {
+                            answer:
+                                crate::outcome::Answer::Choice {
+                                    selected,
+                                    distribution,
+                                },
+                            ..
+                        } => distribution
+                            .iter()
+                            .find(|entry| entry.option_id == *selected)
+                            .map(|entry| super::SelectedChoice {
+                                id: selected.clone(),
+                                probability: entry.probability,
+                            }),
+                        _ => None,
+                    }),
                 defaulted: binding.defaulted,
                 required_missing: binding.required_missing,
                 inspection: Some(reference(index)),
