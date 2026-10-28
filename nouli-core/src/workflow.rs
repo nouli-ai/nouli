@@ -2,6 +2,8 @@
 
 pub mod compile;
 pub mod reference;
+pub mod resolve;
+pub mod schedule;
 
 use std::collections::HashSet;
 
