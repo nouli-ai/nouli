@@ -89,6 +89,8 @@ pub struct AttemptSnapshot {
 
 #[derive(Debug, Error)]
 pub enum TurnError {
+    #[error(transparent)]
+    Projection(#[from] crate::context::projection::ProjectionError),
     #[error("turn does not exist")]
     UnknownTurn,
     #[error("attempt does not exist")]
@@ -163,6 +165,12 @@ impl Ledger {
             expected_revision: session.revision,
             input,
         };
+        self.context_at(
+            &self.context_sources(prepared.session)?,
+            &prepared.input.updates,
+            prepared.session,
+            prepared.id,
+        )?;
         let payload = Self::encode_payload(&prepared)?;
         self.transaction::<_, StorageError>("prepare attempt", |transaction| {
             transaction
@@ -288,6 +296,18 @@ impl Ledger {
             return Err(TurnError::AttemptState);
         }
         let prepared = snapshot.intent;
+        let current = self.session(&SessionSelector::Id(prepared.session))?;
+        if current.revision != prepared.expected_revision
+            || current.frontier != prepared.expected_frontier
+        {
+            return Err(TurnError::Conflict);
+        }
+        self.context_at(
+            &self.context_sources(prepared.session)?,
+            &prepared.input.updates,
+            prepared.session,
+            prepared.id,
+        )?;
         let mut manifest = prepared.input.manifest;
         manifest.provider = outcome.provider.clone();
         let parents = if prepared.expected_frontier.is_empty() {
@@ -445,7 +465,7 @@ mod tests {
             updates: vec![ContextUpdate::Append {
                 record: ContextRecord {
                     id: Id::generate(),
-                    key: "commitment".into(),
+                    key: format!("commitment-{}", Id::generate()),
                     value: Data::new(serde_json::Value::Null).unwrap(),
                     kind: ContextKind::Commitment,
                 },
@@ -647,8 +667,15 @@ mod tests {
             .create_session(None, ModelSelection::default())
             .unwrap();
         let guard = ledger.session_guard(session.id).unwrap();
-        let first = ledger.prepare_attempt(&guard, input()).unwrap();
-        let second = ledger.prepare_attempt(&guard, input()).unwrap();
+        let same_key_input = || {
+            let mut input = input();
+            if let ContextUpdate::Append { record } = &mut input.updates[0] {
+                record.key = "budget".into();
+            }
+            input
+        };
+        let first = ledger.prepare_attempt(&guard, same_key_input()).unwrap();
+        let second = ledger.prepare_attempt(&guard, same_key_input()).unwrap();
         let saved = ledger
             .finalize_attempt(&guard, first.id, outcome())
             .unwrap();
