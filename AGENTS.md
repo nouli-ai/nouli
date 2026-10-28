@@ -6,25 +6,30 @@
 - **Modules:** Use file-named modules (`foo.rs` next to a `foo/` directory for submodules), never `mod.rs`.
 - **Errors:** Define typed errors with `thiserror`, one error enum per module or subsystem rather than one global enum.
 - **Logging:** Emit diagnostics with `tracing` macros and spans, never `println!` or `eprintln!`. Only emit events; never install a subscriber. Never log secrets, file contents, or terminal output.
-- **Formatting and checks:** Run `make fmt-lib` before committing, then `make check-lib`. It runs the rustfmt check, Clippy with warnings denied, and the workspace tests, and must pass.
 - Add any new dependencies with `cargo add <dependency>`.
   - Do not directly edit cargo.toml to add dependencies.
   - Let cargo pick the version unless a certain version is strictly necessary.
 
 ## Build, Test, and Development Commands
 
-No build or development commands are runnable in the current checkout. Once `Cargo.toml` and crate sources exist, run these from the crate root:
+No build or development commands are runnable in the current checkout. Once `Cargo.toml` and crate sources exist, run these from the workspace root:
 
-- `cargo build`: compile the crate.
-- `cargo test`: run unit, integration, and documentation tests.
-- `cargo fmt --check`: check formatting; use `cargo fmt` to apply changes.
-- `cargo clippy --all-targets -- -D warnings`: lint code and treat warnings as errors.
+- `cargo build --workspace`: compile the workspace.
+- `cargo fmt --all`: apply formatting before committing; use `cargo fmt --all --check` for a read-only check.
+- `cargo clippy --workspace --all-targets -- -D warnings`: lint code and treat warnings as errors.
+- `cargo test --workspace`: run unit, integration, and documentation tests.
+
+Before committing Rust changes, format the code, then run Clippy and the workspace tests. All checks must pass.
 
 Document additional prerequisites and commands alongside the code that introduces them.
 
 ## Coding Style & Naming Conventions
 
 - **Rust unit tests:** Unit tests must be inline in a `#[cfg(test)] mod tests` block in the same source file as the code they test.
+
+## Review
+
+After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claude Code, `rust_reviewer` in Codex) review the change, and address its findings before committing.
 
 ## Commit & Pull Request Guidelines
 
