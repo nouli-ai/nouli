@@ -249,6 +249,15 @@ pub(super) fn result(sink: &mut impl Write, envelope: &ResultEnvelope) -> Result
                 if let Some(turn) = node.turn {
                     write!(sink, " (turn {turn})")?;
                 }
+                if let Some(provider) = &node.provider {
+                    write!(
+                        sink,
+                        " [{}/{}]",
+                        clean(&provider.provider),
+                        clean(&provider.model)
+                    )?;
+                }
+
                 writeln!(sink)?;
                 if let Some(error) = &node.error {
                     writeln!(sink, "  {}: {}", clean(&error.code), clean(&error.message))?;

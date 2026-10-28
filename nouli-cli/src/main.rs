@@ -3,19 +3,21 @@ use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser};
 
+mod commands;
 mod evaluate;
 mod input;
 mod inspect;
 mod render;
 mod selection;
 mod settings;
+mod workflows;
 
 /// A decision harness for structured callers.
 #[derive(Parser)]
 #[command(name = "nouli", version, disable_help_subcommand = true, color=clap::ColorChoice::Never)]
 struct Args {
     #[command(subcommand)]
-    command: Option<inspect::Command>,
+    command: Option<commands::Command>,
     #[command(flatten)]
     output: render::OutputArgs,
     #[command(flatten)]
@@ -59,11 +61,16 @@ fn main() -> ExitCode {
                         &args,
                         nouli_core::config::OutputFormat::Auto,
                         inspect::input_error(
-                            "Inspection does not accept decision input or model overrides",
+                            "Use command options instead of root decision inputs or model overrides",
                         ),
                     );
                 }
-                let settings = match settings::load_inspection(&args) {
+                let full = matches!(command,commands::Command::Workflows {command} if workflows::needs_config(command));
+                let settings = match if full {
+                    settings::load(&args)
+                } else {
+                    settings::load_inspection(&args)
+                } {
                     Ok(settings) => settings,
                     Err(error) => {
                         return render_error(
@@ -81,23 +88,32 @@ fn main() -> ExitCode {
                     Ok(format) => format,
                     Err(_) => return ExitCode::from(2),
                 };
-                if format == render::Format::Jsonl {
-                    return render_error(
-                        &args,
-                        settings.config.output,
-                        inspect::input_error("Inspection supports text, JSON, or TOON"),
-                    );
+                match command {
+                    commands::Command::Workflows { command } => {
+                        return ExitCode::from(workflows::run(command, &settings, format));
+                    }
+                    commands::Command::Inspect(command) => {
+                        if format == render::Format::Jsonl {
+                            return render_error(
+                                &args,
+                                settings.config.output,
+                                inspect::input_error("Inspection supports text, JSON, or TOON"),
+                            );
+                        }
+                        return match inspect::run(
+                            command,
+                            &settings.store,
+                            &mut io::stdout().lock(),
+                            format,
+                        ) {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(error) if error.output_failed() => ExitCode::from(6),
+                            Err(error) => {
+                                render_error(&args, settings.config.output, error.report())
+                            }
+                        };
+                    }
                 }
-                return match inspect::run(
-                    command,
-                    &settings.store,
-                    &mut io::stdout().lock(),
-                    format,
-                ) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(error) if error.output_failed() => ExitCode::from(6),
-                    Err(error) => render_error(&args, settings.config.output, error.report()),
-                };
             }
             if !args.decision.has_options()
                 && args.config.is_none()

@@ -148,6 +148,13 @@ fn settled(mut nodes: Vec<NodeProgress>) -> Vec<NodeProgress> {
     }
     nodes
 }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkflowInspection {
+    pub version: u32,
+    pub inspection: RunInspection,
+    pub events: Vec<super::events::StoredEvent>,
+    pub rounds: Vec<RoundResult>,
+}
 pub(in crate::storage) fn read_round_results(
     connection: &Connection,
     run: Id,
@@ -189,11 +196,34 @@ impl Ledger {
             .connection
             .unchecked_transaction()
             .map_err(|error| sql_error("begin recovery inspection", error))?;
-        let stored = super::read_run(&tx, run, || {})?;
-        let all = attempts(self, &tx, run)?;
+        let inspection = self.inspect_workflow_record(run)?;
+        tx.commit()
+            .map_err(|error| sql_error("finish recovery inspection", error))?;
+        Ok(inspection)
+    }
+    pub fn inspect_workflow_full(&self, run: Id) -> Result<WorkflowInspection, WorkflowError> {
+        let tx = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|error| sql_error("begin complete run inspection", error))?;
+        let inspection = self.inspect_workflow_record(run)?;
+        let events = super::events::read_events(&tx, run)?;
+        let rounds = read_round_results(&tx, run)?;
+        tx.commit()
+            .map_err(|error| sql_error("finish complete run inspection", error))?;
+        Ok(WorkflowInspection {
+            version: crate::decision::CONTRACT_VERSION,
+            inspection,
+            events,
+            rounds,
+        })
+    }
+    fn inspect_workflow_record(&self, run: Id) -> Result<RunInspection, WorkflowError> {
+        let stored = super::read_run(&self.connection, run, || {})?;
+        let all = attempts(self, &self.connection, run)?;
         let live = guards::is_locked(self, &format!("run-{run}"))?;
         let session = super::sessions::read_session(
-            &tx,
+            &self.connection,
             &SessionSelector::Id(stored.frozen.definition.session),
         )?;
         let compatible =
@@ -228,8 +258,6 @@ impl Ledger {
                 }
             })
             .collect();
-        tx.commit()
-            .map_err(|error| sql_error("finish recovery inspection", error))?;
         Ok(RunInspection {
             run: stored,
             live_owner: live,

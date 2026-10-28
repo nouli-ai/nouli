@@ -94,6 +94,10 @@ pub fn workflow(
         .zip(&result.result.nodes)
         .enumerate()
         .map(|(index, (node, progress))| NodeReport {
+            provider: progress
+                .output
+                .as_ref()
+                .map(|output| output.outcome.provider.clone()),
             node: node.id.clone(),
             status: progress.status,
             turn: reference(index).turn,

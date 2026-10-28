@@ -65,7 +65,7 @@ pub(crate) enum InputError {
     Read,
     #[error("decision input exceeds 16 MiB")]
     Size,
-    #[error("input does not match the decision request contract")]
+    #[error("input does not match the Nouli request contract")]
     Shape,
     #[error(transparent)]
     Codec(#[from] codec::CodecError),
@@ -86,6 +86,22 @@ fn bounded(reader: &mut impl Read) -> Result<Vec<u8>, InputError> {
         return Err(InputError::Size);
     }
     Ok(bytes)
+}
+pub(crate) fn file(
+    path: &std::path::Path,
+    format: Option<Format>,
+    stdin: &mut impl Read,
+) -> Result<(Vec<u8>, InputFormat), InputError> {
+    let format = format
+        .map(InputFormat::from)
+        .or_else(|| InputFormat::for_path(path).ok())
+        .ok_or(InputError::Format)?;
+    let bytes = if path.as_os_str() == "-" {
+        bounded(stdin)?
+    } else {
+        bounded(&mut std::fs::File::open(path).map_err(|_| InputError::Read)?)?
+    };
+    Ok((bytes, format))
 }
 fn new_session() -> SessionSelection {
     SessionSelection::New { name: None }
@@ -109,16 +125,7 @@ impl DecisionArgs {
     }
     pub(crate) fn request(&self, stdin: &mut impl Read) -> Result<EvaluationRequest, InputError> {
         let (mut request, explicit) = if let Some(path) = &self.input {
-            let format = self
-                .input_format
-                .map(InputFormat::from)
-                .or_else(|| codec::InputFormat::for_path(path).ok())
-                .ok_or(InputError::Format)?;
-            let bytes = if path.as_os_str() == "-" {
-                bounded(stdin)?
-            } else {
-                bounded(&mut std::fs::File::open(path).map_err(|_| InputError::Read)?)?
-            };
+            let (bytes, format) = file(path, self.input_format, stdin)?;
             let mut value = codec::decode_value(&bytes, format)?;
             if value.get("turn").is_some() {
                 let object = value.as_object_mut().ok_or(InputError::Shape)?;

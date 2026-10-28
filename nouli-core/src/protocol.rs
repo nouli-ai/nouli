@@ -70,6 +70,8 @@ pub struct InspectionReference {
 #[serde(deny_unknown_fields)]
 pub struct NodeReport {
     pub node: String,
+    #[serde(default)]
+    pub provider: Option<ProviderIdentity>,
     pub status: NodeStatus,
     pub turn: Option<Id>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

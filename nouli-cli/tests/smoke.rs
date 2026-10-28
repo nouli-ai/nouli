@@ -120,3 +120,42 @@ fn closed_help_and_version_outputs_return_the_io_exit_code() {
         assert!(output.stderr.is_empty());
     }
 }
+
+#[test]
+fn bare_workflow_commands_provide_actionable_usage_without_configuration() {
+    for arguments in [
+        vec!["workflows"],
+        vec!["workflows", "run"],
+        vec!["workflows", "show"],
+        vec!["workflows", "resume"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
+            .args(arguments)
+            .env_clear()
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8(output.stderr).unwrap().contains("Usage:"));
+    }
+}
+#[test]
+fn missing_workflow_resume_never_creates_a_store() {
+    let root = std::env::temp_dir().join(format!("nouli-resume-missing-{}", std::process::id()));
+    let run = nouli_core::identity::Id::generate();
+    let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
+        .env_clear()
+        .env("HOME", &root)
+        .arg("--store")
+        .arg(root.join("store"))
+        .args(["workflows", "resume", &run.to_string(), "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(6));
+    let result: nouli_core::protocol::ResultEnvelope =
+        serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        matches!(result.result,nouli_core::protocol::Report::Error(error) if error.code=="missing_ledger")
+    );
+    assert!(!root.exists());
+}
