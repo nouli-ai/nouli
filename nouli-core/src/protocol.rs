@@ -1,15 +1,21 @@
 //! Versioned public reports and logical event envelopes, separate from tracing.
 
+pub mod projection;
+pub mod stream;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
     data::Data,
-    decision::CONTRACT_VERSION,
+    decision::{CONTRACT_VERSION, Question},
     history::{EvaluationManifest, SourcePoint},
     identity::Id,
-    outcome::TurnOutcome,
-    workflow::{NodeStatus, RunStatus, reference::ReferenceValue},
+    outcome::{Confidence, ProviderIdentity, TurnOutcome},
+    workflow::{
+        NodeStatus, RunStatus,
+        reference::{ReferenceValue, ResultReference},
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,13 +54,26 @@ pub struct TurnReport {
     pub replayed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InspectionReference {
+    pub run: Option<Id>,
+    pub session: Option<Id>,
+    pub node: Option<String>,
+    pub turn: Option<Id>,
+    pub attempts: Vec<Id>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeReport {
     pub node: String,
     pub status: NodeStatus,
     pub turn: Option<Id>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<TurnOutcome>,
+    #[serde(default)]
+    pub inspection: Option<InspectionReference>,
     pub error: Option<ErrorReport>,
 }
 
@@ -63,13 +82,31 @@ pub struct NodeReport {
 pub struct ProjectedOutput {
     pub name: String,
     pub value: ReferenceValue,
+    #[serde(default)]
+    pub reference: Option<ResultReference>,
+    #[serde(default)]
+    pub question: Option<Question>,
+    #[serde(default)]
+    pub provider: Option<ProviderIdentity>,
+    #[serde(default)]
+    pub confidence: Option<Confidence>,
+    #[serde(default)]
+    pub defaulted: bool,
+    #[serde(default)]
+    pub required_missing: bool,
+    #[serde(default)]
+    pub inspection: Option<InspectionReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunReport {
-    pub run: Id,
+    pub run: Option<Id>,
     pub session: Option<Id>,
+    #[serde(default)]
+    pub persisted: bool,
+    #[serde(default)]
+    pub replayed: bool,
     pub status: RunStatus,
     pub sources: Vec<SourcePoint>,
     pub frontier: Vec<Id>,
@@ -95,6 +132,8 @@ pub enum Report {
 pub struct ResultEnvelope {
     pub version: u32,
     pub result: Report,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<InspectionReference>,
 }
 
 impl ResultEnvelope {
@@ -102,6 +141,7 @@ impl ResultEnvelope {
         Self {
             version: CONTRACT_VERSION,
             result,
+            recovery: None,
         }
     }
 }
@@ -146,8 +186,21 @@ pub enum EventError {
     InvalidStream,
 }
 
+fn terminal_matches(result: &ResultEnvelope, run: Option<Id>) -> bool {
+    result.version == CONTRACT_VERSION
+        && result
+            .recovery
+            .as_ref()
+            .is_none_or(|reference| reference.run == run)
+        && match &result.result {
+            Report::Run(report) => report.run == run,
+            Report::Turn(_) => run.is_none(),
+            Report::Error(_) => true,
+        }
+}
+
 pub fn validate_events(events: &[EngineEvent]) -> Result<(), EventError> {
-    if events.is_empty() {
+    if events.len() < 2 || !matches!(events[0].event, EventKind::Started) {
         return Err(EventError::InvalidStream);
     }
     let run = events[0].run;
@@ -155,21 +208,15 @@ pub fn validate_events(events: &[EngineEvent]) -> Result<(), EventError> {
         if event.version != CONTRACT_VERSION
             || event.sequence != index as u64
             || event.run != run
+            || (index > 0 && matches!(event.event, EventKind::Started))
             || matches!(event.event, EventKind::Terminal { .. }) != (index == events.len() - 1)
         {
             return Err(EventError::InvalidStream);
         }
-        if let EventKind::Terminal { result } = &event.event {
-            if result.version != CONTRACT_VERSION {
-                return Err(EventError::InvalidStream);
-            }
-            match &result.result {
-                Report::Run(report) if Some(report.run) != run => {
-                    return Err(EventError::InvalidStream);
-                }
-                Report::Turn(_) if run.is_some() => return Err(EventError::InvalidStream),
-                _ => {}
-            }
+        if let EventKind::Terminal { result } = &event.event
+            && !terminal_matches(result, run)
+        {
+            return Err(EventError::InvalidStream);
         }
     }
     Ok(())
@@ -230,7 +277,7 @@ mod tests {
         let Report::Run(report) = &mut result.result else {
             panic!()
         };
-        report.run = Id::generate();
+        report.run = Some(Id::generate());
         assert_eq!(validate_events(&events), Err(EventError::InvalidStream));
     }
 }

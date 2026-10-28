@@ -101,6 +101,7 @@ fn node_event(
     turn: Option<Id>,
 ) -> WorkflowEvent {
     WorkflowEvent {
+        version: crate::decision::CONTRACT_VERSION,
         round,
         kind,
         node: Some(node),

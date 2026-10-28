@@ -1,6 +1,7 @@
 //! Reusable durable evaluation, with bounded attempts outside transactions.
 pub mod ephemeral;
 pub mod execution;
+pub mod reporting;
 mod run;
 pub mod workflow;
 use crate::{

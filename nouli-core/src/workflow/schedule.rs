@@ -87,6 +87,12 @@ pub trait NodeExecutor: Send + Sync + 'static {
     ) -> impl Future<Output = Result<NodeOutput, ErrorReport>> + Send;
 }
 pub trait ScheduleObserver: Send + Sync + 'static {
+    fn started(
+        &self,
+        _run: Option<crate::identity::Id>,
+    ) -> impl Future<Output = Result<(), ErrorReport>> + Send {
+        async { Ok(()) }
+    }
     fn changed(
         &self,
         node: usize,

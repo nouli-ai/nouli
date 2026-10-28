@@ -1,5 +1,6 @@
 //! Frozen workflow ownership and short durable repository operations.
 mod completion;
+pub mod events;
 pub mod nodes;
 pub mod recovery;
 use super::{
@@ -53,6 +54,8 @@ pub struct StoredRun {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowEvent {
+    #[serde(default = "event_version")]
+    pub version: u32,
     #[serde(default)]
     pub round: u32,
     pub kind: WorkflowEventKind,
@@ -62,6 +65,9 @@ pub struct WorkflowEvent {
     pub run_status: Option<RunStatus>,
     pub attempt: Option<Id>,
     pub turn: Option<Id>,
+}
+fn event_version() -> u32 {
+    crate::decision::CONTRACT_VERSION
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -466,7 +472,7 @@ impl Ledger {
                 tx.execute("INSERT INTO workflow_nodes(run_id,node_id,declaration_order,state,payload_toon) VALUES(?1,?2,?3,'pending',?4)",params![run.to_string(),node.id,index as i64,Self::encode_payload(&pending)?]).map_err(|error|sql_error("save pending node",error))?;
                 tx.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon,kind) VALUES(?1,?2,?3,?4,'pending',?5,'workflow_node')",params![session.to_string(),child_key(run,index),codec::fingerprint(&(run,index)).map_err(|_|WorkflowError::Snapshot)?,session_guard.owner.to_string(),Self::encode_payload(&(run,index))?]).map_err(|error|sql_error("reserve stable node identity",error))?;
             }
-            event(tx,run,&WorkflowEvent {
+            event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,
                     round:0,kind:WorkflowEventKind::RunStarted,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Running),attempt:None,turn:None})?;Ok(definition)
         })?;
         Ok(WorkflowDecision::Accepted(Box::new(WorkflowOwner {
