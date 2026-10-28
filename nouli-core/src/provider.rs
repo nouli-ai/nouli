@@ -1,5 +1,7 @@
 //! One-attempt protocol adapters. Evaluation owns retry orchestration.
 
+mod confidence;
+pub mod openai;
 pub mod typesafe;
 
 use crate::{decision::ContractError, limits::LimitError, transport::TransportError};
@@ -11,6 +13,8 @@ pub enum ProviderError {
     Protocol,
     #[error("provider response does not match its documented schema")]
     Wire,
+    #[error(transparent)]
+    Codec(#[from] crate::codec::CodecError),
     #[error(transparent)]
     Contract(#[from] ContractError),
     #[error(transparent)]
