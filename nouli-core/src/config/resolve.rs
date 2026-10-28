@@ -41,6 +41,7 @@ pub struct RuntimeOverrides {
     pub output: Option<OutputFormat>,
     pub store: Option<PathBuf>,
     pub max_parallel: Option<usize>,
+    pub context_budget_tokens: Option<u64>,
     pub max_attempts: Option<u32>,
     pub attempt_timeout_seconds: Option<u64>,
 }
@@ -141,6 +142,9 @@ impl Config {
             .clone();
         if let Some(model) = selection.model {
             profile.model = model;
+        }
+        if let Some(budget) = overrides.context_budget_tokens {
+            profile.context_budget_tokens = Some(budget);
         }
         profile.validate()?;
         let mut execution = self.execution.clone();
@@ -252,6 +256,7 @@ mod tests {
             output: Some(OutputFormat::Json),
             store: Some(PathBuf::from("/alternate-store")),
             max_parallel: Some(2),
+            context_budget_tokens: Some(4096),
             max_attempts: Some(5),
             attempt_timeout_seconds: Some(7),
         };
@@ -265,6 +270,8 @@ mod tests {
         assert_eq!(resolved.snapshot.output, OutputFormat::Json);
         assert_eq!(resolved.snapshot.store, PathBuf::from("/alternate-store"));
         assert_eq!(resolved.snapshot.execution.max_parallel, 2);
+        assert_eq!(resolved.snapshot.profile.context_budget_tokens, Some(4096));
+        assert_eq!(config.providers["custom"].context_budget_tokens, Some(8192));
         assert_eq!(resolved.snapshot.execution.max_attempts, 5);
         assert_eq!(resolved.snapshot.execution.attempt_timeout_seconds, 7);
         assert_eq!(session.model.as_deref(), Some("session-model"));
