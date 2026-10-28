@@ -19,6 +19,8 @@ pub enum MissingPolicy {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResultField {
+    /// Full typed per-question result, including a native refusal.
+    Outcome,
     #[default]
     Answer,
     Selected,

@@ -1,5 +1,6 @@
 //! Caller-defined acyclic turn networks. Compilation and scheduling are separate.
 
+pub mod compile;
 pub mod reference;
 
 use std::collections::HashSet;
