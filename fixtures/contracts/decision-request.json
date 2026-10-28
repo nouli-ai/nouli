@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "state": [{"type": "text", "text": "Choose travel using the supplied evidence."}, {"type": "structured", "data": {"delay": null, "hours": 4}}],
+  "questions": [
+    {"id": "travel", "prompt": "Which route?", "criteria": ["Prefer reliability", {"label": "Time", "description": "Minimize travel duration"}], "answer_space": {"type": "choice", "options": [{"id": "train", "description": "Rail"}, {"id": "flight", "description": "Air"}]}},
+    {"id": "on_time", "prompt": "Will the train arrive on time?", "answer_space": {"type": "noul"}},
+    {"id": "quality", "prompt": "Rate the route quality", "answer_space": {"type": "score", "levels": ["Poor", {"label": "Adequate", "description": "Meets minimum requirements"}, "Excellent"]}},
+    {"id": "private", "prompt": "Is private information available?", "answer_space": {"type": "noul"}}
+  ]
+}

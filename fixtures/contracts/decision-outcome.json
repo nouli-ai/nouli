@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": {"provider": "fixture", "model": "offline"},
+  "outcomes": [
+    {"status": "answered", "question_id": "travel", "answer": {"type": "choice", "selected": "train", "distribution": [{"option_id": "train", "probability": 0.7}, {"option_id": "flight", "probability": 0.3}]}, "confidence": {"value": 0.8, "meaning": "fixture native certainty"}},
+    {"status": "answered", "question_id": "on_time", "answer": {"type": "noul", "probability": 1.0}, "confidence": null},
+    {"status": "answered", "question_id": "quality", "answer": {"type": "score", "value": 1.43, "probabilities": [0.0, 0.57, 0.43]}, "confidence": null},
+    {"status": "refused", "question_id": "private", "reason": "Unavailable private information"}
+  ],
+  "usage": {"input_tokens": 100, "output_tokens": 20, "exact": true}
+}
