@@ -3,9 +3,12 @@
 use super::{StorageError, sql_error};
 use rusqlite::{Connection, TransactionBehavior};
 
-pub(super) const VERSION: u32 = 1;
+pub(super) const VERSION: u32 = 2;
 const APPLICATION_ID: i64 = 0x4e4f554c;
-pub(super) const MIGRATIONS: &[&str] = &[include_str!("schema/0001.sql")];
+pub(super) const MIGRATIONS: &[&str] = &[
+    include_str!("schema/0001.sql"),
+    include_str!("schema/0002.sql"),
+];
 
 fn identity(connection: &Connection) -> Result<(i64, u32), StorageError> {
     let app = connection
@@ -111,12 +114,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tables, 0);
-        migrate(&mut connection, MIGRATIONS).unwrap();
+        migrate(&mut connection, &MIGRATIONS[..1]).unwrap();
         migrate(
             &mut connection,
             &[MIGRATIONS[0], "CREATE TABLE migration_probe(id);"],
         )
         .unwrap();
         assert_eq!(identity(&connection).unwrap(), (APPLICATION_ID, 2));
+    }
+
+    #[test]
+    fn existing_v1_catalog_survives_the_v2_attempt_projection_migration() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .unwrap();
+        migrate(&mut connection, &MIGRATIONS[..1]).unwrap();
+        connection.execute("INSERT INTO sessions(id,name,defaults_toon,frontier_toon) VALUES('s','kept','{}','[]')",[]).unwrap();
+        migrate(&mut connection, MIGRATIONS).unwrap();
+        let name: String = connection
+            .query_row("SELECT name FROM sessions WHERE id='s'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(name, "kept");
+        assert_eq!(identity(&connection).unwrap().1, VERSION);
     }
 }

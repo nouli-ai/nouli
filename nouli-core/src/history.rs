@@ -258,17 +258,27 @@ impl FinalizedTurn {
                 return Err(ContextError::DuplicateRecord.into());
             }
         }
+        self.manifest.validate()?;
+        if self.manifest.provider != self.outcome.provider {
+            return Err(HistoryError::InvalidManifest);
+        }
+        Ok(())
+    }
+}
+
+impl EvaluationManifest {
+    pub fn validate(&self) -> Result<(), HistoryError> {
+        crate::decision::nonempty(&self.provider.provider, "manifest.provider")?;
+        crate::decision::nonempty(&self.provider.model, "manifest.model")?;
         let mut projections = std::collections::HashSet::new();
-        if self.manifest.provider != self.outcome.provider
-            || !self.manifest.input_count.is_consistent()
-            || self.manifest.budget == 0
+        if !self.input_count.is_consistent()
+            || self.budget == 0
             || self
-                .manifest
                 .input_count
                 .tokens
-                .checked_add(self.manifest.reserved_output_tokens)
-                .is_none_or(|total| total > self.manifest.budget)
-            || self.manifest.records.iter().any(|r| {
+                .checked_add(self.reserved_output_tokens)
+                .is_none_or(|total| total > self.budget)
+            || self.records.iter().any(|r| {
                 !projections.insert(r.record)
                     || (r.protected && r.representation == Representation::Omitted)
             })
