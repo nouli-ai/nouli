@@ -1,4 +1,5 @@
 //! Frozen durable and ephemeral workflows over the shared decision engine.
+pub mod reporting;
 use super::{
     Engine, EngineError,
     execution::{DecisionProvider, RetryClock},
@@ -83,14 +84,10 @@ pub enum WorkflowEngineError {
     #[error("workflow requires explicit recovery ({status:?})")]
     Existing { run: Id, status: RunStatus },
 }
-fn report(error: impl std::fmt::Display) -> ErrorReport {
-    ErrorReport {
-        category: ErrorCategory::Contract,
-        code: "workflow_node_failed".into(),
-        message: error.to_string(),
-        retryable: false,
-    }
+fn report(error: impl Into<EngineError>) -> ErrorReport {
+    error.into().report()
 }
+
 fn from_stored(stored: StoredRun, replayed: bool) -> Result<WorkflowResult, WorkflowEngineError> {
     let definition = stored.frozen.definition;
     Ok(WorkflowResult {
@@ -446,6 +443,10 @@ impl<
                 },
                 lookup,
             });
+            observer
+                .started(None)
+                .await
+                .map_err(ScheduleError::Observer)?;
             let result =
                 schedule::schedule_observed(graph, runner.clone(), runner, parallel, cancel)
                     .await?;
@@ -488,7 +489,13 @@ impl<
             .call(move |ledger| ledger.accept_workflow(&accepted, settings, defaults))
             .await??;
         let owner = match decision {
-            WorkflowDecision::Saved(saved) => return from_stored(*saved, true),
+            WorkflowDecision::Saved(saved) => {
+                observer
+                    .started(Some(saved.frozen.definition.run))
+                    .await
+                    .map_err(ScheduleError::Observer)?;
+                return from_stored(*saved, true);
+            }
             WorkflowDecision::InProgress => return Err(WorkflowEngineError::InProgress),
             WorkflowDecision::Existing { run, status } => {
                 return Err(WorkflowEngineError::Existing { run, status });
@@ -533,7 +540,13 @@ impl<
             .call(move |ledger| ledger.resume_workflow(run))
             .await??;
         let owner = match decision {
-            WorkflowDecision::Saved(saved) => return from_stored(*saved, true),
+            WorkflowDecision::Saved(saved) => {
+                observer
+                    .started(Some(saved.frozen.definition.run))
+                    .await
+                    .map_err(ScheduleError::Observer)?;
+                return from_stored(*saved, true);
+            }
             WorkflowDecision::InProgress => return Err(WorkflowEngineError::InProgress),
             WorkflowDecision::Existing { run, status } => {
                 return Err(WorkflowEngineError::Existing { run, status });
@@ -579,16 +592,23 @@ impl<
             .call(move |ledger| ledger.workflow_run(run))
             .await??
             .nodes;
-        let result = match schedule::schedule_resumed(
-            graph.clone(),
-            runner.clone(),
-            runner,
-            parallel,
-            cancel,
-            initial,
-        )
-        .await
-        {
+        let execution = async {
+            observer
+                .started(Some(run))
+                .await
+                .map_err(ScheduleError::Observer)?;
+            schedule::schedule_resumed(
+                graph.clone(),
+                runner.clone(),
+                runner,
+                parallel,
+                cancel,
+                initial,
+            )
+            .await
+        }
+        .await;
+        let result = match execution {
             Ok(result) => result,
             Err(error) => {
                 let writer = owner.clone();
@@ -2144,5 +2164,329 @@ mod tests {
         assert_eq!(rounds[0].result.completion_order, vec![0, 2]);
         assert_eq!(rounds[0].result.nodes[1].status, NodeStatus::Interrupted);
         assert_eq!(rounds[0].result.nodes[2], done.result.nodes[2]);
+        let events = worker
+            .call(move |ledger| ledger.workflow_events(run))
+            .await
+            .unwrap()
+            .unwrap();
+        let previous = events
+            .iter()
+            .filter(|event| event.event.round == 0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            previous.last().unwrap().event.kind,
+            crate::storage::workflows::WorkflowEventKind::RunFinished
+        );
+        assert_eq!(
+            previous
+                .iter()
+                .filter(|event| event.event.kind
+                    == crate::storage::workflows::WorkflowEventKind::RunFinished)
+                .count(),
+            1
+        );
+        assert!(
+            events
+                .windows(2)
+                .all(|pair| pair[0].event.round <= pair[1].event.round)
+        );
+    }
+    #[tokio::test]
+    async fn compact_reports_and_event_streams_survive_partial_resume_and_retrieve_intermediates() {
+        use crate::protocol::{EventKind, Report, stream::CollectEvents, validate_events};
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, _rx) = engine(&[], &["high"]);
+        let request = request();
+        let config = config();
+        let sink = Arc::new(CollectEvents::default());
+        let envelope = first
+            .evaluate_workflow_report(
+                Some(&worker),
+                WorkflowInput {
+                    request: &request,
+                    config: &config,
+                    overrides: &RuntimeOverrides::default(),
+                    home: Path::new("/unused"),
+                },
+                Arc::new(|_| None),
+                CancellationToken::new(),
+                sink.clone(),
+            )
+            .await
+            .unwrap();
+        let Report::Run(partial) = envelope.result else {
+            panic!("partial report")
+        };
+        let run = partial.run.unwrap();
+        assert_eq!(partial.status, RunStatus::Partial);
+        assert!(partial.outputs[0].required_missing);
+        assert!(partial.nodes.iter().all(|node| node.outcome.is_none()));
+        let events = sink.snapshot().unwrap();
+        validate_events(&events).unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.event, EventKind::Terminal { .. }))
+                .count(),
+            1
+        );
+        assert!(
+            !serde_json::to_string(&events[..events.len() - 1])
+                .unwrap()
+                .contains("NODE:")
+        );
+        let initial = partial.nodes[0].turn.unwrap();
+        let turn = worker
+            .call(move |ledger| ledger.turn(initial))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(turn.outcome.outcomes.len(), 4);
+        assert!(
+            turn.request
+                .state
+                .iter()
+                .any(|input| matches!(input,Input::Text {text} if text=="NODE:initial"))
+        );
+        let (restarted, _rx2) = engine(&[], &[]);
+        let resumed_sink = Arc::new(CollectEvents::default());
+        let finished = restarted
+            .resume_workflow_report(
+                &worker,
+                run,
+                Arc::new(|_| None),
+                CancellationToken::new(),
+                resumed_sink.clone(),
+            )
+            .await
+            .unwrap();
+        let Report::Run(done) = finished.result else {
+            panic!("completed report")
+        };
+        assert_eq!(done.status, RunStatus::Completed);
+        assert_eq!(done.nodes[0].turn, Some(initial));
+        assert_eq!(done.nodes[2].status, NodeStatus::Skipped);
+        validate_events(&resumed_sink.snapshot().unwrap()).unwrap();
+        assert_eq!(restarted.provider.calls.lock().unwrap().len(), 3);
+        let recorded = worker
+            .call(move |ledger| ledger.workflow_events(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            recorded
+                .iter()
+                .enumerate()
+                .all(|(index, event)| event.sequence == index as u64
+                    && event.event.version == 1
+                    && event.run == run)
+        );
+        for round in 0..=1 {
+            assert_eq!(
+                recorded
+                    .iter()
+                    .filter(|event| event.event.round == round
+                        && event.event.kind
+                            == crate::storage::workflows::WorkflowEventKind::RunFinished)
+                    .count(),
+                1
+            );
+        }
+        assert!(recorded.iter().any(|event| event.event.attempt.is_some()));
+        assert!(
+            recorded
+                .iter()
+                .any(|event| event.event.turn == Some(initial))
+        );
+        let replay_sink = Arc::new(CollectEvents::default());
+        let replay = restarted
+            .resume_workflow_report(
+                &worker,
+                run,
+                Arc::new(|_| panic!("replay")),
+                CancellationToken::new(),
+                replay_sink.clone(),
+            )
+            .await
+            .unwrap();
+        let Report::Run(replay) = replay.result else {
+            panic!("replay")
+        };
+        assert!(replay.replayed);
+        assert_eq!(replay.outputs, done.outputs);
+        assert_eq!(replay_sink.snapshot().unwrap().len(), 2);
+        validate_events(&replay_sink.snapshot().unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancellation_and_preflight_errors_each_emit_one_truthful_terminal_event() {
+        use crate::protocol::{ErrorCategory, Report, stream::CollectEvents, validate_events};
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, mut started) = engine(&["initial"], &[]);
+        let request = request();
+        let config = config();
+        let sink = Arc::new(CollectEvents::default());
+        let runner = first.clone();
+        let selected = request.clone();
+        let repository = worker.clone();
+        let settings = config.clone();
+        let events = sink.clone();
+        let cancel = CancellationToken::new();
+        let token = cancel.clone();
+        let task = tokio::spawn(async move {
+            runner
+                .evaluate_workflow_report(
+                    Some(&repository),
+                    WorkflowInput {
+                        request: &selected,
+                        config: &settings,
+                        overrides: &RuntimeOverrides::default(),
+                        home: Path::new("/unused"),
+                    },
+                    Arc::new(|_| None),
+                    token,
+                    events,
+                )
+                .await
+                .unwrap()
+        });
+        assert_eq!(started.recv().await.unwrap(), "initial");
+        cancel.cancel();
+        let canceled = task.await.unwrap();
+        let Report::Run(report) = canceled.result else {
+            panic!("recoverable run")
+        };
+        assert_eq!(report.status, RunStatus::Interrupted);
+        assert!(report.run.is_some());
+        assert_eq!(first.provider.active.load(Ordering::SeqCst), 0);
+        validate_events(&sink.snapshot().unwrap()).unwrap();
+        let mut invalid = request;
+        invalid.workflow.nodes[0].dependencies = vec!["final".into()];
+        let rejected = Arc::new(CollectEvents::default());
+        let before = std::fs::read(store.0.join("ledger.sqlite3")).unwrap();
+        let result = first
+            .evaluate_workflow_report(
+                Some(&worker),
+                WorkflowInput {
+                    request: &invalid,
+                    config: &config,
+                    overrides: &RuntimeOverrides::default(),
+                    home: Path::new("/unused"),
+                },
+                Arc::new(|_| None),
+                CancellationToken::new(),
+                rejected.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(result.result,Report::Error(error) if error.category==ErrorCategory::Input)
+        );
+        assert_eq!(rejected.snapshot().unwrap().len(), 2);
+        validate_events(&rejected.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            before,
+            std::fs::read(store.0.join("ledger.sqlite3")).unwrap()
+        );
+    }
+    struct TerminalFaultSink {
+        events: crate::protocol::stream::CollectEvents,
+        worker: LedgerWorker,
+    }
+    impl crate::protocol::stream::EventSink for TerminalFaultSink {
+        async fn send(&self, event: crate::protocol::EngineEvent) -> Result<(), ErrorReport> {
+            if matches!(&event.event,crate::protocol::EventKind::NodeState {node,status:NodeStatus::Completed,..} if node=="final")
+            {
+                self.worker.call(|ledger|ledger.transaction::<_,crate::storage::StorageError>("inject terminal publication failure",|tx| {
+                    tx.execute_batch("CREATE TRIGGER reject_run_finish BEFORE UPDATE OF result_toon ON workflow_runs WHEN NEW.result_toon IS NOT NULL BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();Ok(())
+                })).await.unwrap().unwrap();
+            }
+            crate::protocol::stream::EventSink::send(&self.events, event).await
+        }
+    }
+    #[tokio::test]
+    async fn terminal_publication_failure_retains_started_run_reference_and_reuses_every_saved_node()
+     {
+        use crate::protocol::{ErrorCategory, Report, stream::CollectEvents, validate_events};
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, _rx) = engine(&[], &[]);
+        let request = request();
+        let config = config();
+        let sink = Arc::new(TerminalFaultSink {
+            events: CollectEvents::default(),
+            worker: worker.clone(),
+        });
+        let result = first
+            .evaluate_workflow_report(
+                Some(&worker),
+                WorkflowInput {
+                    request: &request,
+                    config: &config,
+                    overrides: &RuntimeOverrides::default(),
+                    home: Path::new("/unused"),
+                },
+                Arc::new(|_| None),
+                CancellationToken::new(),
+                sink.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(result.result,Report::Error(error) if error.category==ErrorCategory::Storage)
+        );
+        let events = sink.events.snapshot().unwrap();
+        validate_events(&events).unwrap();
+        let run = events[0].run.unwrap();
+        assert_eq!(result.recovery.unwrap().run, Some(run));
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!inspection.live_owner);
+        assert!(
+            inspection
+                .run
+                .nodes
+                .iter()
+                .all(|node| matches!(node.status, NodeStatus::Completed | NodeStatus::Skipped))
+        );
+        worker
+            .call(|ledger| {
+                ledger.transaction::<_, crate::storage::StorageError>(
+                    "clear terminal failure",
+                    |tx| {
+                        tx.execute_batch("DROP TRIGGER reject_run_finish").unwrap();
+                        Ok(())
+                    },
+                )
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let (restarted, _rx2) = engine(&[], &[]);
+        let stream = Arc::new(CollectEvents::default());
+        let done = restarted
+            .resume_workflow_report(
+                &worker,
+                run,
+                Arc::new(|_| None),
+                CancellationToken::new(),
+                stream.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(done.result,Report::Run(report) if report.status==RunStatus::Completed));
+        assert!(restarted.provider.calls.lock().unwrap().is_empty());
+        validate_events(&stream.snapshot().unwrap()).unwrap();
     }
 }

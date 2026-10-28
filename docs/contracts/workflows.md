@@ -5,7 +5,7 @@ of independent questions. Dependent judgments belong in later nodes. Node inputs
 bind references into structured state; state, context updates, explicit required
 records, conditions, and provider/model overrides are optional. Source order and
 node declaration order define ancestry tie ordering. The default concurrency is
-four; zero is invalid. Compilation later validates DAG edges, reference types,
+four; zero is invalid. Compilation validates DAG edges, reference types,
 and ancestry before execution. Shape validation alone cannot establish a DAG.
 
 V1 forbids cycles, scripts, arbitrary tool execution, and expression strings.
@@ -36,9 +36,9 @@ prior attempts and completed/skipped nodes. Completed runs remain finalized.
 A join waits for active parents, passes intentionally skipped branches, and
 blocks when a required input failed. Independent branches continue after failure.
 False conditions intentionally skip a node; unavailable required comparisons
-block rather than silently skipping. This is a contract, not a scheduler.
+block rather than silently skipping.
 
-Durable runs capture `FrozenRun` before work starts: definition, input state,
+Durable runs capture `FrozenWorkflow` before work starts: definition, input state,
 source frontiers, updates, required records, and selected model defaults. Resume
 uses those frozen values and reuses completed nodes; it does not read a changed
 workflow or moving source. Ephemeral runs retain only in-memory progress and
@@ -47,7 +47,8 @@ branch frontier with shared ancestry deduplicated.
 
 Reports project declared outputs in their declaration order. When outputs are
 absent, terminal-node answers are the fallback. Node reports retain intermediate
-turn IDs, statuses, outcomes, and structured errors. A `ResultEnvelope` carries
+turn IDs, statuses, inspection references, and structured errors. Full intermediate
+outcomes remain available through ledger inspection. A `ResultEnvelope` carries
 version 1 and a turn/run/error report. Error categories distinguish invalid input,
 configuration, authentication, capability, contract, capacity, transport, storage,
 conflict, interruption, and internal faults. Messages must contain safe diagnostic
@@ -65,3 +66,9 @@ not treat an unfinished stream as a finalized report.
 with an optional skipped output. `events.json` includes an answered/refused sibling,
 partial failure, and blocked descendants. Inline tests round-trip a frozen run,
 exercise state transitions, pointers and absence, and reject broken event streams.
+
+The public compact report contains the declared outputs, or per-question whole outcomes from terminal nodes when outputs are absent. Selected scalars retain the source question and answer space, so a fractional score carries its original ordered rubric. Present null, optional absence, required-output absence, defaults, and whole native refusals remain distinct. Node summaries carry status and record references; intermediate answer bodies are retrieved separately through saved turns and run inspection. Ephemeral reports expose no persisted run, session, or turn identity.
+
+`Engine::evaluate_workflow_report` and `resume_workflow_report` wrap the shared engine with a caller-supplied asynchronous `EventSink`. Each invocation delivers v1 consecutive events beginning with `started` and ending with one `terminal` result/error. Live progress contains node IDs, statuses, and finalized record references, without model state bodies. Completed replay emits started/terminal without provider work. A failed sink produces a typed delivery error with the saved run ID when available; terminal delivery is attempted once, and an I/O failure cannot be reported as a successful stream. Dropping an invocation or losing the process can prevent delivery; durable inspection/resume remains the recovery path.
+
+`Ledger::workflow_events` returns immutable globally sequenced run events, including retry-round numbers and attempt/turn references. Historical payloads without an explicit version decode as v1. A recovered orphan round receives an interrupted terminal marker before the next round starts. Reporting and event delivery do not generate explanations, additional inference, or synthesized averages. Structured events and terminal results are separate from tracing diagnostics.
