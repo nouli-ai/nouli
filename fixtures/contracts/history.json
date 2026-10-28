@@ -1,0 +1,901 @@
+{
+  "turns": [
+    {
+      "id": "019a0000-0000-7000-8000-000000000001",
+      "session": "019a0000-0000-7000-8000-000000000065",
+      "parents": [],
+      "request": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          },
+          {
+            "id": "private",
+            "prompt": "Is private information available?",
+            "answer_space": {
+              "type": "noul"
+            }
+          }
+        ]
+      },
+      "outcome": {
+        "version": 1,
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "outcomes": [
+          {
+            "status": "answered",
+            "question_id": "travel",
+            "answer": {
+              "type": "choice",
+              "selected": "train",
+              "distribution": [
+                {
+                  "option_id": "train",
+                  "probability": 0.7
+                },
+                {
+                  "option_id": "flight",
+                  "probability": 0.3
+                }
+              ]
+            },
+            "confidence": {
+              "value": 0.8,
+              "meaning": "fixture native certainty"
+            }
+          },
+          {
+            "status": "answered",
+            "question_id": "on_time",
+            "answer": {
+              "type": "noul",
+              "probability": 1.0
+            },
+            "confidence": null
+          },
+          {
+            "status": "answered",
+            "question_id": "quality",
+            "answer": {
+              "type": "score",
+              "value": 1.43,
+              "probabilities": [
+                0.0,
+                0.57,
+                0.43
+              ]
+            },
+            "confidence": null
+          },
+          {
+            "status": "refused",
+            "question_id": "private",
+            "reason": "Unavailable private information"
+          }
+        ],
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 20,
+          "exact": true
+        }
+      },
+      "updates": [
+        {
+          "op": "pin",
+          "target": {
+            "kind": "new",
+            "record": {
+              "id": "019a0000-0000-7000-8000-0000000000c9",
+              "key": "budget",
+              "value": 8,
+              "kind": "evidence"
+            }
+          }
+        }
+      ],
+      "manifest": {
+        "sources": [],
+        "records": [],
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "budget": 4096,
+        "input_count": {
+          "tokens": 100,
+          "exact": false
+        },
+        "reserved_output_tokens": 128,
+        "context_toon": "state: fixture"
+      }
+    },
+    {
+      "id": "019a0000-0000-7000-8000-000000000002",
+      "session": "019a0000-0000-7000-8000-000000000066",
+      "parents": [
+        "019a0000-0000-7000-8000-000000000001"
+      ],
+      "request": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          },
+          {
+            "id": "private",
+            "prompt": "Is private information available?",
+            "answer_space": {
+              "type": "noul"
+            }
+          }
+        ]
+      },
+      "outcome": {
+        "version": 1,
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "outcomes": [
+          {
+            "status": "answered",
+            "question_id": "travel",
+            "answer": {
+              "type": "choice",
+              "selected": "train",
+              "distribution": [
+                {
+                  "option_id": "train",
+                  "probability": 0.7
+                },
+                {
+                  "option_id": "flight",
+                  "probability": 0.3
+                }
+              ]
+            },
+            "confidence": {
+              "value": 0.8,
+              "meaning": "fixture native certainty"
+            }
+          },
+          {
+            "status": "answered",
+            "question_id": "on_time",
+            "answer": {
+              "type": "noul",
+              "probability": 1.0
+            },
+            "confidence": null
+          },
+          {
+            "status": "answered",
+            "question_id": "quality",
+            "answer": {
+              "type": "score",
+              "value": 1.43,
+              "probabilities": [
+                0.0,
+                0.57,
+                0.43
+              ]
+            },
+            "confidence": null
+          },
+          {
+            "status": "refused",
+            "question_id": "private",
+            "reason": "Unavailable private information"
+          }
+        ],
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 20,
+          "exact": true
+        }
+      },
+      "updates": [
+        {
+          "op": "supersede",
+          "targets": [
+            "019a0000-0000-7000-8000-0000000000c9"
+          ],
+          "replacement": {
+            "id": "019a0000-0000-7000-8000-0000000000ca",
+            "key": "budget",
+            "value": 10,
+            "kind": "evidence"
+          },
+          "pinned": null
+        }
+      ],
+      "manifest": {
+        "sources": [],
+        "records": [],
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "budget": 4096,
+        "input_count": {
+          "tokens": 100,
+          "exact": false
+        },
+        "reserved_output_tokens": 128,
+        "context_toon": "state: fixture"
+      }
+    },
+    {
+      "id": "019a0000-0000-7000-8000-000000000003",
+      "session": "019a0000-0000-7000-8000-000000000067",
+      "parents": [
+        "019a0000-0000-7000-8000-000000000001"
+      ],
+      "request": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          },
+          {
+            "id": "private",
+            "prompt": "Is private information available?",
+            "answer_space": {
+              "type": "noul"
+            }
+          }
+        ]
+      },
+      "outcome": {
+        "version": 1,
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "outcomes": [
+          {
+            "status": "answered",
+            "question_id": "travel",
+            "answer": {
+              "type": "choice",
+              "selected": "train",
+              "distribution": [
+                {
+                  "option_id": "train",
+                  "probability": 0.7
+                },
+                {
+                  "option_id": "flight",
+                  "probability": 0.3
+                }
+              ]
+            },
+            "confidence": {
+              "value": 0.8,
+              "meaning": "fixture native certainty"
+            }
+          },
+          {
+            "status": "answered",
+            "question_id": "on_time",
+            "answer": {
+              "type": "noul",
+              "probability": 1.0
+            },
+            "confidence": null
+          },
+          {
+            "status": "answered",
+            "question_id": "quality",
+            "answer": {
+              "type": "score",
+              "value": 1.43,
+              "probabilities": [
+                0.0,
+                0.57,
+                0.43
+              ]
+            },
+            "confidence": null
+          },
+          {
+            "status": "refused",
+            "question_id": "private",
+            "reason": "Unavailable private information"
+          }
+        ],
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 20,
+          "exact": true
+        }
+      },
+      "updates": [
+        {
+          "op": "supersede",
+          "targets": [
+            "019a0000-0000-7000-8000-0000000000c9"
+          ],
+          "replacement": {
+            "id": "019a0000-0000-7000-8000-0000000000cb",
+            "key": "budget",
+            "value": 12,
+            "kind": "commitment"
+          },
+          "pinned": null
+        }
+      ],
+      "manifest": {
+        "sources": [],
+        "records": [],
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "budget": 4096,
+        "input_count": {
+          "tokens": 100,
+          "exact": false
+        },
+        "reserved_output_tokens": 128,
+        "context_toon": "state: fixture"
+      }
+    },
+    {
+      "id": "019a0000-0000-7000-8000-000000000004",
+      "session": "019a0000-0000-7000-8000-000000000068",
+      "parents": [
+        "019a0000-0000-7000-8000-000000000002",
+        "019a0000-0000-7000-8000-000000000003"
+      ],
+      "request": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          },
+          {
+            "id": "private",
+            "prompt": "Is private information available?",
+            "answer_space": {
+              "type": "noul"
+            }
+          }
+        ]
+      },
+      "outcome": {
+        "version": 1,
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "outcomes": [
+          {
+            "status": "answered",
+            "question_id": "travel",
+            "answer": {
+              "type": "choice",
+              "selected": "train",
+              "distribution": [
+                {
+                  "option_id": "train",
+                  "probability": 0.7
+                },
+                {
+                  "option_id": "flight",
+                  "probability": 0.3
+                }
+              ]
+            },
+            "confidence": {
+              "value": 0.8,
+              "meaning": "fixture native certainty"
+            }
+          },
+          {
+            "status": "answered",
+            "question_id": "on_time",
+            "answer": {
+              "type": "noul",
+              "probability": 1.0
+            },
+            "confidence": null
+          },
+          {
+            "status": "answered",
+            "question_id": "quality",
+            "answer": {
+              "type": "score",
+              "value": 1.43,
+              "probabilities": [
+                0.0,
+                0.57,
+                0.43
+              ]
+            },
+            "confidence": null
+          },
+          {
+            "status": "refused",
+            "question_id": "private",
+            "reason": "Unavailable private information"
+          }
+        ],
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 20,
+          "exact": true
+        }
+      },
+      "updates": [],
+      "manifest": {
+        "sources": [],
+        "records": [],
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "budget": 4096,
+        "input_count": {
+          "tokens": 100,
+          "exact": false
+        },
+        "reserved_output_tokens": 128,
+        "context_toon": "state: fixture"
+      }
+    },
+    {
+      "id": "019a0000-0000-7000-8000-000000000005",
+      "session": "019a0000-0000-7000-8000-000000000069",
+      "parents": [],
+      "request": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          },
+          {
+            "id": "private",
+            "prompt": "Is private information available?",
+            "answer_space": {
+              "type": "noul"
+            }
+          }
+        ]
+      },
+      "outcome": {
+        "version": 1,
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "outcomes": [
+          {
+            "status": "answered",
+            "question_id": "travel",
+            "answer": {
+              "type": "choice",
+              "selected": "train",
+              "distribution": [
+                {
+                  "option_id": "train",
+                  "probability": 0.7
+                },
+                {
+                  "option_id": "flight",
+                  "probability": 0.3
+                }
+              ]
+            },
+            "confidence": {
+              "value": 0.8,
+              "meaning": "fixture native certainty"
+            }
+          },
+          {
+            "status": "answered",
+            "question_id": "on_time",
+            "answer": {
+              "type": "noul",
+              "probability": 1.0
+            },
+            "confidence": null
+          },
+          {
+            "status": "answered",
+            "question_id": "quality",
+            "answer": {
+              "type": "score",
+              "value": 1.43,
+              "probabilities": [
+                0.0,
+                0.57,
+                0.43
+              ]
+            },
+            "confidence": null
+          },
+          {
+            "status": "refused",
+            "question_id": "private",
+            "reason": "Unavailable private information"
+          }
+        ],
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 20,
+          "exact": true
+        }
+      },
+      "updates": [
+        {
+          "op": "pin",
+          "target": {
+            "kind": "new",
+            "record": {
+              "id": "019a0000-0000-7000-8000-0000000000cd",
+              "key": "secret",
+              "value": "unrelated",
+              "kind": "evidence"
+            }
+          }
+        }
+      ],
+      "manifest": {
+        "sources": [],
+        "records": [],
+        "provider": {
+          "provider": "fixture",
+          "model": "offline"
+        },
+        "budget": 4096,
+        "input_count": {
+          "tokens": 100,
+          "exact": false
+        },
+        "reserved_output_tokens": 128,
+        "context_toon": "state: fixture"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "session": "019a0000-0000-7000-8000-000000000068",
+      "frontier": [
+        "019a0000-0000-7000-8000-000000000004"
+      ]
+    }
+  ],
+  "expected": [
+    "019a0000-0000-7000-8000-000000000001",
+    "019a0000-0000-7000-8000-000000000002",
+    "019a0000-0000-7000-8000-000000000003",
+    "019a0000-0000-7000-8000-000000000004"
+  ],
+  "unrelated_pinned_record": "019a0000-0000-7000-8000-0000000000cd",
+  "failed_attempt": {
+    "id": "019a0000-0000-7000-8000-00000000012d",
+    "session": "019a0000-0000-7000-8000-000000000065",
+    "state": "failed"
+  },
+  "selections": {
+    "continuation": {
+      "mode": "continue",
+      "session": "019a0000-0000-7000-8000-000000000065"
+    },
+    "branch": {
+      "mode": "from",
+      "sources": [
+        {
+          "session": "019a0000-0000-7000-8000-000000000065",
+          "frontier": [
+            "019a0000-0000-7000-8000-000000000001"
+          ]
+        }
+      ],
+      "name": "branch"
+    },
+    "blend": {
+      "mode": "from",
+      "sources": [
+        {
+          "session": "019a0000-0000-7000-8000-000000000066",
+          "frontier": [
+            "019a0000-0000-7000-8000-000000000002"
+          ]
+        },
+        {
+          "session": "019a0000-0000-7000-8000-000000000067",
+          "frontier": [
+            "019a0000-0000-7000-8000-000000000003"
+          ]
+        }
+      ],
+      "name": "blend"
+    }
+  }
+}
