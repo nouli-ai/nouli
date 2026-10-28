@@ -1,0 +1,488 @@
+{
+  "version": 1,
+  "state": [],
+  "nodes": [
+    {
+      "id": "initial",
+      "dependencies": [],
+      "turn": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          },
+          {
+            "type": "text",
+            "text": "NODE:initial"
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          }
+        ]
+      },
+      "inputs": [],
+      "when": null,
+      "updates": [],
+      "required_records": [],
+      "model": {
+        "provider": null,
+        "model": null
+      }
+    },
+    {
+      "id": "high",
+      "dependencies": [
+        "initial"
+      ],
+      "turn": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          },
+          {
+            "type": "text",
+            "text": "NODE:high"
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          }
+        ]
+      },
+      "inputs": [],
+      "when": {
+        "op": "compare",
+        "left": {
+          "kind": "reference",
+          "reference": {
+            "node": "initial",
+            "question": "quality",
+            "field": "score",
+            "pointer": null,
+            "on_missing": {
+              "policy": "required"
+            }
+          }
+        },
+        "comparison": "ge",
+        "right": {
+          "kind": "literal",
+          "value": 1.4
+        }
+      },
+      "updates": [],
+      "required_records": [],
+      "model": {
+        "provider": null,
+        "model": null
+      }
+    },
+    {
+      "id": "low",
+      "dependencies": [
+        "initial"
+      ],
+      "turn": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          },
+          {
+            "type": "text",
+            "text": "NODE:low"
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          }
+        ]
+      },
+      "inputs": [],
+      "when": {
+        "op": "not",
+        "condition": {
+          "op": "compare",
+          "left": {
+            "kind": "reference",
+            "reference": {
+              "node": "initial",
+              "question": "quality",
+              "field": "score",
+              "pointer": null,
+              "on_missing": {
+                "policy": "required"
+              }
+            }
+          },
+          "comparison": "ge",
+          "right": {
+            "kind": "literal",
+            "value": 1.4
+          }
+        }
+      },
+      "updates": [],
+      "required_records": [],
+      "model": {
+        "provider": null,
+        "model": null
+      }
+    },
+    {
+      "id": "join",
+      "dependencies": [
+        "high",
+        "low"
+      ],
+      "turn": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          },
+          {
+            "type": "text",
+            "text": "NODE:join"
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          }
+        ]
+      },
+      "inputs": [],
+      "when": null,
+      "updates": [],
+      "required_records": [],
+      "model": {
+        "provider": null,
+        "model": null
+      }
+    },
+    {
+      "id": "final",
+      "dependencies": [
+        "join"
+      ],
+      "turn": {
+        "version": 1,
+        "state": [
+          {
+            "type": "text",
+            "text": "Choose travel using the supplied evidence."
+          },
+          {
+            "type": "structured",
+            "data": {
+              "delay": null,
+              "hours": 4
+            }
+          },
+          {
+            "type": "text",
+            "text": "NODE:final"
+          }
+        ],
+        "questions": [
+          {
+            "id": "travel",
+            "prompt": "Which route?",
+            "criteria": [
+              "Prefer reliability",
+              {
+                "label": "Time",
+                "description": "Minimize travel duration"
+              }
+            ],
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Rail"
+                },
+                {
+                  "id": "flight",
+                  "description": "Air"
+                }
+              ]
+            }
+          },
+          {
+            "id": "on_time",
+            "prompt": "Will the train arrive on time?",
+            "answer_space": {
+              "type": "noul"
+            }
+          },
+          {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {
+              "type": "score",
+              "levels": [
+                "Poor",
+                {
+                  "label": "Adequate",
+                  "description": "Meets minimum requirements"
+                },
+                "Excellent"
+              ]
+            }
+          }
+        ]
+      },
+      "inputs": [],
+      "when": null,
+      "updates": [],
+      "required_records": [],
+      "model": {
+        "provider": null,
+        "model": null
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "rating",
+      "reference": {
+        "node": "final",
+        "question": "quality",
+        "field": "score",
+        "pointer": null,
+        "on_missing": {
+          "policy": "required"
+        }
+      }
+    },
+    {
+      "name": "optional_low",
+      "reference": {
+        "node": "low",
+        "question": "quality",
+        "field": "score",
+        "pointer": null,
+        "on_missing": {
+          "policy": "optional"
+        }
+      }
+    }
+  ],
+  "max_parallel": 4,
+  "mode": "durable",
+  "model": {
+    "provider": null,
+    "model": null
+  }
+}
