@@ -1,0 +1,38 @@
+default_provider = "jev"
+output = "auto"
+
+[execution]
+max_parallel = 4
+max_attempts = 3
+attempt_timeout_seconds = 120
+
+[providers.jev]
+protocol = "typesafe"
+base_url = "https://api.typesafe.ai"
+model = "jev-latest"
+api_key_env = "TYPESAFE_API_KEY"
+
+[providers.openai]
+protocol = "openai-decisions"
+base_url = "https://api.openai.com"
+model = "gpt-6-luna"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.router]
+protocol = "openrouter-decisions"
+base_url = "https://openrouter.ai/api"
+model = "openai/gpt-6-luna-decisions"
+api_key_env = "OPENROUTER_API_KEY"
+
+[providers.local]
+protocol = "typesafe"
+base_url = "http://localhost:8000"
+model = "english"
+context_budget_tokens = 512
+
+[providers.custom]
+protocol = "openai-decisions"
+base_url = "https://decisions.example.net/prefix"
+model = "custom-decision-model"
+api_key_env = "CUSTOM_KEY"
+context_budget_tokens = 8192

@@ -3,20 +3,37 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
+mod settings;
+
 /// A decision harness for structured callers.
 #[derive(Parser)]
 #[command(name = "nouli", version, disable_help_subcommand = true)]
-struct Args {}
+struct Args {
+    /// User configuration file (defaults to ~/.nouli/config.toml).
+    #[arg(long, value_name = "FILE")]
+    config: Option<std::path::PathBuf>,
+    /// Relocate the user ledger root.
+    #[arg(long, value_name = "DIR")]
+    store: Option<std::path::PathBuf>,
+}
 
 fn main() -> ExitCode {
     match Args::try_parse() {
-        Ok(_) => match io::stdout()
-            .lock()
-            .write_all(b"Nouli workspace foundation. Use --help for available options.\n")
-        {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(_) => ExitCode::FAILURE,
-        },
+        Ok(args) => {
+            if let Err(error) = settings::load(&args) {
+                if writeln!(io::stderr().lock(), "{error}").is_err() {
+                    return ExitCode::FAILURE;
+                }
+                return ExitCode::from(2);
+            }
+            match io::stdout()
+                .lock()
+                .write_all(b"Nouli workspace foundation. Use --help for available options.\n")
+            {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(_) => ExitCode::FAILURE,
+            }
+        }
         Err(error) => {
             let success = matches!(
                 error.kind(),
