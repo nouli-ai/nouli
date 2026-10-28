@@ -75,7 +75,10 @@ impl Home {
 }
 impl Drop for Home {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
+        let result = std::fs::remove_dir_all(&self.0);
+        if !std::thread::panicking() {
+            result.unwrap();
+        }
     }
 }
 pub fn turn() -> TurnRequest {

@@ -93,7 +93,10 @@ impl Drop for Server {
         self.stop.store(true, Ordering::SeqCst);
         let _ = TcpStream::connect(self.url.trim_start_matches("http://"));
         if let Some(thread) = self.thread.take() {
-            thread.join().unwrap();
+            let result = thread.join();
+            if !std::thread::panicking() {
+                result.unwrap();
+            }
         }
     }
 }
