@@ -7,8 +7,11 @@
 //! assert!(!nouli_core::version().is_empty());
 //! ```
 
+pub mod context;
 pub mod data;
 pub mod decision;
+pub mod history;
+pub mod identity;
 pub mod outcome;
 
 /// The version of the Nouli library in this build.
