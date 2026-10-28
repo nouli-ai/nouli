@@ -106,25 +106,25 @@ fn data(value: &impl Serialize) -> Result<Data, BuildError> {
     Ok(Data::new(codec::to_value(value)?)?)
 }
 #[derive(Serialize)]
-struct RevisionSource {
-    session: Id,
-    turn: Id,
-    index: usize,
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RevisionSource {
+    Finalized { session: Id, turn: Id, index: usize },
+    Pending { index: usize },
 }
 #[derive(Serialize)]
 struct ContextMaterial<'a> {
     record: &'a super::ContextRecord,
     active: bool,
     pinned: bool,
-    created_session: Id,
-    created_turn: Id,
+    created_session: Option<Id>,
+    created_turn: Option<Id>,
     revision: Option<RevisionSource>,
 }
 fn context_entry(
     record: &super::ContextRecord,
     active: Option<&super::projection::ActiveRecord>,
-    session: Id,
-    turn: Id,
+    created: Option<(Id, Id)>,
+    pending_turn: Id,
 ) -> Result<ContextEntry, BuildError> {
     let pinned = active.is_some_and(|record| record.pinned);
     Ok(ContextEntry {
@@ -136,12 +136,20 @@ fn context_entry(
             record,
             active: active.is_some(),
             pinned,
-            created_session: session,
-            created_turn: turn,
-            revision: active.map(|record| RevisionSource {
-                session: record.source_session,
-                turn: record.source_turn,
-                index: record.revision,
+            created_session: created.map(|source| source.0),
+            created_turn: created.map(|source| source.1),
+            revision: active.map(|record| {
+                if record.source_turn == pending_turn {
+                    RevisionSource::Pending {
+                        index: record.revision,
+                    }
+                } else {
+                    RevisionSource::Finalized {
+                        session: record.source_session,
+                        turn: record.source_turn,
+                        index: record.revision,
+                    }
+                }
             }),
         })?,
     })
@@ -246,6 +254,9 @@ impl ContextBuilder {
             return Err(BuildError::Provider);
         }
         let ordered = canonical_history(input.history, input.sources)?;
+        if ordered.iter().any(|turn| turn.id == input.turn) {
+            return Err(HistoryError::DuplicateTurn.into());
+        }
         let active = projection::project(
             input.history,
             input.sources,
@@ -281,8 +292,8 @@ impl ContextBuilder {
                     entries.push(context_entry(
                         record,
                         active.iter().find(|active| active.record.id == record.id),
-                        turn.session,
-                        turn.id,
+                        Some((turn.session, turn.id)),
+                        input.turn,
                     )?);
                 }
             }
@@ -294,7 +305,7 @@ impl ContextBuilder {
                 entries.push(context_entry(
                     record,
                     active.iter().find(|active| active.record.id == record.id),
-                    input.session,
+                    None,
                     input.turn,
                 )?);
             }
@@ -427,7 +438,7 @@ mod tests {
             required,
             workflow_base: &[],
             session: history[0].session,
-            turn: history[0].id,
+            turn: Id::generate(),
             provider: history[0].outcome.provider.clone(),
         }
     }

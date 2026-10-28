@@ -12,6 +12,7 @@ pub mod config;
 pub mod context;
 pub mod data;
 pub mod decision;
+pub mod engine;
 pub mod history;
 pub mod identity;
 pub mod limits;
