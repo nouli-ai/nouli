@@ -14,6 +14,7 @@ pub mod data;
 pub mod decision;
 pub mod history;
 pub mod identity;
+pub mod limits;
 pub mod outcome;
 pub mod protocol;
 pub mod transport;
