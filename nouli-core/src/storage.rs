@@ -2,6 +2,8 @@
 //! embedding in an async runtime; transactions never span a provider await.
 
 mod schema;
+pub mod sessions;
+pub mod turns;
 
 use std::io::Read;
 use std::{
@@ -48,6 +50,8 @@ pub enum StorageError {
     MigrationRequired { found: u32 },
     #[error("stored structured payload is invalid")]
     Payload,
+    #[error("stored projection changed concurrently")]
+    Conflict,
 }
 
 pub(super) fn sql_error(operation: &'static str, error: rusqlite::Error) -> StorageError {
@@ -236,7 +240,7 @@ mod tests {
     fn create_reopen_and_read_only_preserve_schema_and_files() {
         let store = Store::new();
         let ledger = store.open();
-        assert_eq!(ledger.schema_version(), 1);
+        assert_eq!(ledger.schema_version(), schema::VERSION);
         let path = ledger.path().to_owned();
         drop(ledger);
         let before = fs::read(&path).unwrap();
@@ -248,7 +252,7 @@ mod tests {
         drop(readonly);
         assert_eq!(fs::read(&path).unwrap(), before);
         assert_eq!(fs::read_dir(&store.0).unwrap().count(), 1);
-        assert_eq!(store.open().schema_version(), 1);
+        assert_eq!(store.open().schema_version(), schema::VERSION);
     }
 
     #[test]
@@ -283,17 +287,17 @@ mod tests {
         let ledger = store.open();
         ledger
             .connection
-            .pragma_update(None, "user_version", 2)
+            .pragma_update(None, "user_version", schema::VERSION + 1)
             .unwrap();
         drop(ledger);
         let before = fs::read(store.0.join("ledger.sqlite3")).unwrap();
         assert!(matches!(
             Ledger::open(&store.0, OpenMode::ReadOnlyExisting),
-            Err(StorageError::NewerSchema { found: 2, .. })
+            Err(StorageError::NewerSchema { found, .. }) if found==schema::VERSION+1
         ));
         assert!(matches!(
             Ledger::open(&store.0, OpenMode::ReadWriteCreate),
-            Err(StorageError::NewerSchema { found: 2, .. })
+            Err(StorageError::NewerSchema { found, .. }) if found==schema::VERSION+1
         ));
         assert_eq!(before, fs::read(store.0.join("ledger.sqlite3")).unwrap());
         let connection = Connection::open(store.0.join("ledger.sqlite3")).unwrap();
