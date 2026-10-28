@@ -260,6 +260,7 @@ mod tests {
         let turn: crate::history::FinalizedTurn =
             serde_json::from_value(history["turns"][0].clone()).unwrap();
         let mut turn_result = ResultEnvelope::new(Report::Turn(Box::new(TurnReport {
+            questions: turn.request.questions,
             session: Some(turn.session),
             turn: Some(turn.id),
             outcome: turn.outcome,
