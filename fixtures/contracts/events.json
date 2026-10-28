@@ -1,0 +1,156 @@
+[
+  {
+    "version": 1,
+    "sequence": 0,
+    "run": "019a0000-0000-7000-8000-000000000400",
+    "event": {
+      "type": "started"
+    }
+  },
+  {
+    "version": 1,
+    "sequence": 1,
+    "run": "019a0000-0000-7000-8000-000000000400",
+    "event": {
+      "type": "node_state",
+      "node": "initial",
+      "status": "completed",
+      "turn": null
+    }
+  },
+  {
+    "version": 1,
+    "sequence": 2,
+    "run": "019a0000-0000-7000-8000-000000000400",
+    "event": {
+      "type": "terminal",
+      "result": {
+        "version": 1,
+        "result": {
+          "kind": "run",
+          "report": {
+            "run": "019a0000-0000-7000-8000-000000000400",
+            "session": null,
+            "status": "partial",
+            "sources": [],
+            "frontier": [],
+            "nodes": [
+              {
+                "node": "initial",
+                "status": "completed",
+                "turn": null,
+                "outcome": {
+                  "version": 1,
+                  "provider": {
+                    "provider": "fixture",
+                    "model": "offline"
+                  },
+                  "outcomes": [
+                    {
+                      "status": "answered",
+                      "question_id": "travel",
+                      "answer": {
+                        "type": "choice",
+                        "selected": "train",
+                        "distribution": [
+                          {
+                            "option_id": "train",
+                            "probability": 0.7
+                          },
+                          {
+                            "option_id": "flight",
+                            "probability": 0.3
+                          }
+                        ]
+                      },
+                      "confidence": {
+                        "value": 0.8,
+                        "meaning": "fixture native certainty"
+                      }
+                    },
+                    {
+                      "status": "answered",
+                      "question_id": "on_time",
+                      "answer": {
+                        "type": "noul",
+                        "probability": 1.0
+                      },
+                      "confidence": null
+                    },
+                    {
+                      "status": "answered",
+                      "question_id": "quality",
+                      "answer": {
+                        "type": "score",
+                        "value": 1.43,
+                        "probabilities": [
+                          0.0,
+                          0.57,
+                          0.43
+                        ]
+                      },
+                      "confidence": null
+                    },
+                    {
+                      "status": "refused",
+                      "question_id": "private",
+                      "reason": "Unavailable private information"
+                    }
+                  ],
+                  "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "exact": true
+                  }
+                },
+                "error": null
+              },
+              {
+                "node": "high",
+                "status": "failed",
+                "turn": null,
+                "outcome": null,
+                "error": {
+                  "category": "transport",
+                  "code": "timeout",
+                  "message": "Attempt timed out",
+                  "retryable": true
+                }
+              },
+              {
+                "node": "low",
+                "status": "skipped",
+                "turn": null,
+                "outcome": null,
+                "error": null
+              },
+              {
+                "node": "join",
+                "status": "blocked",
+                "turn": null,
+                "outcome": null,
+                "error": null
+              },
+              {
+                "node": "final",
+                "status": "blocked",
+                "turn": null,
+                "outcome": null,
+                "error": null
+              }
+            ],
+            "outputs": [
+              {
+                "name": "optional_low",
+                "value": {
+                  "presence": "absent",
+                  "reason": "skipped"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+]
