@@ -1,0 +1,43 @@
+{
+  "model": "router/food-fixture",
+  "answers": {
+    "meal": {
+      "type": "choice",
+      "choice": "lentils",
+      "probabilities": {
+        "lentils": 0.7,
+        "pasta": 0.3
+      },
+      "confidence": 0.35
+    },
+    "available": {
+      "type": "noul",
+      "noul": 1.0
+    },
+    "quality": {
+      "type": "score",
+      "score": 0.6,
+      "probabilities": {
+        "0": 0.4,
+        "1": 0.6,
+        "2": 0.0
+      },
+      "confidence": 0.35,
+      "legend": {
+        "0": "Over budget",
+        "1": {
+          "label": "Affordable",
+          "description": "Meets spending limit"
+        },
+        "2": "Comfortable"
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 20,
+    "cost": 1.23e-05
+  },
+  "id": "fixture-router-request",
+  "provider": "OpenAI"
+}

@@ -1,119 +1,28 @@
+#[path = "support/harness.rs"]
+pub mod harness;
 #[path = "support/loopback.rs"]
-mod loopback;
+pub mod loopback;
+use harness::{Home, questions, report, run_report, turn, workflow};
 use loopback::Server;
 use nouli_core::{
     codec,
     context::{ContextKind, ContextRecord, ContextUpdate},
     data::{Data, Input},
-    decision::TurnRequest,
-    history::{EvaluationRequest, ModelSelection, SessionSelection},
+    history::{EvaluationRequest, SessionSelection},
     identity::Id,
-    protocol::{Report, ResultEnvelope, TurnReport},
+    protocol::{Report, ResultEnvelope},
     storage::{Ledger, OpenMode},
 };
 use std::{
     io::Write,
-    path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Stdio},
 };
-struct Home(PathBuf);
-impl Home {
-    fn new() -> Self {
-        let home = Self(std::env::temp_dir().join(format!("nouli-cli-eval-{}", Id::generate())));
-        std::fs::create_dir_all(&home.0).unwrap();
-        home
-    }
-    fn store(&self) -> PathBuf {
-        self.0.join("ledger")
-    }
-    fn configure(&self, server: &Server, protocol: &str, credential: bool) {
-        let config = format!(
-            "default_provider = \"local\"\n[execution]\nmax_attempts = 1\nattempt_timeout_seconds = 5\n[providers.local]\nprotocol = \"{protocol}\"\nbase_url = \"{}\"\nmodel = \"offline\"\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n{}",
-            server.url,
-            if credential {
-                "api_key_env = \"NOULI_FIXTURE_KEY\"\n"
-            } else {
-                ""
-            }
-        );
-        std::fs::write(self.0.join("config.toml"), config).unwrap();
-    }
-    fn command(&self) -> Command {
-        self.command_at(&self.store())
-    }
-    fn command_at(&self, store: &std::path::Path) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_nouli"));
-        cmd.env_clear()
-            .env("HOME", &self.0)
-            .arg("--config")
-            .arg(self.0.join("config.toml"))
-            .arg("--store")
-            .arg(store);
-        cmd
-    }
-    fn run(&self, args: &[&str]) -> Output {
-        self.command().args(args).output().unwrap()
-    }
-    fn request(
-        &self,
-        path: &str,
-        selection: SessionSelection,
-        marker: &str,
-        updates: Vec<ContextUpdate>,
-    ) -> PathBuf {
-        let mut turn = turn();
-        turn.state.push(Input::Text {
-            text: marker.into(),
-        });
-        let request = EvaluationRequest {
-            turn,
-            session: selection,
-            updates,
-            required_records: vec![],
-            model: ModelSelection::default(),
-            request_id: None,
-        };
-        let path = self.0.join(path);
-        std::fs::write(&path, serde_json::to_vec_pretty(&request).unwrap()).unwrap();
-        path
-    }
-}
-impl Drop for Home {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
-    }
-}
-fn turn() -> TurnRequest {
-    let mut turn: TurnRequest = serde_json::from_str(include_str!(
-        "../../fixtures/contracts/decision-request.json"
-    ))
-    .unwrap();
-    turn.questions.truncate(3);
-    turn
-}
-fn report(output: Output) -> TurnReport {
-    assert!(
-        output.status.success(),
-        "exit={:?},stderr={}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stderr.is_empty());
-    let result: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Turn(turn) = result.result else {
-        panic!("turn report")
-    };
-    *turn
-}
-fn questions() -> String {
-    serde_json::to_string(&turn().questions).unwrap()
-}
 #[test]
 fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engine() {
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let questions = questions();
     let seed = report(home.run(&[
@@ -196,7 +105,7 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let record = ContextRecord {
         id: Id::generate(),
@@ -276,7 +185,7 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", true);
     let questions = questions();
     let missing = home.run(&[
@@ -366,7 +275,7 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
         ),
     ] {
         let server = Server::new(response);
-        let home = Home::new();
+        let home = Home::create();
         home.configure(&server, protocol, false);
         let mut request = turn();
         if full_questions {
@@ -394,7 +303,7 @@ fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let path = home.0.join("config.toml");
     let config = std::fs::read_to_string(&path)
@@ -439,7 +348,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", true);
     let keyed = |args: &[&str]| {
         home.command()
@@ -691,7 +600,7 @@ fn readonly_inspection_rejects_newer_and_migration_required_stores_without_chang
         (999, "newer_ledger_schema"),
         (1, "ledger_migration_required"),
     ] {
-        let home = Home::new();
+        let home = Home::create();
         std::fs::write(home.0.join("config.toml"), "").unwrap();
         let mut ledger = Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap();
         ledger
@@ -713,31 +622,6 @@ fn readonly_inspection_rejects_newer_and_migration_required_stores_without_chang
     }
 }
 
-fn workflow() -> nouli_core::workflow::WorkflowSpec {
-    let mut definition: nouli_core::workflow::WorkflowSpec =
-        serde_json::from_str(include_str!("../../fixtures/contracts/workflow.json")).unwrap();
-    for node in &mut definition.nodes {
-        node.turn.questions.truncate(3);
-        node.turn.state.push(Input::Text {
-            text: format!("NODE:{}", node.id),
-        });
-    }
-    definition
-}
-fn run_report(output: Output, expected: u8) -> nouli_core::protocol::RunReport {
-    assert_eq!(
-        output.status.code(),
-        Some(i32::from(expected)),
-        "stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stderr.is_empty());
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Run(report) = envelope.result else {
-        panic!("run report")
-    };
-    report
-}
 #[test]
 fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_outputs() {
     use nouli_core::{
@@ -747,7 +631,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
@@ -886,7 +770,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
             )
         }
     });
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let budget = ContextRecord {
         id: Id::generate(),
@@ -1021,7 +905,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
             )
         }
     });
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
@@ -1095,7 +979,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let spec = workflow();
     let file = home.0.join("workflow.toon");
@@ -1170,7 +1054,7 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
             include_str!("../../fixtures/providers/typesafe/response.json").into(),
         )
     });
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
@@ -1236,7 +1120,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = workflow();
     graph.nodes.truncate(1);
@@ -1304,7 +1188,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     let server = Server::new(include_str!(
         "../../fixtures/providers/typesafe/response.json"
     ));
-    let home = Home::new();
+    let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = workflow();
     graph.nodes.truncate(1);

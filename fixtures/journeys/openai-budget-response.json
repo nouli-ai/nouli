@@ -1,0 +1,53 @@
+{
+  "model": "openai-food-fixture",
+  "answers": [
+    {
+      "type": "choice",
+      "name": "meal",
+      "choice": "lentils",
+      "confidence": 0.8,
+      "probabilities": [
+        {
+          "value": "pasta",
+          "probability": 0.3
+        },
+        {
+          "value": "lentils",
+          "probability": 0.7
+        }
+      ]
+    },
+    {
+      "type": "predicate",
+      "name": "available",
+      "probability": 0.0
+    },
+    {
+      "type": "score",
+      "name": "quality",
+      "score": 0.6,
+      "confidence": 0.35,
+      "probabilities": [
+        {
+          "value": 0,
+          "label": "Over budget",
+          "probability": 0.4
+        },
+        {
+          "value": 1,
+          "label": "Affordable",
+          "probability": 0.6
+        },
+        {
+          "value": 2,
+          "label": "Comfortable",
+          "probability": 0.0
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 20
+  }
+}

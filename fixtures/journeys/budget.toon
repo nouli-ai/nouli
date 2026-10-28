@@ -1,0 +1,33 @@
+version: 1
+state[2]:
+  - type: "text"
+    text: "BUDGET_FOLLOWUP"
+  - type: "structured"
+    data:
+      budget: 8
+questions[3]:
+  - id: "meal"
+    prompt: "What should we cook?"
+    criteria[2]:
+      - "Prefer vegetarian meals"
+      - "Use available time"
+    answer_space:
+      type: "choice"
+      options[2]:
+        - id: "lentils"
+          description: "Lentil stew"
+        - id: "pasta"
+          description: "Pasta with tomato sauce"
+  - id: "available"
+    prompt: "Are the ingredients available?"
+    answer_space:
+      type: "noul"
+  - id: "quality"
+    prompt: "Rate spending flexibility."
+    answer_space:
+      type: "score"
+      levels[3]:
+        - "Over budget"
+        - label: "Affordable"
+          description: "Meets spending limit"
+        - "Comfortable"
