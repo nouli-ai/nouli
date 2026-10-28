@@ -18,6 +18,7 @@ pub mod limits;
 pub mod outcome;
 pub mod protocol;
 pub mod provider;
+pub mod storage;
 pub mod transport;
 pub mod workflow;
 
