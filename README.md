@@ -34,6 +34,7 @@ Sessions persist by default in `~/.nouli`; names are optional. One `--from` bran
 - [Workflows, events, and recovery](docs/cli-workflows.md)
 - [Output formats and exit codes](docs/output.md)
 - [Actual context and complete history inspection](docs/inspection.md)
+- [Local release packaging and installation](docs/release.md)
 - [Rust embedding API and executable fake-provider example](docs/embedding.md)
 
 V1 does not include a REPL, model tool execution, images/audio/video, loops, an expression language, standalone context mutation, OS keychains, or project/directory session discovery. Those are future scope; no model is installed or bundled. Release publication, signing/notarization, license selection, and registry delivery require separate owner decisions and authority.
