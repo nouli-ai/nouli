@@ -1,5 +1,6 @@
 //! Fixed source points and immutable finalized decision history.
 
+pub mod base;
 pub mod order;
 
 use serde::{Deserialize, Serialize};
@@ -125,6 +126,14 @@ pub struct EvaluationManifest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FinalizedTurn {
+    #[serde(default)]
+    pub context_base: Option<base::ContextBase>,
+    #[serde(default)]
+    pub workflow_run: Option<Id>,
+    #[serde(default)]
+    pub runtime_only: bool,
+    #[serde(default)]
+    pub workflow_node: Option<String>,
     pub id: Id,
     pub session: Id,
     /// Stable caller-source or workflow declaration order for unrelated parents.
@@ -223,7 +232,14 @@ impl EvaluationRequest {
         {
             return Err(HistoryError::InvalidSelection);
         }
-        if let SessionSelection::From { sources, .. } = &self.session {
+        self.session.validate()?;
+        Ok(())
+    }
+}
+
+impl SessionSelection {
+    pub fn validate(&self) -> Result<(), HistoryError> {
+        if let Self::From { sources, .. } = self {
             if sources.is_empty() {
                 return Err(HistoryError::InvalidSelection);
             }
@@ -246,6 +262,33 @@ impl EvaluationRequest {
 
 impl FinalizedTurn {
     pub fn validate(&self) -> Result<(), HistoryError> {
+        if self
+            .workflow_node
+            .as_ref()
+            .is_some_and(|node| node.trim().is_empty())
+            || self.workflow_node.is_some() != self.workflow_run.is_some()
+        {
+            return Err(HistoryError::InvalidManifest);
+        }
+        if let Some(base) = &self.context_base {
+            base.validate()?;
+            if Some(base.id) != self.workflow_run
+                || base.session != self.session
+                || base.runtime_only != self.runtime_only
+            {
+                return Err(HistoryError::InvalidManifest);
+            }
+        } else if self.workflow_run.is_some() {
+            return Err(HistoryError::InvalidManifest);
+        }
+        if self.runtime_only
+            && self
+                .workflow_node
+                .as_ref()
+                .is_none_or(|node| node.trim().is_empty())
+        {
+            return Err(HistoryError::InvalidManifest);
+        }
         self.outcome.validate(&self.request)?;
         for update in &self.updates {
             update.validate()?;

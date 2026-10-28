@@ -23,9 +23,18 @@ use tokio::task::{Id as TaskId, JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeEvaluation {
+    pub request: TurnRequest,
+    pub updates: Vec<crate::context::ContextUpdate>,
+    pub manifest: crate::history::EvaluationManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeOutput {
     pub outcome: TurnOutcome,
     pub source: Option<SourcePoint>,
+    #[serde(default)]
+    pub evaluation: Option<NodeEvaluation>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedBinding {
@@ -77,10 +86,27 @@ pub trait NodeExecutor: Send + Sync + 'static {
         cancel: CancellationToken,
     ) -> impl Future<Output = Result<NodeOutput, ErrorReport>> + Send;
 }
+pub trait ScheduleObserver: Send + Sync + 'static {
+    fn changed(
+        &self,
+        node: usize,
+        progress: NodeProgress,
+    ) -> impl Future<Output = Result<(), ErrorReport>> + Send;
+}
+#[derive(Default)]
+pub struct NoopObserver;
+impl ScheduleObserver for NoopObserver {
+    async fn changed(&self, _node: usize, _progress: NodeProgress) -> Result<(), ErrorReport> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ScheduleError {
     #[error("parallelism must be positive")]
     Parallelism,
+    #[error("workflow progress observer failed")]
+    Observer(ErrorReport),
     #[error("scheduler task or graph state is inconsistent")]
     State,
     #[error(transparent)]
@@ -125,7 +151,7 @@ fn binding(
         required_missing,
     })
 }
-fn compiled_binding(
+pub(crate) fn compiled_binding(
     binding: &CompiledBinding,
     nodes: &[NodeProgress],
 ) -> Result<ResolvedBinding, ResolveError> {
@@ -138,7 +164,8 @@ fn compiled_binding(
 
 type TaskResult = Result<(TaskId, (usize, Result<NodeOutput, ErrorReport>)), JoinError>;
 
-struct Scheduler<'a, E> {
+struct Scheduler<'a, E, O> {
+    observer: Arc<O>,
     graph: &'a CompiledWorkflow,
     executor: Arc<E>,
     limit: usize,
@@ -149,7 +176,7 @@ struct Scheduler<'a, E> {
     start_order: Vec<usize>,
     completion_order: Vec<usize>,
 }
-impl<E: NodeExecutor> Scheduler<'_, E> {
+impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
     fn prepare(&mut self, id: usize) -> Result<Option<NodeCall>, ResolveError> {
         let plan = &self.graph.nodes()[id];
         let definition = &self.graph.definition().nodes[id];
@@ -246,7 +273,7 @@ impl<E: NodeExecutor> Scheduler<'_, E> {
             ancestors,
         }))
     }
-    fn complete(&mut self, result: TaskResult, canceling: bool) -> Result<(), ScheduleError> {
+    fn complete(&mut self, result: TaskResult, canceling: bool) -> Result<usize, ScheduleError> {
         let (id, result) = match result {
             Ok((task, (id, result))) => {
                 if self.owners.remove(&task) != Some(id) {
@@ -263,7 +290,7 @@ impl<E: NodeExecutor> Scheduler<'_, E> {
                     self.nodes[id].status = NodeStatus::Interrupted;
                     self.nodes[id].error =
                         Some(self::error(ErrorCategory::Interrupted, "node_interrupted"));
-                    return Ok(());
+                    return Ok(id);
                 }
                 (
                     id,
@@ -298,7 +325,7 @@ impl<E: NodeExecutor> Scheduler<'_, E> {
                 self.nodes[id].error = Some(error);
             }
         }
-        Ok(())
+        Ok(id)
     }
     async fn drive(&mut self) -> Result<bool, ScheduleError> {
         loop {
@@ -328,19 +355,32 @@ impl<E: NodeExecutor> Scheduler<'_, E> {
                         let executor = self.executor.clone();
                         let cancel = self.cancel.child_token();
                         self.nodes[id].status = NodeStatus::Running;
+                        self.observer
+                            .changed(id, self.nodes[id].clone())
+                            .await
+                            .map_err(ScheduleError::Observer)?;
                         self.start_order.push(id);
                         let task = self
                             .tasks
                             .spawn(async move { (id, executor.execute(call, cancel).await) });
                         self.owners.insert(task.id(), id);
                     }
-                    Ok(None) => {}
+                    Ok(None) => {
+                        self.observer
+                            .changed(id, self.nodes[id].clone())
+                            .await
+                            .map_err(ScheduleError::Observer)?;
+                    }
                     Err(_) => {
                         self.nodes[id].status = NodeStatus::Blocked;
                         self.nodes[id].error = Some(error(
                             ErrorCategory::Contract,
                             "condition_input_unavailable",
                         ));
+                        self.observer
+                            .changed(id, self.nodes[id].clone())
+                            .await
+                            .map_err(ScheduleError::Observer)?;
                     }
                 }
             }
@@ -354,45 +394,45 @@ impl<E: NodeExecutor> Scheduler<'_, E> {
                 }
                 return Err(ScheduleError::State);
             }
-            tokio::select! {biased;_=self.cancel.cancelled()=>return Ok(true),result=self.tasks.join_next_with_id()=>self.complete(result.ok_or(ScheduleError::State)?,false)?}
+            tokio::select! {biased;_=self.cancel.cancelled()=>return Ok(true),result=self.tasks.join_next_with_id()=>{let id=self.complete(result.ok_or(ScheduleError::State)?,false)?;self.observer.changed(id,self.nodes[id].clone()).await.map_err(ScheduleError::Observer)?;}}
         }
     }
-    fn outputs(&self) -> Result<Vec<ResolvedBinding>, ResolveError> {
-        if !self.graph.outputs().is_empty() {
-            return self
-                .graph
-                .outputs()
-                .iter()
-                .map(|binding| compiled_binding(binding, &self.nodes))
-                .collect();
-        }
-        let mut outputs = Vec::new();
-        for node in self.graph.fallback_outputs() {
-            for question in &self.graph.definition().nodes[*node].turn.questions {
-                let reference = ResultReference {
-                    node: self.graph.definition().nodes[*node].id.clone(),
-                    question: question.id.clone(),
-                    field: ResultField::Outcome,
-                    pointer: None,
-                    on_missing: MissingPolicy::Optional,
-                };
-                let value = resolve::select(
-                    &reference,
-                    self.nodes[*node].status,
-                    self.nodes[*node]
-                        .output
-                        .as_ref()
-                        .map(|output| &output.outcome),
-                )?;
-                outputs.push(binding(
-                    format!("{}.{}", reference.node, reference.question),
-                    reference,
-                    value,
-                )?);
-            }
-        }
-        Ok(outputs)
+}
+
+pub(crate) fn project_outputs(
+    graph: &CompiledWorkflow,
+    nodes: &[NodeProgress],
+) -> Result<Vec<ResolvedBinding>, ResolveError> {
+    if !graph.outputs().is_empty() {
+        return graph
+            .outputs()
+            .iter()
+            .map(|binding| compiled_binding(binding, nodes))
+            .collect();
     }
+    let mut outputs = Vec::new();
+    for node in graph.fallback_outputs() {
+        for question in &graph.definition().nodes[*node].turn.questions {
+            let reference = ResultReference {
+                node: graph.definition().nodes[*node].id.clone(),
+                question: question.id.clone(),
+                field: ResultField::Outcome,
+                pointer: None,
+                on_missing: MissingPolicy::Optional,
+            };
+            let value = resolve::select(
+                &reference,
+                nodes[*node].status,
+                nodes[*node].output.as_ref().map(|output| &output.outcome),
+            )?;
+            outputs.push(binding(
+                format!("{}.{}", reference.node, reference.question),
+                reference,
+                value,
+            )?);
+        }
+    }
+    Ok(outputs)
 }
 
 pub async fn schedule<E: NodeExecutor>(
@@ -401,10 +441,21 @@ pub async fn schedule<E: NodeExecutor>(
     parallelism: usize,
     cancel: CancellationToken,
 ) -> Result<ScheduleResult, ScheduleError> {
+    schedule_observed(graph, executor, Arc::new(NoopObserver), parallelism, cancel).await
+}
+
+pub async fn schedule_observed<E: NodeExecutor, O: ScheduleObserver>(
+    graph: Arc<CompiledWorkflow>,
+    executor: Arc<E>,
+    observer: Arc<O>,
+    parallelism: usize,
+    cancel: CancellationToken,
+) -> Result<ScheduleResult, ScheduleError> {
     if parallelism == 0 {
         return Err(ScheduleError::Parallelism);
     }
     let mut scheduler = Scheduler {
+        observer,
         graph: &graph,
         executor,
         limit: parallelism.min(graph.definition().max_parallel),
@@ -432,8 +483,17 @@ pub async fn schedule<E: NodeExecutor>(
     }
     let mut cleanup_error = None;
     while let Some(result) = scheduler.tasks.join_next_with_id().await {
-        if let Err(error) = scheduler.complete(result, canceling) {
-            cleanup_error = Some(error);
+        match scheduler.complete(result, canceling) {
+            Ok(id) => {
+                if let Err(error) = scheduler
+                    .observer
+                    .changed(id, scheduler.nodes[id].clone())
+                    .await
+                {
+                    cleanup_error = Some(ScheduleError::Observer(error));
+                }
+            }
+            Err(error) => cleanup_error = Some(error),
         }
     }
     let canceled = result?;
@@ -441,14 +501,19 @@ pub async fn schedule<E: NodeExecutor>(
         return Err(error);
     }
     if canceled {
-        for node in &mut scheduler.nodes {
+        for (index, node) in scheduler.nodes.iter_mut().enumerate() {
             if matches!(node.status, NodeStatus::Pending | NodeStatus::Running) {
                 node.status = NodeStatus::Interrupted;
                 node.error = Some(error(ErrorCategory::Interrupted, "node_interrupted"));
+                scheduler
+                    .observer
+                    .changed(index, node.clone())
+                    .await
+                    .map_err(ScheduleError::Observer)?;
             }
         }
     }
-    let outputs = scheduler.outputs()?;
+    let outputs = project_outputs(scheduler.graph, &scheduler.nodes)?;
     let partial = scheduler
         .nodes
         .iter()
@@ -533,6 +598,7 @@ mod tests {
             Ok(NodeOutput {
                 outcome: outcome(),
                 source: None,
+                evaluation: None,
             })
         }
     }
@@ -668,6 +734,7 @@ mod tests {
                 Ok(NodeOutput {
                     outcome: outcome(),
                     source: None,
+                    evaluation: None,
                 })
             }
         }

@@ -1,0 +1,15 @@
+# Workflow execution
+
+`Arc<Engine>::evaluate_workflow` freezes the compiled graph, base state, source points, output plan, and each node's resolved nonsecret settings before dispatch. `evaluate_workflow_observed` also accepts a progress observer. Node-specific selections override run selections; fully specified nodes do not require an unused run-level provider. Credentials are resolved only for nodes that execute, using their saved source names.
+
+A durable run owns one session writer guard and one run guard. Authorized internal node attempts share that owner while retaining separate immutable intents, stable request identities, contexts, and outcomes. Every node's turn belongs to the target session, with parents selected from its completed declared dependencies or the original source snapshot. The moving session frontier never supplies a sibling's input.
+
+A shared `ContextBase` captures the caller's workflow state and context updates. It is a caller event, not a model judgment. Its immutable identity makes multiple root nodes inherit the same revisions once. The first successful node publication adopts the base and its records atomically; a failed publication adopts nothing. Each node's current base state and pins are protected. Node state and resolved reference bindings remain separately labeled inputs.
+
+Successful publication atomically saves the full node turn, base revisions, actual manifest, attempt completion, node status, and session frontier. The frontier contains completed branch heads in declaration order, with their ancestors deduplicated. Partial runs retain useful results without another model call or a synthetic recommendation. Ordinary continuation sees their union. Actual served model metadata can differ from a requested alias and remains recorded.
+
+Progress is persisted before the observer sees its canonical node snapshot. Cancellation drains owned tasks, records interrupted attempts, and retains successful publications. A failed progress sink records interruption where storage permits and returns the saved run identity. Root results cannot finalize while nodes or attempts are live, and terminal output projection is checked against durable node state. Aggregate inspection uses one SQLite read snapshot.
+
+Workflow and internal node request IDs share the store-wide reservation namespace with ordinary evaluations, with distinct immutable kinds. Completed replay returns saved results without current configuration or credential lookup. Incomplete runs require explicit recovery. Frozen definitions and completed outcomes cannot be edited through these APIs.
+
+An ephemeral workflow uses the same scheduler and decision execution without a recorder. Saved sources require a read-only worker; fresh runs need no store or home directory. New ancestry lives in memory and is labeled by workflow node. Returned persisted session/run/frontier identities are absent, and source manifests retain only actual saved source points. Caller revisions remain local to that execution.

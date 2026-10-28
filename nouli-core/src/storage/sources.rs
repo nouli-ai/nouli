@@ -59,6 +59,28 @@ pub(super) fn resolve_on(
         .collect()
 }
 
+pub(super) fn resolve_selection(
+    connection: &Connection,
+    selection: &crate::history::SessionSelection,
+    current: &Session,
+) -> Result<Vec<SourcePoint>, SourceError> {
+    use crate::history::SessionSelection;
+    match selection {
+        SessionSelection::New { .. } => Ok(vec![]),
+        SessionSelection::Continue { .. } => {
+            if current.frontier.is_empty() {
+                Ok(super::sessions::read_sources(connection, current.id)?)
+            } else {
+                Ok(vec![SourcePoint {
+                    session: current.id,
+                    frontier: current.frontier.clone(),
+                }])
+            }
+        }
+        SessionSelection::From { sources, .. } => resolve_on(connection, sources),
+    }
+}
+
 impl Ledger {
     /// One read transaction freezes all unspecified heads together. This also
     /// works on a read-only ledger and creates no session or guard files.

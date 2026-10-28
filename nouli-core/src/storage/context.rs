@@ -109,7 +109,13 @@ mod tests {
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].record, record);
         assert!(active[0].pinned);
-        assert_eq!(active[0].source_turn, turn.id);
+        assert_eq!(
+            active[0].origin,
+            crate::context::projection::RevisionOrigin::Turn {
+                session: turn.session,
+                turn: turn.id
+            }
+        );
         drop(guard);
         drop(ledger);
         let ledger = Ledger::open(&root, OpenMode::ReadOnlyExisting).unwrap();

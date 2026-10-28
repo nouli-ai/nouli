@@ -35,15 +35,19 @@ impl ContextPolicy for Staged {
 }
 #[derive(Deserialize)]
 struct Decision {
-    session: Id,
-    turn: Id,
+    session: Option<Id>,
+    turn: Option<Id>,
+    #[serde(default)]
+    workflow_node: Option<String>,
     request: TurnRequest,
     outcome: TurnOutcome,
 }
 #[derive(Serialize)]
 struct CompactDecision<'a> {
-    session: Id,
-    turn: Id,
+    session: Option<Id>,
+    turn: Option<Id>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workflow_node: Option<&'a str>,
     provider: &'a ProviderIdentity,
     results: Vec<CompactResult<'a>>,
 }
@@ -165,6 +169,7 @@ fn compact(value: &Data) -> Result<Data, BuildError> {
     let compact = CompactDecision {
         session: decision.session,
         turn: decision.turn,
+        workflow_node: decision.workflow_node.as_deref(),
         provider: &decision.outcome.provider,
         results,
     };
@@ -252,6 +257,8 @@ mod tests {
         }];
         ContextBuilder::build(
             ContextInput {
+                context_base: None,
+                runtime_only: false,
                 history,
                 sources: &sources,
                 request: &head.request,
@@ -340,6 +347,8 @@ mod tests {
         }];
         let reversed = ContextBuilder::build(
             ContextInput {
+                context_base: None,
+                runtime_only: false,
                 history: &history,
                 sources: &sources,
                 request: &head.request,
