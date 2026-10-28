@@ -1,5 +1,6 @@
 //! Append-only context lifecycle contracts; active revisions are branch-local.
 
+pub mod builder;
 pub mod projection;
 
 use std::collections::HashSet;

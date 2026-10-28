@@ -109,6 +109,11 @@ pub fn decode_request(bytes: &[u8], format: InputFormat) -> Result<Request, Code
     }
 }
 
+/// Convert serializable input without allowing non-finite values to become null.
+pub fn to_value<T: Serialize>(value: &T) -> Result<Value, CodecError> {
+    serialize::checked_value(value)
+}
+
 /// Official TOON encoding, checked against a strict decode before use. Numeric
 /// spelling and object-key order are canonicalized; array/history order is kept.
 pub fn encode_toon<T: Serialize>(value: &T) -> Result<String, CodecError> {
