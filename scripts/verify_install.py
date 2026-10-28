@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -46,6 +47,10 @@ def main():
             raise ValueError('expected exactly one package manifest')
         stage = manifests[0].parent
         manifest = json.loads(manifests[0].read_text())
+        native = {('Darwin', 'arm64'): 'aarch64-apple-darwin',
+                  ('Linux', 'aarch64'): 'aarch64-unknown-linux-gnu'}.get((platform.system(), platform.machine()))
+        if manifest['target'] != native:
+            raise SystemExit(f"Cannot run staged {manifest['target']} binary on this host; verify installation on its matching native target.")
         for relative, expected_hash in manifest['files'].items():
             path = stage / relative
             if not path.resolve().is_relative_to(stage.resolve()) or digest(path) != expected_hash:
