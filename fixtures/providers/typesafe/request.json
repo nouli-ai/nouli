@@ -1,0 +1,39 @@
+{
+  "model": "english",
+  "state": "evidence: fixture",
+  "questions": {
+    "travel": {
+      "type": "choice",
+      "instructions": {
+        "question": "Which route?",
+        "criteria": [
+          "Prefer reliability",
+          {
+            "label": "Time",
+            "description": "Minimize travel duration"
+          }
+        ]
+      },
+      "criteria": {
+        "train": "Rail",
+        "flight": "Air"
+      }
+    },
+    "on_time": {
+      "type": "noul",
+      "instructions": "Will the train arrive on time?"
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate the route quality",
+      "criteria": [
+        "Poor",
+        {
+          "label": "Adequate",
+          "description": "Meets minimum requirements"
+        },
+        "Excellent"
+      ]
+    }
+  }
+}

@@ -25,8 +25,11 @@ pub struct ProviderIdentity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Confidence {
-    pub value: f64,
+    pub value: Option<f64>,
     pub meaning: String,
+    /// Optional native maximum-answer probability, separate from confidence.
+    #[serde(default)]
+    pub answer_confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -210,10 +213,16 @@ impl QuestionOutcome {
             } => {
                 answer.validate(question)?;
                 if let Some(confidence) = confidence {
-                    if !confidence.value.is_finite() {
+                    if confidence.value.is_none() && confidence.answer_confidence.is_none() {
+                        return Err(ContractError::Empty("confidence"));
+                    }
+                    if confidence.value.is_some_and(|value| !value.is_finite()) {
                         return Err(ContractError::Number("confidence"));
                     }
                     nonempty(&confidence.meaning, "confidence.meaning")?;
+                    if let Some(answer_confidence) = confidence.answer_confidence {
+                        probability(answer_confidence)?;
+                    }
                 }
                 Ok(())
             }
