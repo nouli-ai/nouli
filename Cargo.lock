@@ -839,6 +839,7 @@ dependencies = [
  "clap",
  "nix",
  "nouli-core",
+ "rusqlite",
  "serde_json",
  "thiserror",
  "tokio",
