@@ -1,6 +1,7 @@
 //! Frozen workflow ownership and short durable repository operations.
 mod completion;
 pub mod nodes;
+pub mod recovery;
 use super::{
     Ledger, StorageError,
     guards::{self, FileGuard, GuardError, RunGuard, SessionGuard},
@@ -52,6 +53,8 @@ pub struct StoredRun {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowEvent {
+    #[serde(default)]
+    pub round: u32,
     pub kind: WorkflowEventKind,
     pub progress: Option<NodeProgress>,
     pub node: Option<usize>,
@@ -110,6 +113,8 @@ pub enum WorkflowError {
     IntentConflict,
     #[error("workflow does not exist")]
     UnknownRun,
+    #[error("session head advanced beyond the saved workflow frontier")]
+    AdvancedHead,
     #[error("workflow ownership or node state changed")]
     Conflict,
     #[error("workflow snapshot is inconsistent")]
@@ -181,6 +186,44 @@ pub(super) fn event(
 ) -> Result<(), StorageError> {
     tx.execute("INSERT INTO workflow_events(run_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM workflow_events WHERE run_id=?1",params![run.to_string(),Ledger::encode_payload(event)?]).map_err(|error|sql_error("append workflow event",error))?;
     Ok(())
+}
+pub(super) fn round_order(
+    ledger: &Ledger,
+    run: Id,
+    round: u32,
+) -> Result<(Vec<usize>, Vec<usize>), WorkflowError> {
+    let mut statement = ledger
+        .connection
+        .prepare("SELECT payload_toon FROM workflow_events WHERE run_id=?1 ORDER BY sequence")
+        .map_err(|error| sql_error("read workflow event order", error))?;
+    let payloads = statement
+        .query_map([run.to_string()], |row| row.get::<_, String>(0))
+        .map_err(|error| sql_error("read workflow events", error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| sql_error("decode workflow events", error))?;
+    drop(statement);
+    let mut start_order = Vec::new();
+    let mut completion_order = Vec::new();
+    for payload in payloads {
+        let event: WorkflowEvent = Ledger::decode_payload(&payload)?;
+        if event.round != round {
+            continue;
+        }
+        if let Some(node) = event.node {
+            if event.kind == WorkflowEventKind::NodeState
+                && event.node_status == Some(NodeStatus::Running)
+            {
+                start_order.push(node);
+            }
+            if event.turn.is_some()
+                || (event.kind == WorkflowEventKind::NodeState
+                    && event.node_status == Some(NodeStatus::Failed))
+            {
+                completion_order.push(node);
+            }
+        }
+    }
+    Ok((start_order, completion_order))
 }
 pub(super) fn child_key(run: Id, node: usize) -> String {
     format!("{run}/node/{node}")
@@ -424,7 +467,7 @@ impl Ledger {
                 tx.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon,kind) VALUES(?1,?2,?3,?4,'pending',?5,'workflow_node')",params![session.to_string(),child_key(run,index),codec::fingerprint(&(run,index)).map_err(|_|WorkflowError::Snapshot)?,session_guard.owner.to_string(),Self::encode_payload(&(run,index))?]).map_err(|error|sql_error("reserve stable node identity",error))?;
             }
             event(tx,run,&WorkflowEvent {
-                    kind:WorkflowEventKind::RunStarted,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Running),attempt:None,turn:None})?;Ok(definition)
+                    round:0,kind:WorkflowEventKind::RunStarted,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Running),attempt:None,turn:None})?;Ok(definition)
         })?;
         Ok(WorkflowDecision::Accepted(Box::new(WorkflowOwner {
             round: 0,

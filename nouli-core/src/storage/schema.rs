@@ -3,13 +3,14 @@
 use super::{StorageError, sql_error};
 use rusqlite::{Connection, TransactionBehavior};
 
-pub(super) const VERSION: u32 = 4;
+pub(super) const VERSION: u32 = 5;
 const APPLICATION_ID: i64 = 0x4e4f554c;
 pub(super) const MIGRATIONS: &[&str] = &[
     include_str!("schema/0001.sql"),
     include_str!("schema/0002.sql"),
     include_str!("schema/0003.sql"),
     include_str!("schema/0004.sql"),
+    include_str!("schema/0005.sql"),
 ];
 
 fn identity(connection: &Connection) -> Result<(i64, u32), StorageError> {
@@ -199,6 +200,56 @@ mod tests {
                 .execute("DELETE FROM context_records WHERE id='r'", [])
                 .is_err()
         );
+        assert!(
+            !connection
+                .prepare("PRAGMA foreign_key_check")
+                .unwrap()
+                .exists([])
+                .unwrap()
+        );
+    }
+    #[test]
+    fn existing_v4_terminal_run_is_backfilled_as_an_immutable_round_result() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .unwrap();
+        connection
+            .pragma_update(None, "recursive_triggers", true)
+            .unwrap();
+        migrate(&mut connection, &MIGRATIONS[..4]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO workflow_runs(id,session_id,definition_toon,settings_toon,state,frontier_toon,result_toon,published_revision) VALUES('r','s','definition','settings','interrupted','frontier','saved-result',3)",[]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES('r',0,'old-owner')",
+                [],
+            )
+            .unwrap();
+        migrate(&mut connection, MIGRATIONS).unwrap();
+        let saved:(u32,String,String,i64,String)=connection.query_row("SELECT round,state,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id='r'",[],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).unwrap();
+        assert_eq!(
+            saved,
+            (
+                0,
+                "interrupted".into(),
+                "frontier".into(),
+                3,
+                "saved-result".into()
+            )
+        );
+        for sql in [
+            "UPDATE workflow_round_results SET state='completed'",
+            "DELETE FROM workflow_round_results",
+            "INSERT OR REPLACE INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES('r',0,'completed','[]',4,'changed')",
+        ] {
+            assert!(connection.execute(sql, []).is_err());
+        }
         assert!(
             !connection
                 .prepare("PRAGMA foreign_key_check")

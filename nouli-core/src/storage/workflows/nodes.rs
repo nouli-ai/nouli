@@ -93,6 +93,7 @@ pub(crate) fn node_output(turn: &FinalizedTurn) -> NodeOutput {
     }
 }
 fn node_event(
+    round: u32,
     node: usize,
     kind: WorkflowEventKind,
     progress: Option<NodeProgress>,
@@ -100,6 +101,7 @@ fn node_event(
     turn: Option<Id>,
 ) -> WorkflowEvent {
     WorkflowEvent {
+        round,
         kind,
         node: Some(node),
         node_status: progress
@@ -299,7 +301,7 @@ impl Ledger {
                 let rows=statement.query_map(params![definition.run.to_string(),name],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))).map_err(|error|sql_error("read node attempt states",error))?.collect::<Result<Vec<_>,_>>().map_err(|error|sql_error("read node attempts",error))?;drop(statement);
                 for (id,state) in rows {let id=Id::try_from(id).map_err(|_|StorageError::Payload)?;tx.execute("UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1",[id.to_string()]).map_err(|error|sql_error("interrupt node attempt",error))?;progress_event(tx,id,&AttemptProgress {state:AttemptStatus::Interrupted,error:Some(crate::protocol::ErrorReport {category:crate::protocol::ErrorCategory::Interrupted,code:if state=="running" {"provider_outcome_unknown"} else {"not_dispatched"}.into(),message:"Workflow node interrupted".into(),retryable:false})})?;}
             }
-            event(tx,definition.run,&node_event(node,WorkflowEventKind::NodeState,Some(progress.clone()),None,None))?;Ok(())
+            event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeState,Some(progress.clone()),None,None))?;Ok(())
         })?;
         Ok(())
     }
@@ -344,7 +346,7 @@ impl Ledger {
         self.transaction::<_,StorageError>("accept workflow node intent",|tx| {
             let existing:Option<String>=tx.query_row("SELECT payload_toon FROM workflow_node_intents WHERE run_id=?1 AND node_id=?2 AND round=?3",params![definition.run.to_string(),name,owner.round],|row|row.get(0)).optional().map_err(|error|sql_error("inspect node intent",error))?;
             if let Some(existing)=existing {if existing!=payload {return Err(StorageError::Conflict);}}
-            else {tx.execute("INSERT INTO workflow_node_intents(run_id,node_id,round,payload_toon) VALUES(?1,?2,?3,?4)",params![definition.run.to_string(),name,owner.round,payload]).map_err(|error|sql_error("save node intent",error))?;event(tx,definition.run,&node_event(node,WorkflowEventKind::NodeIntent,None,None,None))?;}Ok(())
+            else {tx.execute("INSERT INTO workflow_node_intents(run_id,node_id,round,payload_toon) VALUES(?1,?2,?3,?4)",params![definition.run.to_string(),name,owner.round,payload]).map_err(|error|sql_error("save node intent",error))?;event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeIntent,None,None,None))?;}Ok(())
         })?;
         Ok(intent)
     }
@@ -427,7 +429,7 @@ impl Ledger {
             let live:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND a.node_id=?2 AND s.state IN ('pending','running'))",params![definition.run.to_string(),name],|row|row.get(0)).map_err(|error|sql_error("check live node attempt",error))?;if live {return Err(StorageError::Conflict);}
             tx.execute("INSERT INTO attempts(id,session_id,run_id,node_id,payload_toon) VALUES(?1,?2,?3,?4,?5)",params![attempt.id.to_string(),definition.session.to_string(),definition.run.to_string(),name,Self::encode_payload(&attempt)?]).map_err(|error|sql_error("insert workflow attempt",error))?;
             tx.execute("INSERT INTO attempt_states(attempt_id,state) VALUES(?1,'running')",[attempt.id.to_string()]).map_err(|error|sql_error("start workflow attempt",error))?;
-            progress_event(tx,attempt.id,&AttemptProgress {state:AttemptStatus::Running,error:None})?;event(tx,definition.run,&node_event(node,WorkflowEventKind::AttemptStarted,None,Some(attempt.id),None))?;Ok(())
+            progress_event(tx,attempt.id,&AttemptProgress {state:AttemptStatus::Running,error:None})?;event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::AttemptStarted,None,Some(attempt.id),None))?;Ok(())
         })?;
         Ok(attempt)
     }
@@ -458,7 +460,7 @@ impl Ledger {
         self.transaction::<_,StorageError>("finish workflow attempt",|tx| {
             let state=if progress.state==AttemptStatus::Failed {"failed"} else {"interrupted"};
             let changed=tx.execute("UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state IN ('pending','running')",params![attempt.to_string(),state]).map_err(|error|sql_error("record failed workflow attempt",error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            progress_event(tx,attempt,&progress)?;event(tx,scope.run,&node_event(scope.node,WorkflowEventKind::AttemptFinished,None,Some(attempt),None))?;Ok(())
+            progress_event(tx,attempt,&progress)?;event(tx,scope.run,&node_event(owner.round,scope.node,WorkflowEventKind::AttemptFinished,None,Some(attempt),None))?;Ok(())
         })?;
         Ok(())
     }
@@ -543,7 +545,7 @@ impl Ledger {
             tx.execute("UPDATE workflow_runs SET frontier_toon=?2,published_revision=?3 WHERE id=?1",params![definition.run.to_string(),frontier,revision+1]).map_err(|error|sql_error("record published workflow frontier",error))?;
             let changed=tx.execute("UPDATE request_reservations SET state='completed',result_toon=?2 WHERE request_id=?1 AND kind='workflow_node' AND state='pending' AND owner_id=?3",params![child_key(definition.run,node),Self::encode_payload(&turn)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("complete stable node identity",error))?;if changed!=1 {return Err(StorageError::Conflict);}
             tx.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![definition.session.to_string(),Self::encode_payload(&HistoryEvent::TurnFinalized {session:definition.session,turn:turn.id,frontier:heads})?]).map_err(|error|sql_error("record workflow publication",error))?;
-            event(tx,definition.run,&node_event(node,WorkflowEventKind::NodeState,None,Some(attempt),Some(turn.id)))?;Ok(())
+            event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeState,None,Some(attempt),Some(turn.id)))?;Ok(())
         })?;
         Ok(turn)
     }

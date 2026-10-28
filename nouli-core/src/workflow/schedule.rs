@@ -451,8 +451,49 @@ pub async fn schedule_observed<E: NodeExecutor, O: ScheduleObserver>(
     parallelism: usize,
     cancel: CancellationToken,
 ) -> Result<ScheduleResult, ScheduleError> {
+    let nodes = graph
+        .nodes()
+        .iter()
+        .map(|_| NodeProgress {
+            status: NodeStatus::Pending,
+            output: None,
+            error: None,
+            ancestors: vec![],
+            inputs: vec![],
+        })
+        .collect();
+    schedule_resumed(graph, executor, observer, parallelism, cancel, nodes).await
+}
+
+/// Execute a repository-validated snapshot, reusing only completed and skipped nodes.
+pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
+    graph: Arc<CompiledWorkflow>,
+    executor: Arc<E>,
+    observer: Arc<O>,
+    parallelism: usize,
+    cancel: CancellationToken,
+    nodes: Vec<NodeProgress>,
+) -> Result<ScheduleResult, ScheduleError> {
     if parallelism == 0 {
         return Err(ScheduleError::Parallelism);
+    }
+    if nodes.len() != graph.nodes().len()
+        || nodes.iter().any(|node| {
+            !matches!(
+                node.status,
+                NodeStatus::Pending | NodeStatus::Completed | NodeStatus::Skipped
+            ) || (node.status == NodeStatus::Completed) != node.output.is_some()
+        })
+    {
+        return Err(ScheduleError::State);
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        if let Some(output) = &node.output {
+            output
+                .outcome
+                .validate(&graph.definition().nodes[index].turn)
+                .map_err(|_| ScheduleError::State)?;
+        }
     }
     let mut scheduler = Scheduler {
         observer,
@@ -460,17 +501,7 @@ pub async fn schedule_observed<E: NodeExecutor, O: ScheduleObserver>(
         executor,
         limit: parallelism.min(graph.definition().max_parallel),
         cancel,
-        nodes: graph
-            .nodes()
-            .iter()
-            .map(|_| NodeProgress {
-                status: NodeStatus::Pending,
-                output: None,
-                error: None,
-                ancestors: vec![],
-                inputs: vec![],
-            })
-            .collect(),
+        nodes,
         tasks: JoinSet::new(),
         owners: HashMap::new(),
         start_order: vec![],
