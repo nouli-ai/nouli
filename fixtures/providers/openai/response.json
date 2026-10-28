@@ -1,0 +1,57 @@
+{
+  "model": "gpt-6-luna-fixture",
+  "answers": [
+    {
+      "type": "choice",
+      "name": "travel",
+      "choice": "train",
+      "confidence": 0.8,
+      "probabilities": [
+        {
+          "value": "flight",
+          "probability": 0.3
+        },
+        {
+          "value": "train",
+          "probability": 0.7
+        }
+      ]
+    },
+    {
+      "type": "predicate",
+      "name": "on_time",
+      "probability": 0.0
+    },
+    {
+      "type": "score",
+      "name": "quality",
+      "score": 1.43,
+      "confidence": 0.35,
+      "probabilities": [
+        {
+          "value": 0,
+          "label": "Poor",
+          "probability": 0
+        },
+        {
+          "value": 1,
+          "label": "Adequate",
+          "probability": 0.57
+        },
+        {
+          "value": 2,
+          "label": "Excellent",
+          "probability": 0.43
+        }
+      ]
+    },
+    {
+      "type": "refusal",
+      "name": "private"
+    }
+  ],
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 20
+  }
+}

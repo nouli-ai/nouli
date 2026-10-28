@@ -1,0 +1,50 @@
+{
+  "model": "gpt-6-luna",
+  "input": "evidence: fixture",
+  "questions": [
+    {
+      "name": "travel",
+      "type": "choice",
+      "instructions": "Which route?\n\nCriteria:\n[2]:\n  - Prefer reliability\n  - description: Minimize travel duration\n    label: Time",
+      "choices": [
+        {
+          "value": "train",
+          "description": "Rail"
+        },
+        {
+          "value": "flight",
+          "description": "Air"
+        }
+      ]
+    },
+    {
+      "name": "on_time",
+      "type": "predicate",
+      "instructions": "Will the train arrive on time?"
+    },
+    {
+      "name": "quality",
+      "type": "score",
+      "instructions": "Rate the route quality",
+      "levels": [
+        {
+          "label": "Poor",
+          "description": "Poor"
+        },
+        {
+          "label": "Adequate",
+          "description": "Meets minimum requirements"
+        },
+        {
+          "label": "Excellent",
+          "description": "Excellent"
+        }
+      ]
+    },
+    {
+      "name": "private",
+      "type": "predicate",
+      "instructions": "Is private information available?"
+    }
+  ]
+}

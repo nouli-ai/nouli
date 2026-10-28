@@ -11,10 +11,7 @@ use crate::{
     config::{Protocol, resolve::ResolvedSettings},
     decision::{AnswerSpace, CONTRACT_VERSION, TurnRequest},
     limits::{ResolvedLimits, count::TokenCounter},
-    outcome::{
-        Answer, Confidence, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome,
-        Usage,
-    },
+    outcome::{Answer, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome, Usage},
     transport::HttpTransport,
 };
 
@@ -82,29 +79,6 @@ pub fn request_body(
         questions.insert(&question.id, native);
     }
     Ok(json!({"model":model,"state":context_toon,"questions":questions}))
-}
-
-fn confidence(
-    value: Option<f64>,
-    answer_confidence: Option<f64>,
-    identity: &ProviderIdentity,
-) -> Result<Option<Confidence>, ProviderError> {
-    for n in [value, answer_confidence].into_iter().flatten() {
-        if !n.is_finite() || !(0.0..=1.0).contains(&n) {
-            return Err(ProviderError::Wire);
-        }
-    }
-    if value.is_none() && answer_confidence.is_none() {
-        return Ok(None);
-    }
-    Ok(Some(Confidence {
-        value,
-        meaning: format!(
-            "native confidence fields from profile {} model {}",
-            identity.provider, identity.model
-        ),
-        answer_confidence,
-    }))
 }
 
 /// Normalize only documented primitives. Unknown refusal types fail rather than
@@ -226,7 +200,11 @@ pub fn normalize(
         outcomes.push(QuestionOutcome::Answered {
             question_id: question.id.clone(),
             answer,
-            confidence: confidence(native_confidence, selected_confidence, &identity)?,
+            confidence: super::confidence::native_confidence(
+                native_confidence,
+                selected_confidence,
+                &identity,
+            )?,
         });
     }
     let usage = match response.usage {
