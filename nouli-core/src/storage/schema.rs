@@ -3,11 +3,12 @@
 use super::{StorageError, sql_error};
 use rusqlite::{Connection, TransactionBehavior};
 
-pub(super) const VERSION: u32 = 2;
+pub(super) const VERSION: u32 = 3;
 const APPLICATION_ID: i64 = 0x4e4f554c;
 pub(super) const MIGRATIONS: &[&str] = &[
     include_str!("schema/0001.sql"),
     include_str!("schema/0002.sql"),
+    include_str!("schema/0003.sql"),
 ];
 
 fn identity(connection: &Connection) -> Result<(i64, u32), StorageError> {

@@ -1,6 +1,8 @@
 //! Blocking local ledger primitives. Call from an owned blocking worker when
 //! embedding in an async runtime; transactions never span a provider await.
 
+pub mod guards;
+pub mod replay;
 mod schema;
 pub mod sessions;
 pub mod turns;
@@ -185,22 +187,22 @@ impl Ledger {
     }
 
     /// Synchronous closures cannot retain a transaction across an async await.
-    pub fn transaction<T>(
+    pub fn transaction<T, E: From<StorageError>>(
         &mut self,
         operation: &'static str,
-        write: impl FnOnce(&Transaction<'_>) -> Result<T, StorageError>,
-    ) -> Result<T, StorageError> {
+        write: impl FnOnce(&Transaction<'_>) -> Result<T, E>,
+    ) -> Result<T, E> {
         if self.mode == OpenMode::ReadOnlyExisting {
-            return Err(StorageError::ReadOnly);
+            return Err(StorageError::ReadOnly.into());
         }
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|error| sql_error(operation, error))?;
+            .map_err(|error| E::from(sql_error(operation, error)))?;
         let result = write(&transaction)?;
         transaction
             .commit()
-            .map_err(|error| sql_error("commit", error))?;
+            .map_err(|error| E::from(sql_error("commit", error)))?;
         Ok(result)
     }
 
@@ -246,7 +248,7 @@ mod tests {
         let before = fs::read(&path).unwrap();
         let mut readonly = Ledger::open(&store.0, OpenMode::ReadOnlyExisting).unwrap();
         assert!(matches!(
-            readonly.transaction("forbidden", |_| Ok(())),
+            readonly.transaction::<_, StorageError>("forbidden", |_| Ok(())),
             Err(StorageError::ReadOnly)
         ));
         drop(readonly);
@@ -326,7 +328,7 @@ mod tests {
     fn short_transactions_enforce_foreign_keys_and_rollback_errors() {
         let store = Store::new();
         let mut ledger = store.open();
-        let failure=ledger.transaction("test rollback",|transaction| {
+        let failure=ledger.transaction::<_, StorageError>("test rollback",|transaction| {
             transaction.execute("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('fixture','{}','[]')",[]).map_err(|error|sql_error("insert test session",error))?;
             Err::<(),_>(StorageError::Payload)
         });
@@ -336,7 +338,7 @@ mod tests {
             .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
-        assert!(ledger.transaction("foreign key",|transaction| {
+        assert!(ledger.transaction::<_, StorageError>("foreign key",|transaction| {
             transaction.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('turn','missing',0,'{}')",[]).map_err(|error|sql_error("insert test turn",error))?;
             Ok(())
         }).is_err());
@@ -346,7 +348,7 @@ mod tests {
     fn immutable_rows_reject_update_delete_and_replacement() {
         let store = Store::new();
         let mut ledger = store.open();
-        ledger.transaction("insert fixture",|transaction| {
+        ledger.transaction::<_, StorageError>("insert fixture",|transaction| {
             transaction.execute_batch("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]'); INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'original');").map_err(|error|sql_error("insert fixtures",error))?;
             Ok(())
         }).unwrap();
@@ -357,7 +359,7 @@ mod tests {
         ] {
             assert!(
                 ledger
-                    .transaction("immutable write", |transaction| {
+                    .transaction::<_, StorageError>("immutable write", |transaction| {
                         transaction
                             .execute(sql, [])
                             .map_err(|error| sql_error("immutable test", error))?;
@@ -374,7 +376,7 @@ mod tests {
             assert_eq!(payload, "original");
         }
         ledger
-            .transaction("mutable projection", |transaction| {
+            .transaction::<_, StorageError>("mutable projection", |transaction| {
                 transaction
                     .execute("UPDATE sessions SET revision=revision+1 WHERE id='s'", [])
                     .map_err(|error| sql_error("update projection", error))?;
