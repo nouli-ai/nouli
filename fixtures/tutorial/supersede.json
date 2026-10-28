@@ -1,0 +1,77 @@
+{
+  "turn": {
+    "version": 1,
+    "state": [
+      {
+        "type": "text",
+        "text": "BUDGET_FOLLOWUP"
+      },
+      {
+        "type": "structured",
+        "data": {
+          "budget": 8
+        }
+      }
+    ],
+    "questions": [
+      {
+        "id": "meal",
+        "prompt": "What should we cook?",
+        "criteria": [
+          "Prefer vegetarian meals",
+          "Use available time"
+        ],
+        "answer_space": {
+          "type": "choice",
+          "options": [
+            {
+              "id": "lentils",
+              "description": "Lentil stew"
+            },
+            {
+              "id": "pasta",
+              "description": "Pasta with tomato sauce"
+            }
+          ]
+        }
+      },
+      {
+        "id": "available",
+        "prompt": "Are the ingredients available?",
+        "answer_space": {
+          "type": "noul"
+        }
+      },
+      {
+        "id": "quality",
+        "prompt": "Rate spending flexibility.",
+        "answer_space": {
+          "type": "score",
+          "levels": [
+            "Over budget",
+            {
+              "label": "Affordable",
+              "description": "Meets spending limit"
+            },
+            "Comfortable"
+          ]
+        }
+      }
+    ]
+  },
+  "updates": [
+    {
+      "op": "supersede",
+      "targets": [
+        "019a0000-0000-7000-8000-000000000010"
+      ],
+      "replacement": {
+        "id": "019a0000-0000-7000-8000-000000000011",
+        "key": "budget",
+        "kind": "commitment",
+        "value": 12
+      },
+      "pinned": null
+    }
+  ]
+}
