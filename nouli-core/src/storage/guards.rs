@@ -82,6 +82,38 @@ pub(super) fn lock(ledger: &Ledger, key: &str) -> Result<FileGuard, GuardError> 
     }
 }
 
+/// Probe an existing identity without creating or changing store files.
+pub(super) fn is_locked(ledger: &Ledger, key: &str) -> Result<bool, GuardError> {
+    let path = ledger
+        .path()
+        .parent()
+        .ok_or(StorageError::Payload)?
+        .join("locks")
+        .join(format!("{key}.lock"));
+    let file = match File::open(&path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(source) => {
+            return Err(StorageError::Io {
+                operation: "inspect writer guard",
+                path,
+                source,
+            }
+            .into());
+        }
+    };
+    match file.try_lock() {
+        Ok(()) => Ok(false),
+        Err(TryLockError::WouldBlock) => Ok(true),
+        Err(TryLockError::Error(source)) => Err(StorageError::Io {
+            operation: "probe writer guard",
+            path,
+            source,
+        }
+        .into()),
+    }
+}
+
 pub(super) fn acquire_session(ledger: &Ledger, id: Id) -> Result<SessionGuard, GuardError> {
     let guard = lock(ledger, &format!("session-{id}"))?;
     let ledger_path = fs::canonicalize(ledger.path()).map_err(|source| StorageError::Io {
@@ -157,6 +189,23 @@ mod tests {
             let _ = self.0.kill();
             let _ = self.0.wait();
         }
+    }
+
+    #[test]
+    fn read_only_probe_never_creates_lock_files_and_observes_live_ownership() {
+        let store = Store::new();
+        let ledger = store.open();
+        let reader = Ledger::open(&store.0, OpenMode::ReadOnlyExisting).unwrap();
+        let run = Id::generate();
+        let key = format!("run-{run}");
+        assert!(!is_locked(&reader, &key).unwrap());
+        assert!(!store.0.join("locks").exists());
+        let owner = ledger.run_guard(run).unwrap();
+        let before = fs::read_dir(store.0.join("locks")).unwrap().count();
+        assert!(is_locked(&reader, &key).unwrap());
+        drop(owner);
+        assert!(!is_locked(&reader, &key).unwrap());
+        assert_eq!(before, fs::read_dir(store.0.join("locks")).unwrap().count());
     }
 
     #[test]

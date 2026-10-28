@@ -30,34 +30,7 @@ impl Ledger {
         }
         let snapshot = self.workflow_run(run)?;
         let graph = compile::compile(&owner.frozen.definition.request.workflow)?;
-        let mut statement = self
-            .connection
-            .prepare("SELECT payload_toon FROM workflow_events WHERE run_id=?1 ORDER BY sequence")
-            .map_err(|error| sql_error("read workflow event order", error))?;
-        let payloads = statement
-            .query_map([run.to_string()], |row| row.get::<_, String>(0))
-            .map_err(|error| sql_error("read workflow events", error))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| sql_error("decode workflow events", error))?;
-        drop(statement);
-        let mut start_order = Vec::new();
-        let mut completion_order = Vec::new();
-        for payload in payloads {
-            let event: WorkflowEvent = Self::decode_payload(&payload)?;
-            if let Some(node) = event.node {
-                if event.kind == WorkflowEventKind::NodeState
-                    && event.node_status == Some(NodeStatus::Running)
-                {
-                    start_order.push(node);
-                }
-                if event.turn.is_some()
-                    || (event.kind == WorkflowEventKind::NodeState
-                        && event.node_status == Some(NodeStatus::Failed))
-                {
-                    completion_order.push(node);
-                }
-            }
-        }
+        let (start_order, completion_order) = super::round_order(self, run, owner.round)?;
         let outputs = crate::workflow::schedule::project_outputs(&graph, &snapshot.nodes)
             .map_err(|_| WorkflowError::Snapshot)?;
         self.finish_workflow(
@@ -141,7 +114,8 @@ impl Ledger {
             let changed=tx.execute("UPDATE workflow_runs SET state=?2,result_toon=?3 WHERE id=?1 AND state='running' AND owner_id=?4",params![definition.run.to_string(),run_name(result.status),Self::encode_payload(result)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("save workflow result",error))?;if changed!=1 {return Err(StorageError::Conflict);}
             let state=if result.status==RunStatus::Completed {"completed"} else {"interrupted"};
             let changed=tx.execute("UPDATE request_reservations SET state=?2,result_toon=?3 WHERE request_id=?1 AND state='pending' AND owner_id=?4",params![key,state,Self::encode_payload(result)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("save workflow replay result",error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            event(tx,definition.run,&WorkflowEvent {kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(result.status),attempt:None,turn:None})?;Ok(())
+            tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) SELECT id,?2,state,frontier_toon,published_revision,?3 FROM workflow_runs WHERE id=?1",params![definition.run.to_string(),owner.round,Self::encode_payload(result)?]).map_err(|error|sql_error("append workflow round result",error))?;
+            event(tx,definition.run,&WorkflowEvent {round:owner.round,kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(result.status),attempt:None,turn:None})?;Ok(())
         })?;
         self.workflow_run(definition.run)
     }

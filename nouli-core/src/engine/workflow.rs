@@ -495,6 +495,67 @@ impl<
             }
             WorkflowDecision::Accepted(owner) => Arc::<WorkflowOwner>::from(owner),
         };
+        self.run_owned_workflow(worker, owner, graph, lookup, cancel, observer)
+            .await
+    }
+
+    /// Explicitly begin a new bounded retry round using the saved definition and settings.
+    /// Credentials are resolved afresh by the original source names.
+    pub async fn resume_workflow(
+        self: &Arc<Self>,
+        worker: &LedgerWorker,
+        run: Id,
+        lookup: CredentialLookup,
+        cancel: CancellationToken,
+    ) -> Result<WorkflowResult, WorkflowEngineError> {
+        self.resume_workflow_observed(
+            worker,
+            run,
+            lookup,
+            cancel,
+            Arc::new(schedule::NoopObserver),
+        )
+        .await
+    }
+
+    pub async fn resume_workflow_observed<O: ScheduleObserver>(
+        self: &Arc<Self>,
+        worker: &LedgerWorker,
+        run: Id,
+        lookup: CredentialLookup,
+        cancel: CancellationToken,
+        observer: Arc<O>,
+    ) -> Result<WorkflowResult, WorkflowEngineError> {
+        if cancel.is_cancelled() {
+            return Err(EngineError::Canceled.into());
+        }
+        let decision = worker
+            .call(move |ledger| ledger.resume_workflow(run))
+            .await??;
+        let owner = match decision {
+            WorkflowDecision::Saved(saved) => return from_stored(*saved, true),
+            WorkflowDecision::InProgress => return Err(WorkflowEngineError::InProgress),
+            WorkflowDecision::Existing { run, status } => {
+                return Err(WorkflowEngineError::Existing { run, status });
+            }
+            WorkflowDecision::Accepted(owner) => Arc::<WorkflowOwner>::from(owner),
+        };
+        let graph = Arc::new(compile::compile(
+            &owner.frozen().definition.request.workflow,
+        )?);
+        self.run_owned_workflow(worker, owner, graph, lookup, cancel, observer)
+            .await
+    }
+
+    async fn run_owned_workflow<O: ScheduleObserver>(
+        self: &Arc<Self>,
+        worker: &LedgerWorker,
+        owner: Arc<WorkflowOwner>,
+        graph: Arc<CompiledWorkflow>,
+        lookup: CredentialLookup,
+        cancel: CancellationToken,
+        observer: Arc<O>,
+    ) -> Result<WorkflowResult, WorkflowEngineError> {
         let frozen = Arc::new(owner.frozen().clone());
         let run = frozen.definition.run;
         let parallel = frozen
@@ -514,12 +575,17 @@ impl<
             },
             lookup,
         });
-        let result = match schedule::schedule_observed(
+        let initial = worker
+            .call(move |ledger| ledger.workflow_run(run))
+            .await??
+            .nodes;
+        let result = match schedule::schedule_resumed(
             graph.clone(),
             runner.clone(),
             runner,
             parallel,
             cancel,
+            initial,
         )
         .await
         {
@@ -597,6 +663,7 @@ mod tests {
         gates: HashMap<String, tokio::sync::Semaphore>,
         started: tokio::sync::mpsc::UnboundedSender<String>,
         fail: HashSet<String>,
+        transient: bool,
         active: AtomicUsize,
         peak: AtomicUsize,
     }
@@ -636,9 +703,11 @@ mod tests {
                     gate.acquire().await.unwrap().forget();
                 }
                 if self.fail.contains(node) {
-                    return Err(ProviderError::Transport(
-                        crate::transport::TransportError::Contract,
-                    ));
+                    return Err(ProviderError::Transport(if self.transient {
+                        crate::transport::TransportError::Connect
+                    } else {
+                        crate::transport::TransportError::Contract
+                    }));
                 }
             }
             let fault = self.publication_fault.lock().unwrap().clone();
@@ -655,6 +724,9 @@ mod tests {
             .unwrap();
             outcome.provider.provider = settings.snapshot.profile_name.clone();
             outcome.provider.model = settings.snapshot.profile.model.clone();
+            if outcome.provider.model == "frozen-alias" {
+                outcome.provider.model = "served-version-2026-10".into();
+            }
             Ok(outcome)
         }
     }
@@ -676,6 +748,7 @@ mod tests {
                         .map(|id| (id.to_string(), tokio::sync::Semaphore::new(0)))
                         .collect(),
                     started,
+                    transient: false,
                     fail: failed.iter().map(|id| id.to_string()).collect(),
                     active: AtomicUsize::new(0),
                     peak: AtomicUsize::new(0),
@@ -1234,6 +1307,22 @@ mod tests {
                 siblings.insert(node);
             }
         }
+        let selected = request.clone();
+        let frozen = worker
+            .call(move |ledger| ledger.saved_workflow(&selected))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let run = frozen.definition.run;
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(inspection.live_owner);
+        assert!(inspection.nodes[1..3].iter().all(|node| node.disposition
+            == crate::storage::workflows::recovery::Disposition::LiveRunning));
         cancel.cancel();
         let result = task.await.unwrap();
         assert_eq!(result.result.status, RunStatus::Interrupted);
@@ -1268,6 +1357,22 @@ mod tests {
                 .count(),
             2
         );
+        let (restarted, _events) = self::engine(&[], &[]);
+        let done = restarted
+            .resume_workflow(&worker, run, Arc::new(|_| None), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(done.result.status, RunStatus::Completed);
+        assert_eq!(done.result.nodes[0], result.result.nodes[0]);
+        assert_eq!(restarted.provider.calls.lock().unwrap().len(), 4);
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inspection.nodes[1].uncertain_prior_calls, 1);
+        assert_eq!(inspection.nodes[2].uncertain_prior_calls, 1);
+        assert_eq!(inspection.nodes[1].attempts.len(), 2);
     }
     struct BrokenObserver;
     impl ScheduleObserver for BrokenObserver {
@@ -1426,5 +1531,618 @@ mod tests {
             high.progress.error.as_ref().unwrap().code,
             "provider_outcome_unknown"
         );
+        *engine.provider.publication_fault.lock().unwrap() = None;
+        worker
+            .call(|ledger| {
+                ledger.transaction::<_, crate::storage::StorageError>(
+                    "clear publication fault",
+                    |tx| {
+                        tx.execute_batch("DROP TRIGGER reject_high_publication")
+                            .unwrap();
+                        Ok(())
+                    },
+                )
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let (restarted, _rx) = self::engine(&[], &[]);
+        let done = restarted
+            .resume_workflow(&worker, run, Arc::new(|_| None), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(done.result.status, RunStatus::Completed);
+        assert_eq!(done.result.nodes[0], result.result.nodes[0]);
+        assert_eq!(done.result.nodes[2], result.result.nodes[2]);
+        assert_eq!(restarted.provider.calls.lock().unwrap().len(), 3);
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inspection.nodes[1].uncertain_prior_calls, 1);
+        assert_eq!(inspection.nodes[1].attempts.len(), 2);
+    }
+    async fn run_fixture(
+        engine: &Arc<Engine<Fake, ByteCounter, TokioClock>>,
+        worker: &LedgerWorker,
+        config: &Config,
+        request: &WorkflowRequest,
+    ) -> WorkflowResult {
+        engine
+            .evaluate_workflow(
+                Some(worker),
+                WorkflowInput {
+                    request,
+                    config,
+                    overrides: &RuntimeOverrides::default(),
+                    home: Path::new("/unused"),
+                },
+                Arc::new(|_| None),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn explicit_rounds_reuse_success_and_skips_preserve_failures_and_freeze_settings() {
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, _rx) = engine(&[], &["high"]);
+        let mut config = config();
+        config.providers.get_mut("fixture").unwrap().api_key_env = Some("SAVED_KEY_SOURCE".into());
+        let mut request = request();
+        request.workflow.nodes[1].model.model = Some("frozen-alias".into());
+        let result = first
+            .evaluate_workflow(
+                Some(&worker),
+                WorkflowInput {
+                    request: &request,
+                    config: &config,
+                    overrides: &RuntimeOverrides::default(),
+                    home: Path::new("/unused"),
+                },
+                Arc::new(|name| {
+                    assert_eq!(name, "SAVED_KEY_SOURCE");
+                    Some("old-secret".into())
+                }),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.result.status, RunStatus::Partial);
+        assert_eq!(result.result.nodes[2].status, NodeStatus::Skipped);
+        let run = result.run.unwrap();
+        let initial = result.result.nodes[0].clone();
+        let skipped = result.result.nodes[2].clone();
+        // An explicit retry can exhaust its own bounded attempt budget again.
+        let again = first
+            .resume_workflow(
+                &worker,
+                run,
+                Arc::new(|_| Some("new-secret".into())),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(again.result.status, RunStatus::Partial);
+        assert_eq!(again.result.start_order, vec![1]);
+        assert_eq!(again.result.nodes[0], initial);
+        assert_eq!(again.result.nodes[2], skipped);
+        let (restarted, _rx2) = engine(&[], &[]);
+        let looked_up = Arc::new(Mutex::new(Vec::new()));
+        let captured = looked_up.clone();
+        // Config/workflow file edits cannot be passed to resume; only the saved run is accepted.
+        config.providers.clear();
+        request.workflow.nodes.clear();
+        let done = restarted
+            .resume_workflow(
+                &worker,
+                run,
+                Arc::new(move |name| {
+                    captured.lock().unwrap().push(name.to_owned());
+                    Some("replacement-secret".into())
+                }),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(done.result.status, RunStatus::Completed);
+        assert_eq!(done.result.start_order, vec![1, 3, 4]);
+        assert_eq!(
+            done.result.nodes[1]
+                .output
+                .as_ref()
+                .unwrap()
+                .outcome
+                .provider
+                .model,
+            "served-version-2026-10"
+        );
+        assert_eq!(done.result.nodes[0], initial);
+        assert_eq!(done.result.nodes[2], skipped);
+        assert_eq!(*looked_up.lock().unwrap(), vec!["SAVED_KEY_SOURCE"; 3]);
+        assert_eq!(
+            restarted.provider.calls.lock().unwrap()[0].model,
+            "frozen-alias"
+        );
+        let rounds = worker
+            .call(move |ledger| ledger.workflow_round_results(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            rounds.iter().map(|round| round.round).collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(rounds[0].result, result.result);
+        assert_eq!(rounds[1].result, again.result);
+        assert_eq!(rounds[2].result, done.result);
+        let inspected = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!inspected.live_owner);
+        assert_eq!(inspected.nodes[1].attempts.len(), 3);
+        assert_eq!(
+            inspected.nodes[1]
+                .attempts
+                .iter()
+                .map(|attempt| attempt.intent.workflow.as_ref().unwrap().round)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        let encoded = crate::codec::encode_toon(&inspected).unwrap();
+        for secret in ["old-secret", "new-secret", "replacement-secret"] {
+            assert!(!encoded.contains(secret));
+        }
+        let replay = restarted
+            .resume_workflow(
+                &worker,
+                run,
+                Arc::new(|_| panic!("completed replay needs no credentials")),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(replay.replayed);
+        assert_eq!(restarted.provider.calls.lock().unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn abandoned_before_dispatch_is_inspectable_read_only_and_resumes_under_one_owner() {
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let request = request();
+        let config = config();
+        let (settings, defaults) = resolve_settings(
+            &WorkflowInput {
+                request: &request,
+                config: &config,
+                overrides: &RuntimeOverrides::default(),
+                home: Path::new("/unused"),
+            },
+            &request,
+            &ModelSelection::default(),
+        )
+        .unwrap();
+        let selected = request.clone();
+        let owner = worker
+            .call(move |ledger| ledger.accept_workflow(&selected, settings, defaults))
+            .await
+            .unwrap()
+            .unwrap();
+        let WorkflowDecision::Accepted(owner) = owner else {
+            panic!("new owner")
+        };
+        let run = owner.frozen().definition.run;
+        let reader = LedgerWorker::open(store.0.clone(), OpenMode::ReadOnlyExisting)
+            .await
+            .unwrap();
+        let bytes = std::fs::read(store.0.join("ledger.sqlite3")).unwrap();
+        let inspected = reader
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(inspected.live_owner);
+        assert!(inspected.nodes.iter().all(|node| node.disposition
+            == crate::storage::workflows::recovery::Disposition::NeverDispatched));
+        assert_eq!(
+            bytes,
+            std::fs::read(store.0.join("ledger.sqlite3")).unwrap()
+        );
+        assert!(matches!(
+            worker
+                .call(move |ledger| ledger.resume_workflow(run))
+                .await
+                .unwrap()
+                .unwrap(),
+            WorkflowDecision::InProgress
+        ));
+        drop(owner);
+        let owner = worker
+            .call(move |ledger| ledger.resume_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        let WorkflowDecision::Accepted(owner) = owner else {
+            panic!("recovered owner")
+        };
+        assert_eq!(
+            worker
+                .call(move |ledger| ledger.workflow_round_results(run))
+                .await
+                .unwrap()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(matches!(
+            worker
+                .call(move |ledger| ledger.resume_workflow(run))
+                .await
+                .unwrap()
+                .unwrap(),
+            WorkflowDecision::InProgress
+        ));
+        drop(owner);
+        let (engine, _rx) = engine(&[], &[]);
+        let done = engine
+            .resume_workflow(&worker, run, Arc::new(|_| None), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(done.result.status, RunStatus::Completed);
+        assert_eq!(engine.provider.calls.lock().unwrap().len(), 4);
+        let rounds = worker
+            .call(move |ledger| ledger.workflow_round_results(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(rounds.len(), 3);
+        assert!(
+            rounds[..2]
+                .iter()
+                .all(|round| round.result.status == RunStatus::Interrupted)
+        );
+    }
+
+    #[tokio::test]
+    async fn advanced_session_head_rejects_resume_without_mutating_saved_run() {
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, _rx) = engine(&[], &["high"]);
+        let config = config();
+        let partial = run_fixture(&first, &worker, &config, &request()).await;
+        let run = partial.run.unwrap();
+        let main = partial.session.unwrap();
+        let mut next = ordinary();
+        next.session = SessionSelection::Continue {
+            session: SessionSelector::Id(main),
+        };
+        evaluate(&first, &worker, &config, &next).await;
+        let before = std::fs::read(store.0.join("ledger.sqlite3")).unwrap();
+        let (restarted, _rx2) = engine(&[], &[]);
+        assert!(matches!(
+            restarted
+                .resume_workflow(&worker, run, Arc::new(|_| None), CancellationToken::new())
+                .await,
+            Err(WorkflowEngineError::Repository(WorkflowError::AdvancedHead))
+        ));
+        assert_eq!(
+            before,
+            std::fs::read(store.0.join("ledger.sqlite3")).unwrap()
+        );
+        let inspected = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!inspected.session_head_compatible);
+        assert!(!inspected.live_owner);
+        assert_eq!(inspected.run.result, Some(partial.result));
+        assert!(restarted.provider.calls.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn owner_drop_during_dispatch_keeps_unknown_receipt_and_frozen_source_snapshot() {
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, mut started) = engine(&["initial"], &[]);
+        let config = config();
+        let old = record("budget", serde_json::json!(8));
+        let mut seed = ordinary();
+        seed.updates = vec![ContextUpdate::Append {
+            record: old.clone(),
+        }];
+        let source = evaluate(&first, &worker, &config, &seed).await;
+        let mut request = request();
+        request.session = SessionSelection::From {
+            sources: vec![crate::history::SourceSelection {
+                session: SessionSelector::Id(source.turn.session),
+                frontier: None,
+            }],
+            name: None,
+        };
+        let runner = first.clone();
+        let repository = worker.clone();
+        let selected = request.clone();
+        let settings = config.clone();
+        let task =
+            tokio::spawn(
+                async move { run_fixture(&runner, &repository, &settings, &selected).await },
+            );
+        assert_eq!(started.recv().await.unwrap(), "initial");
+        let selected = request.clone();
+        let frozen = worker
+            .call(move |ledger| ledger.saved_workflow(&selected))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let run = frozen.definition.run;
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let live = worker
+                    .call(move |ledger| ledger.inspect_workflow(run))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .live_owner;
+                if !live {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            inspection.nodes[0].disposition,
+            crate::storage::workflows::recovery::Disposition::ProviderOutcomeUnknown
+        );
+        assert_eq!(inspection.nodes[0].uncertain_prior_calls, 1);
+        assert_eq!(first.provider.active.load(Ordering::SeqCst), 0);
+        let mut change = ordinary();
+        change.session = SessionSelection::Continue {
+            session: SessionSelector::Id(source.turn.session),
+        };
+        change.updates = vec![ContextUpdate::Supersede {
+            targets: vec![old.id],
+            replacement: record("budget", serde_json::json!(12)),
+            pinned: Some(false),
+        }];
+        evaluate(&first, &worker, &config, &change).await;
+        let (restarted, _rx) = engine(&[], &[]);
+        let done = restarted
+            .resume_workflow(&worker, run, Arc::new(|_| None), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(done.result.status, RunStatus::Completed);
+        assert_eq!(done.sources, frozen.definition.base.sources);
+        assert_eq!(restarted.provider.calls.lock().unwrap().len(), 4);
+        assert!(
+            restarted.provider.calls.lock().unwrap()[0]
+                .context
+                .contains(&old.id.to_string())
+        );
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inspection.nodes[0].attempts.len(), 2);
+        assert_eq!(inspection.nodes[0].uncertain_prior_calls, 1);
+        assert_eq!(
+            inspection.nodes[0].attempts[0].progress.state,
+            crate::storage::turns::AttemptStatus::Interrupted
+        );
+    }
+    struct PausedRetryClock {
+        waiting: tokio::sync::Notify,
+    }
+    impl RetryClock for PausedRetryClock {
+        fn now(&self) -> std::time::SystemTime {
+            std::time::SystemTime::UNIX_EPOCH
+        }
+        async fn wait(&self, _delay: std::time::Duration, cancel: &CancellationToken) -> bool {
+            self.waiting.notify_one();
+            cancel.cancelled().await;
+            false
+        }
+    }
+    #[tokio::test]
+    async fn recorded_failed_call_is_never_reported_as_never_dispatched_during_retry_backoff() {
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (base, _rx) = engine(&[], &["initial"]);
+        let Ok(mut base) = Arc::try_unwrap(base) else {
+            panic!("single owner")
+        };
+        base.provider.transient = true;
+        let runner = Arc::new(Engine {
+            provider: base.provider,
+            counter: base.counter,
+            clock: PausedRetryClock {
+                waiting: tokio::sync::Notify::new(),
+            },
+        });
+        let request = request();
+        let mut config = config();
+        config.execution.max_attempts = 2;
+        let selected = request.clone();
+        let repository = worker.clone();
+        let engine = runner.clone();
+        let task = tokio::spawn(async move {
+            engine
+                .evaluate_workflow(
+                    Some(&repository),
+                    WorkflowInput {
+                        request: &selected,
+                        config: &config,
+                        overrides: &RuntimeOverrides::default(),
+                        home: Path::new("/unused"),
+                    },
+                    Arc::new(|_| None),
+                    CancellationToken::new(),
+                )
+                .await
+        });
+        runner.clock.waiting.notified().await;
+        let selected = request.clone();
+        let frozen = worker
+            .call(move |ledger| ledger.saved_workflow(&selected))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let run = frozen.definition.run;
+        let before = std::fs::read(store.0.join("ledger.sqlite3")).unwrap();
+        let inspection = worker
+            .call(move |ledger| ledger.inspect_workflow(run))
+            .await
+            .unwrap()
+            .unwrap();
+        use crate::storage::workflows::recovery::Disposition;
+        assert_eq!(inspection.nodes[0].disposition, Disposition::RetryWaiting);
+        assert_eq!(inspection.nodes[0].attempts.len(), 1);
+        assert_eq!(
+            inspection.nodes[0].attempts[0].progress.state,
+            crate::storage::turns::AttemptStatus::Failed
+        );
+        assert_eq!(
+            before,
+            std::fs::read(store.0.join("ledger.sqlite3")).unwrap()
+        );
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let inspection = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let inspection = worker
+                    .call(move |ledger| ledger.inspect_workflow(run))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                if !inspection.live_owner {
+                    break inspection;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            inspection.nodes[0].disposition,
+            Disposition::InterruptedBeforeCall
+        );
+        assert_eq!(inspection.nodes[0].uncertain_prior_calls, 0);
+        assert_eq!(inspection.nodes[0].attempts.len(), 1);
+    }
+    #[tokio::test]
+    async fn owner_exit_between_completions_preserves_prior_round_order_and_reuses_saved_nodes() {
+        let store = Store::new();
+        let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
+            .await
+            .unwrap();
+        let (first, mut started) = engine(&["high", "low"], &[]);
+        let mut request = request();
+        request.workflow.nodes[1].when = None;
+        request.workflow.nodes[2].when = None;
+        let config = config();
+        let selected = request.clone();
+        let repository = worker.clone();
+        let runner = first.clone();
+        let observer = Arc::new(Observed {
+            low_done: tokio::sync::Notify::new(),
+            events: Mutex::new(vec![]),
+        });
+        let watching = observer.clone();
+        let task = tokio::spawn(async move {
+            runner
+                .evaluate_workflow_observed(
+                    Some(&repository),
+                    WorkflowInput {
+                        request: &selected,
+                        config: &config,
+                        overrides: &RuntimeOverrides::default(),
+                        home: Path::new("/unused"),
+                    },
+                    Arc::new(|_| None),
+                    CancellationToken::new(),
+                    watching,
+                )
+                .await
+        });
+        let mut ready = HashSet::new();
+        while ready.len() < 2 {
+            let node = started.recv().await.unwrap();
+            if node == "high" || node == "low" {
+                ready.insert(node);
+            }
+        }
+        first.provider.gates["low"].add_permits(1);
+        observer.low_done.notified().await;
+        let selected = request.clone();
+        let frozen = worker
+            .call(move |ledger| ledger.saved_workflow(&selected))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let run = frozen.definition.run;
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let inspection = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let inspection = worker
+                    .call(move |ledger| ledger.inspect_workflow(run))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                if !inspection.live_owner {
+                    break inspection;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let (restarted, _rx) = engine(&[], &[]);
+        let done = restarted
+            .resume_workflow(&worker, run, Arc::new(|_| None), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(done.result.status, RunStatus::Completed);
+        assert_eq!(done.result.nodes[0], inspection.run.nodes[0]);
+        assert_eq!(done.result.nodes[2], inspection.run.nodes[2]);
+        assert_eq!(done.result.start_order, vec![1, 3, 4]);
+        assert_eq!(restarted.provider.calls.lock().unwrap().len(), 3);
+        let rounds = worker
+            .call(move |ledger| ledger.workflow_round_results(run))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(rounds[0].result.start_order, vec![0, 1, 2]);
+        assert_eq!(rounds[0].result.completion_order, vec![0, 2]);
+        assert_eq!(rounds[0].result.nodes[1].status, NodeStatus::Interrupted);
+        assert_eq!(rounds[0].result.nodes[2], done.result.nodes[2]);
     }
 }
