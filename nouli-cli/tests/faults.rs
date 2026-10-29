@@ -283,6 +283,88 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
     }
 }
 
+/// A provider that answers exactly the questions it is asked.
+fn adaptive() -> Server {
+    Server::with_handler(|body| {
+        let mut response: serde_json::Value = serde_json::from_str(RESPONSE).unwrap();
+        let asked = body["questions"].as_object().unwrap();
+        let answers = response["answers"].as_object_mut().unwrap();
+        answers.retain(|id, _| asked.contains_key(id));
+        for id in asked.keys() {
+            answers
+                .entry(id.clone())
+                .or_insert_with(|| serde_json::json!({"type": "noul", "noul": 0.5}));
+        }
+        (200, response.to_string())
+    })
+}
+
+#[test]
+fn retrying_an_interrupted_request_applies_its_questions_and_drops_once() {
+    let server = adaptive();
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
+    // The answer comes back, but saving the turn fails after the provider call.
+    sql(
+        &home,
+        "CREATE TRIGGER inject_fault BEFORE UPDATE OF state ON request_reservations WHEN NEW.request_id='retry-questions' AND NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;",
+    );
+    let arguments = [
+        "add",
+        "Main",
+        "A new fact",
+        "-q",
+        "extra: Is it cheap?",
+        "--drop",
+        "on_time",
+        "--request-id",
+        "retry-questions",
+        "--json",
+    ];
+    error(home.run(arguments), 6);
+    assert_eq!(server.count(), 2);
+    // Nothing was applied to the session: it still asks the original questions.
+    let standing = |home: &Home| {
+        let output = home.run(["questions", "Main", "--format", "text"]);
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .map(|line| line.split(':').next().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(standing(&home), ["travel", "on_time", "quality"]);
+    sql(&home, "DROP TRIGGER inject_fault;");
+    // Without the flag the request is interrupted and nothing is sent.
+    let interrupted = error(home.run(arguments), 130);
+    assert_eq!(interrupted.code, "request_requires_explicit_retry");
+    assert_eq!(server.count(), 2);
+    let recovered = report(home.run([&arguments[..], &["--retry-interrupted"]].concat()));
+    assert!(!recovered.replayed);
+    let asked: Vec<_> = recovered
+        .questions
+        .iter()
+        .map(|question| question.id.as_str())
+        .collect();
+    assert_eq!(asked, ["travel", "quality", "extra"]);
+    let sent = server.calls.lock().unwrap().last().unwrap().clone();
+    let mut sent: Vec<_> = sent["questions"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    sent.sort();
+    assert_eq!(sent, ["extra", "quality", "travel"]);
+    assert_eq!(server.count(), 3);
+    // The changes applied once: the new question stands, the dropped one is gone.
+    assert_eq!(standing(&home), ["travel", "quality", "extra"]);
+    let replay = report(home.run(arguments));
+    assert!(replay.replayed && replay.turn == recovered.turn);
+    assert_eq!(server.count(), 3);
+}
+
 fn record(value: i64) -> ContextRecord {
     ContextRecord {
         id: Id::generate(),
