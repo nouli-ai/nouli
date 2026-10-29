@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examples · Nouli</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<header class="top"><a class="mark" href="../">NOULI</a><nav><a href="../guide/">guide</a><a href="./" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<h1 class="display small">Examples</h1>
+<div class="sub"><p>Worked examples of Nouli, the multi-turn decision harness. Each walkthrough builds decisions in separate sessions, blends them, and revisits the result when new evidence arrives. Outputs come from recorded runs with TypeSafe's Jev 1.14.0.</p></div>
+
+<table class="index">
+  <thead><tr><th>walkthrough</th><th>what it shows</th><th class="n">turns</th></tr></thead>
+  <tbody>
+    <tr><td class="t"><a href="recall/">Food recall response</a></td><td>Coordinate stock holds and customer outreach, then revise the plan when a customer reports downstream sales.</td><td class="n">09</td></tr>
+    <tr><td class="t"><a href="robot-picking/">Robotic picking exceptions</a></td><td>A picking robot continues one session through a failed grasp, a double pick, and a torn bag, and uses probabilities to decide when to ask a remote operator.</td><td class="n">07</td></tr>
+    <tr><td class="t"><a href="seed-investment/">Seed investment decision</a></td><td>Plan diligence and draft an investment committee recommendation for an applied-AI company, then revise it after customer reference calls.</td><td class="n">08</td></tr>
+    <tr><td class="t"><a href="loan-approval/">Personal loan approval</a></td><td>Combine affordability and repayment reviews, then recheck the recommendation after corrected income verification.</td><td class="n">09</td></tr>
+    <tr><td class="t"><a href="credit-card-limit/">Credit card limit increase</a></td><td>Combine payment capacity and account standing, then reconsider the limit after verified income changes.</td><td class="n">09</td></tr>
+    <tr><td class="t"><a href="vulnerability-response/">Firewall vulnerability response</a></td><td>Combine exposure and service-continuity reviews, then add a confirmed compromise finding.</td><td class="n">08</td></tr>
+    <tr><td class="t"><a href="conservation/">Energy conservation planning</a></td><td>Combine battery and flexible-load plans, try an unsaved alternative, and revise after corrected telemetry.</td><td class="n">09</td></tr>
+  </tbody>
+</table>
+
+<section class="notes prose">
+    <p>Read a walkthrough as a worked example, or copy its commands into your terminal in order. Each one starts with a session prefix; change it before running the walkthrough again. <a href="../guide/#provider">Configure a provider</a> first. Calls use your provider account and may cost money.</p>
+    <p>Your answers and probabilities may differ from the recorded ones. The loan and energy walkthroughs include incorrect model answers and show the calculations that expose them. A decision graph records history; it doesn't certify the answers. The commands produce recommendations only: they don't move a robot, approve credit, commit capital, send recall notices, patch equipment, or operate a battery.</p>
+</section>
+
+<footer class="site"><span>MIT</span><a href="../guide/">guide</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nouli · multi-turn decision harness</title>
+<meta name="description" content="Nouli is a multi-turn decision harness: it runs decision models over many turns, keeping every fact, question, and answer in a session.">
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<header class="top"><a class="mark" href="./">NOULI</a><nav><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+
+<h1 class="display">Every answer<br><span>remembers.</span></h1>
+<div class="sub"><p><strong>Nouli is a multi-turn decision harness.</strong> It runs decision models over many turns: each turn adds facts, and the model decides again with the whole history in view.</p></div>
+
+<section id="hero" aria-label="A recorded Nouli session">
+  <div class="panel" id="panel">
+    <div class="group"><span>the train is</span>
+      <div class="keys" id="train"><button type="button" data-v="cancelled" aria-pressed="true">cancelled</button><button type="button" data-v="late" aria-pressed="false">late</button><button type="button" data-v="ontime" aria-pressed="false">on time</button></div></div>
+    <div class="group"><span>plan draws on</span>
+      <div class="keys" id="sources"><label><input type="checkbox" value="travel" checked>travel</label><label><input type="checkbox" value="budget" checked>budget</label></div></div>
+  </div>
+</section>
+
+<p class="thesis">A session keeps <b>every fact, question and answer.</b> Add a turn and the model decides again with all of it in view. Branch to try something else. <b>Blend</b> to put separate histories together.</p>
+
+<table class="index">
+  <thead><tr><th>example</th><th>what it shows</th><th class="n">turns</th></tr></thead>
+  <tbody>
+    <tr><td class="t"><a href="examples/recall/">Food recall response</a></td><td>A customer's reply changes the recall plan</td><td class="n">09</td></tr>
+    <tr><td class="t"><a href="examples/robot-picking/">Robotic picking exceptions</a></td><td>A picking arm decides when to ask a person</td><td class="n">07</td></tr>
+    <tr><td class="t"><a href="examples/seed-investment/">Seed investment decision</a></td><td>Reference calls change a fund's recommendation</td><td class="n">08</td></tr>
+    <tr><td class="t"><a href="examples/loan-approval/">Personal loan approval</a></td><td>Corrected income reaches a new recommendation</td><td class="n">09</td></tr>
+    <tr><td class="t"><a href="examples/credit-card-limit/">Credit card limit increase</a></td><td>Verified income reopens a limit decision</td><td class="n">09</td></tr>
+    <tr><td class="t"><a href="examples/vulnerability-response/">Firewall vulnerability response</a></td><td>A confirmed compromise joins the response</td><td class="n">08</td></tr>
+    <tr><td class="t"><a href="examples/conservation/">Energy conservation planning</a></td><td>Corrected telemetry revises a combined plan</td><td class="n">09</td></tr>
+  </tbody>
+</table>
+
+<footer class="site"><span>MIT</span><a href="guide/">guide</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
+<script type="module" src="/src/home.js"></script>
+</body>
+</html>

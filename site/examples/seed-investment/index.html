@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seed investment decision · Nouli</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body data-graph="seed-investment">
+<header class="top"><a class="mark" href="../../">NOULI</a><nav><a href="../../guide/">guide</a><a href="../" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<main class="walk">
+<article class="story prose">
+<p class="crumb"><a href="../">Examples</a></p>
+<h1 class="display small">Seed investment decision</h1>
+<p class="lede">A seed fund reviews an applied-AI company, plans diligence, and drafts a recommendation for its investment committee. Customer reference calls then change the biggest risk, and the recommendation changes with it.</p>
+<h2>The problem</h2>
+<p>A partner at a seed fund is evaluating Tidewell, an AI agent that prepares and follows up dental insurance claims. The partner has notes on the team and the traction, a fund policy on check size, ownership, and valuation, and a committee meeting on Monday. The evidence arrives during the week: reference calls land after the first recommendation is drafted.</p>
+<p>A good process shows what each recommendation was based on, and updates it when the evidence changes without losing the earlier reasoning. That's what a committee memo, a partner review, or a post-mortem two years later needs.</p>
+<p>Tidewell, its founders, its metrics, and the fund policy are fictional.</p>
+<h2>What we will do</h2>
+<p>We keep team, traction, and fund policy in separate sessions. We blend team and traction to plan diligence, then blend the plan with the fund policy to draft the recommendation. When the reference calls come in, we add them to the traction session and rebuild the diligence plan and the recommendation from the updated history. Finally, we try a repriced round without saving it.</p>
+<h2>Before you start</h2>
+<p><a href="../../guide/#provider">Configure a provider and model</a>, then run the commands in order in the same shell. Nouli reads credentials from your shell or the <code>.env</code> in your current directory. Each decision calls your configured provider and may cost money.</p>
+<p>The outputs below were recorded with <code>typesafe/jev-1.14.0</code>. Your probabilities, session IDs, and answers may differ.</p>
+<p>Set a session prefix for this walkthrough. Change it before running the walkthrough again, so the new sessions get unique names:</p>
+<pre><code>example=seed</code></pre>
+<section class="step" id="step-1" data-node="0">
+<h2><span class="num">01</span>Review the founding team</h2>
+<p>Record the founders' backgrounds in their own session. A choice question names the shape of the team instead of rating it.</p>
+<pre><code>nouli --format text --name "$example-team" \
+  --state 'Fictional company Tidewell builds an AI agent that prepares and follows up dental insurance claims for independent practices. Maya Ortiz, CEO, ran billing for a 12-location dental group for six years. Dev Patel, CTO, spent four years on document-understanding models at a large cloud provider and has shipped two production ML systems. Both founders work full time. There is no sales hire yet.' \
+  --questions '[
+  {
+    "id": "team",
+    "prompt": "How complete is the founding team for this market?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "sales_gap",
+          "description": "Strong product and technology fit, with a gap in sales leadership"
+        },
+        {
+          "id": "complete",
+          "description": "Complete team, including proven sales leadership"
+        },
+        {
+          "id": "missing",
+          "description": "Missing skills the company needs to build the product"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-40e3-706f-8507-ff2f780ed919
+Turn: 01a186b2-4161-7313-8dba-b80399aa7544
+Provider: typesafe/jev-1.14.0
+team: choice: sales_gap (Strong product and technology fit, with a gap in sales leadership), P(selected)=0.96
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.94</code></pre>
+<p>The model sees strong product and technology coverage with a gap in sales leadership (0.96). That gap matters later: every customer so far came through the CEO's network.</p>
+</section>
+<section class="step" id="step-2" data-node="1">
+<h2><span class="num">02</span>Review traction</h2>
+<p>Record traction in a separate session, including where the customers came from.</p>
+<pre><code>nouli --format text --name "$example-traction" \
+  --state 'Tidewell metrics at month 10: 9 of 12 pilot practices converted to paid plans, monthly recurring revenue is $14,200, and no paying practice has cancelled. Practices collect insurance claims 11 days faster on average. All 9 customers came from the CEO'\''s professional network. Tidewell has not yet tried outbound sales.' \
+  --questions '[
+  {
+    "id": "traction",
+    "prompt": "What does the traction show?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "early_signal",
+          "description": "An early product-market signal that sales beyond the founders' network have not yet tested"
+        },
+        {
+          "id": "repeatable",
+          "description": "Repeatable sales across unrelated customers"
+        },
+        {
+          "id": "weak",
+          "description": "Too little evidence of demand"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-416c-7189-b8ad-28916560f816
+Turn: 01a186b2-444b-73a0-9bdf-b4d90e1eb844
+Provider: typesafe/jev-1.14.0
+traction: choice: early_signal (An early product-market signal that sales beyond the founders' network have not yet tested), P(selected)=1
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<p>Nine paid practices and no cancellations read as an early signal, not repeatable sales (P=1), because no customer came from outside the founders' network.</p>
+</section>
+<section class="step" id="step-3" data-node="2">
+<h2><span class="num">03</span>Record the fund policy and round terms</h2>
+<p>Record the fund's rules and the round terms in a third session. Every recommendation that follows reuses this history.</p>
+<pre><code>nouli --format text --name "$example-fund" \
+  --state 'Illustrative fund policy: a $40M seed fund investing in applied AI companies. Initial checks range from $500,000 to $1,500,000, with a target of at least 8% ownership at entry. The fund does not invest in rounds priced above a $20M post-money valuation. Tidewell is raising $3M at a $15M post-money valuation. A $1.2M check buys 8%; a $1M check buys 6.7%.' \
+  --questions '[
+  {
+    "id": "check",
+    "prompt": "Which check fits the fund policy for this round?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "check_1_2m",
+          "description": "Request $1.2M for 8% ownership"
+        },
+        {
+          "id": "check_1m",
+          "description": "Request $1M for 6.7% ownership"
+        },
+        {
+          "id": "outside",
+          "description": "The round falls outside the fund policy"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-4463-7550-92f2-9a257aedce31
+Turn: 01a186b2-44eb-7403-8173-bd18f3f67ad4
+Provider: typesafe/jev-1.14.0
+check: choice: check_1_2m (Request $1.2M for 8% ownership), P(selected)=0.95
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.92</code></pre>
+<p>The model picks the $1.2M check, the one that meets the 8% ownership target (0.95). A $1M check would fall short.</p>
+</section>
+<section class="step" id="step-4" data-node="3">
+<h2><span class="num">04</span>Plan diligence from team and traction</h2>
+<p>Blend team and traction to choose what diligence should test first. The fund policy isn't needed for that.</p>
+<pre><code>nouli --format text --from "$example-team" --from "$example-traction" --name "$example-diligence" \
+  --state 'Plan the week of diligence before the investment committee. Start with the largest unresolved risk in the team and traction records.' \
+  --questions '[
+  {
+    "id": "diligence",
+    "prompt": "What should diligence test first?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "references",
+          "description": "Call practices outside the founders' network about retention and switching risk"
+        },
+        {
+          "id": "technical",
+          "description": "Review the claim-preparation model's accuracy and error handling"
+        },
+        {
+          "id": "hiring",
+          "description": "Assess the founders' plan to hire a first sales lead"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-44f9-77bc-b1db-c6d1745b69e0
+Turn: 01a186b2-45a0-752d-8f5d-f944f53b636f
+Provider: typesafe/jev-1.14.0
+diligence: choice: references (Call practices outside the founders' network about retention and switching risk), P(selected)=0.78
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.67</code></pre>
+<p>Reference calls come first (0.78), with sales hiring second (0.21). Both point at the same gap: nobody has sold Tidewell to a stranger yet.</p>
+</section>
+<section class="step" id="step-5" data-node="4">
+<h2><span class="num">05</span>Draft the investment committee recommendation</h2>
+<p>Blend the diligence plan with the fund policy to draft the recommendation for Monday's committee.</p>
+<pre><code>nouli --format text --from "$example-diligence" --from "$example-fund" --name "$example-ic" \
+  --state 'Prepare a recommendation for Monday'\''s investment committee. It must respect the fund policy and name any diligence that is still open.' \
+  --questions '[
+  {
+    "id": "recommendation",
+    "prompt": "What should the partner recommend to the investment committee?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "invest_conditional",
+          "description": "Invest $1.2M, conditional on completing the planned diligence"
+        },
+        {
+          "id": "invest_now",
+          "description": "Invest $1.2M now without further diligence"
+        },
+        {
+          "id": "pass",
+          "description": "Pass on the round"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-45af-70d2-91ae-e509448cbcd2
+Turn: 01a186b2-4674-7335-b60d-10a20e6efb14
+Provider: typesafe/jev-1.14.0
+recommendation: choice: invest_conditional (Invest $1.2M, conditional on completing the planned diligence), P(selected)=0.91
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.86</code></pre>
+<p>The model recommends investing $1.2M once the planned reference calls are done (0.91). It names the open diligence instead of skipping it, as the fund policy asks.</p>
+</section>
+<section class="step" id="step-6" data-node="5">
+<h2><span class="num">06</span>Add the reference calls</h2>
+<p>The reference calls come back mid-week. Add them to the traction session as its second turn; the first turn stays in its history.</p>
+<pre><code>nouli --format text --session "$example-traction" \
+  --state 'Reference call update: the partner spoke with 4 practices outside the founders'\'' network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.' \
+  --questions '[
+  {
+    "id": "risk",
+    "prompt": "What is now the biggest risk to Tidewell's growth?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "platform",
+          "description": "A practice-management vendor bundling a competing feature"
+        },
+        {
+          "id": "demand",
+          "description": "Weak demand for faster claims collection"
+        },
+        {
+          "id": "team",
+          "description": "The founders' ability to build the product"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-416c-7189-b8ad-28916560f816
+Turn: 01a186b2-471a-7715-9678-963f1b93ebeb
+Provider: typesafe/jev-1.14.0
+risk: choice: platform (A practice-management vendor bundling a competing feature), P(selected)=0.99
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<p>Two of the four outside practices bought. The other two declined because their software vendor plans a built-in assistant. The model now names platform bundling as the biggest risk (0.99), something the first traction turn couldn't show.</p>
+</section>
+<section class="step" id="step-7" data-node="6">
+<h2><span class="num">07</span>Replan diligence with the updated traction</h2>
+<p>Blend the team with the updated traction. The earlier diligence session doesn't change; this is a new plan from the new history.</p>
+<pre><code>nouli --format text --from "$example-team" --from "$example-traction" --name "$example-diligence-updated" \
+  --state 'Plan the remaining diligence before the investment committee. Use the latest traction record, including the reference calls.' \
+  --questions '[
+  {
+    "id": "diligence",
+    "prompt": "What should diligence test first?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "platform",
+          "description": "Test whether practices would keep Tidewell if their software vendor bundles a claims assistant"
+        },
+        {
+          "id": "technical",
+          "description": "Review the claim-preparation model's accuracy and error handling"
+        },
+        {
+          "id": "hiring",
+          "description": "Assess the founders' plan to hire a first sales lead"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-4727-71fd-9a24-0f0886341080
+Turn: 01a186b2-47af-77d2-8076-d2209b2ada27
+Provider: typesafe/jev-1.14.0
+diligence: choice: platform (Test whether practices would keep Tidewell if their software vendor bundles a claims assistant), P(selected)=0.99
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<p>Diligence moves from reference calls, which are done, to the bundling risk (0.99).</p>
+</section>
+<section class="step" id="step-8" data-node="7">
+<h2><span class="num">08</span>Reconsider the recommendation</h2>
+<p>Blend the new diligence plan with the same fund policy.</p>
+<pre><code>nouli --format text --from "$example-diligence-updated" --from "$example-fund" --name "$example-ic-updated" \
+  --state 'Prepare the recommendation for Monday'\''s investment committee. It must respect the fund policy and use the latest diligence record.' \
+  --questions '[
+  {
+    "id": "recommendation",
+    "prompt": "What should the partner recommend to the investment committee?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "milestone",
+          "description": "Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant"
+        },
+        {
+          "id": "invest_now",
+          "description": "Invest $1.2M now on the current evidence"
+        },
+        {
+          "id": "small",
+          "description": "Invest $500,000 to hold a smaller position while the platform risk plays out"
+        },
+        {
+          "id": "pass",
+          "description": "Pass until Tidewell shows it can win against the bundled feature"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a186b2-47bb-718b-a5b2-83ca237bb8b4
+Turn: 01a186b2-48ad-7602-a929-47e46986cd7a
+Provider: typesafe/jev-1.14.0
+recommendation: choice: milestone (Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant), P(selected)=0.61
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.48</code></pre>
+<p>The model recommends $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant (0.61). Passing is a real second choice (0.33), so the committee sees a close call, not a confident yes. The smaller $500,000 check gets 0.04; it would miss the fund's 8% ownership target.</p>
+</section>
+<section class="step" id="step-9">
+<h2><span class="num">09</span>Try new terms without saving</h2>
+<p>Try a repriced round from the updated recommendation. <code>--no-session</code> evaluates it without saving anything.</p>
+<pre><code>nouli --format text --from "$example-ic-updated" --no-session \
+  --state 'What-if: the lead investor reprices the round to $3M at a $25M post-money valuation. Everything else is unchanged.' \
+  --questions '[
+  {
+    "id": "terms",
+    "prompt": "What should the partner do under these terms?",
+    "answer_space": {
+      "type": "choice",
+      "options": [
+        {
+          "id": "same",
+          "description": "Keep the $1.2M recommendation"
+        },
+        {
+          "id": "smaller",
+          "description": "Ask for a smaller allocation at the new price"
+        },
+        {
+          "id": "decline",
+          "description": "Decline, because the new price is above the fund's valuation limit"
+        }
+      ]
+    }
+  }
+]'</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Provider: typesafe/jev-1.14.0
+terms: choice: decline (Decline, because the new price is above the fund's valuation limit), P(selected)=0.91
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.86</code></pre>
+<p>At a $25M post-money valuation the round is above the fund's $20M limit, and the model declines (0.91). Because nothing was saved, this answer isn't in the graph and the recommendation stands.</p>
+</section>
+<h2>What the graph keeps</h2>
+<p>The saved graph holds both recommendations side by side. The first is conditional on reference calls; the second is conditional on the bundling milestone. Each one traces back to the facts the model saw, and the fund policy feeds both without being copied. These commands make recommendations only; they don't commit capital.</p>
+</article>
+<aside aria-label="Decision graph for this walkthrough"><div id="figure"></div></aside>
+</main>
+<script type="module" src="/src/example.js"></script>
+</body>
+</html>

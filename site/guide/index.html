@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide · Nouli</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<header class="top"><a class="mark" href="../">NOULI</a><nav><a href="./" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<h1 class="display small">Guide</h1>
+
+<div class="guide">
+<ol class="toc">
+  <li><a href="#install">Install</a></li>
+  <li><a href="#provider">Configure a provider</a></li>
+  <li><a href="#first">Make a decision</a></li>
+  <li><a href="#turns">Add a turn</a></li>
+  <li><a href="#branch">Branch and blend</a></li>
+  <li><a href="#view">See the graph</a></li>
+  <li><a href="#workflows">Run a workflow</a></li>
+  <li><a href="#output">Output and exit codes</a></li>
+  <li><a href="#help">Troubleshooting</a></li>
+</ol>
+
+<article class="prose">
+<p>Nouli is a multi-turn decision harness: it gives a decision model a memory. You send facts and a question with a fixed set of answers; the model returns a probability for each answer. Nouli records the turn in a session, and the next turn only needs the new facts.</p>
+
+<h2 id="install"><span class="num">01</span>Install</h2>
+<p>Installation instructions are coming soon.</p>
+
+<h2 id="provider"><span class="num">02</span>Configure a provider</h2>
+<p>Nouli reads <code>~/.nouli/config.toml</code>. The first time you make a decision without one, Nouli creates an empty file and asks you to define a provider. For TypeSafe:</p>
+<pre><code>default_provider = "typesafe"
+default_model = "jev-latest"
+
+[providers.typesafe]
+protocol = "typesafe"
+base_url = "https://api.typesafe.ai"
+api_key_env = "TYPESAFE_TOKEN"</code></pre>
+<p><code>api_key_env</code> names an environment variable; never put the key itself in the file. Nouli reads <code>.env</code> from the directory you run it in, so you can keep the key there and out of version control:</p>
+<pre><code>TYPESAFE_TOKEN="your-api-key"</code></pre>
+<p>A value exported in your shell takes precedence. Use <code>--env-file FILE</code> to read a different file.</p>
+<p>The other supported protocols are <code>openai-decisions</code> and <code>openrouter-decisions</code>. A local Laya service uses the <code>typesafe</code> protocol with a loopback URL and needs a context budget, because Nouli can't look up its limits:</p>
+<pre><code>[providers.local]
+protocol = "typesafe"
+base_url = "http://localhost:8000"
+
+[providers.local.models."english"]
+context_budget_tokens = 8192
+reserved_output_tokens = 128</code></pre>
+<p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
+
+<h2 id="first"><span class="num">03</span>Make a decision</h2>
+<p>Give the facts with <code>--state</code> (<code>-s</code>) and the questions with <code>--questions</code> (<code>-q</code>). <code>--name</code> starts a saved session:</p>
+<pre><code>nouli --name travel \
+  -s 'The train costs 40 USD and arrives 30 minutes before the meeting.
+A taxi costs 70 USD and also arrives in time. Prefer the cheaper option
+that arrives on time.' \
+  -q '[{"id": "transport",
+        "prompt": "How should I travel to the meeting?",
+        "answer_space": {"type": "choice", "options": [
+          {"id": "train", "description": "Take the train"},
+          {"id": "taxi", "description": "Take a taxi"}]}}]'</code></pre>
+<pre class="out"><code>transport: choice: train (Take the train), P(selected)=1</code></pre>
+<p>Each question has one of three answer types:</p>
+<table>
+  <thead><tr><th>type</th><th>answer</th><th>answer_space</th></tr></thead>
+  <tbody>
+    <tr><td><code>choice</code></td><td>One option, with a probability for every option</td><td><code>{"type": "choice", "options": [{"id", "description"}]}</code></td></tr>
+    <tr><td><code>noul</code></td><td>The probability that the answer is yes</td><td><code>{"type": "noul"}</code></td></tr>
+    <tr><td><code>score</code></td><td>The expected position on an ordered rubric, which can be fractional</td><td><code>{"type": "score", "levels": ["Poor", "Adequate", "Excellent"]}</code></td></tr>
+  </tbody>
+</table>
+<p>One turn can ask several questions; the model answers each independently. For larger requests, put the turn in a file and pass <code>--input request.json</code> (JSON or TOON). Answers are model judgments, not actions: Nouli never books, sends, or changes anything.</p>
+
+<h2 id="turns"><span class="num">04</span>Add a turn</h2>
+<p><code>--session</code> continues a saved session. Send only what changed; the earlier facts and answers come along:</p>
+<pre><code>nouli --session travel \
+  -s 'The train has been cancelled. The taxi is still available at 70 USD.' \
+  -q '[{"id": "transport", "prompt": "How should I travel to the meeting now?",
+        "answer_space": {"type": "choice", "options": [
+          {"id": "train", "description": "Take the train"},
+          {"id": "taxi", "description": "Take a taxi"}]}}]'</code></pre>
+<p>Sessions are saved under <code>~/.nouli</code> and work from any directory. <code>--store DIR</code> uses a different store. <code>--no-session</code> makes a decision without saving it.</p>
+<p>Long histories are trimmed to fit the model's context budget: older decisions shrink to their question and answer first, then the oldest optional records drop out. The full record stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached the model for a turn.</p>
+
+<h2 id="branch"><span class="num">05</span>Branch and blend</h2>
+<p><code>--from</code> starts a new session from saved history. One <code>--from</code> branches; several blend:</p>
+<pre><code>nouli --from travel --name travel-late -s '…' -q '…'
+nouli --from travel --from budget --name plan -s '…' -q '…'</code></pre>
+<p>A new session captures its sources when you create it. Later turns in <code>travel</code> don't change <code>plan</code>; make a new blend to reconsider with the updated history. To start from an older point, name the turn: <code>--from travel@TURN_ID</code>. Combine <code>--from</code> with <code>--no-session</code> to try a what-if without saving anything.</p>
+
+<h2 id="view"><span class="num">06</span>See the graph</h2>
+<pre><code>nouli view --session plan
+nouli view --session plan --mermaid &gt; plan.mmd
+nouli sessions list
+nouli sessions show plan
+nouli sessions export plan --format json &gt; plan.json</code></pre>
+<p><code>nouli view</code> draws the session and every turn it captured as boxes in your terminal, with <code>▶</code> marking each selected answer. <code>--mermaid</code> prints the same graph as Mermaid source; paste it into a <code>```mermaid</code> block and GitHub draws it. None of these commands call a model or change the store.</p>
+
+<h2 id="workflows"><span class="num">07</span>Run a workflow</h2>
+<p>When later questions depend on earlier answers, describe the turns as a graph and let Nouli run it. Nodes with no dependency between them run in parallel:</p>
+<pre><code>{
+  "state": [],
+  "nodes": [
+    {"id": "choose", "turn": {
+      "state": [{"type": "text", "text": "The train takes 4 hours; the flight takes 2 hours."}],
+      "questions": [{"id": "route", "prompt": "Which route should I take?",
+        "answer_space": {"type": "choice", "options": [
+          {"id": "train", "description": "Take the train"},
+          {"id": "flight", "description": "Take the flight"}]}}]}},
+    {"id": "book", "dependencies": ["choose"], "turn": {
+      "state": [],
+      "questions": [{"id": "book_now", "prompt": "Given the preferred route, should I book it now?",
+        "answer_space": {"type": "noul"}}]}}
+  ]
+}</code></pre>
+<pre><code>nouli workflows run workflow.json --name review --parallel 2
+nouli workflows show RUN_ID
+nouli workflows resume RUN_ID</code></pre>
+<p>A run saves its graph and settings before it starts. If it's interrupted, <code>resume</code> reuses finished nodes and runs the rest. <code>--jsonl</code> streams progress events.</p>
+
+<h2 id="output"><span class="num">08</span>Output and exit codes</h2>
+<p>Output is text in a terminal and JSON when piped. Choose explicitly with <code>--format text|json|jsonl|toon</code>, <code>--json</code>, or <code>--jsonl</code>.</p>
+<table>
+  <thead><tr><th>exit</th><th>meaning</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>Completed, including replays and per-question refusals</td></tr>
+    <tr><td>2</td><td>Invalid input or configuration</td></tr>
+    <tr><td>3</td><td>Provider, authentication, capability, contract, or capacity failure</td></tr>
+    <tr><td>4</td><td>Partial or failed workflow</td></tr>
+    <tr><td>5</td><td>Request, writer, context, or advanced-head conflict</td></tr>
+    <tr><td>6</td><td>Storage, internal, or output failure</td></tr>
+    <tr><td>130</td><td>Interrupted; recovery needed</td></tr>
+  </tbody>
+</table>
+
+<h2 id="help"><span class="num">09</span>Troubleshooting</h2>
+<table>
+  <thead><tr><th>message</th><th>what to do</th></tr></thead>
+  <tbody>
+    <tr><td><code>providers_required</code></td><td>Open the configuration file named in the error and add a <code>[providers.NAME]</code> section.</td></tr>
+    <tr><td><code>provider_required</code></td><td>Set <code>default_provider</code> or pass <code>--provider NAME</code>.</td></tr>
+    <tr><td><code>model_required</code></td><td>Set <code>default_model</code> or pass <code>--model MODEL</code>.</td></tr>
+    <tr><td><code>unknown_provider</code></td><td>Use a provider name defined in your configuration.</td></tr>
+    <tr><td><code>credential_unavailable</code></td><td>Set the environment variable named in the error, in your shell or the env file.</td></tr>
+    <tr><td><code>env_file_not_found</code></td><td>Check the path passed to <code>--env-file</code>.</td></tr>
+    <tr><td><code>invalid_env_file</code></td><td>Check assignments, quotes, and UTF-8 encoding in the env file.</td></tr>
+    <tr><td><code>invalid_model_budget</code></td><td>Add <code>context_budget_tokens</code> under <code>[providers.NAME.models."MODEL"]</code> or pass <code>--context-budget TOKENS</code>.</td></tr>
+    <tr><td><code>invalid_configuration_syntax</code></td><td>Check the TOML. Top-level settings go before provider sections.</td></tr>
+  </tbody>
+</table>
+<p>A provider can refuse a single question; that's recorded as a refusal, not an error. Run <code>nouli --help</code> for every option. The <a href="https://github.com/standing-desks/nouli/tree/main/docs">reference docs</a> cover each subsystem in detail.</p>
+</article>
+</div>
+
+<footer class="site"><span>MIT</span><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
+</body>
+</html>

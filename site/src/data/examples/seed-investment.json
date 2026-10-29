@@ -1,0 +1,377 @@
+{
+ "session": "ic-updated",
+ "nodes": [
+  {
+   "id": "01a186b2-4161-7313-8dba-b80399aa7544",
+   "session": "team",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Fictional company Tidewell builds an AI agent that prepares and follows up dental insurance claims for independent practices. Maya Ortiz, CEO, ran billing for a 12-location dental group for six years. Dev Patel, CTO, spent four years on document-understanding models at a large cloud provider and has shipped two production ML systems. Both founders work full time. There is no sales hire yet.",
+   "questions": [
+    {
+     "id": "team",
+     "prompt": "How complete is the founding team for this market?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "sales_gap",
+       "label": "Strong product and technology fit, with a gap in sales leadership",
+       "p": 0.96
+      },
+      {
+       "id": "complete",
+       "label": "Complete team, including proven sales leadership",
+       "p": 0.04
+      },
+      {
+       "id": "missing",
+       "label": "Missing skills the company needs to build the product",
+       "p": 0
+      }
+     ],
+     "selected": "sales_gap"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name team -s … -q …"
+  },
+  {
+   "id": "01a186b2-444b-73a0-9bdf-b4d90e1eb844",
+   "session": "traction",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Tidewell metrics at month 10: 9 of 12 pilot practices converted to paid plans, monthly recurring revenue is $14,200, and no paying practice has cancelled. Practices collect insurance claims 11 days faster on average. All 9 customers came from the CEO's professional network. Tidewell has not yet tried outbound sales.",
+   "questions": [
+    {
+     "id": "traction",
+     "prompt": "What does the traction show?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "early_signal",
+       "label": "An early product-market signal that sales beyond the founders' network have not yet tested",
+       "p": 1
+      },
+      {
+       "id": "repeatable",
+       "label": "Repeatable sales across unrelated customers",
+       "p": 0
+      },
+      {
+       "id": "weak",
+       "label": "Too little evidence of demand",
+       "p": 0
+      }
+     ],
+     "selected": "early_signal"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name traction -s … -q …"
+  },
+  {
+   "id": "01a186b2-44eb-7403-8173-bd18f3f67ad4",
+   "session": "fund",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Illustrative fund policy: a $40M seed fund investing in applied AI companies. Initial checks range from $500,000 to $1,500,000, with a target of at least 8% ownership at entry. The fund does not invest in rounds priced above a $20M post-money valuation. Tidewell is raising $3M at a $15M post-money valuation. A $1.2M check buys 8%; a $1M check buys 6.7%.",
+   "questions": [
+    {
+     "id": "check",
+     "prompt": "Which check fits the fund policy for this round?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "check_1_2m",
+       "label": "Request $1.2M for 8% ownership",
+       "p": 0.95
+      },
+      {
+       "id": "check_1m",
+       "label": "Request $1M for 6.7% ownership",
+       "p": 0
+      },
+      {
+       "id": "outside",
+       "label": "The round falls outside the fund policy",
+       "p": 0.05
+      }
+     ],
+     "selected": "check_1_2m"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name fund -s … -q …"
+  },
+  {
+   "id": "01a186b2-45a0-752d-8f5d-f944f53b636f",
+   "session": "diligence",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    0,
+    1
+   ],
+   "state": "Plan the week of diligence before the investment committee. Start with the largest unresolved risk in the team and traction records.",
+   "questions": [
+    {
+     "id": "diligence",
+     "prompt": "What should diligence test first?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "references",
+       "label": "Call practices outside the founders' network about retention and switching risk",
+       "p": 0.78
+      },
+      {
+       "id": "technical",
+       "label": "Review the claim-preparation model's accuracy and error handling",
+       "p": 0.01
+      },
+      {
+       "id": "hiring",
+       "label": "Assess the founders' plan to hire a first sales lead",
+       "p": 0.21
+      }
+     ],
+     "selected": "references"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from team --from traction --name diligence -s … -q …"
+  },
+  {
+   "id": "01a186b2-4674-7335-b60d-10a20e6efb14",
+   "session": "ic",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    3,
+    2
+   ],
+   "state": "Prepare a recommendation for Monday's investment committee. It must respect the fund policy and name any diligence that is still open.",
+   "questions": [
+    {
+     "id": "recommendation",
+     "prompt": "What should the partner recommend to the investment committee?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "invest_conditional",
+       "label": "Invest $1.2M, conditional on completing the planned diligence",
+       "p": 0.91
+      },
+      {
+       "id": "invest_now",
+       "label": "Invest $1.2M now without further diligence",
+       "p": 0
+      },
+      {
+       "id": "pass",
+       "label": "Pass on the round",
+       "p": 0.09
+      }
+     ],
+     "selected": "invest_conditional"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 3,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from diligence --from fund --name ic -s … -q …"
+  },
+  {
+   "id": "01a186b2-471a-7715-9678-963f1b93ebeb",
+   "session": "traction",
+   "turn": 2,
+   "kind": "continued",
+   "parents": [
+    1
+   ],
+   "state": "Reference call update: the partner spoke with 4 practices outside the founders' network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.",
+   "questions": [
+    {
+     "id": "risk",
+     "prompt": "What is now the biggest risk to Tidewell's growth?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "platform",
+       "label": "A practice-management vendor bundling a competing feature",
+       "p": 0.99
+      },
+      {
+       "id": "demand",
+       "label": "Weak demand for faster claims collection",
+       "p": 0.01
+      },
+      {
+       "id": "team",
+       "label": "The founders' ability to build the product",
+       "p": 0
+      }
+     ],
+     "selected": "platform"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --session traction -s … -q …"
+  },
+  {
+   "id": "01a186b2-47af-77d2-8076-d2209b2ada27",
+   "session": "diligence-updated",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    0,
+    5
+   ],
+   "state": "Plan the remaining diligence before the investment committee. Use the latest traction record, including the reference calls.",
+   "questions": [
+    {
+     "id": "diligence",
+     "prompt": "What should diligence test first?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "platform",
+       "label": "Test whether practices would keep Tidewell if their software vendor bundles a claims assistant",
+       "p": 0.99
+      },
+      {
+       "id": "technical",
+       "label": "Review the claim-preparation model's accuracy and error handling",
+       "p": 0
+      },
+      {
+       "id": "hiring",
+       "label": "Assess the founders' plan to hire a first sales lead",
+       "p": 0.01
+      }
+     ],
+     "selected": "platform"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 5,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from team --from traction --name diligence-updated -s … -q …"
+  },
+  {
+   "id": "01a186b2-48ad-7602-a929-47e46986cd7a",
+   "session": "ic-updated",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    6,
+    2
+   ],
+   "state": "Prepare the recommendation for Monday's investment committee. It must respect the fund policy and use the latest diligence record.",
+   "questions": [
+    {
+     "id": "recommendation",
+     "prompt": "What should the partner recommend to the investment committee?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "milestone",
+       "label": "Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant",
+       "p": 0.61
+      },
+      {
+       "id": "invest_now",
+       "label": "Invest $1.2M now on the current evidence",
+       "p": 0.02
+      },
+      {
+       "id": "small",
+       "label": "Invest $500,000 to hold a smaller position while the platform risk plays out",
+       "p": 0.04
+      },
+      {
+       "id": "pass",
+       "label": "Pass until Tidewell shows it can win against the bundled feature",
+       "p": 0.33
+      }
+     ],
+     "selected": "milestone"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 5,
+     "representation": "full"
+    },
+    {
+     "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from diligence-updated --from fund --name ic-updated -s … -q …"
+  }
+ ]
+}

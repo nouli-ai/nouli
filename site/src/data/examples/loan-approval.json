@@ -1,0 +1,435 @@
+{
+ "session": "recommendation-updated",
+ "nodes": [
+  {
+   "id": "01a18684-1131-739f-bdd5-020cc8fbbcba",
+   "session": "cashflow",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Fictional application L-101, initial verification at 09:00: verified recurring\nnet income is 5000 USD per month. Essential living expenses are 3000 USD and\npayments on existing debts are 600 USD. These expenses exclude any proposed new\nloan. There are no other obligations. All figures are documented for this\nsample.",
+   "questions": [
+    {
+     "id": "cashflow",
+     "prompt": "What monthly amount remains before a new loan payment?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "s1400",
+       "label": "1400 USD",
+       "p": 1
+      },
+      {
+       "id": "s2000",
+       "label": "2000 USD",
+       "p": 0
+      },
+      {
+       "id": "missing",
+       "label": "Request missing cash-flow records",
+       "p": 0
+      }
+     ],
+     "selected": "s1400"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name cashflow -s … -q …"
+  },
+  {
+   "id": "01a18684-1140-7154-96eb-339cb9d7706d",
+   "session": "history",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Fictional application L-101: the verified credit record covers 48 scheduled\nmonthly payments. Every payment was on time. There are no defaults or\ndelinquent balances, and the record is complete for this review.",
+   "questions": [
+    {
+     "id": "history",
+     "prompt": "How strong is the documented repayment performance?",
+     "type": "score",
+     "levels": [
+      {
+       "label": "Adverse payment history",
+       "p": 0
+      },
+      {
+       "label": "Mixed payment history",
+       "p": 0
+      },
+      {
+       "label": "Consistently timely payments",
+       "p": 1
+      }
+     ],
+     "expected": 2
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name history -s … -q …"
+  },
+  {
+   "id": "01a18684-114f-765f-ae86-78d40dbccb2e",
+   "session": "policy",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Fictional bank policy for application L-101: the applicant requests a 6000 USD\npersonal loan with a quoted all-in monthly installment of 250 USD. A smaller\n3000 USD loan has a quoted all-in installment of 150 USD. Either offer requires at\nleast 1000 USD remaining each month after living expenses, existing debt\npayments, and the proposed installment. Repayment records must be complete\nwith no defaults, no current delinquency, and at least 24 timely scheduled\npayments. Missing evidence requires manual review. Prefer the requested loan\nif both gates pass; otherwise recommend the smaller loan if both gates pass\nfor it; otherwise refer for manual review. No funds have been advanced.",
+   "questions": [
+    {
+     "id": "policy",
+     "prompt": "What must a loan recommendation consider?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "both",
+       "label": "Both affordability and documented repayment history",
+       "p": 1
+      },
+      {
+       "id": "history",
+       "label": "Repayment history alone",
+       "p": 0
+      },
+      {
+       "id": "income",
+       "label": "Income alone",
+       "p": 0
+      }
+     ],
+     "selected": "both"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name policy -s … -q …"
+  },
+  {
+   "id": "01a18684-1162-751f-9650-fba3afc90683",
+   "session": "affordability",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    0,
+    2
+   ],
+   "state": "Apply the sample product policy to the latest verified cash-flow record.\nSubtract each quoted installment separately, since these are alternative\noffers, not two concurrent loans. Compare the remainder with the 1000 USD sample\nthreshold.",
+   "questions": [
+    {
+     "id": "affordability",
+     "prompt": "Which quoted loans satisfy the sample affordability policy?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "both",
+       "label": "Both quoted loans meet the affordability threshold",
+       "p": 0.81
+      },
+      {
+       "id": "smaller",
+       "label": "Only the 3000 USD loan meets the affordability threshold",
+       "p": 0.06333333333333331
+      },
+      {
+       "id": "neither",
+       "label": "Neither quoted loan meets the affordability threshold",
+       "p": 0.06333333333333331
+      },
+      {
+       "id": "review",
+       "label": "Required affordability evidence is missing",
+       "p": 0.06333333333333331
+      }
+     ],
+     "selected": "both"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from cashflow --from policy --name affordability -s … -q …"
+  },
+  {
+   "id": "01a18684-1175-7522-a384-845962008707",
+   "session": "credit-review",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    1,
+    2
+   ],
+   "state": "Apply the sample policy requirements for repayment records only. Do not infer\naffordability from this review.",
+   "questions": [
+    {
+     "id": "credit_review",
+     "prompt": "Does the documented repayment record pass the sample history gate?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "pass",
+       "label": "The complete record meets the history requirements",
+       "p": 1
+      },
+      {
+       "id": "fail",
+       "label": "The record fails the history requirements",
+       "p": 0
+      },
+      {
+       "id": "review",
+       "label": "Required history evidence is missing",
+       "p": 0
+      }
+     ],
+     "selected": "pass"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from history --from policy --name credit-review -s … -q …"
+  },
+  {
+   "id": "01a18684-118d-73b9-bd8a-6c6fbdf4e8d9",
+   "session": "recommendation",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    3,
+    4
+   ],
+   "state": "Combine the affordability and credit-history reviews using the sample product\npolicy. A passing history gate cannot override an affordability failure.\nPrefer the requested 6000 USD loan if eligible; otherwise recommend the eligible\n3000 USD alternative; otherwise refer for manual review. This is a recommendation\nfor a loan officer, not an executed lending decision.",
+   "questions": [
+    {
+     "id": "recommendation",
+     "prompt": "What should the loan officer review?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "requested",
+       "label": "Recommend the requested 6000 USD loan at the quoted 250 USD installment",
+       "p": 0.81
+      },
+      {
+       "id": "smaller",
+       "label": "Recommend review of the 3000 USD alternative at the quoted 150 USD installment",
+       "p": 0.09499999999999997
+      },
+      {
+       "id": "manual",
+       "label": "Refer for manual review without recommending either loan",
+       "p": 0.09499999999999997
+      }
+     ],
+     "selected": "requested"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": 3,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 4,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from affordability --from credit-review --name recommendation -s … -q …"
+  },
+  {
+   "id": "01a18684-119f-73ad-af8f-222f0bdf70b9",
+   "session": "cashflow",
+   "turn": 2,
+   "kind": "continued",
+   "parents": [
+    0
+   ],
+   "state": "Fictional application L-101, corrected verification at 11:00: recurring net\nincome is 4800 USD per month, replacing the 09:00 figure of 5000 USD. Essential\nliving expenses remain 3000 USD and existing debt payments remain 600 USD. There are\nno other obligations. The proposed loan has not been approved or disbursed.",
+   "questions": [
+    {
+     "id": "cashflow",
+     "prompt": "What monthly amount now remains before a new loan payment?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "s1200",
+       "label": "1200 USD",
+       "p": 0.31
+      },
+      {
+       "id": "s1400",
+       "label": "1400 USD",
+       "p": 0.69
+      },
+      {
+       "id": "missing",
+       "label": "Request missing cash-flow records",
+       "p": 0
+      }
+     ],
+     "selected": "s1400"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --session cashflow -s … -q …"
+  },
+  {
+   "id": "01a18684-11b4-74f1-a1dc-a88fa0debdc2",
+   "session": "affordability-updated",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    6,
+    2
+   ],
+   "state": "Apply the sample product policy to the latest verified cash-flow record.\nSubtract each quoted installment separately, since these are alternative\noffers, not two concurrent loans. Compare the remainder with the 1000 USD sample\nthreshold.",
+   "questions": [
+    {
+     "id": "affordability_updated",
+     "prompt": "Which quoted loans satisfy the sample affordability policy now?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "both",
+       "label": "Both quoted loans meet the affordability threshold",
+       "p": 0.77
+      },
+      {
+       "id": "smaller",
+       "label": "Only the 3000 USD loan meets the affordability threshold",
+       "p": 0.05
+      },
+      {
+       "id": "neither",
+       "label": "Neither quoted loan meets the affordability threshold",
+       "p": 0.06
+      },
+      {
+       "id": "review",
+       "label": "Required affordability evidence is missing",
+       "p": 0.12
+      }
+     ],
+     "selected": "both"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from cashflow --from policy --name affordability-updated -s … -q …"
+  },
+  {
+   "id": "01a18684-11ce-74c6-a6cc-cf0abe12583b",
+   "session": "recommendation-updated",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    7,
+    4
+   ],
+   "state": "Combine the affordability and credit-history reviews using the sample product\npolicy. A passing history gate cannot override an affordability failure.\nPrefer the requested 6000 USD loan if eligible; otherwise recommend the eligible\n3000 USD alternative; otherwise refer for manual review. This is a recommendation\nfor a loan officer, not an executed lending decision.",
+   "questions": [
+    {
+     "id": "recommendation_updated",
+     "prompt": "What should the loan officer review now?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "requested",
+       "label": "Recommend the requested 6000 USD loan at the quoted 250 USD installment",
+       "p": 0.73
+      },
+      {
+       "id": "smaller",
+       "label": "Recommend review of the 3000 USD alternative at the quoted 150 USD installment",
+       "p": 0.17
+      },
+      {
+       "id": "manual",
+       "label": "Refer for manual review without recommending either loan",
+       "p": 0.1
+      }
+     ],
+     "selected": "requested"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": 7,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 4,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from affordability-updated --from credit-review --name recommendation-updated -s … -q …"
+  }
+ ]
+}
