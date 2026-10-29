@@ -193,6 +193,9 @@ impl Verb<'_> {
                 let create = args.facts.is_empty()
                     && args.questions.is_empty()
                     && args.common.input.is_none();
+                if create && (args.replay.request_id.is_some() || args.replay.retry_interrupted) {
+                    return Err(InputError::CreateOnly);
+                }
                 Parts {
                     selection: if args.from.is_empty() {
                         SessionSelection::New { name }
@@ -516,6 +519,14 @@ mod tests {
     fn new_builds_a_first_turn_or_only_a_session() {
         let only = draft(&["new", "Trip"]).unwrap();
         assert!(only.create.is_some());
+        // Creating a session saves no turn, so a request ID has nothing to identify.
+        for flag in [&["--request-id", "key"][..], &["--retry-interrupted"]] {
+            assert!(matches!(
+                draft(&[&["new", "Trip"][..], flag].concat()),
+                Err(InputError::CreateOnly)
+            ));
+        }
+        assert!(draft(&["new", "Trip", "A fact", "--request-id", "key"]).is_ok());
         let turn = draft(&[
             "new",
             "Trip",

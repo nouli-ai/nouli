@@ -49,6 +49,10 @@ pub(crate) enum InputError {
     },
     #[error(transparent)]
     Fact(#[from] FactError),
+    #[error(
+        "--request-id and --retry-interrupted need a turn: give `new` a fact or -q question, or leave them out to only create the session"
+    )]
+    CreateOnly,
     #[error("--replace takes a fact number from `nouli facts` and the new text")]
     ReplaceNumber,
     #[error("fact {0} does not exist; see the numbers in `nouli facts`")]

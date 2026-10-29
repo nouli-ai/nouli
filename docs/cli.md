@@ -13,7 +13,7 @@ nouli whatif Trip "The taxi fare has doubled to 140 USD."
 
 | Command | What it does |
 | --- | --- |
-| `nouli new NAME [--from SRC[@TURN]]... [FACT...] [-q Q...]` | Creates a session: new with no `--from`, a branch with one, a blend with several. With no facts and no questions it only creates the session and prints its ID. Otherwise it runs the first turn, and its `-q` questions become standing questions. |
+| `nouli new NAME [--from SRC[@TURN]]... [FACT...] [-q Q...]` | Creates a session: new with no `--from`, a branch with one, a blend with several. With no facts and no questions it only creates the session and prints its ID, and `--request-id` and `--retry-interrupted` are rejected because no turn is saved. Otherwise it runs the first turn, and its `-q` questions become standing questions. |
 | `nouli add SESSION [FACT...] [-q Q...] [--drop ID...] [--replace N TEXT...]` | Runs a turn on an existing session. |
 | `nouli ask SESSION [-q Q...] [--drop ID...]` | Asks again without new facts. It is `add` with no facts. |
 | `nouli whatif SESSION [FACT...] [-q Q...] [--drop ID...] [--replace N TEXT...]` | Runs one turn from the session's head and saves nothing. |
