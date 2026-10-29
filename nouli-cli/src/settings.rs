@@ -1,9 +1,10 @@
 //! CLI-owned filesystem/environment discovery. Loading has no ledger side effects.
 
 mod bootstrap;
+mod environment;
 pub(crate) mod preflight;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use nouli_core::config::{Config, ConfigError};
 
@@ -13,6 +14,8 @@ pub(crate) struct Settings {
     pub home: PathBuf,
     pub store: PathBuf,
     pub config_path: PathBuf,
+    pub environment: Arc<environment::Environment>,
+    env_file: Option<PathBuf>,
     initialize_default: bool,
     store_override: Option<PathBuf>,
 }
@@ -51,12 +54,21 @@ fn discover(
         home,
         store,
         config_path: path,
+        environment: Arc::default(),
+        env_file: args.env_file.clone(),
         initialize_default: args.config.is_none(),
         store_override: args.store.clone(),
     })
 }
 
 impl Settings {
+    pub(crate) fn load_environment(&mut self) -> Result<(), nouli_core::protocol::ErrorReport> {
+        self.environment = Arc::new(
+            environment::Environment::load(self.env_file.as_deref())
+                .map_err(|error| error.report())?,
+        );
+        Ok(())
+    }
     pub(crate) fn initialize(&mut self) -> Result<(), nouli_core::protocol::ErrorReport> {
         if self.initialize_default {
             self.config = bootstrap::initialize(&self.config_path).map_err(|error| match error {

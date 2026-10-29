@@ -39,6 +39,7 @@ impl Home {
     pub fn command_at(&self, store: &std::path::Path) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_nouli"));
         cmd.env_clear()
+            .current_dir(&self.0)
             .env("HOME", &self.0)
             .arg("--config")
             .arg(self.0.join("config.toml"))

@@ -89,7 +89,7 @@ async fn execute(
                 .evaluate_ephemeral(
                     worker.as_ref(),
                     input,
-                    |name| std::env::var(name).ok(),
+                    |name| settings.environment.lookup(name),
                     &cancel,
                 )
                 .await?;
@@ -106,7 +106,7 @@ async fn execute(
                 .evaluate(
                     worker.as_ref().ok_or(EngineError::EphemeralStore)?,
                     input,
-                    |name| std::env::var(name).ok(),
+                    |name| settings.environment.lookup(name),
                     &cancel,
                 )
                 .await?;

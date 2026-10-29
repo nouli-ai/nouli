@@ -12,6 +12,7 @@ use std::{
 pub struct Server {
     pub url: String,
     pub calls: Arc<Mutex<Vec<Value>>>,
+    pub authorizations: Arc<Mutex<Vec<Option<String>>>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -24,6 +25,8 @@ impl Server {
         let address = listener.local_addr().unwrap();
         let calls = Arc::new(Mutex::new(vec![]));
         let captured = calls.clone();
+        let authorizations = Arc::new(Mutex::new(vec![]));
+        let captured_authorizations = authorizations.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
         let thread = std::thread::spawn(move || {
@@ -47,6 +50,14 @@ impl Server {
                     assert!(bytes.len() < 64 * 1024);
                 };
                 let header = std::str::from_utf8(&bytes[..end]).unwrap();
+                captured_authorizations
+                    .lock()
+                    .unwrap()
+                    .push(header.lines().find_map(|line| {
+                        line.split_once(':')
+                            .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                            .map(|(_, value)| value.trim().to_owned())
+                    }));
                 let length = header
                     .lines()
                     .find_map(|line| {
@@ -80,6 +91,7 @@ impl Server {
         Self {
             url: format!("http://{address}"),
             calls,
+            authorizations,
             stop,
             thread: Some(thread),
         }

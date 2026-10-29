@@ -29,6 +29,11 @@ The inline-selection examples assume a portable turn file, or a full request tha
 
 Persisted calls use the user ledger by default. Fresh ephemeral calls open no ledger; sourced ephemeral calls open an existing store read-only. The first valid evaluation scaffolds a missing default config; configuration loading for help and inspection creates no files. `HOME` supplies default config/store paths; fully explicit config and store paths also work without `HOME`.
 
+Provider credentials can come from the current directory's `.env` or an explicit
+`--env-file FILE`. Exported shell values take precedence. Missing automatic files
+are fine; malformed/unreadable files and missing explicit files fail before
+execution. See [configuration](configuration.md) for credential setup and errors.
+
 `--provider` selects a named provider and `--model` selects a model independently. Configuration defaults are top-level `default_provider` and `default_model`. Optional `[providers.NAME.models."MODEL_ID"]` settings apply only to that model. `--context-budget TOKENS` overrides its budget, subject to known/configured context limits. Resolution is CLI selection, request selection, session defaults, then config defaults. The engine freezes settings and fixed sources for accepted work, records the actual served provider/model, and never falls back to another model/provider. Native uncertainty and fractional score semantics remain intact through all three adapters.
 
 `--request-id KEY` identifies normalized intent globally. Completed replay returns the saved turn even when formatting or current configuration differs. Syntax whitespace does not affect intent; changing evidence text does. A conflicting intent fails. `--retry-interrupted` requires that request identity and explicitly retries eligible interrupted work using saved settings/source points and fresh credentials from the saved source name. Earlier attempts remain inspectable. Ctrl-C signals cancellation to the shared engine and awaits its cleanup before exiting; an unsaved remote result can remain unknown.
