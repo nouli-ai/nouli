@@ -1,5 +1,5 @@
 // A recorded interactive session, played back line by line: typed input, then the turn it sent.
-const PROMPT = /^(\S+ › )(.*)$/;
+const PROMPT = /^(\S+ › |\$ )(.*)$/;
 
 /** Marks up one transcript line the way the terminal colors it. */
 function line(text) {
@@ -26,6 +26,18 @@ function line(text) {
     row.textContent = text;
   }
   return { row, typed: null };
+}
+
+/** Colors a static transcript in place, one block per line so long input can wrap. */
+export function paint(pre) {
+  const lines = pre.textContent.split("\n");
+  pre.replaceChildren();
+  for (const text of lines) {
+    const { row, typed } = line(text);
+    if (typed !== null) row.lastChild.textContent = typed;
+    row.classList.add("row");
+    pre.append(row);
+  }
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));

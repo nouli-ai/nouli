@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/src/style.css">
 </head>
-<body data-graph="credit-card-limit">
+<body data-graph="credit-card-limit" data-view="repl">
 <header class="top"><a class="mark" href="../../">NOULI</a><nav><a href="../../guide/#interactive">interactive</a><a href="../../guide/">guide</a><a href="../" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 <main class="walk">
 <article class="story prose">
@@ -22,11 +22,26 @@
 <h2>Before you start</h2>
 <p><a href="../../guide/#provider">Configure a provider and model</a>, then run the commands in order in the same shell. Nouli reads credentials from your shell or the <code>.env</code> in your current directory. Each decision calls your configured provider and may incur charges.</p>
 <p>The outputs below were captured with <code>typesafe/jev-1.14.0</code>. They are a recorded run, not guaranteed results. Probabilities, session IDs, and model answers may differ when you run the commands.</p>
+<div class="cmd-only">
 <p>Set a session prefix for this walkthrough. Change it before repeating the example so the new sessions have unique names:</p>
 <pre><code>example=card</code></pre>
+</div>
+<div class="views" role="group" aria-label="Show the steps as">
+<span>show the steps as</span><button type="button" data-view="repl" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
+<p class="repl-only">Open the first session with <code>nouli open cashflow</code>, then type each step's lines at the prompt. A question sends the turn.</p>
+</div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record income and existing obligations</h2>
 <p>Record income, living expenses, and other debt payments. Exclude the existing payment on this card because the capacity review will substitute a stressed payment for the candidate total line.</p>
+<pre class="repl"><code>$ nouli open cashflow
+new session "cashflow" · /help for commands
+
+cashflow › Fictional card application C-202 for an adult over 21, verification at 09:00: recurring net monthly income is 4000 USD, essential living expenses are 2500 USD, and payments on other debts are 700 USD. The 700 USD excludes payments on this credit card. There are no other obligations. All records required by the sample policy are verified.
+cashflow › ?cashflow: What monthly amount is available before this card payment? [800 USD, 1500 USD, Request missing income or obligation records]
+  turn 1 · 1 fact · 1 question
+  cashflow    ▶ 800 USD                          ███████████████████▊ 0.99
+                1500 USD                         ▎                    0.01
+                Request missing income or oblig…                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-cashflow&quot; \
   &#x27;Fictional card application C-202 for an adult over 21, verification at 09:00:
 recurring net monthly income is 4000 USD, essential living expenses are 2500 USD,
@@ -47,6 +62,13 @@ sample policy are verified.&#x27; \
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review the existing card account</h2>
 <p>Start a separate history for account behavior. A score records the documented payment performance independently of income.</p>
+<pre class="repl"><code>cashflow › /new account
+  new session "account"
+account › Fictional card account C-202: the current total limit is 5000 USD and the balance is 1000 USD. All 24 monthly minimum payments were made on time. There is no delinquency, over-limit balance, or unresolved account restriction. The account record is complete.
+account › ?account: How strong is the documented payment performance? &lt;Adverse payment history, Mixed payment history, Consistently timely payments&gt;
+  turn 1 · 1 fact · 1 question
+  account       expected 2.00 of 2   ▁▁█
+                Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently timely pay…</code></pre>
 <pre><code>nouli --format text new &quot;$example-account&quot; \
   &#x27;Fictional card account C-202: the current total limit is 5000 USD and the balance
 is 1000 USD. All 24 monthly minimum payments were made on time. There is no
@@ -65,6 +87,14 @@ account record is complete.&#x27; \
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record the request and sample review policy</h2>
 <p>Record the request, alternative line, and sample bank rules. Stressed monthly payments are supplied all-in estimates at full utilization, not statutory percentage formulas.</p>
+<pre class="repl"><code>account › /new policy
+  new session "policy"
+policy › Fictional bank review policy for C-202: the customer requests a total credit line of 10000 USD, replacing the current 5000 USD line. A 6000 USD total line is an alternative. Supplied all-in stressed monthly minimum payments at full utilization are 300 USD for 10000 USD, 180 USD for 6000 USD, and 150 USD for the current 5000 USD. These are illustrative account-term estimates, not a statutory percentage formula. Each line must leave at least 600 USD per month after living expenses, other debt payments, and its stressed card payment. The account gate requires complete records, at least 12 timely payments, and no delinquency, over-limit balance, or unresolved restriction. Recommend the highest eligible line up to the request; if no increase qualifies, retain the current line only if it qualifies; otherwise refer for manual review. Missing evidence also requires manual review.
+policy › ?policy: What does this limit review require? [Evaluate payment capacity and account standing, Use account standing alone, Use the current balance alone]
+  turn 1 · 1 fact · 1 question
+  policy      ▶ Evaluate payment capacity and a… ████████████████████ 1.00
+                Use account standing alone                            0.00
+                Use the current balance alone                         0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-policy&quot; \
   &#x27;Fictional bank review policy for C-202: the customer requests a total credit
 line of 10000 USD, replacing the current 5000 USD line. A 6000 USD total line is an
@@ -92,6 +122,15 @@ requires manual review.&#x27; \
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Review capacity at each candidate limit</h2>
 <p>Blend cash flow and policy to compare the candidate total lines. Assess each separately using its supplied stressed minimum payment.</p>
+<pre class="repl"><code>policy › /blend cashflow policy as capacity
+  new session "capacity" from cashflow + policy · no standing questions
+capacity › Use the latest verified income and obligations with the sample policy. Assess each candidate total line separately, not as an additional amount on top of the existing line. Subtract the supplied stressed card payment once. Determine the highest total line that leaves at least 600 USD each month.
+capacity › ?capacity: What is the highest total line supported by the sample capacity test? [The 10000 USD requested total line meets the capacity threshold, Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold, Only the current 5000 USD line meets the capacity threshold, No line qualifies or required verification is missing]
+  turn 1 · 1 fact · 1 question
+  capacity      The 10000 USD requested total l… ██████▍              0.32
+              ▶ Only the 6000 USD alternative a… ██████████▎          0.51
+                Only the current 5000 USD line … ██▊                  0.14
+                No line qualifies or required v… ▋                    0.03</code></pre>
 <pre><code>nouli --format text new &quot;$example-capacity&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
   &#x27;Use the latest verified income and obligations with the sample policy. Assess
 each candidate total line separately, not as an additional amount on top of
@@ -113,6 +152,14 @@ the highest total line that leaves at least 600 USD each month.&#x27; \
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Review account eligibility</h2>
 <p>Blend the account history and policy to evaluate the standing gate. This branch shares policy with the capacity branch while using different evidence.</p>
+<pre class="repl"><code>capacity › /blend account policy as standing
+  new session "standing" from account + policy · no standing questions
+standing › Apply only the account-standing gate from the sample policy to the recorded account. Do not use account standing to infer income or payment capacity.
+standing › ?standing: Does the account pass the sample standing gate? [The complete account record meets the standing requirements, The account fails the standing requirements, Required account records are missing]
+  turn 1 · 1 fact · 1 question
+  standing    ▶ The complete account record mee… ████████████████████ 1.00
+                The account fails the standing …                      0.00
+                Required account records are mi…                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-standing&quot; --from &quot;$example-account&quot; --from &quot;$example-policy&quot; \
   &#x27;Apply only the account-standing gate from the sample policy to the recorded
 account. Do not use account standing to infer income or payment capacity.&#x27; \
@@ -130,6 +177,15 @@ account. Do not use account standing to infer income or payment capacity.&#x27; 
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine the reviews into a limit recommendation</h2>
 <p>Combine capacity and standing into a limit recommendation. Both branches must support the offer.</p>
+<pre class="repl"><code>standing › /blend capacity standing as limit
+  new session "limit" from capacity + standing · no standing questions
+limit › Combine the capacity and account-standing reviews. Recommend the highest eligible total line up to the requested 10000 USD only when both gates pass. A passing account review cannot override insufficient payment capacity. If the account-standing gate fails or lacks evidence, refer for manual review. If standing passes but no increase qualifies, retain 5000 USD only if its capacity test passes; otherwise refer for manual review. This recommendation does not change the account.
+limit › ?limit: Which total credit line should the reviewer consider? [Recommend a 10000 USD total line, Recommend a 6000 USD total line, Retain the current 5000 USD line, Refer for manual review without recommending a limit]
+  turn 1 · 1 fact · 1 question
+  limit         Recommend a 10000 USD total line ████▍                0.22
+              ▶ Recommend a 6000 USD total line  █████████████▊       0.69
+                Retain the current 5000 USD line █▍                   0.07
+                Refer for manual review without… ▍                    0.02</code></pre>
 <pre><code>nouli --format text new &quot;$example-limit&quot; --from &quot;$example-capacity&quot; --from &quot;$example-standing&quot; \
   &#x27;Combine the capacity and account-standing reviews. Recommend the highest
 eligible total line up to the requested 10000 USD only when both gates pass. A
@@ -153,6 +209,14 @@ test passes; otherwise refer for manual review. This recommendation does not cha
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Record new verified income</h2>
 <p>Continue the cash-flow session with verified income of 4500 USD, explicitly replacing the earlier amount. No account change has been applied.</p>
+<pre class="repl"><code>limit › /use cashflow
+  cashflow · 1 standing question
+cashflow › Fictional card application C-202, new verification at 11:00: recurring net monthly income is now 4500 USD, replacing the 09:00 value of 4000 USD. Essential living expenses remain 2500 USD and other debt payments remain 700 USD, excluding this credit card. There are no other obligations. The customer supplied verified evidence of the income change. No limit increase has been applied.
+cashflow › ?cashflow: What monthly amount is now available before this card payment? [1300 USD, 800 USD, Request missing income or obligation records]
+  turn 2 · 1 fact · 1 question · re-asked 1
+  cashflow    ▶ 1300 USD                         █████████████████▋   0.88   → was 800 USD 0.99
+                800 USD                          ██▍                  0.12
+                Request missing income or oblig…                      0.00</code></pre>
 <pre><code>nouli --format text add &quot;$example-cashflow&quot; \
   &#x27;Fictional card application C-202, new verification at 11:00: recurring net
 monthly income is now 4500 USD, replacing the 09:00 value of 4000 USD. Essential
@@ -173,6 +237,15 @@ verified evidence of the income change. No limit increase has been applied.&#x27
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Review capacity with the updated source</h2>
 <p>Create a fresh capacity blend from the updated cash-flow history and the same policy. The initial capacity review remains a separate saved decision.</p>
+<pre class="repl"><code>cashflow › /blend cashflow policy as capacity-updated
+  new session "capacity-updated" from cashflow + policy · no standing questions
+capacity-updated › Use the latest verified income and obligations with the sample policy. Assess each candidate total line separately, not as an additional amount on top of the existing line. Subtract the supplied stressed card payment once. Determine the highest total line that leaves at least 600 USD each month.
+capacity-updated › ?capacity_updated: What is the highest total line supported by the updated capacity test? [The 10000 USD requested total line meets the capacity threshold, Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold, Only the current 5000 USD line meets the capacity threshold, No line qualifies or required verification is missing]
+  turn 1 · 1 fact · 1 question
+  capacity_u… ▶ The 10000 USD requested total l… ██████████▊          0.54
+                Only the 6000 USD alternative a… ███████▍             0.37
+                Only the current 5000 USD line … █▍                   0.07
+                No line qualifies or required v… ▍                    0.02</code></pre>
 <pre><code>nouli --format text new &quot;$example-capacity-updated&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
   &#x27;Use the latest verified income and obligations with the sample policy. Assess
 each candidate total line separately, not as an additional amount on top of
@@ -194,6 +267,15 @@ the highest total line that leaves at least 600 USD each month.&#x27; \
 <section class="step" id="step-9" data-node="8">
 <h2><span class="num">09</span>Reconsider the limit using both review branches</h2>
 <p>Reuse the account-standing review and combine it with updated capacity. This creates a revised recommendation without rewriting the initial limit decision.</p>
+<pre class="repl"><code>capacity-updated › /blend capacity-updated standing as limit-updated
+  new session "limit-updated" from capacity-updated + standing · no standing questions
+limit-updated › Combine the capacity and account-standing reviews. Recommend the highest eligible total line up to the requested 10000 USD only when both gates pass. A passing account review cannot override insufficient payment capacity. If the account-standing gate fails or lacks evidence, refer for manual review. If standing passes but no increase qualifies, retain 5000 USD only if its capacity test passes; otherwise refer for manual review. This recommendation does not change the account.
+limit-updated › ?limit_updated: Which total credit line should the reviewer consider now? [Recommend a 10000 USD total line, Recommend a 6000 USD total line, Retain the current 5000 USD line, Refer for manual review without recommending a limit]
+  turn 1 · 1 fact · 1 question
+  limit_upda… ▶ Recommend a 10000 USD total line ██████████▊          0.54
+                Recommend a 6000 USD total line  ███████              0.35
+                Retain the current 5000 USD line █▊                   0.09
+                Refer for manual review without… ▍                    0.02</code></pre>
 <pre><code>nouli --format text new &quot;$example-limit-updated&quot; --from &quot;$example-capacity-updated&quot; --from &quot;$example-standing&quot; \
   &#x27;Combine the capacity and account-standing reviews. Recommend the highest
 eligible total line up to the requested 10000 USD only when both gates pass. A

@@ -57,6 +57,17 @@ node scripts/replay.mjs --example recall --nouli ../target/debug/nouli --check  
 
 The page's commands run through `sh`. A page may print apostrophes inside single-quoted text without escaping them; the script escapes those before running so the command still works. The commands call `nouli`, so `--nouli` names the binary they use.
 
+## Interactive view of walkthroughs
+
+Walkthroughs show their steps as interactive lines by default, with a toggle for the commands. `scripts/repl-view.mjs` turns each step's command into what you would type in `nouli open`: `/new`, `/blend A B as NAME`, `/use`, `/drop`, the facts, and then the question, which sends the turn. It runs them all in one `nouli open` session against the offline stub and writes each step's part of the transcript into a `<pre class="repl">` block. Session names drop the `$example-` prefix. A `whatif` that asks a question of its own has no interactive form, so its step shows the command instead. The script fails if any turn prints differently from the step's recorded output. Run it after replaying a walkthrough:
+
+```sh
+node scripts/repl-view.mjs --example all --nouli ../target/debug/nouli
+node scripts/repl-view.mjs --example all --nouli ../target/debug/nouli --check  # compare, write nothing
+```
+
+The home page's terminal plays `src/data/repl-session.txt`, a session recorded with live model calls through `nouli open`. Record a new one with real facts and questions and paste the output there.
+
 ## Walkthroughs
 
 Each walkthrough page links its steps to graph nodes with `data-node`, the node's index in that page's JSON. When you change a walkthrough's sessions, export its graph again and update the step links to match.

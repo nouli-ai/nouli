@@ -54,11 +54,11 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .install .meta a { color: var(--ink); text-underline-offset: 3px; }
 
 /* Interactive mode: a recorded session next to how to start one */
-.repl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); gap: 48px; padding: 96px 28px 0; align-items: start; }
+.demo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); gap: 48px; padding: 96px 28px 0; align-items: start; }
 .repl-side > * + * { margin-top: 18px; }
 .kicker { font: 400 12px var(--mono); font-stretch: 87%; color: var(--teal); }
-.repl h2, .start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
-.repl h2 span, .start h2 span { color: var(--teal); }
+.demo h2, .start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
+.demo h2 span, .start h2 span { color: var(--teal); }
 .repl-side p:not(.kicker) { font: 400 14px/1.6 var(--mono); font-stretch: 87%; }
 .repl-side code, .steps code { color: var(--teal); }
 .repl-side .shell { margin-top: 28px; }
@@ -204,13 +204,36 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
 .walk .big strong { font-size: 72px; }
 .walk .several .big strong { font-size: 48px; }
 .walk .display { padding: 8px 0 18px; }
+/* Walkthrough steps as interactive lines or as commands */
+.views { display: flex; flex-wrap: wrap; align-items: center; margin-top: 36px; font: 400 12px var(--mono); font-stretch: 87%; }
+.views > span { margin-right: 12px; color: var(--soft); }
+.views button { font: inherit; background: none; border: 1px solid var(--ink); color: var(--ink); padding: 5px 12px; cursor: pointer; }
+.views button + button { border-left: 0; }
+.views button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.views button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.views p { flex-basis: 100%; margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--soft); }
+.prose pre.repl { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.prose pre.repl code { display: block; min-width: 100%; font-family: var(--term); font-stretch: 100%; }
+.prose pre.repl .row { display: block; min-height: 1.55em; }
+.prose pre.repl .row.in { white-space: pre-wrap; overflow-wrap: break-word; padding-left: 2ch; text-indent: -2ch; }
+pre.repl .prompt, pre.repl .was, pre.repl .pick { color: var(--teal-bright); }
+pre.repl .pick { font-weight: 700; }
+pre.repl .meta { color: #f4f1eb8c; }
+.prose .note { font: 400 13px var(--mono); font-stretch: 87%; }
+body[data-view="repl"] .step > pre:not([class]),
+body[data-view="repl"] .step:has(> pre.repl) > .caption,
+body[data-view="repl"] .step:has(> pre.repl) > pre.out,
+body[data-view="repl"] .cmd-only,
+body[data-view="commands"] .repl-only,
+body[data-view="commands"] pre.repl { display: none; }
+
 .crumb { font: 400 12px var(--mono); font-stretch: 87%; }
 .crumb a { text-decoration: none; color: var(--teal); }
 
 @media (max-width: 960px) {
   .install { grid-template-columns: minmax(0, 1fr); }
-  .repl, .start { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  .repl { padding-top: 64px; }
+  .demo, .start { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .demo { padding-top: 64px; }
   .screen { height: 30em; font-size: 10.5px; }
   .slab { grid-template-columns: 1fr; }
   .read { border-left: 0; border-top: 1px solid var(--on-teal-dim); }

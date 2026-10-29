@@ -269,7 +269,7 @@ export function answer(entry, id, asked) {
   return { type: "score", score: value, probabilities: Object.fromEntries(levels.map((p, i) => [String(i), p])), ...out };
 }
 
-function startStub(recorded) {
+export function startStub(recorded) {
   const failures = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -297,7 +297,7 @@ function startStub(recorded) {
 
 // ---- running commands ------------------------------------------------------------------------
 
-function configFor({ live, port }) {
+export function configFor({ live, port }) {
   const provider = live
     ? `base_url = "${process.env.TYPESAFE_BASE_URL || "https://api.typesafe.ai"}"\napi_key_env = "TYPESAFE_TOKEN"`
     : `base_url = "http://127.0.0.1:${port}"`;

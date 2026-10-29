@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/src/style.css">
 </head>
-<body data-graph="seed-investment">
+<body data-graph="seed-investment" data-view="repl">
 <header class="top"><a class="mark" href="../../">NOULI</a><nav><a href="../../guide/#interactive">interactive</a><a href="../../guide/">guide</a><a href="../" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 <main class="walk">
 <article class="story prose">
@@ -23,11 +23,26 @@
 <h2>Before you start</h2>
 <p><a href="../../guide/#provider">Configure a provider and model</a>, then run the commands in order in the same shell. Nouli reads credentials from your shell or the <code>.env</code> in your current directory. Each decision calls your configured provider and may cost money.</p>
 <p>The outputs below were recorded with <code>typesafe/jev-1.14.0</code>. Your probabilities, session IDs, and answers may differ.</p>
+<div class="cmd-only">
 <p>Set a session prefix for this walkthrough. Change it before running the walkthrough again, so the new sessions get unique names:</p>
 <pre><code>example=seed</code></pre>
+</div>
+<div class="views" role="group" aria-label="Show the steps as">
+<span>show the steps as</span><button type="button" data-view="repl" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
+<p class="repl-only">Open the first session with <code>nouli open team</code>, then type each step's lines at the prompt. A question sends the turn.</p>
+</div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Review the founding team</h2>
 <p>Record the founders' backgrounds in their own session. A choice question names the shape of the team instead of rating it.</p>
+<pre class="repl"><code>$ nouli open team
+new session "team" · /help for commands
+
+team › Fictional company Tidewell builds an AI agent that prepares and follows up dental insurance claims for independent practices. Maya Ortiz, CEO, ran billing for a 12-location dental group for six years. Dev Patel, CTO, spent four years on document-understanding models at a large cloud provider and has shipped two production ML systems. Both founders work full time. There is no sales hire yet.
+team › ?team: How complete is the founding team for this market? ["Strong product and technology fit, with a gap in sales leadership", "Complete team, including proven sales leadership", Missing skills the company needs to build the product]
+  turn 1 · 1 fact · 1 question
+  team        ▶ Strong product and technology f… ███████████████████▊ 0.99
+                Complete team, including proven…                      0.00
+                Missing skills the company need… ▎                    0.01</code></pre>
 <pre><code>nouli --format text new &quot;$example-team&quot; \
   &#x27;Fictional company Tidewell builds an AI agent that prepares and follows up dental insurance claims for independent practices. Maya Ortiz, CEO, ran billing for a 12-location dental group for six years. Dev Patel, CTO, spent four years on document-understanding models at a large cloud provider and has shipped two production ML systems. Both founders work full time. There is no sales hire yet.&#x27; \
   -q &#x27;team: How complete is the founding team for this market? [&quot;Strong product and technology fit, with a gap in sales leadership&quot;,
@@ -44,6 +59,14 @@
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review traction</h2>
 <p>Record traction in a separate session, including where the customers came from.</p>
+<pre class="repl"><code>team › /new traction
+  new session "traction"
+traction › Tidewell metrics at month 10: 9 of 12 pilot practices converted to paid plans, monthly recurring revenue is $14,200, and no paying practice has cancelled. Practices collect insurance claims 11 days faster on average. All 9 customers came from the CEO'\''s professional network. Tidewell has not yet tried outbound sales.
+traction › ?traction: What does the traction show? [An early product-market signal that sales beyond the founders' network have not yet tested, Repeatable sales across unrelated customers, Too little evidence of demand]
+  turn 1 · 1 fact · 1 question
+  traction    ▶ An early product-market signal … ████████████████████ 1.00
+                Repeatable sales across unrelat…                      0.00
+                Too little evidence of demand                         0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-traction&quot; \
   &#x27;Tidewell metrics at month 10: 9 of 12 pilot practices converted to paid plans, monthly recurring revenue is $14,200, and no paying practice has cancelled. Practices collect insurance claims 11 days faster on average. All 9 customers came from the CEO&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s professional network. Tidewell has not yet tried outbound sales.&#x27; \
   -q &quot;traction: What does the traction show? [An early product-market signal that sales beyond the founders&#x27; network have not yet tested,
@@ -60,6 +83,14 @@
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record the fund policy and round terms</h2>
 <p>Record the fund's rules and the round terms in a third session. Every recommendation that follows reuses this history.</p>
+<pre class="repl"><code>traction › /new fund
+  new session "fund"
+fund › Illustrative fund policy: a $40M seed fund investing in applied AI companies. Initial checks range from $500,000 to $1,500,000, with a target of at least 8% ownership at entry. The fund does not invest in rounds priced above a $20M post-money valuation. Tidewell is raising $3M at a $15M post-money valuation. A $1.2M check buys 8%; a $1M check buys 6.7%.
+fund › ?check: Which check fits the fund policy for this round? [Request $1.2M for 8% ownership, Request $1M for 6.7% ownership, The round falls outside the fund policy]
+  turn 1 · 1 fact · 1 question
+  check       ▶ Request $1.2M for 8% ownership   ████████████████████ 1.00
+                Request $1M for 6.7% ownership                        0.00
+                The round falls outside the fun…                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-fund&quot; \
   &#x27;Illustrative fund policy: a $40M seed fund investing in applied AI companies. Initial checks range from $500,000 to $1,500,000, with a target of at least 8% ownership at entry. The fund does not invest in rounds priced above a $20M post-money valuation. Tidewell is raising $3M at a $15M post-money valuation. A $1.2M check buys 8%; a $1M check buys 6.7%.&#x27; \
   -q &#x27;check: Which check fits the fund policy for this round? [Request $1.2M for 8% ownership,
@@ -76,6 +107,14 @@
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Plan diligence from team and traction</h2>
 <p>Blend team and traction to choose what diligence should test first. The fund policy isn't needed for that.</p>
+<pre class="repl"><code>fund › /blend team traction as diligence
+  new session "diligence" from team + traction · no standing questions
+diligence › Plan the week of diligence before the investment committee. Start with the largest unresolved risk in the team and traction records.
+diligence › ?diligence: What should diligence test first? [Call practices outside the founders' network about retention and switching risk, Review the claim-preparation model's accuracy and error handling, Assess the founders' plan to hire a first sales lead]
+  turn 1 · 1 fact · 1 question
+  diligence   ▶ Call practices outside the foun… ███████████████▎     0.76
+                Review the claim-preparation mo…                      0.00
+                Assess the founders' plan to hi… ████▊                0.24</code></pre>
 <pre><code>nouli --format text new &quot;$example-diligence&quot; --from &quot;$example-team&quot; --from &quot;$example-traction&quot; \
   &#x27;Plan the week of diligence before the investment committee. Start with the largest unresolved risk in the team and traction records.&#x27; \
   -q &quot;diligence: What should diligence test first? [Call practices outside the founders&#x27; network about retention and switching risk,
@@ -92,6 +131,14 @@
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Draft the investment committee recommendation</h2>
 <p>Blend the diligence plan with the fund policy to draft the recommendation for Monday's committee.</p>
+<pre class="repl"><code>diligence › /blend diligence fund as ic
+  new session "ic" from diligence + fund · no standing questions
+ic › Prepare a recommendation for Monday'\''s investment committee. It must respect the fund policy and name any diligence that is still open.
+ic › ?recommendation: What should the partner recommend to the investment committee? ["Invest $1.2M, conditional on completing the planned diligence", Invest $1.2M now without further diligence, Pass on the round]
+  turn 1 · 1 fact · 1 question
+  recommenda… ▶ Invest $1.2M, conditional on co… ███████████████████▋ 0.98
+                Invest $1.2M now without furthe…                      0.00
+                Pass on the round                ▍                    0.02</code></pre>
 <pre><code>nouli --format text new &quot;$example-ic&quot; --from &quot;$example-diligence&quot; --from &quot;$example-fund&quot; \
   &#x27;Prepare a recommendation for Monday&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s investment committee. It must respect the fund policy and name any diligence that is still open.&#x27; \
   -q &#x27;recommendation: What should the partner recommend to the investment committee? [&quot;Invest $1.2M, conditional on completing the planned diligence&quot;,
@@ -108,6 +155,16 @@
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Add the reference calls</h2>
 <p>The reference calls come back mid-week. Add them to the traction session as its second turn; the first turn stays in its history. The new question replaces the old one with <code>--drop traction</code>.</p>
+<pre class="repl"><code>ic › /use traction
+  traction · 1 standing question
+traction › /drop traction
+  queued: drop traction
+traction › Reference call update: the partner spoke with 4 practices outside the founders'\'' network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.
+traction › ?risk: What is now the biggest risk to Tidewell's growth? [A practice-management vendor bundling a competing feature, Weak demand for faster claims collection, The founders' ability to build the product]
+  turn 2 · 1 fact · 1 question
+  risk        ▶ A practice-management vendor bu… ███████████████████▊ 0.99
+                Weak demand for faster claims c… ▎                    0.01
+                The founders' ability to build …                      0.00</code></pre>
 <pre><code>nouli --format text add &quot;$example-traction&quot; \
   &#x27;Reference call update: the partner spoke with 4 practices outside the founders&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27; network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.&#x27; \
   -q &quot;risk: What is now the biggest risk to Tidewell&#x27;s growth? [A practice-management vendor bundling a competing feature,
@@ -125,6 +182,14 @@
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Replan diligence with the updated traction</h2>
 <p>Blend the team with the updated traction. The earlier diligence session doesn't change; this is a new plan from the new history.</p>
+<pre class="repl"><code>traction › /blend team traction as diligence-updated
+  new session "diligence-updated" from team + traction · no standing questions
+diligence-updated › Plan the remaining diligence before the investment committee. Use the latest traction record, including the reference calls.
+diligence-updated › ?diligence: What should diligence test first? [Test whether practices would keep Tidewell if their software vendor bundles a claims assistant, Review the claim-preparation model's accuracy and error handling, Assess the founders' plan to hire a first sales lead]
+  turn 1 · 1 fact · 1 question
+  diligence   ▶ Test whether practices would ke… ████████████████████ 1.00
+                Review the claim-preparation mo…                      0.00
+                Assess the founders' plan to hi…                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-diligence-updated&quot; --from &quot;$example-team&quot; --from &quot;$example-traction&quot; \
   &#x27;Plan the remaining diligence before the investment committee. Use the latest traction record, including the reference calls.&#x27; \
   -q &quot;diligence: What should diligence test first? [Test whether practices would keep Tidewell if their software vendor bundles a claims assistant,
@@ -141,6 +206,15 @@
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Reconsider the recommendation</h2>
 <p>Blend the new diligence plan with the same fund policy.</p>
+<pre class="repl"><code>diligence-updated › /blend diligence-updated fund as ic-updated
+  new session "ic-updated" from diligence-updated + fund · no standing questions
+ic-updated › Prepare the recommendation for Monday'\''s investment committee. It must respect the fund policy and use the latest diligence record.
+ic-updated › ?recommendation: What should the partner recommend to the investment committee? [Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant, Invest $1.2M now on the current evidence, "Invest $500,000 to hold a smaller position while the platform risk plays out", Pass until Tidewell shows it can win against the bundled feature]
+  turn 1 · 1 fact · 1 question
+  recommenda… ▶ Invest $1.2M with a milestone: … █████████████████▊   0.89
+                Invest $1.2M now on the current… ▋                    0.03
+                Invest $500,000 to hold a small…                      0.00
+                Pass until Tidewell shows it ca… █▋                   0.08</code></pre>
 <pre><code>nouli --format text new &quot;$example-ic-updated&quot; --from &quot;$example-diligence-updated&quot; --from &quot;$example-fund&quot; \
   &#x27;Prepare the recommendation for Monday&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s investment committee. It must respect the fund policy and use the latest diligence record.&#x27; \
   -q &#x27;recommendation: What should the partner recommend to the investment committee? [Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant,
@@ -159,6 +233,13 @@
 <section class="step" id="step-9">
 <h2><span class="num">09</span>Try new terms without saving</h2>
 <p>Try a repriced round from the updated recommendation. <code>whatif</code> runs it from the updated recommendation without saving anything. <code>--drop</code> leaves the recommendation question out of this one turn, because a session keeps asking its questions.</p>
+<p class="repl-only note">This what-if asks a question of its own, so it runs from the shell:</p>
+<pre class="repl-only"><code>nouli --format text whatif &quot;ic-updated&quot; \
+  &#x27;What-if: the lead investor reprices the round to $3M at a $25M post-money valuation. Everything else is unchanged.&#x27; \
+  -q &#x27;terms: What should the partner do under these terms? [Keep the $1.2M recommendation,
+    Ask for a smaller allocation at the new price,
+    &quot;Decline, because the new price is above the fund&#x27;\&#x27;&#x27;s valuation limit&quot;]&#x27; \
+  --drop recommendation</code></pre>
 <pre><code>nouli --format text whatif &quot;$example-ic-updated&quot; \
   &#x27;What-if: the lead investor reprices the round to $3M at a $25M post-money valuation. Everything else is unchanged.&#x27; \
   -q &#x27;terms: What should the partner do under these terms? [Keep the $1.2M recommendation,
