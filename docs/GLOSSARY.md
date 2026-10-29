@@ -106,6 +106,17 @@ _Avoid_: Failed node
 A workflow node unable to proceed because a required result is unavailable.
 _Avoid_: Intentionally skipped node
 
+**Standing question**:
+A decision question a session keeps asking. Each later turn re-asks it until it
+is replaced or dropped, so a turn only needs new facts.
+_Avoid_: Saved prompt
+
+**Fact**:
+Caller-supplied evidence stored as a numbered evidence record in a session.
+Replacing a fact supersedes its record, and the earlier version stays in the
+ledger.
+_Avoid_: Turn state
+
 **Refusal**:
 A per-question outcome indicating that the provider declined to supply a
 decision answer.
