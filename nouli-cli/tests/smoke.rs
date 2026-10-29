@@ -2,7 +2,10 @@ use std::process::Command;
 
 #[test]
 fn help_and_version_work_without_configuration() {
-    for (argument, expected) in [("--help", "Usage: nouli"), ("--version", "nouli 0.1.0")] {
+    for (argument, expected) in [
+        ("--help", "Usage: nouli"),
+        ("--version", concat!("nouli ", env!("CARGO_PKG_VERSION"))),
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
             .arg(argument)
             .env_clear()
