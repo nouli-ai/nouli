@@ -36,7 +36,8 @@ so the change is breaking.
   A bare `nouli` in a terminal opens the REPL, and `nouli open SESSION` opens
   it on a session. Removed: root evaluation, `-s/--state`, `--name`,
   `--session`, root `--from`, `--no-session`, JSON after `-q`, and the
-  `workflows` plural.
+  `workflows` plural. [ADR 0004](0004-ask-each-question-once.md) removes
+  `--drop` and `questions`, and makes `-q` take one question.
 - **Agents keep full access.** Turn verbs accept `--input FILE|-`: an
   `EvaluationRequest` without `session`, in JSON or TOON, which the verb
   supplies. Output keeps `--json`, `--jsonl`, and TOON, and request IDs,

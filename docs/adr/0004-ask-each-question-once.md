@@ -20,10 +20,13 @@ the REPL behavior built on them.
 
 ## Decision
 
-- **A turn asks exactly the questions it is given.** A `?` line in the REPL is
-  one question and one call. `-q`, a request file's `turn.questions`, and a
-  workflow node list the questions for that call. Nothing a session asked
+- **A turn asks exactly the questions it is given.** Nothing a session asked
   before is asked again; earlier answers reach the model only as history.
+- **One question per call from the CLI and the REPL.** A `?` line and a
+  command's `-q` each give one question, sent in its own call, and a second
+  `-q` is a usage error. Request files' `turn.questions` and workflow nodes,
+  which agents and scripts write, can still list several independent questions
+  for one call, as [ADR 0001](0001-decision-session-harness.md) decided.
 - **No standing questions.** Sessions keep facts and history, not questions,
   and branches and blends inherit none. `--drop`, `/drop`, `nouli questions`,
   `/questions`, and `/ask` are removed. A turn with no question fails with
@@ -49,7 +52,8 @@ the REPL behavior built on them.
 | Keep standing questions and explain re-asking better | The behavior is the problem: asking again re-decides answers the chain depends on, and puts old and new questions in one call. |
 | Keep standing questions as an opt-in library feature | It is the same behavior through another door, and keeps the ledger fold, branch inheritance, and replay checks for a mode the CLI no longer uses. |
 | Remove the `standing` fields from the data model | Saved 0.2.0 turns, frozen requests, and attempts carry them, so old stores would stop reading. |
-| Allow one question per CLI turn | `-q` names every question explicitly and none is asked again later. Request files and workflow nodes already ask several independent questions in one call ([ADR 0001](0001-decision-session-harness.md)), and each REPL line still sends one. |
+| Let `-q` repeat, so a command's questions share one call | Questions listed together would be decided together, while a person reading the session expects each answer to come from its own call, as each REPL line does. |
+| One question per call for request files and workflow nodes too | They are the agent contract from [ADR 0001](0001-decision-session-harness.md), where a node's independent questions share one context and one call. Changing that is a contract change outside this record. |
 
 ## Consequences
 
@@ -58,7 +62,9 @@ the REPL behavior built on them.
 - Every turn names its question. Facts alone no longer run a turn, and the REPL
   holds them in the queue until a `?` line sends them.
 - The README, guide, home page, and walkthroughs are rewritten for this, and
-  the home page's interactive session is recorded again.
+  the home page's interactive session is recorded again. The home-page figure
+  is recorded again too: its second travel turn asked two questions, and is now
+  two turns.
 - A 0.2.0 request that set standing questions can't be replayed or retried by
   its request ID, because its questions lived in `standing`. Ask them in a new
   turn.
