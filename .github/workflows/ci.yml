@@ -1,0 +1,143 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: Run all checks
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  select:
+    name: Select checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ inputs.run_all || steps.filter.outputs.rust == 'true' }}
+      ci: ${{ inputs.run_all || steps.filter.outputs.ci == 'true' }}
+      site: ${{ inputs.run_all || steps.filter.outputs.site == 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed files
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          base: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'pull_request' && github.base_ref || 'HEAD~1' }}
+          filters: |
+            ci: &pipeline
+              - '.github/**'
+            rust:
+              - *pipeline
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.cargo/**'
+              - 'fixtures/**'
+            site:
+              - *pipeline
+              - 'site/**'
+  lint-ci:
+    name: Lint workflows
+    needs: select
+    if: needs.select.outputs.ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run Actionlint
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
+  lint-rust:
+    name: Lint Rust
+    needs: select
+    if: needs.select.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+  test:
+    name: Test Rust
+    needs: select
+    if: needs.select.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Run unit, integration, and documentation tests
+        run: cargo test --workspace --locked
+  docs:
+    name: Build API documentation
+    needs: select
+    if: needs.select.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Build API documentation
+        run: cargo doc --workspace --no-deps --locked
+  site:
+    name: Build site
+    needs: select
+    if: needs.select.outputs.site == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install site dependencies
+        run: npm ci
+      - name: Build site
+        run: npm run build
+  required:
+    name: Required checks
+    needs: [select, lint-ci, lint-rust, test, docs, site]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected check to pass
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
