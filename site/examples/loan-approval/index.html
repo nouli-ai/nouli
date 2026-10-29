@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal loan approval · Nouli</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body data-graph="loan-approval">
+<header class="top"><a class="mark" href="../../">NOULI</a><nav><a href="../../guide/">guide</a><a href="../" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<main class="walk">
+<article class="story prose">
+<p class="crumb"><a href="../">Examples</a></p>
+<h1 class="display small">Personal loan approval</h1>
+<p class="lede">In this recorded run, the model did not correctly apply the income correction. The graph preserves that result. Steps 7-9 explain the mismatch and the calculation a reviewer should check.</p>
+<h2>The problem</h2>
+<p>A loan officer is reviewing a request for a 6000 USD personal loan. The bank also offers a smaller 3000 USD alternative. A good repayment record is only one part of the review: either offer must leave enough money after living expenses, existing debts, and the new installment. During the review, corrected income verification arrives.</p>
+<p>The <a href="https://www.occ.gov/publications-and-resources/publications/comptrollers-handbook/files/installment-lending/pub-ch-installment-lending.pdf">OCC Installment Lending handbook</a> describes reviewing repayment capacity after obligations and living expenses. The applicant, loan quotes, and thresholds here are fictional. They demonstrate selected review steps, not a complete underwriting or compliance process.</p>
+<h2>What we will do</h2>
+<p>We will keep verified cash flow, repayment history, and product policy in three separate histories. We will blend cash flow with policy to assess affordability, blend repayment history with policy to assess account performance, then combine both reviews into a recommendation. After income changes, we will create a new affordability review and recommendation while keeping the earlier results available.</p>
+<h2>Before you start</h2>
+<p><a href="../../guide/#provider">Configure a provider and model</a>, then run the commands in order in the same shell. Nouli reads credentials from your shell or the <code>.env</code> in your current directory. Each decision calls your configured provider and may incur charges.</p>
+<p>The outputs below were captured with <code>typesafe/jev-1.14.0</code>. They are a recorded run, not guaranteed results. Probabilities, session IDs, and model answers may differ when you run the commands.</p>
+<p>Set a session prefix for this walkthrough. Change it before repeating the example so the new sessions have unique names:</p>
+<pre><code>example=loan</code></pre>
+<section class="step" id="step-1" data-node="0">
+<h2><span class="num">01</span>Record verified household cash flow</h2>
+<p>Start with the verified income and existing expenses. This session has no product policy yet, so its question asks only about money available before a new loan payment.</p>
+<pre><code>nouli --format text --name &quot;$example-cashflow&quot; \
+  --state &#x27;Fictional application L-101, initial verification at 09:00: verified recurring
+net income is 5000 USD per month. Essential living expenses are 3000 USD and
+payments on existing debts are 600 USD. These expenses exclude any proposed new
+loan. There are no other obligations. All figures are documented for this
+sample.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;cashflow&quot;,
+    &quot;prompt&quot;: &quot;What monthly amount remains before a new loan payment?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;s1400&quot;, &quot;description&quot;: &quot;1400 USD&quot;},
+        {&quot;id&quot;: &quot;s2000&quot;, &quot;description&quot;: &quot;2000 USD&quot;},
+        {&quot;id&quot;: &quot;missing&quot;, &quot;description&quot;: &quot;Request missing cash-flow records&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-112d-71a0-8472-3317888c551e
+Turn: 01a18684-1131-739f-bdd5-020cc8fbbcba
+Provider: typesafe/jev-1.14.0
+cashflow: choice: s1400 (1400 USD), P(selected)=1
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<p>The initial monthly remainder is 5000 - 3000 - 600 = 1400 USD. This is a cash-flow fact for the later affordability review, not approval of a loan.</p>
+</section>
+<section class="step" id="step-2" data-node="1">
+<h2><span class="num">02</span>Review repayment history</h2>
+<p>Record repayment performance separately. We use a score with three ordered levels so the later review can retain both the answer and its scale.</p>
+<pre><code>nouli --format text --name &quot;$example-history&quot; \
+  --state &#x27;Fictional application L-101: the verified credit record covers 48 scheduled
+monthly payments. Every payment was on time. There are no defaults or
+delinquent balances, and the record is complete for this review.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;history&quot;,
+    &quot;prompt&quot;: &quot;How strong is the documented repayment performance?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;score&quot;,
+      &quot;levels&quot;: [
+        &quot;Adverse payment history&quot;,
+        &quot;Mixed payment history&quot;,
+        &quot;Consistently timely payments&quot;
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-113c-71d2-80e6-6d84971735a6
+Turn: 01a18684-1140-7154-96eb-339cb9d7706d
+Provider: typesafe/jev-1.14.0
+history: expected score: 2, scale 0..2 [0: Adverse payment history; 1: Mixed payment history; 2: Consistently timely payments]
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<p>The returned score is 2, the highest level on this rubric. A score can be fractional; it is an expected position on the supplied scale, not necessarily a selected category.</p>
+</section>
+<section class="step" id="step-3" data-node="2">
+<h2><span class="num">03</span>Record the request and sample product policy</h2>
+<p>Record the two quoted products and the sample bank policy. The policy requires both repayment evidence and an affordability check, and it will be shared by both review branches.</p>
+<pre><code>nouli --format text --name &quot;$example-policy&quot; \
+  --state &#x27;Fictional bank policy for application L-101: the applicant requests a 6000 USD
+personal loan with a quoted all-in monthly installment of 250 USD. A smaller
+3000 USD loan has a quoted all-in installment of 150 USD. Either offer requires at
+least 1000 USD remaining each month after living expenses, existing debt
+payments, and the proposed installment. Repayment records must be complete
+with no defaults, no current delinquency, and at least 24 timely scheduled
+payments. Missing evidence requires manual review. Prefer the requested loan
+if both gates pass; otherwise recommend the smaller loan if both gates pass
+for it; otherwise refer for manual review. No funds have been advanced.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;policy&quot;,
+    &quot;prompt&quot;: &quot;What must a loan recommendation consider?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;both&quot;, &quot;description&quot;: &quot;Both affordability and documented repayment history&quot;},
+        {&quot;id&quot;: &quot;history&quot;, &quot;description&quot;: &quot;Repayment history alone&quot;},
+        {&quot;id&quot;: &quot;income&quot;, &quot;description&quot;: &quot;Income alone&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-114b-70e6-81a6-46ac3ada0b96
+Turn: 01a18684-114f-765f-ae86-78d40dbccb2e
+Provider: typesafe/jev-1.14.0
+policy: choice: both (Both affordability and documented repayment history), P(selected)=1
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<p>The answer identifies the two required checks. The 1000 USD monthly remainder and quoted installments are sample bank rules, not regulatory formulas.</p>
+</section>
+<section class="step" id="step-4" data-node="3">
+<h2><span class="num">04</span>Review affordability for both loan sizes</h2>
+<p>Blend the cash-flow and policy sessions to evaluate each quoted installment. Repeated --from supplies both source histories to a new decision.</p>
+<pre><code>nouli --format text \
+  --from &quot;$example-cashflow&quot; \
+  --from &quot;$example-policy&quot; \
+  --name &quot;$example-affordability&quot; \
+  --state &#x27;Apply the sample product policy to the latest verified cash-flow record.
+Subtract each quoted installment separately, since these are alternative
+offers, not two concurrent loans. Compare the remainder with the 1000 USD sample
+threshold.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;affordability&quot;,
+    &quot;prompt&quot;: &quot;Which quoted loans satisfy the sample affordability policy?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;both&quot;, &quot;description&quot;: &quot;Both quoted loans meet the affordability threshold&quot;},
+        {&quot;id&quot;: &quot;smaller&quot;, &quot;description&quot;: &quot;Only the 3000 USD loan meets the affordability threshold&quot;},
+        {&quot;id&quot;: &quot;neither&quot;, &quot;description&quot;: &quot;Neither quoted loan meets the affordability threshold&quot;},
+        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Required affordability evidence is missing&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-115a-7524-a3ed-6e448ced5c95
+Turn: 01a18684-1162-751f-9650-fba3afc90683
+Provider: typesafe/jev-1.14.0
+affordability: choice: both (Both quoted loans meet the affordability threshold), P(selected)=0.81
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.75</code></pre>
+<p>At the initial income, the remainders are 1150 USD for the requested loan and 1250 USD for the smaller alternative. Both exceed the sample 1000 USD threshold.</p>
+</section>
+<section class="step" id="step-5" data-node="4">
+<h2><span class="num">05</span>Review the credit-history gate</h2>
+<p>Blend the independent repayment record with the same policy. This branch checks history requirements without treating payment performance as proof of affordability.</p>
+<pre><code>nouli --format text \
+  --from &quot;$example-history&quot; \
+  --from &quot;$example-policy&quot; \
+  --name &quot;$example-credit-review&quot; \
+  --state &#x27;Apply the sample policy requirements for repayment records only. Do not infer
+affordability from this review.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;credit_review&quot;,
+    &quot;prompt&quot;: &quot;Does the documented repayment record pass the sample history gate?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;pass&quot;, &quot;description&quot;: &quot;The complete record meets the history requirements&quot;},
+        {&quot;id&quot;: &quot;fail&quot;, &quot;description&quot;: &quot;The record fails the history requirements&quot;},
+        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Required history evidence is missing&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-116e-769a-9dda-826583f9b6ac
+Turn: 01a18684-1175-7522-a384-845962008707
+Provider: typesafe/jev-1.14.0
+credit_review: choice: pass (The complete record meets the history requirements), P(selected)=1
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<p>The record meets the sample history gate: it is complete, includes 48 timely payments, and has no defaults or current delinquency.</p>
+</section>
+<section class="step" id="step-6" data-node="5">
+<h2><span class="num">06</span>Combine both reviews into a lending recommendation</h2>
+<p>Combine the two review sessions. Each source is already a blend, so the recommendation includes cash flow, repayment history, and the shared policy.</p>
+<pre><code>nouli --format text \
+  --from &quot;$example-affordability&quot; \
+  --from &quot;$example-credit-review&quot; \
+  --name &quot;$example-recommendation&quot; \
+  --state &#x27;Combine the affordability and credit-history reviews using the sample product
+policy. A passing history gate cannot override an affordability failure.
+Prefer the requested 6000 USD loan if eligible; otherwise recommend the eligible
+3000 USD alternative; otherwise refer for manual review. This is a recommendation
+for a loan officer, not an executed lending decision.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;recommendation&quot;,
+    &quot;prompt&quot;: &quot;What should the loan officer review?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;requested&quot;, &quot;description&quot;: &quot;Recommend the requested 6000 USD loan at the quoted 250 USD installment&quot;},
+        {&quot;id&quot;: &quot;smaller&quot;, &quot;description&quot;: &quot;Recommend review of the 3000 USD alternative at the quoted 150 USD installment&quot;},
+        {&quot;id&quot;: &quot;manual&quot;, &quot;description&quot;: &quot;Refer for manual review without recommending either loan&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-1181-7199-8934-4eb79c3d78b0
+Turn: 01a18684-118d-73b9-bd8a-6c6fbdf4e8d9
+Provider: typesafe/jev-1.14.0
+recommendation: choice: requested (Recommend the requested 6000 USD loan at the quoted 250 USD installment), P(selected)=0.81
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.72</code></pre>
+<p>The model recommends the requested loan using the initial evidence. This remains a recommendation for review; the command does not approve or disburse funds.</p>
+</section>
+<section class="step" id="step-7" data-node="6">
+<h2><span class="num">07</span>Record corrected income verification</h2>
+<p>Continue the cash-flow session with corrected income of 4800 USD. The later verification explicitly replaces the earlier 5000 USD figure for subsequent decisions.</p>
+<pre><code>nouli --format text --session &quot;$example-cashflow&quot; \
+  --state &#x27;Fictional application L-101, corrected verification at 11:00: recurring net
+income is 4800 USD per month, replacing the 09:00 figure of 5000 USD. Essential
+living expenses remain 3000 USD and existing debt payments remain 600 USD. There are
+no other obligations. The proposed loan has not been approved or disbursed.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;cashflow&quot;,
+    &quot;prompt&quot;: &quot;What monthly amount now remains before a new loan payment?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;s1200&quot;, &quot;description&quot;: &quot;1200 USD&quot;},
+        {&quot;id&quot;: &quot;s1400&quot;, &quot;description&quot;: &quot;1400 USD&quot;},
+        {&quot;id&quot;: &quot;missing&quot;, &quot;description&quot;: &quot;Request missing cash-flow records&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-112d-71a0-8472-3317888c551e
+Turn: 01a18684-119f-73ad-af8f-222f0bdf70b9
+Provider: typesafe/jev-1.14.0
+cashflow: choice: s1400 (1400 USD), P(selected)=0.69
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.53</code></pre>
+<p class="finding"><strong>Review finding:</strong> the model returned 1400 USD, but the corrected remainder is 4800 - 3000 - 600 = 1200 USD. This captured answer is incorrect; its probability does not establish that the arithmetic is right.</p>
+</section>
+<section class="step" id="step-8" data-node="7">
+<h2><span class="num">08</span>Create an updated affordability review</h2>
+<p>Create a new affordability blend from the updated cash-flow session and the original policy. The earlier affordability decision remains saved with its original sources.</p>
+<pre><code>nouli --format text \
+  --from &quot;$example-cashflow&quot; \
+  --from &quot;$example-policy&quot; \
+  --name &quot;$example-affordability-updated&quot; \
+  --state &#x27;Apply the sample product policy to the latest verified cash-flow record.
+Subtract each quoted installment separately, since these are alternative
+offers, not two concurrent loans. Compare the remainder with the 1000 USD sample
+threshold.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;affordability_updated&quot;,
+    &quot;prompt&quot;: &quot;Which quoted loans satisfy the sample affordability policy now?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;both&quot;, &quot;description&quot;: &quot;Both quoted loans meet the affordability threshold&quot;},
+        {&quot;id&quot;: &quot;smaller&quot;, &quot;description&quot;: &quot;Only the 3000 USD loan meets the affordability threshold&quot;},
+        {&quot;id&quot;: &quot;neither&quot;, &quot;description&quot;: &quot;Neither quoted loan meets the affordability threshold&quot;},
+        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Required affordability evidence is missing&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-11ab-773a-918d-24decc172743
+Turn: 01a18684-11b4-74f1-a1dc-a88fa0debdc2
+Provider: typesafe/jev-1.14.0
+affordability_updated: choice: both (Both quoted loans meet the affordability threshold), P(selected)=0.77
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.69</code></pre>
+<p class="finding"><strong>Review finding:</strong> the model still says both loans qualify. With corrected income, the requested installment leaves 950 USD and the smaller installment leaves 1050 USD. Only the smaller loan meets the sample threshold.</p>
+</section>
+<section class="step" id="step-9" data-node="8">
+<h2><span class="num">09</span>Reconsider the offer using the updated review</h2>
+<p>Combine the updated affordability review with the unchanged repayment-history review to obtain a new recommendation.</p>
+<pre><code>nouli --format text \
+  --from &quot;$example-affordability-updated&quot; \
+  --from &quot;$example-credit-review&quot; \
+  --name &quot;$example-recommendation-updated&quot; \
+  --state &#x27;Combine the affordability and credit-history reviews using the sample product
+policy. A passing history gate cannot override an affordability failure.
+Prefer the requested 6000 USD loan if eligible; otherwise recommend the eligible
+3000 USD alternative; otherwise refer for manual review. This is a recommendation
+for a loan officer, not an executed lending decision.&#x27; \
+  --questions &#x27;[
+  {
+    &quot;id&quot;: &quot;recommendation_updated&quot;,
+    &quot;prompt&quot;: &quot;What should the loan officer review now?&quot;,
+    &quot;answer_space&quot;: {
+      &quot;type&quot;: &quot;choice&quot;,
+      &quot;options&quot;: [
+        {&quot;id&quot;: &quot;requested&quot;, &quot;description&quot;: &quot;Recommend the requested 6000 USD loan at the quoted 250 USD installment&quot;},
+        {&quot;id&quot;: &quot;smaller&quot;, &quot;description&quot;: &quot;Recommend review of the 3000 USD alternative at the quoted 150 USD installment&quot;},
+        {&quot;id&quot;: &quot;manual&quot;, &quot;description&quot;: &quot;Refer for manual review without recommending either loan&quot;}
+      ]
+    }
+  }
+]&#x27;</code></pre>
+<p class="caption">Output</p>
+<pre class="out"><code>Session: 01a18684-11c1-7338-80b0-afb3f129e667
+Turn: 01a18684-11ce-74c6-a6cc-cf0abe12583b
+Provider: typesafe/jev-1.14.0
+recommendation_updated: choice: requested (Recommend the requested 6000 USD loan at the quoted 250 USD installment), P(selected)=0.73
+  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.59</code></pre>
+<p class="finding"><strong>Review finding:</strong> the model continues to recommend the requested loan. Under the supplied sample policy, the smaller alternative is the eligible recommendation. This run shows why a saved graph supports inspection and why model recommendations need independent checks of numerical conditions.</p>
+</section>
+</article>
+<aside aria-label="Decision graph for this walkthrough"><div id="figure"></div></aside>
+</main>
+<script type="module" src="/src/example.js"></script>
+</body>
+</html>

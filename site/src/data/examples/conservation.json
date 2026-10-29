@@ -1,0 +1,428 @@
+{
+ "session": "plan-updated",
+ "nodes": [
+  {
+   "id": "01a18684-13b4-7491-859f-9449caa8f172",
+   "session": "request",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Cal OES reported a September 6, 2022 emergency alert at 17:45, requesting\nreductions in nonessential electricity use where health permits until 21:00.\nOur illustrative facility is considering 18:00-20:00. This is a voluntary\nconservation request, not a market dispatch instruction.",
+   "questions": [
+    {
+     "id": "request",
+     "prompt": "Which type of response fits this request?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "flexible",
+       "label": "Reduce nonessential use while preserving critical operations",
+       "p": 1
+      },
+      {
+       "id": "critical",
+       "label": "Include critical operations in load reductions",
+       "p": 0
+      },
+      {
+       "id": "clarify",
+       "label": "Request clarification before choosing any response",
+       "p": 0
+      }
+     ],
+     "selected": "flexible"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name request -s … -q …"
+  },
+  {
+   "id": "01a18684-13c4-718d-8c14-736242220857",
+   "session": "battery",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Illustrative reading at 17:50: stored AC-deliverable energy is 800 kWh in a\n1000 kWh battery. The discharge limit is 200 kW. No charging is planned during\nthe two-hour interval. This telemetry record does not define the required\nreserve.",
+   "questions": [
+    {
+     "id": "battery",
+     "prompt": "What battery power limit applies before reserve requirements are considered?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "p100",
+       "label": "100 kW",
+       "p": 0
+      },
+      {
+       "id": "p150",
+       "label": "150 kW",
+       "p": 0
+      },
+      {
+       "id": "p200",
+       "label": "200 kW",
+       "p": 1
+      }
+     ],
+     "selected": "p200"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name battery -s … -q …"
+  },
+  {
+   "id": "01a18684-13d4-7133-a56e-f1a7a58a3010",
+   "session": "facility",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Illustrative facility policy: retain at least 500 kWh of AC-deliverable\nbattery energy after 20:00 for critical operations. Vehicle charging can be\ndeferred by 100 kW throughout 18:00-20:00 without affecting departures.\nCritical refrigeration uses 150 kW and cannot be curtailed. There are no other\nflexible loads. The local conservation goal is 250 kW for the interval.",
+   "questions": [
+    {
+     "id": "facility",
+     "prompt": "Which load can be reduced without disrupting critical operations?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "charging",
+       "label": "Defer vehicle charging",
+       "p": 1
+      },
+      {
+       "id": "refrigeration",
+       "label": "Curtail refrigeration",
+       "p": 0
+      },
+      {
+       "id": "review",
+       "label": "Request a review of operating constraints",
+       "p": 0
+      }
+     ],
+     "selected": "charging"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --name facility -s … -q …"
+  },
+  {
+   "id": "01a18684-13e6-76d7-95f8-d1f1b30bb777",
+   "session": "battery-plan",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    1,
+    2
+   ],
+   "state": "Choose the greatest constant battery output for 18:00-20:00 that leaves at\nleast the recorded reserve. Use the latest telemetry. The proposed plan has\nnot executed.",
+   "questions": [
+    {
+     "id": "battery_plan",
+     "prompt": "What constant battery contribution is feasible?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "p100",
+       "label": "Discharge at 100 kW for two hours",
+       "p": 0.21000000000000002
+      },
+      {
+       "id": "p150",
+       "label": "Discharge at 150 kW for two hours",
+       "p": 0.58
+      },
+      {
+       "id": "p200",
+       "label": "Discharge at 200 kW for two hours",
+       "p": 0.21000000000000002
+      }
+     ],
+     "selected": "p150"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from battery --from facility --name battery-plan -s … -q …"
+  },
+  {
+   "id": "01a18684-13f9-72a5-bf53-905142d38644",
+   "session": "load-plan",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    0,
+    2
+   ],
+   "state": "Choose a voluntary load reduction consistent with the conservation request and\nthe facility obligations.",
+   "questions": [
+    {
+     "id": "load_plan",
+     "prompt": "Which load response should the facility offer?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "charging",
+       "label": "Defer 100 kW of vehicle charging for two hours",
+       "p": 0.86
+      },
+      {
+       "id": "both",
+       "label": "Defer charging and refrigeration for two hours",
+       "p": 0.01
+      },
+      {
+       "id": "review",
+       "label": "Request a revised operating plan before offering a reduction",
+       "p": 0.13
+      }
+     ],
+     "selected": "charging"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from request --from facility --name load-plan -s … -q …"
+  },
+  {
+   "id": "01a18684-1411-7412-96f6-18eb59bcc1c5",
+   "session": "plan",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    3,
+    4
+   ],
+   "state": "Choose a combined offer consistent with battery reserve, power limit, flexible\nloads, and the local goal. Prefer meeting the goal when feasible. Otherwise\nchoose the largest feasible offer and report its shortfall. All proposed plans\nare alternatives before execution, not successive discharges.",
+   "questions": [
+    {
+     "id": "plan",
+     "prompt": "Which conservation plan is feasible for 18:00-20:00?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "full",
+       "label": "Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging",
+       "p": 0.71
+      },
+      {
+       "id": "partial",
+       "label": "Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall",
+       "p": 0.14500000000000002
+      },
+      {
+       "id": "review",
+       "label": "Request a revised plan because neither offer fits the constraints",
+       "p": 0.14500000000000002
+      }
+     ],
+     "selected": "full"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": 3,
+     "representation": "full"
+    },
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 4,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from battery-plan --from load-plan --name plan -s … -q …"
+  },
+  {
+   "id": "01a18684-1433-7177-be12-51537e7be106",
+   "session": "battery",
+   "turn": 2,
+   "kind": "continued",
+   "parents": [
+    1
+   ],
+   "state": "Confirmed illustrative correction at 17:55, replacing the 17:50 reading:\nstored AC-deliverable energy is 700 kWh. The power limit remains 200 kW. No\ndischarge has occurred; this is a corrected measurement before the interval\nstarts.",
+   "questions": [
+    {
+     "id": "battery",
+     "prompt": "What stored-energy reading should the next plan use?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "e700",
+       "label": "700 kWh",
+       "p": 1
+      },
+      {
+       "id": "e800",
+       "label": "800 kWh",
+       "p": 0
+      },
+      {
+       "id": "review",
+       "label": "Request a fresh reading",
+       "p": 0
+      }
+     ],
+     "selected": "e700"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --session battery -s … -q …"
+  },
+  {
+   "id": "01a18684-1447-74c8-9b36-3c690b231025",
+   "session": "battery-plan-updated",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    6,
+    2
+   ],
+   "state": "Choose the greatest constant battery output for 18:00-20:00 that leaves at\nleast the recorded reserve. Use the latest telemetry. The proposed plan has\nnot executed.",
+   "questions": [
+    {
+     "id": "battery_plan_updated",
+     "prompt": "What constant battery contribution is feasible?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "p100",
+       "label": "Discharge at 100 kW for two hours",
+       "p": 0.3
+      },
+      {
+       "id": "p150",
+       "label": "Discharge at 150 kW for two hours",
+       "p": 0.54
+      },
+      {
+       "id": "p200",
+       "label": "Discharge at 200 kW for two hours",
+       "p": 0.16
+      }
+     ],
+     "selected": "p150"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from battery --from facility --name battery-plan-updated -s … -q …"
+  },
+  {
+   "id": "01a18684-1461-767d-8cd3-cd347c661f1b",
+   "session": "plan-updated",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    7,
+    4
+   ],
+   "state": "Choose a combined offer consistent with battery reserve, power limit, flexible\nloads, and the local goal. Prefer meeting the goal when feasible. Otherwise\nchoose the largest feasible offer and report its shortfall. All proposed plans\nare alternatives before execution, not successive discharges.",
+   "questions": [
+    {
+     "id": "plan_updated",
+     "prompt": "Which conservation plan is feasible for 18:00-20:00?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "full",
+       "label": "Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging",
+       "p": 0.66
+      },
+      {
+       "id": "partial",
+       "label": "Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall",
+       "p": 0.3
+      },
+      {
+       "id": "review",
+       "label": "Request a revised plan because neither offer fits the constraints",
+       "p": 0.04
+      }
+     ],
+     "selected": "full"
+    }
+   ],
+   "context": [
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": 7,
+     "representation": "full"
+    },
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 4,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli --from battery-plan-updated --from load-plan --name plan-updated -s … -q …"
+  }
+ ]
+}
