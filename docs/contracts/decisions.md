@@ -47,3 +47,31 @@ are invalid. Structured JSON null is a present data value; absence of a result
 and refusal have their own representations. Primitive answers cannot be null.
 Model judgments do not assert caller adoption or completed actions. No implicit
 acceptance threshold or generated explanation is part of this contract.
+
+## Compact question syntax
+
+`decision::grammar::parse` reads one question from a single line, and
+`decision::grammar::format` writes one back. The CLI, the REPL, and workflow
+files share this syntax.
+
+```text
+transport: How should I get to the meeting? [train, taxi]
+next: What should I do next? ["Request approval for the taxi", "Book the train"]
+on_time: Will the train get me there on time?
+fit: How strong is the candidate? <weak, partial, strong, exceptional>
+```
+
+A line starts with a question ID (1–64 characters of `a-z`, `0-9`, `_`, or
+`-`, starting with a letter or digit) and a colon. A trailing `[…]` group makes
+a choice with 2 to 255 options, a trailing `<…>` group makes a score with 2 to
+10 levels in order, and no group makes a yes/no (noul) question. The group must
+be the last thing on the line; brackets earlier in the prompt are part of the
+prompt.
+
+Items are separated by commas. A bare item can't contain `,`, brackets, angle
+brackets, or `"`; quote it instead, escaping `"` and `\` with a backslash.
+Choice option IDs come from the labels: letters and digits are lowercased, every
+other run of characters becomes one `_`, and leading and trailing `_` are
+removed, so `"Book the 40 USD train"` becomes `book_the_40_usd_train`. Two
+labels that derive the same ID are an error. Errors report byte offsets and
+never repeat the line.
