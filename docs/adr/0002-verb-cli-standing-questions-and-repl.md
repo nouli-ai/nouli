@@ -53,6 +53,8 @@ so the change is breaking.
   makes them, so a failed turn leaves the set unchanged. A new session starts
   with none, a branch inherits its source's set as it was at the captured
   point, and a blend starts with none.
+  Superseded by [ADR 0004](0004-ask-each-question-once.md), under which a turn
+  asks only its own questions and nothing is asked again.
 - **Facts.** Each fact is an evidence context record with key
   `fact:<record id>`, shown numbered in context order. `--replace N`
   supersedes fact N with a record that keeps the same key, so the ledger keeps
@@ -63,7 +65,8 @@ so the change is breaking.
   `--replace N` supersedes all of them.
 - **REPL.** Plain lines queue facts. `?id: prompt …` adds a standing question
   and sends the queue with it as one turn, and an empty line sends the queue
-  or asks the standing questions again. Slash commands map
+  or asks the standing questions again. ADR 0004 replaces these, and removes
+  `/drop`, `/questions`, and `/ask`. Slash commands map
   to the verbs: `/whatif`, `/branch`, `/blend`, `/use`, `/facts`,
   `/questions`, `/drop`, `/replace`, `/ask`, `/view`, `/context`, `/help`, and
   `/quit` or `/exit`. The REPL is a thin loop over the same operations as the CLI and
