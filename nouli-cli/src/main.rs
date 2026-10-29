@@ -135,10 +135,7 @@ fn main() -> ExitCode {
                             &settings.store,
                             &mut io::stdout().lock(),
                             format,
-                            io::stdout().is_terminal()
-                                && std::env::var_os("NO_COLOR")
-                                    .is_none_or(|value| value.is_empty())
-                                && std::env::var_os("TERM").is_none_or(|value| value != "dumb"),
+                            render::color_enabled(io::stdout().is_terminal()),
                         ) {
                             Ok(()) => ExitCode::SUCCESS,
                             Err(error) if error.output_failed() => ExitCode::from(6),
