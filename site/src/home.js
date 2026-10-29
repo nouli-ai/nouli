@@ -1,6 +1,12 @@
 // Home page: the recorded travel session, switchable between its recorded variants.
 import hero from "./data/hero.json";
 import { Figure } from "./figure.js";
+import { copyButtons } from "./copy.js";
+import { playTranscript } from "./repl.js";
+import session from "./data/repl-session.txt?raw";
+
+copyButtons();
+playTranscript(document.getElementById("screen"), session, document.getElementById("replay"));
 
 const POSITIONS = [{ x: 0, y: 0 }, { x: 290, y: 0 }, { x: 0, y: 170 }, { x: 145, y: 340 }, { x: 145, y: 510 }];
 const PLAN = 4;
