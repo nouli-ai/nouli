@@ -14,6 +14,7 @@ Nouli adds the parts a single model call doesn't have, much as an agent harness 
 - **Memory across turns.** A session records every fact, question, and answer. When new information arrives, you add only that information, and the model decides with the whole history in view.
 - **Typed answers.** Every question has a defined answer space: `choice` (pick an option), `noul` (probability of yes), or `score` (a position on an ordered rubric). Results are probabilities, not prose.
 - **Branching and blending.** Start a new session from one history to explore an alternative, or combine several independent histories into one decision.
+- **An interactive mode.** `nouli open recall` opens a prompt on a session: type facts, define questions with `?id: prompt [a, b]`, and press return on an empty line to ask. `/whatif`, `/branch`, and `/blend` explore alternatives.
 - **A durable record.** Sessions are stored locally, so you can trace any decision back to the facts and earlier answers it was based on.
 
 Nouli ships as a CLI and a Rust library.
@@ -42,80 +43,65 @@ A food distributor is handling a peanut butter recall. It shipped 30 affected sn
 
 ### Turn 1: start a session
 
-Start a session named `recall`, add what is known so far, and ask a question:
+Start a session named `recall`, add what is known so far, and ask a question. The question is written on one line, with its options in brackets:
 
 ```sh
-nouli --name recall \
-  --state 'Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used
+nouli new recall \
+  'Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used
 in 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30.
 Harbor acknowledges the recall notice and confirms all 30 are isolated. Summit
 has not responded. There were no other shipments of this batch.' \
-  --questions '[{
-    "id": "customers",
-    "prompt": "Which customer needs a response follow-up first?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {"id": "harbor", "description": "Contact Harbor"},
-        {"id": "summit", "description": "Contact Summit"},
-        {"id": "both",   "description": "Contact both customers again"}
-      ]
-    }
-  }]'
+  -q 'customers: Which customer needs a response follow-up first? [Contact Harbor,
+    Contact Summit,
+    Contact both customers again]'
 ```
 
 ```text
-Session: 01a1861e-4079-7001-a962-1d453b45ece1
-Turn: 01a1861e-40ee-70bf-b345-ddf2e59f1a9f
-Provider: typesafe/jev-1.14.0
-customers: choice: summit (Contact Summit), P(selected)=1
+  turn 1 · 1 fact · 1 question
+  customers     Contact Harbor                                        0.00
+              ▶ Contact Summit                   ████████████████████ 1.00
+                Contact both customers again                          0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6d86-769b-9683-3acd7b62d06c
 ```
 
-Harbor has isolated its boxes and Summit hasn't replied, so the model picks Summit.
+Harbor has isolated its boxes and Summit hasn't replied, so the model picks Summit. Every option's probability is shown, and `▶` marks the answer.
 
 ### Turn 2: add only what is new
 
-Later that morning, Summit replies. Continue the same session with `--session`. You don't repeat the earlier facts because Nouli already has them:
+Later that morning, Summit replies. Continue the same session with `add`. You don't repeat the earlier facts because Nouli already has them, and a question with the same ID takes the place of the one the session was asking:
 
 ```sh
-nouli --session recall \
-  --state 'Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
+nouli add recall \
+  'Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
 notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to
 end customers. Whether those buyers have been notified is unknown. This
 replaces the earlier Summit nonresponse. Harbor still has all 30 boxes
 isolated.' \
-  --questions '[{
-    "id": "customers",
-    "prompt": "What is the next action for Summit?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {"id": "confirm",  "description": "Confirm acknowledgment only"},
-        {"id": "escalate", "description": "Escalate the 12 sold boxes and verify downstream notification"},
-        {"id": "close",    "description": "Treat the customer response as complete"}
-      ]
-    }
-  }]'
+  -q 'customers: What is the next action for Summit? [Confirm acknowledgment only,
+    Escalate the 12 sold boxes and verify downstream notification,
+    Treat the customer response as complete]'
 ```
 
 ```text
-Session: 01a1861e-4079-7001-a962-1d453b45ece1
-Turn: 01a1861e-4360-7697-a44e-d944aa8c9675
-Provider: typesafe/jev-1.14.0
-customers: choice: escalate (Escalate the 12 sold boxes and verify downstream notification), P(selected)=1
+  turn 2 · 1 fact · 1 question · re-asked 1
+  customers     Confirm acknowledgment only                           0.00
+              ▶ Escalate the 12 sold boxes and … ████████████████████ 1.00
+                Treat the customer response as …                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6ddf-7142-b42f-006a3796a594
 ```
 
-The session ID is the same and the turn ID is new. The model decides using what it learned in turn 1: SNACK-A is the affected batch, Summit received 30 boxes, and Harbor's boxes are already isolated. The 12 boxes that reached end customers make escalation necessary. Turn 1 stays in the history, and you can inspect it at any time:
+The session is the same and the turn is new. The model decides using what it learned in turn 1: SNACK-A is the affected batch, Summit received 30 boxes, and Harbor's boxes are already isolated. The 12 boxes that reached end customers make escalation necessary. Turn 1 stays in the history, and you can inspect it at any time:
 
 ```sh
-nouli view --session recall
+nouli view recall
+nouli facts recall
 ```
 
-These outputs come from a recorded run. Answers and probabilities depend on your model.
+Questions stay with the session, so a later `nouli ask recall` or an empty line in the interactive mode, `nouli open recall`, asks them again. These outputs come from a recorded run. Answers and probabilities depend on your model.
 
 ### Going further
 
-The [full recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) keeps going. It records the recall scope and warehouse stock in separate sessions, then blends them into a coordinated response with `--from`. When Summit's reply arrives, it builds a revised response. Each walkthrough ends with the decision graph that `nouli view --mermaid` prints:
+The [full recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) keeps going. It records the recall scope and warehouse stock in separate sessions, then blends them into a coordinated response with `new --from`. When Summit's reply arrives, it builds a revised response. Each walkthrough ends with the decision graph that `nouli view recall-response-updated --mermaid` prints:
 
 ```mermaid
 %% Nouli session: recall-response-updated (01a18651-c1e2-729b-9c2a-25b69d0de3d3)
@@ -144,7 +130,7 @@ More [examples](https://standing-desks.github.io/nouli/examples/) cover robotic 
 ## Documentation
 
 - [User guide](https://standing-desks.github.io/nouli/guide/): setup, sessions, branching, blending, and workflows
-- [Configuration](docs/configuration.md): providers, models, credentials, and storage
+- [Configuration](docs/configuration.md): providers, models, credentials (`nouli auth login`), and storage
 - [CLI guide](docs/cli.md): sessions, facts, standing questions, request files, branching, and blending
 - [Question types](docs/contracts/decisions.md): `choice`, `noul`, and `score`
 - [Output formats](docs/output.md): text, JSON, JSONL, and TOON

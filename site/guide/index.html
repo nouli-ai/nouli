@@ -19,6 +19,7 @@
   <li><a href="#turns">Add a turn</a></li>
   <li><a href="#branch">Branch and blend</a></li>
   <li><a href="#view">See the graph</a></li>
+  <li><a href="#interactive">Interactive mode</a></li>
   <li><a href="#workflows">Run a workflow</a></li>
   <li><a href="#output">Output and exit codes</a></li>
   <li><a href="#help">Troubleshooting</a></li>
@@ -50,12 +51,18 @@ default_model = "jev-latest"
 
 [providers.typesafe]
 protocol = "typesafe"
+base_url = "https://api.typesafe.ai"</code></pre>
+<p>Then log in once. Nouli asks for the key without showing it and keeps it in <code>~/.nouli/auth.toml</code>, a file only you can read, so every command works from any directory:</p>
+<pre><code>nouli auth login typesafe
+nouli auth list</code></pre>
+<p><code>nouli auth list</code> shows where each provider's key comes from and never prints a key. <code>nouli auth logout typesafe</code> removes it.</p>
+<p>For CI and agents, use an environment variable instead. Name it in the provider with <code>api_key_env</code>, and Nouli reads it from your shell or from a <code>.env</code> in the directory you run it in. The shell wins over <code>.env</code>, and both win over the stored key:</p>
+<pre><code>[providers.typesafe]
+protocol = "typesafe"
 base_url = "https://api.typesafe.ai"
 api_key_env = "TYPESAFE_TOKEN"</code></pre>
-<p><code>api_key_env</code> names an environment variable; never put the key itself in the file. Nouli reads <code>.env</code> from the directory you run it in, so you can keep the key there and out of version control:</p>
 <pre><code>TYPESAFE_TOKEN="your-api-key"</code></pre>
-<p>A value exported in your shell takes precedence. Use <code>--env-file FILE</code> to read a different file.</p>
-<p>The other supported protocols are <code>openai-decisions</code> and <code>openrouter-decisions</code>. A local Laya service uses the <code>typesafe</code> protocol with a loopback URL and needs a context budget, because Nouli can't look up its limits:</p>
+<p>Use <code>--env-file FILE</code> to read a different file. The other supported protocols are <code>openai-decisions</code> and <code>openrouter-decisions</code>. A local Laya service uses the <code>typesafe</code> protocol with a loopback URL and needs a context budget, because Nouli can't look up its limits:</p>
 <pre><code>[providers.local]
 protocol = "typesafe"
 base_url = "http://localhost:8000"
@@ -66,54 +73,88 @@ reserved_output_tokens = 128</code></pre>
 <p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
 
 <h2 id="first"><span class="num">03</span>Make a decision</h2>
-<p>Give the facts with <code>--state</code> (<code>-s</code>) and the questions with <code>--questions</code> (<code>-q</code>). <code>--name</code> starts a saved session:</p>
-<pre><code>nouli --name travel \
-  -s 'The train costs 40 USD and arrives 30 minutes before the meeting.
+<p><code>nouli new</code> starts a saved session. Give it the facts, then the questions with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
+<pre><code>nouli new travel \
+  'The train costs 40 USD and arrives 30 minutes before the meeting.
 A taxi costs 70 USD and also arrives in time. Prefer the cheaper option
 that arrives on time.' \
-  -q '[{"id": "transport",
-        "prompt": "How should I travel to the meeting?",
-        "answer_space": {"type": "choice", "options": [
-          {"id": "train", "description": "Take the train"},
-          {"id": "taxi", "description": "Take a taxi"}]}}]'</code></pre>
-<pre class="out"><code>transport: choice: train (Take the train), P(selected)=1</code></pre>
-<p>Each question has one of three answer types:</p>
+  -q 'transport: How should I travel to the meeting? [Take the train, Take a taxi]'</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  transport   ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
+  typesafe/jev-1.14.0 · session 01a18762-58ce-726d-83d9-70cf6801a1ff · turn 01a18762-58d4-71ca-9344-e84e399dedd0</code></pre>
+<p>Every option gets a probability, and <code>▶</code> marks the answer. Each question has one of three answer types:</p>
 <table>
-  <thead><tr><th>type</th><th>answer</th><th>answer_space</th></tr></thead>
+  <thead><tr><th>type</th><th>answer</th><th>how to write it</th></tr></thead>
   <tbody>
-    <tr><td><code>choice</code></td><td>One option, with a probability for every option</td><td><code>{"type": "choice", "options": [{"id", "description"}]}</code></td></tr>
-    <tr><td><code>noul</code></td><td>The probability that the answer is yes</td><td><code>{"type": "noul"}</code></td></tr>
-    <tr><td><code>score</code></td><td>The expected position on an ordered rubric, which can be fractional</td><td><code>{"type": "score", "levels": ["Poor", "Adequate", "Excellent"]}</code></td></tr>
+    <tr><td><code>choice</code></td><td>One option, with a probability for every option</td><td><code>id: prompt [option, option]</code></td></tr>
+    <tr><td><code>noul</code></td><td>The probability that the answer is yes</td><td><code>id: prompt</code></td></tr>
+    <tr><td><code>score</code></td><td>The expected position on an ordered rubric, which can be fractional</td><td><code>id: prompt &lt;poor, fair, good&gt;</code></td></tr>
   </tbody>
 </table>
-<p>One turn can ask several questions; the model answers each independently. For larger requests, put the turn in a file and pass <code>--input request.json</code> (JSON or TOON). Answers are model judgments, not actions: Nouli never books, sends, or changes anything.</p>
+<p>Put an option in double quotes if it contains a comma or a bracket. A question can sit in a file too: pass <code>--input request.json</code> (JSON or TOON) for the full form with rubrics and structured evidence. Answers are model judgments, not actions: Nouli never books, sends, or changes anything.</p>
 
 <h2 id="turns"><span class="num">04</span>Add a turn</h2>
-<p><code>--session</code> continues a saved session. Send only what changed; the earlier facts and answers come along:</p>
-<pre><code>nouli --session travel \
-  -s 'The train has been cancelled. The taxi is still available at 70 USD.' \
-  -q '[{"id": "transport", "prompt": "How should I travel to the meeting now?",
-        "answer_space": {"type": "choice", "options": [
-          {"id": "train", "description": "Take the train"},
-          {"id": "taxi", "description": "Take a taxi"}]}}]'</code></pre>
-<p>Sessions are saved under <code>~/.nouli</code> and work from any directory. <code>--store DIR</code> uses a different store. <code>--no-session</code> makes a decision without saving it.</p>
+<p>A session keeps the facts you gave it and the questions it asks. <code>nouli add</code> sends only what changed, and the earlier facts and answers come along. A question with an ID the session already has takes the place of the old one; <code>--drop ID</code> stops asking one, and <code>nouli ask travel</code> asks again without new facts:</p>
+<pre><code>nouli add travel \
+  'The train has been cancelled. The taxi is still available at 70 USD.' \
+  -q 'on_time: Will the train get me to the meeting on time?' \
+  -q 'transport: How should I travel to the meeting now? [Take the train, Take a taxi]'</code></pre>
+<pre class="out"><code>  turn 2 · 1 fact · 2 questions · re-asked 1
+  transport     Take the train                   ▎                    0.01
+              ▶ Take a taxi                      ███████████████████▊ 0.99   → was Take the tr… 1.00
+  on_time       yes                              ██▋                  0.13
+  typesafe/jev-1.14.0 · session 01a18762-58ce-726d-83d9-70cf6801a1ff · turn 01a18762-58e6-77f4-b3ff-6f0834a4344f</code></pre>
+<p>The arrow shows what changed since the last answer to the same question. Facts are numbered, and <code>--replace 1 'new text'</code> corrects fact 1: the model sees only the new text, and the old one stays in the history. <code>nouli whatif travel 'The taxi fare has doubled to 140 USD.'</code> asks the same questions of a hypothetical fact and saves nothing.</p>
+<p>Sessions are saved under <code>~/.nouli</code> and work from any directory. <code>--store DIR</code> uses a different store.</p>
 <p>Long histories are trimmed to fit the model's context budget: older decisions shrink to their question and answer first, then the oldest optional records drop out. The full record stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached the model for a turn.</p>
 
 <h2 id="branch"><span class="num">05</span>Branch and blend</h2>
-<p><code>--from</code> starts a new session from saved history. One <code>--from</code> branches; several blend:</p>
-<pre><code>nouli --from travel --name travel-late -s '…' -q '…'
-nouli --from travel --from budget --name plan -s '…' -q '…'</code></pre>
-<p>A new session captures its sources when you create it. Later turns in <code>travel</code> don't change <code>plan</code>; make a new blend to reconsider with the updated history. To start from an older point, name the turn: <code>--from travel@TURN_ID</code>. Combine <code>--from</code> with <code>--no-session</code> to try a what-if without saving anything.</p>
+<p><code>--from</code> starts a new session from saved history. One <code>--from</code> branches, and the branch keeps the source's questions; several blend, and a blend starts with none:</p>
+<pre><code>nouli new travel-late --from travel '…' -q '…'
+nouli new plan --from travel --from budget '…' -q '…'</code></pre>
+<p>A new session captures its sources when you create it. Later turns in <code>travel</code> don't change <code>plan</code>; make a new blend to reconsider with the updated history. To start from an older point, name the turn: <code>--from travel@TURN_ID</code>.</p>
 
 <h2 id="view"><span class="num">06</span>See the graph</h2>
-<pre><code>nouli view --session plan
-nouli view --session plan --mermaid &gt; plan.mmd
+<pre><code>nouli view plan
+nouli view plan --mermaid &gt; plan.mmd
+nouli facts plan
+nouli questions plan
 nouli sessions list
 nouli sessions show plan
 nouli sessions export plan --format json &gt; plan.json</code></pre>
-<p><code>nouli view</code> draws the session and every turn it captured as boxes in your terminal, with <code>▶</code> marking each selected answer. <code>--mermaid</code> prints the same graph as Mermaid source; paste it into a <code>```mermaid</code> block and GitHub draws it. None of these commands call a model or change the store.</p>
+<p><code>nouli view</code> draws the session and every turn it captured as boxes in your terminal, with <code>▶</code> marking each selected answer. <code>--mermaid</code> prints the same graph as Mermaid source; paste it into a <code>```mermaid</code> block and GitHub draws it. <code>nouli facts</code> lists the numbered facts, marking those inherited from another session, and <code>nouli questions</code> prints the session's questions in the one-line form. None of these commands call a model or change the store.</p>
 
-<h2 id="workflows"><span class="num">07</span>Run a workflow</h2>
+<h2 id="interactive"><span class="num">07</span>Interactive mode</h2>
+<p><code>nouli open travel</code> opens a prompt on a session, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, define a question with <code>?</code>, and press return on an empty line to send everything as one turn. Questions stay with the session, so an empty line later asks them again:</p>
+<pre><code>$ nouli open travel
+new session "travel" · /help for commands
+
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.
+travel › ?transport: How should I travel to the meeting? [Take the train, Take a taxi]
+  queued: choice question "transport" · options take_the_train, take_a_taxi
+travel › ↵
+  turn 1 · 1 fact · 1 question
+  transport   ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
+travel › The train has been cancelled. The taxi is still available at 70 USD.
+travel › ?on_time: Will the train get me to the meeting on time?
+  queued: yes/no question "on_time"
+travel › ?transport: How should I travel to the meeting now? [Take the train, Take a taxi]
+  queued: choice question "transport" · options take_the_train, take_a_taxi
+travel › ↵
+  turn 2 · 1 fact · 2 questions · re-asked 1
+  transport     Take the train                   ▎                    0.01
+              ▶ Take a taxi                      ███████████████████▊ 0.99   → was Take the tr… 1.00
+  on_time       yes                              ██▋                  0.13
+travel › /facts
+   1  The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.
+   2  The train has been cancelled. The taxi is still available at 70 USD.
+travel › /quit
+  bye</code></pre>
+<p>Slash commands do the rest: <code>/whatif FACT</code> asks without saving, <code>/replace N TEXT</code> and <code>/drop ID</code> queue a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears what you have queued, and Ctrl-D quits.</p>
+
+<h2 id="workflows"><span class="num">08</span>Run a workflow</h2>
 <p>When later questions depend on earlier answers, describe the turns as a graph and let Nouli run it. Nodes with no dependency between them run in parallel:</p>
 <pre><code>{
   "state": [],
@@ -130,12 +171,12 @@ nouli sessions export plan --format json &gt; plan.json</code></pre>
         "answer_space": {"type": "noul"}}]}}
   ]
 }</code></pre>
-<pre><code>nouli workflows run workflow.json --name review --parallel 2
-nouli workflows show RUN_ID
-nouli workflows resume RUN_ID</code></pre>
+<pre><code>nouli workflow run workflow.json --name review --parallel 2
+nouli workflow show RUN_ID
+nouli workflow resume RUN_ID</code></pre>
 <p>A run saves its graph and settings before it starts. If it's interrupted, <code>resume</code> reuses finished nodes and runs the rest. <code>--jsonl</code> streams progress events.</p>
 
-<h2 id="output"><span class="num">08</span>Output and exit codes</h2>
+<h2 id="output"><span class="num">09</span>Output and exit codes</h2>
 <p>Output is text in a terminal and JSON when piped. Choose explicitly with <code>--format text|json|jsonl|toon</code>, <code>--json</code>, or <code>--jsonl</code>.</p>
 <table>
   <thead><tr><th>exit</th><th>meaning</th></tr></thead>
@@ -150,7 +191,7 @@ nouli workflows resume RUN_ID</code></pre>
   </tbody>
 </table>
 
-<h2 id="help"><span class="num">09</span>Troubleshooting</h2>
+<h2 id="help"><span class="num">10</span>Troubleshooting</h2>
 <table>
   <thead><tr><th>message</th><th>what to do</th></tr></thead>
   <tbody>
@@ -158,7 +199,10 @@ nouli workflows resume RUN_ID</code></pre>
     <tr><td><code>provider_required</code></td><td>Set <code>default_provider</code> or pass <code>--provider NAME</code>.</td></tr>
     <tr><td><code>model_required</code></td><td>Set <code>default_model</code> or pass <code>--model MODEL</code>.</td></tr>
     <tr><td><code>unknown_provider</code></td><td>Use a provider name defined in your configuration.</td></tr>
-    <tr><td><code>credential_unavailable</code></td><td>Set the environment variable named in the error, in your shell or the env file.</td></tr>
+    <tr><td><code>credential_unavailable</code></td><td>Run <code>nouli auth login PROVIDER</code>, or set the environment variable named in the error, in your shell or the env file.</td></tr>
+    <tr><td><code>auth_store_insecure</code></td><td>Others can read <code>~/.nouli/auth.toml</code>. Run <code>chmod 600</code> on it.</td></tr>
+    <tr><td><code>questions_required</code></td><td>The session has no questions yet. Add one with <code>-q</code>.</td></tr>
+    <tr><td><code>invalid_standing_question</code></td><td><code>--drop</code> named a question the session does not have, or a one-off question repeats an ID it already asks.</td></tr>
     <tr><td><code>env_file_not_found</code></td><td>Check the path passed to <code>--env-file</code>.</td></tr>
     <tr><td><code>invalid_env_file</code></td><td>Check assignments, quotes, and UTF-8 encoding in the env file.</td></tr>
     <tr><td><code>invalid_model_budget</code></td><td>Add <code>context_budget_tokens</code> under <code>[providers.NAME.models."MODEL"]</code> or pass <code>--context-budget TOKENS</code>.</td></tr>

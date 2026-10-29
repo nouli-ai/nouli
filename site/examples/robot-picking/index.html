@@ -28,272 +28,128 @@
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Load the item's grasp history</h2>
 <p>Load what the station knows about this item into its own session. Every pick of this SKU can start from it.</p>
-<pre><code>nouli --format text --name "$example-catalog" \
-  --state 'Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.' \
-  --questions '[
-  {
-    "id": "grasp",
-    "prompt": "Which grasp should the arm prefer for this item?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "suction_label",
-          "description": "Suction on the flat label area of the bottle"
-        },
-        {
-          "id": "suction_any",
-          "description": "Suction on any flat bag surface"
-        },
-        {
-          "id": "pinch",
-          "description": "A two-finger pinch on the bottle neck"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<pre><code>nouli --format text new &quot;$example-catalog&quot; \
+  &#x27;Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.&#x27; \
+  -q &#x27;grasp: Which grasp should the arm prefer for this item? [Suction on the flat label area of the bottle,
+    Suction on any flat bag surface,
+    A two-finger pinch on the bottle neck]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-5d95-708c-bd30-608bf9d69e4a
-Turn: 01a186ba-5e2b-76ba-a6ca-2db7c01da65a
-Provider: typesafe/jev-1.14.0
-grasp: choice: suction_label (Suction on the flat label area of the bottle), P(selected)=0.99
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  grasp       ▶ Suction on the flat label area … ███████████████████▊ 0.99
+                Suction on any flat bag surface                       0.00
+                A two-finger pinch on the bottl… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1875f-6e86-774b-93db-130ac15b31ca · turn 01a1875f-6e8a-705d-91f1-c4a615cf6407</code></pre>
 <p>Suction on the label is the clear first choice (0.99), matching 81 first-time successes in 112 picks.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Load the station rules</h2>
 <p>Load the station rules into a second session. The first rule is about uncertainty: the robot's controller reads the probability Nouli returns and acts on its own only at 0.6 or above.</p>
-<pre><code>nouli --format text --name "$example-policy" \
-  --state 'Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.' \
-  --questions '[
-  {
-    "id": "overweight",
-    "prompt": "May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?",
-    "answer_space": {
-      "type": "noul"
-    }
-  }
-]'</code></pre>
+<pre><code>nouli --format text new &quot;$example-policy&quot; \
+  &#x27;Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.&#x27; \
+  -q &#x27;overweight: May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-5e34-72c0-9399-18f557f0f9d9
-Turn: 01a186ba-5ee6-739b-941b-5c579dbe4086
-Provider: typesafe/jev-1.14.0
-overweight: noul: P(yes)=0.04</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  overweight    yes                              ▊                    0.04
+  typesafe/jev-1.14.0 · session 01a1875f-6e96-765e-aae2-2148d026b283 · turn 01a1875f-6e9b-776a-a01f-d636a013335a</code></pre>
 <p>The model confirms that a 1.9 kg load can't be placed when one 0.45 kg item is expected (P(yes)=0.04). That rule matters three turns later.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Start the pick</h2>
 <p>Start the pick as a blend of the item history and the station rules. From here the robot continues one session, adding each sensor update as a new turn.</p>
-<pre><code>nouli --format text --from "$example-catalog" --from "$example-policy" --name "$example-pick" \
-  --state 'Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.' \
-  --questions '[
-  {
-    "id": "action",
-    "prompt": "What should the arm do first?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "nudge",
-          "description": "Nudge the covering item aside to expose the target's label"
-        },
-        {
-          "id": "suction_film",
-          "description": "Attempt suction on the visible bag film"
-        },
-        {
-          "id": "assist",
-          "description": "Request remote assistance now"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<pre><code>nouli --format text new &quot;$example-pick&quot; --from &quot;$example-catalog&quot; --from &quot;$example-policy&quot; \
+  &#x27;Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.&#x27; \
+  -q &quot;action: What should the arm do first? [Nudge the covering item aside to expose the target&#x27;s label,
+    Attempt suction on the visible bag film,
+    Request remote assistance now]&quot;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-5eef-7173-8c5e-f36c9169d31c
-Turn: 01a186ba-5f70-7217-a296-605866ae03d2
-Provider: typesafe/jev-1.14.0
-action: choice: nudge (Nudge the covering item aside to expose the target's label), P(selected)=0.96
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.94</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  action      ▶ Nudge the covering item aside t… ███████████████████▎ 0.96
+                Attempt suction on the visible … ▎                    0.01
+                Request remote assistance now    ▋                    0.03
+  typesafe/jev-1.14.0 · session 01a1875f-6ea5-7128-a81e-e3b1b33f9781 · turn 01a1875f-6ead-70a8-a9c0-45ae8efb79bb</code></pre>
 <p>The model nudges the covering item aside to expose the label (0.96) instead of trying suction on loose film. At 0.96, the arm acts on its own.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>React to a failed grasp</h2>
 <p>The robot sends only what changed: the nudge worked, but the suction attempt failed when the film peeled. The camera scene, item history, and rules come from the session.</p>
-<pre><code>nouli --format text --session "$example-pick" \
-  --state 'Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.' \
-  --questions '[
-  {
-    "id": "action",
-    "prompt": "What should the arm do next?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "pinch",
-          "description": "Try a two-finger pinch on the bottle neck"
-        },
-        {
-          "id": "suction_again",
-          "description": "Retry suction on the same spot"
-        },
-        {
-          "id": "assist",
-          "description": "Stop and request remote assistance"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<pre><code>nouli --format text add &quot;$example-pick&quot; \
+  &#x27;Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.&#x27; \
+  -q &#x27;action: What should the arm do next? [Try a two-finger pinch on the bottle neck,
+    Retry suction on the same spot,
+    Stop and request remote assistance]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-5eef-7173-8c5e-f36c9169d31c
-Turn: 01a186ba-6012-74ee-8ba8-38f454760c01
-Provider: typesafe/jev-1.14.0
-action: choice: suction_again (Retry suction on the same spot), P(selected)=0.54
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.31</code></pre>
+<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+  action        Try a two-finger pinch on the b… ██▊                  0.14
+              ▶ Retry suction on the same spot   ██████████▊          0.54
+                Stop and request remote assista… ██████▍              0.32
+  typesafe/jev-1.14.0 · session 01a1875f-6ea5-7128-a81e-e3b1b33f9781 · turn 01a1875f-6ec8-7757-8be1-22493ec088c4</code></pre>
 <p>The model isn't sure: retry suction 0.54, ask for help 0.32, pinch the neck 0.14. The top answer is below 0.6, so the controller doesn't act on it and asks a remote operator to choose. A system that returned only its best guess would have retried suction on a label now covered by loose film.</p>
 </section>
 <section class="step" id="step-5">
 <h2><span class="num">05</span>Check a clean lift without saving</h2>
-<p>Before saving the real outcome, check what the arm would do if the operator's pinch lifted one bottle cleanly. <code>--no-session</code> evaluates it without saving.</p>
-<pre><code>nouli --format text --from "$example-pick" --no-session \
-  --state 'What-if: the remote operator chooses a pinch on the bottle neck, and pinch attempt 2 lifts the target. The wrist force sensor reads 0.46 kg against an expected 0.45 kg, and the tote camera shows a single bottle in the gripper.' \
-  --questions '[
-  {
-    "id": "load",
-    "prompt": "What should the arm do with the load?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "return_assist",
-          "description": "Lower the load back into the tote and request remote assistance"
-        },
-        {
-          "id": "place",
-          "description": "Place the load in box B-12"
-        },
-        {
-          "id": "shake",
-          "description": "Shake the load to check for anything attached, then place it"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<p>Before saving the real outcome, check what the arm would do if the operator's pinch lifted one bottle cleanly. <code>whatif</code> evaluates it without saving. <code>--drop</code> leaves the pick question out of this one turn.</p>
+<pre><code>nouli --format text whatif &quot;$example-pick&quot; \
+  &#x27;What-if: the remote operator chooses a pinch on the bottle neck, and pinch attempt 2 lifts the target. The wrist force sensor reads 0.46 kg against an expected 0.45 kg, and the tote camera shows a single bottle in the gripper.&#x27; \
+  -q &#x27;load: What should the arm do with the load? [Lower the load back into the tote and request remote assistance,
+    Place the load in box B-12,
+    &quot;Shake the load to check for anything attached, then place it&quot;]&#x27; \
+  --drop action</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Provider: typesafe/jev-1.14.0
-load: choice: place (Place the load in box B-12), P(selected)=0.86
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.79</code></pre>
+<pre class="out"><code>  (not saved) · 1 fact · 1 question
+  load          Lower the load back into the to… █▍                   0.07
+              ▶ Place the load in box B-12       █████████████████▎   0.86
+                Shake the load to check for any… █▍                   0.07
+  typesafe/jev-1.14.0</code></pre>
 <p>With one bottle at 0.46 kg, the model places it in the box (0.86). Nothing is saved, so this alternative isn't in the graph.</p>
 </section>
 <section class="step" id="step-6" data-node="4">
 <h2><span class="num">06</span>React to a double pick</h2>
-<p>The real outcome: the operator chose a neck pinch, and it lifted two bottles stuck together.</p>
-<pre><code>nouli --format text --session "$example-pick" \
-  --state 'Sensor update: the remote operator chose a pinch on the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.' \
-  --questions '[
-  {
-    "id": "load",
-    "prompt": "What should the arm do with the load?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "return_assist",
-          "description": "Lower the load back into the tote and request remote assistance"
-        },
-        {
-          "id": "place",
-          "description": "Place the load in box B-12 and let the packer remove the extra bottle"
-        },
-        {
-          "id": "shake",
-          "description": "Shake the load to separate the bottles, then place the target"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<p>The real outcome: the operator chose a neck pinch, and it lifted two bottles stuck together. <code>-q</code> sets the question for the new turn, and <code>--drop action</code> stops the session from asking the earlier one.</p>
+<pre><code>nouli --format text add &quot;$example-pick&quot; \
+  &#x27;Sensor update: the remote operator chose a pinch on the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.&#x27; \
+  -q &#x27;load: What should the arm do with the load? [Lower the load back into the tote and request remote assistance,
+    Place the load in box B-12 and let the packer remove the extra bottle,
+    &quot;Shake the load to separate the bottles, then place the target&quot;]&#x27; \
+  --drop action</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-5eef-7173-8c5e-f36c9169d31c
-Turn: 01a186ba-618e-7280-8e88-99908e06497d
-Provider: typesafe/jev-1.14.0
-load: choice: return_assist (Lower the load back into the tote and request remote assistance), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 3 · 1 fact · 1 question
+  load        ▶ Lower the load back into the to… ████████████████████ 1.00
+                Place the load in box B-12 and …                      0.00
+                Shake the load to separate the …                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6ea5-7128-a81e-e3b1b33f9781 · turn 01a1875f-6ef7-7562-b523-b6ffac4d2f76</code></pre>
 <p>The load weighs four times what one bottle should, and the station rules forbid placing it. The model lowers it back into the tote and asks for help (P=1). It doesn't shake the load or leave the problem for the packer.</p>
 </section>
 <section class="step" id="step-7" data-node="5">
 <h2><span class="num">07</span>Take the remote operator's report</h2>
-<p>Add the remote operator's report as the next turn.</p>
-<pre><code>nouli --format text --session "$example-pick" \
-  --state 'Remote assistance, 40 seconds: the operator separated the bottles by marking pinch points, and the arm now holds only the target (0.46 kg). The operator reports that the target'\''s bag is torn along one edge.' \
-  --questions '[
-  {
-    "id": "destination",
-    "prompt": "Where should the arm put the target?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "exception",
-          "description": "Send it to the exception station"
-        },
-        {
-          "id": "box",
-          "description": "Place it in box B-12"
-        },
-        {
-          "id": "tote",
-          "description": "Return it to the tote"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<p>Add the remote operator's report as the next turn, again swapping the session's question for the new one.</p>
+<pre><code>nouli --format text add &quot;$example-pick&quot; \
+  &#x27;Remote assistance, 40 seconds: the operator separated the bottles by marking pinch points, and the arm now holds only the target (0.46 kg). The operator reports that the target&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s bag is torn along one edge.&#x27; \
+  -q &#x27;destination: Where should the arm put the target? [Send it to the exception station,
+    Place it in box B-12,
+    Return it to the tote]&#x27; \
+  --drop load</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-5eef-7173-8c5e-f36c9169d31c
-Turn: 01a186ba-623c-75bc-9400-ff9d4958cd1f
-Provider: typesafe/jev-1.14.0
-destination: choice: exception (Send it to the exception station), P(selected)=0.84
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.76</code></pre>
+<pre class="out"><code>  turn 4 · 1 fact · 1 question
+  destination ▶ Send it to the exception station ████████████████▊    0.84
+                Place it in box B-12                                  0.00
+                Return it to the tote            ███▎                 0.16
+  typesafe/jev-1.14.0 · session 01a1875f-6ea5-7128-a81e-e3b1b33f9781 · turn 01a1875f-6f1d-701c-930c-8e4a8ff4501e</code></pre>
 <p>The operator separated the bottles, but the target's bag is torn, and torn bags go to the exception station (0.84). Returning it to the tote (0.16) would put a damaged item back into stock.</p>
 </section>
 <section class="step" id="step-8" data-node="6">
 <h2><span class="num">08</span>Update the item's grasp profile</h2>
 <p>Blend the item history with the whole pick episode to decide how the arm should grasp this SKU next time. One robot's episode becomes station knowledge without changing the original item session.</p>
-<pre><code>nouli --format text --from "$example-catalog" --from "$example-pick" --name "$example-catalog-review" \
-  --state 'Review the completed pick against the item'\''s history and decide how the arm should grasp this SKU next time.' \
-  --questions '[
-  {
-    "id": "profile",
-    "prompt": "How should the grasp profile for SKU 30418 change?",
-    "answer_space": {
-      "type": "choice",
-      "options": [
-        {
-          "id": "pinch_first",
-          "description": "Prefer a neck pinch, and check the weight before placing"
-        },
-        {
-          "id": "keep",
-          "description": "Keep suction on the label area as the first choice"
-        },
-        {
-          "id": "assist_always",
-          "description": "Always request remote assistance for this item"
-        }
-      ]
-    }
-  }
-]'</code></pre>
+<pre><code>nouli --format text new &quot;$example-catalog-review&quot; --from &quot;$example-catalog&quot; --from &quot;$example-pick&quot; \
+  &#x27;Review the completed pick against the item&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s history and decide how the arm should grasp this SKU next time.&#x27; \
+  -q &#x27;profile: How should the grasp profile for SKU 30418 change? [&quot;Prefer a neck pinch, and check the weight before placing&quot;,
+    Keep suction on the label area as the first choice,
+    Always request remote assistance for this item]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a186ba-6246-762a-89e5-2ed6fd7ebaad
-Turn: 01a186ba-6324-77c5-a154-2997a41c6249
-Provider: typesafe/jev-1.14.0
-profile: choice: keep (Keep suction on the label area as the first choice), P(selected)=0.61
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.41</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  profile       Prefer a neck pinch, and check … ███████▋             0.38
+              ▶ Keep suction on the label area … ████████████▎        0.61
+                Always request remote assistanc… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1875f-6f2d-7783-9def-16fc9377584d · turn 01a1875f-6f40-7239-a326-95f3101b9519</code></pre>
 <p>The model keeps suction on the label as the first choice (0.61) but gives a neck pinch real weight (0.38). The record shows why it's close: suction failed on loose film, and the pinch that followed caught a second bottle. Anyone reviewing grasp profiles can see the evidence behind both numbers.</p>
 </section>
 <h2>What the graph keeps</h2>

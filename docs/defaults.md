@@ -10,7 +10,7 @@ These values describe implementation defaults, distinct from provider capabiliti
 | Config/store | `~/.nouli/config.toml`, `~/.nouli` | First evaluation creates a missing default config; explicit overrides, no project discovery |
 | Output | `auto` | Text for terminal, JSON when redirected; explicit format overrides config |
 | Execution parallelism | 4 | Workflow graph limit also defaults to 4; effective ready-node count respects both |
-| Workflow mode | `durable` | `ephemeral` and CLI `--no-session` explicitly select no recording |
+| Workflow mode | `durable` | `ephemeral` and `workflow run --no-session` explicitly select no recording |
 | Attempts per turn/node retry round | 3 total | Includes first attempt; configured/profile overrides supported |
 | Attempt timeout | 120 seconds | Covers selected-provider attempt; no fallback provider/model |
 | Backoff | 1 second, doubling | Default three-attempt delays are 1 then 2 seconds, with no jitter |

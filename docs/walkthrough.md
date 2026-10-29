@@ -1,6 +1,6 @@
 # Executable CLI walkthrough
 
-These commands use the checked-in tutorial requests and your configured provider. Run them from the workspace root with a fresh store, because the requests contain fixed record IDs. `RUN_ID` and `TURN_ID` below are values returned by preceding commands.
+These commands use the checked-in tutorial requests and your configured provider. Run them from the workspace root with a fresh store, because the requests contain fixed record IDs. The request files name no session; each command supplies it (`new` creates one, `add` continues one, and `whatif` saves nothing). `RUN_ID` and `TURN_ID` below are values returned by preceding commands.
 
 The Rust integration tests exercise these behaviors using local fixture providers. To run them without API credentials:
 
@@ -9,20 +9,20 @@ cargo test --package nouli-cli --locked
 ```
 
 ```sh
-nouli --input fixtures/tutorial/meal.json --name Dinner --request-id tutorial-meal
-nouli --input fixtures/tutorial/meal.toon --name Dinner --request-id tutorial-meal
-nouli --input fixtures/tutorial/commitment.json --session Dinner
-nouli --input fixtures/tutorial/meal.json --from Dinner --name Branch
-nouli --input fixtures/tutorial/meal.json --from Dinner --from Branch --name Blend
-nouli --input fixtures/tutorial/supersede.json --session Dinner
-nouli --input fixtures/tutorial/unpin.json --session Branch
-nouli --input - --input-format json --session Blend < fixtures/tutorial/meal.json
+nouli new Dinner --input fixtures/tutorial/meal.json --request-id tutorial-meal
+nouli new Dinner --input fixtures/tutorial/meal.toon --request-id tutorial-meal
+nouli add Dinner --input fixtures/tutorial/commitment.json
+nouli new Branch --from Dinner --input fixtures/tutorial/meal.json
+nouli new Blend --from Dinner --from Branch --input fixtures/tutorial/meal.json
+nouli add Dinner --input fixtures/tutorial/supersede.json
+nouli add Branch --input fixtures/tutorial/unpin.json
+nouli add Blend --input - --input-format json < fixtures/tutorial/meal.json
 nouli context Blend --turn "$TURN_ID"
 nouli sessions export Blend --format json
 nouli sessions export Blend --format toon
 nouli sessions list
 nouli sessions show Branch --format text
-nouli --input fixtures/tutorial/meal.json --from Blend --no-session
+nouli whatif Blend --input fixtures/tutorial/meal.json
 nouli workflow run fixtures/tutorial/workflow.json --name Travel
 nouli workflow show "$RUN_ID"
 nouli workflow resume "$RUN_ID" --jsonl

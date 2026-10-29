@@ -122,6 +122,9 @@ pub(crate) struct Whatif {
     /// Ask an extra or changed question for this turn only (repeatable).
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
     pub questions: Vec<String>,
+    /// Leave a standing question out of this turn only (repeatable).
+    #[arg(long, value_name = "ID")]
+    pub drop: Vec<String>,
     /// Replace fact N with new text for this turn only (repeatable).
     #[arg(long, num_args = 2, value_names = ["N", "TEXT"], action = ArgAction::Append)]
     pub replace: Vec<String>,
@@ -256,7 +259,7 @@ impl Verb<'_> {
                 numbering: Some(args.session.clone()),
                 facts: &args.facts,
                 questions: &args.questions,
-                drop: &[],
+                drop: &args.drop,
                 replace: &args.replace,
                 common: &args.common,
                 replay: None,

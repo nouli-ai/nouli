@@ -63,14 +63,28 @@ export function readPage(html) {
 
 // ---- what was recorded -----------------------------------------------------------------------
 
-/** Parse the printed output of a saved run: selected answers, and native confidence. */
+const EIGHTHS = " ▏▎▍▌▋▊▉";
+
+/** The length of a printed bar in eighths of a cell. */
+const eighthsOf = (bar) => {
+  const full = [...bar].filter((c) => c === "█").length;
+  const partial = [...bar].find((c) => EIGHTHS.includes(c) && c !== " ");
+  return full * 8 + (partial ? EIGHTHS.indexOf(partial) : 0);
+};
+
+/**
+ * Parse what a step printed. The format of CLI 0.1.0 names only the selected answer, with the
+ * native confidence beneath it. The bars of the current format show every option's probability.
+ */
 export function parseOutput(text) {
   const answers = new Map();
+  const lines = text.split("\n");
   let last = null;
-  for (const line of text.split("\n")) {
+  const rows = [];
+  for (const line of lines) {
     let m;
-    if ((m = line.match(/^(\S+): choice: (\S+) \(.*\), P\(selected\)=(\S+)$/))) {
-      last = { type: "choice", selected: m[2], p: Number(m[3]) };
+    if ((m = line.match(/^(\S+): choice: (\S+) \((.*)\), P\(selected\)=(\S+)$/))) {
+      last = { type: "choice", selectedLabel: m[3], p: Number(m[4]) };
       answers.set(m[1], last);
     } else if ((m = line.match(/^(\S+): noul: P\(yes\)=(\S+)$/))) {
       last = { type: "noul", p: Number(m[2]) };
@@ -84,6 +98,40 @@ export function parseOutput(text) {
     } else if (last && (m = line.match(/^ {2}Native confidence \(.*\): value=(\S+?)(?:, answer confidence=(\S+))?$/))) {
       last.confidence = Number(m[1]);
       if (m[2] !== undefined) last.answerConfidence = Number(m[2]);
+    } else {
+      rows.push(line);
+    }
+  }
+  // Bars: two spaces, an 11-column question ID, a 3-column marker, a 32-column label, a
+  // 20-cell bar, and the probability. Rows with no ID continue the question above.
+  const bar = /^ {2}(.{11})(.{3})(.{32}) (.{20}) (\d\.\d\d|n\/a)(?: {3}→ was .*)?$/;
+  let current = null;
+  for (let index = 0; index < rows.length; index++) {
+    const line = rows[index];
+    let m;
+    if ((m = line.match(/^ {2}(\S+) +expected (\S+) of (\d+) /))) {
+      const levels = (rows[index + 1] ?? "").trim().split(" · ").map((part) => {
+        const cut = part.lastIndexOf(" ");
+        return { label: part.slice(0, cut), p: Number(part.slice(cut + 1)) };
+      });
+      answers.set(m[1], { type: "score", value: Number(m[2]), levels });
+      current = null;
+    } else if ((m = line.match(bar))) {
+      const row = { marker: m[2].trim(), label: m[3].trim(), p: m[5] === "n/a" ? 0 : Number(m[5]), eighths: eighthsOf(m[4]) };
+      if (m[1].trim()) {
+        current = { id: m[1].trim(), rows: [] };
+        answers.set(current.id, current);
+      }
+      current?.rows.push(row);
+    }
+  }
+  for (const [id, answer] of answers) {
+    if (!answer.rows) continue;
+    const { rows: found } = answer;
+    if (found.length === 1 && found[0].label === "yes") answers.set(id, { type: "noul", p: found[0].p });
+    else {
+      const selected = found.find((row) => row.marker === "▶") ?? found[0];
+      answers.set(id, { type: "choice", options: found.map(({ label, p, eighths }) => ({ label, p, eighths })), selectedLabel: selected.label, p: selected.p });
     }
   }
   return answers;
@@ -104,37 +152,74 @@ const promptOf = (q) => (typeof q.instructions === "string" ? q.instructions : q
 const labelsOf = (q) =>
   q.type === "choice" ? q.criteria : (q.criteria ?? []).map((l) => (typeof l === "string" ? l : l.label));
 
+/** Option IDs come from labels in the current CLI, so questions match on prompt and labels. */
+const sortedLabels = (labels) => JSON.stringify([...labels].sort());
+
+/** A printed label can be cut short with "…" to fit its column. */
+const sameLabel = (printed, full) => (printed.endsWith("…") ? full.startsWith(printed.slice(0, -1)) : printed === full);
+
+/** Do printed labels and the labels asked about name the same options? */
+function sameLabels(printed, asked) {
+  return printed.length === asked.length && printed.every((label) => asked.filter((full) => sameLabel(label, full)).length === 1) && asked.every((full) => printed.filter((label) => sameLabel(label, full)).length === 1);
+}
+
 /** Does a recorded saved question match what the model was asked? */
-function sameQuestion(recorded, id, asked) {
-  if (recorded.id !== id || recorded.type !== asked.type || recorded.prompt !== promptOf(asked)) return false;
-  const labels = labelsOf(asked);
-  if (asked.type === "choice") {
-    const have = Object.fromEntries(recorded.options.map((o) => [o.id, o.label]));
-    return JSON.stringify(Object.entries(have).sort()) === JSON.stringify(Object.entries(labels).sort());
-  }
-  if (asked.type === "score") return JSON.stringify(recorded.levels.map((l) => l.label)) === JSON.stringify(labels);
+function sameQuestion(recorded, asked) {
+  if (recorded.type !== asked.type || recorded.prompt !== promptOf(asked)) return false;
+  if (asked.type === "choice") return sortedLabels(recorded.options.map((o) => o.label)) === sortedLabels(Object.values(asked.criteria));
+  if (asked.type === "score") return JSON.stringify(recorded.levels.map((l) => l.label)) === JSON.stringify(labelsOf(asked));
   return true;
 }
 
 /** Find the first unused recording that matches. Saved nodes match on prompt and labels;
- * a step that saved nothing has only its printed answers, so it matches on question IDs. */
+ * a step that saved nothing has only its printed answers, so it matches on question IDs, and
+ * on option labels when the printed bars show them. */
 export function match(recorded, asked) {
   const ids = Object.keys(asked).sort();
   return recorded.find((entry) => {
     if (entry.used) return false;
     if (entry.node) {
       const known = entry.node.questions.map((q) => q.id).sort();
-      return JSON.stringify(known) === JSON.stringify(ids) && entry.node.questions.every((q) => sameQuestion(q, q.id, asked[q.id]));
+      return JSON.stringify(known) === JSON.stringify(ids) && entry.node.questions.every((q) => sameQuestion(q, asked[q.id]));
     }
     const known = [...entry.printed.keys()].sort();
-    return JSON.stringify(known) === JSON.stringify(ids) && ids.every((id) => entry.printed.get(id).type === asked[id].type || entry.printed.get(id).type === "refusal");
+    return (
+      JSON.stringify(known) === JSON.stringify(ids) &&
+      ids.every((id) => {
+        const printed = entry.printed.get(id);
+        if (printed.type !== asked[id].type) return printed.type === "refusal";
+        if (printed.options) return sameLabels(printed.options.map((o) => o.label), Object.values(asked[id].criteria));
+        return true;
+      })
+    );
   });
 }
 
 const round = (n) => Math.round(n * 1e9) / 1e9;
 
+/** Probabilities printed to two decimals can sum to 1.01. Move each of them within what its
+ * printed number and bar (the eighths of a 20-cell bar) allow, so that nothing printed changes
+ * and they sum to one. */
+export function reconcile(options) {
+  const eps = 1e-6;
+  const limits = options.map(({ p, eighths }) => [
+    Math.max(0, p - 0.005 + eps, (eighths - 0.5) / 160 + eps),
+    Math.min(1, p + 0.005 - eps, (eighths + 0.5) / 160 - eps),
+  ]);
+  const out = options.map(({ p }, index) => Math.min(limits[index][1], Math.max(limits[index][0], p)));
+  for (let pass = 0; pass < 50; pass++) {
+    const delta = 1 - out.reduce((a, b) => a + b, 0);
+    if (Math.abs(delta) < 1e-9) break;
+    out.forEach((value, index) => {
+      out[index] = Math.min(limits[index][1], Math.max(limits[index][0], value + delta / out.length));
+    });
+  }
+  return out.map(round);
+}
+
 /** The wire answer for one question. Saved nodes hold every probability. A step that saved
- * nothing printed only the selected one, so the rest is spread evenly across the others. */
+ * nothing printed the probabilities it shows: in the older format only the selected one, so
+ * the rest is spread evenly across the other options. */
 export function answer(entry, id, asked) {
   const printed = entry.printed.get(id);
   const out = {};
@@ -144,16 +229,24 @@ export function answer(entry, id, asked) {
   if (asked.type === "noul") return { type: "noul", noul: saved ? saved.probability : printed.p, ...out };
   if (asked.type === "choice") {
     const ids = Object.keys(asked.criteria);
-    let probabilities;
-    let choice;
+    const labels = Object.values(asked.criteria);
+    const full = (label) => labels.find((candidate) => sameLabel(label, candidate));
+    let known; // label -> probability
+    let selectedLabel;
     if (saved) {
-      probabilities = Object.fromEntries(saved.options.map((o) => [o.id, o.p]));
-      choice = saved.selected;
+      known = new Map(saved.options.map((o) => [o.label, o.p]));
+      selectedLabel = saved.options.find((o) => o.id === saved.selected).label;
+    } else if (printed.options) {
+      const exact = reconcile(printed.options);
+      known = new Map(printed.options.map((o, index) => [full(o.label), exact[index]]));
+      selectedLabel = full(printed.selectedLabel);
     } else {
-      choice = printed.selected;
+      selectedLabel = full(printed.selectedLabel);
       const rest = ids.length > 1 ? round((1 - printed.p) / (ids.length - 1)) : 0;
-      probabilities = Object.fromEntries(ids.map((o) => [o, o === choice ? printed.p : rest]));
+      known = new Map(labels.map((label) => [label, label === selectedLabel ? printed.p : rest]));
     }
+    const probabilities = Object.fromEntries(ids.map((option) => [option, known.get(asked.criteria[option])]));
+    const choice = ids.find((option) => asked.criteria[option] === selectedLabel);
     return { type: "choice", choice, probabilities, ...out };
   }
   const count = asked.criteria.length;
@@ -162,6 +255,9 @@ export function answer(entry, id, asked) {
   if (saved) {
     levels = saved.levels.map((l) => l.p);
     value = saved.expected;
+  } else if (printed.levels) {
+    levels = printed.levels.map((l) => l.p);
+    value = printed.value;
   } else {
     value = printed.value;
     const low = Math.min(Math.floor(value), count - 1);

@@ -1,6 +1,6 @@
 // Convert a saved Nouli session into the graph data the site renders.
 //
-//   node scripts/export-graph.mjs --store DIR (--session NAME | --all) [--rename FROM=TO ...] > graph.json
+//   node scripts/export-graph.mjs --store DIR (--only NAME | --all) [--rename FROM=TO ...] > graph.json
 //
 // Reads `nouli sessions export`, so every question, probability, and context record
 // comes from the ledger. `--all` merges every session in the store into one graph. Set NOULI to choose the executable (default: nouli on PATH).
@@ -71,9 +71,9 @@ function toGraph(exp, rename) {
   for (const node of nodes) {
     const from = node.parents.map((p) => nodes[p].session);
     node.command =
-      node.kind === "continued" ? `nouli --session ${node.session} -s … -q …`
-      : node.kind === "new" ? `nouli --name ${node.session} -s … -q …`
-      : `nouli ${from.map((f) => `--from ${f}`).join(" ")} --name ${node.session} -s … -q …`;
+      node.kind === "continued" ? `nouli add ${node.session} '…'`
+      : node.kind === "new" ? `nouli new ${node.session} '…' -q '…'`
+      : `nouli new ${node.session} ${from.map((f) => `--from ${f}`).join(" ")} '…' -q '…'`;
   }
   return { session: displayName(exp.session.name, rename), nodes };
 }
@@ -82,6 +82,6 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const opt = (k) => args[args.indexOf(k) + 1];
   const rename = args.flatMap((a, i) => (args[i - 1] === "--rename" ? [a.split("=")] : []));
-  const graph = args.includes("--all") ? exportStore(opt("--store"), rename) : exportGraph(opt("--store"), opt("--session"), rename);
+  const graph = args.includes("--all") ? exportStore(opt("--store"), rename) : exportGraph(opt("--store"), opt("--only"), rename);
   process.stdout.write(JSON.stringify(graph, null, 1) + "\n");
 }
