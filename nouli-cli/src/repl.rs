@@ -371,7 +371,7 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
             selection,
             numbering: Some(self.selector()),
             facts: &self.queue.facts,
-            questions: &[question.to_owned()],
+            question: Some(question),
             replace: &replace,
             common: &common,
             replay: None,

@@ -2,7 +2,7 @@
 pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
-use harness::{Home, QUESTIONS, report};
+use harness::{Home, QUESTION, report};
 use loopback::Server;
 use nouli_core::{
     identity::SessionSelector,
@@ -16,17 +16,10 @@ use std::process::Output;
 /// choice once the evidence says the train is cancelled.
 fn provider() -> Server {
     Server::with_handler(|body| {
-        let mut response: Value = serde_json::from_str(harness::TYPESAFE).unwrap();
-        let asked = body["questions"].as_object().unwrap();
-        let answers = response["answers"].as_object_mut().unwrap();
-        answers.retain(|id, _| asked.contains_key(id));
-        for id in asked.keys() {
-            // Any other question is a yes/no one.
-            answers
-                .entry(id.clone())
-                .or_insert_with(|| json!({"type": "noul", "noul": 0.5}));
-        }
-        if asked.contains_key("travel") && body["state"].as_str().unwrap().contains("CANCELLED") {
+        let mut response: Value = serde_json::from_str(&harness::typesafe(body).1).unwrap();
+        if body["questions"].get("travel").is_some()
+            && body["state"].as_str().unwrap().contains("CANCELLED")
+        {
             response["answers"]["travel"] = json!({
                 "type": "choice",
                 "choice": "flight",
@@ -66,12 +59,12 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         home.run(
             [
                 &["new", "Trip", "The train costs 40 USD", "--json"][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
     );
-    assert_eq!(ids(&first.questions), ["travel", "on_time", "quality"]);
+    assert_eq!(ids(&first.questions), ["travel"]);
     // A fact needs a question to go with it; nothing is asked again.
     let calls = server.count();
     let nothing = failure(
@@ -154,7 +147,11 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         home.run(["add", "Trip", "-q", "no colon in this question"]),
         "invalid_decision_input",
     );
-    assert!(grammar.message.contains("question 1"));
+    assert!(grammar.message.starts_with("grammar error: "));
+    // Each call asks one question, so a second -q is a usage error.
+    let twice = home.run(["add", "Trip", "-q", "a: A?", "-q", "b: B?"]);
+    assert_eq!(twice.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&twice.stderr).contains("--question"));
     failure(
         home.run(["add", "Trip", "-q", "bad: What? [only one]"]),
         "invalid_decision_input",
@@ -235,9 +232,9 @@ fn new_without_facts_or_questions_creates_a_session_and_branches_ask_only_their_
     assert!(saved.frontier.is_empty());
     assert!(ledger.list_attempts(saved.id).unwrap().is_empty());
     drop(ledger);
-    // The session is usable: its first turn brings the questions.
+    // The session is usable: its first turn brings the question.
     let first =
-        report(home.run([&["add", "Empty", "A fact"][..], &QUESTIONS, &["--json"]].concat()));
+        report(home.run([&["add", "Empty", "A fact"][..], &QUESTION, &["--json"]].concat()));
     assert_eq!(first.session, Some(session.session));
     // A name is taken once.
     let again = home.run(["new", "Empty"]);
@@ -280,41 +277,47 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
     let first = home.run(
         [
             &["new", "Trip", "The train is on time", "--format", "text"][..],
-            &QUESTIONS,
+            &QUESTION,
         ]
         .concat(),
     );
     assert!(first.status.success());
     let text = String::from_utf8(first.stdout).unwrap();
     assert!(
-        text.starts_with("  turn 1 · 1 fact · 3 questions\n"),
+        text.starts_with("  turn 1 · 1 fact · 1 question\n"),
         "{text}"
     );
     assert!(text.contains("▶ train") && text.contains("0.70"), "{text}");
     assert!(!text.contains("→ was") && !text.contains('\x1b'));
-    // Asking the same questions again by name compares with their last answers.
+    // Asking the same question again by name compares with its last answer.
     let second = home.run(
         [
             &["add", "Trip", "The train is CANCELLED", "--format", "text"][..],
-            &QUESTIONS,
+            &QUESTION,
         ]
         .concat(),
     );
     let text = String::from_utf8(second.stdout).unwrap();
     assert!(
-        text.starts_with("  turn 2 · 1 fact · 3 questions\n"),
+        text.starts_with("  turn 2 · 1 fact · 1 question\n"),
         "{text}"
     );
     assert!(text.contains("▶ flight"), "{text}");
     assert!(text.contains("→ was train 0.70"), "{text}");
-    assert!(text.contains("expected 1.43 of 2"), "{text}");
     // A what-if says it was not saved.
-    let what = home.run([&["whatif", "Trip", "--format", "text"][..], &QUESTIONS].concat());
+    let what = home.run(
+        [
+            &["whatif", "Trip", "--format", "text"][..],
+            &harness::QUESTIONS[2],
+        ]
+        .concat(),
+    );
     let text = String::from_utf8(what.stdout).unwrap();
     assert!(
-        text.starts_with("  (not saved) · 0 facts · 3 questions\n"),
+        text.starts_with("  (not saved) · 0 facts · 1 question\n"),
         "{text}"
     );
+    assert!(text.contains("expected 1.43 of 2"), "{text}");
     // A replayed request keeps its record IDs, so the same command replays.
     let args = [
         "add",
@@ -374,7 +377,7 @@ fn facts_list_inherited_and_replaced_facts() {
         home.run(
             [
                 &["new", "Trip", "Fact one", "Fact two", "--json"][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
@@ -438,7 +441,7 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
         home.run(
             [
                 &["new", "Trip", "Fact one", "Fact two", "--json"][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
@@ -482,7 +485,7 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     assert_eq!(listed[0]["alternatives"].as_array().unwrap().len(), 2);
     assert_eq!(listed[1]["records"].as_array().unwrap().len(), 1);
     // Both alternatives reach the model, and a plain add still works.
-    report(home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTIONS].concat()));
+    report(home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTION].concat()));
     let state = server.calls.lock().unwrap().last().unwrap().to_string();
     assert!(
         state.contains("Cheap fact") && state.contains("Dear fact"),

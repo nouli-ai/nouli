@@ -89,6 +89,21 @@ impl Drop for Home {
 pub const TYPESAFE: &str =
     include_str!("../../../fixtures/providers/typesafe/compact-response.json");
 
+/// A TypeSafe provider that answers exactly the questions it is asked: from
+/// [`TYPESAFE`] when it has them, and yes/no otherwise.
+pub fn typesafe(body: &serde_json::Value) -> (u16, String) {
+    let mut response: serde_json::Value = serde_json::from_str(TYPESAFE).unwrap();
+    let asked = body["questions"].as_object().unwrap();
+    let answers = response["answers"].as_object_mut().unwrap();
+    answers.retain(|id, _| asked.contains_key(id));
+    for id in asked.keys() {
+        answers
+            .entry(id.clone())
+            .or_insert_with(|| serde_json::json!({"type": "noul", "noul": 0.5}));
+    }
+    (200, response.to_string())
+}
+
 /// Writes score levels as plain labels so the question matches the compact grammar.
 fn plain(questions: &mut [Question]) {
     for question in questions {
@@ -125,15 +140,17 @@ pub fn report(output: Output) -> TurnReport {
     };
     *turn
 }
-/// The first three fixture questions in the compact grammar.
-pub const QUESTIONS: [&str; 6] = [
-    "-q",
-    "travel: Which route? [train, flight]",
-    "-q",
-    "on_time: Will the train arrive on time?",
-    "-q",
-    "quality: Rate the route quality <Poor, Adequate, Excellent>",
+/// The first three fixture questions in the compact grammar: a choice, a
+/// yes/no question, and a score. A CLI turn asks one of them.
+pub const QUESTIONS: [[&str; 2]; 3] = [
+    ["-q", "travel: Which route? [train, flight]"],
+    ["-q", "on_time: Will the train arrive on time?"],
+    [
+        "-q",
+        "quality: Rate the route quality <Poor, Adequate, Excellent>",
+    ],
 ];
+pub const QUESTION: [&str; 2] = QUESTIONS[0];
 pub fn workflow() -> nouli_core::workflow::WorkflowSpec {
     let mut definition: nouli_core::workflow::WorkflowSpec =
         serde_json::from_str(include_str!("../../../fixtures/contracts/workflow.json")).unwrap();
