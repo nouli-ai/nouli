@@ -134,6 +134,7 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
 .prose th { color: var(--ink); font-weight: 500; border-bottom: 2px solid var(--ink); }
 
 .guide { display: grid; grid-template-columns: 220px minmax(0, 720px); gap: 56px; padding: 40px 28px 120px; }
+.guide > * { min-width: 0; }
 .guide .toc { position: sticky; top: 20px; align-self: start; font: 400 12px/2 var(--mono); font-stretch: 87%; list-style: none; }
 .guide .toc a { text-decoration: none; }
 .guide .toc a:hover { color: var(--teal); }
@@ -162,6 +163,7 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
   .read { border-left: 0; border-top: 1px solid var(--on-teal-dim); }
   .guide { grid-template-columns: 1fr; gap: 24px; }
   .guide .toc { position: static; }
+  .guide table { display: block; overflow-x: auto; }
   .walk { grid-template-columns: 1fr; padding-right: 28px; }
   .walk aside { position: sticky; top: 0; height: 52vh; order: -1; z-index: 1; }
   .walk .read { display: none; }

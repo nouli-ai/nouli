@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a checksum-verified download installer for Apple silicon macOS and ARM64 or x86_64 GNU/Linux.
 - Build Linux x86_64 release archives alongside the existing ARM64 downloads.
 
+### Fixed
+
+- Keep the user guide within the viewport on narrow screens, with long commands and tables scrolling within the content.
+
 ## [0.1.0] - 2026-10-29
 
 ### Added
