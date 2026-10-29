@@ -28,7 +28,20 @@
 <p>Nouli is a multi-turn decision harness: it gives a decision model a memory. You send facts and a question with a fixed set of answers; the model returns a probability for each answer. Nouli records the turn in a session, and the next turn only needs the new facts.</p>
 
 <h2 id="install"><span class="num">01</span>Install</h2>
-<p>Installation instructions are coming soon.</p>
+<p>On <strong>macOS (Apple silicon)</strong>, use Homebrew:</p>
+<pre><code>brew install standing-desks/tap/nouli</code></pre>
+<p>On <strong>Linux</strong>, use the download installer:</p>
+<pre><code>curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh</code></pre>
+<p>The script installs the latest published binary into <code>~/.local/bin</code> after verifying its checksum. It also works on Apple silicon macOS. Linux needs glibc 2.38 or newer. The <code>0.1.0</code> downloads are ARM64-only; Linux x86_64 requires a newer release.</p>
+<p>If your shell cannot find Nouli, add the installation directory to your PATH:</p>
+<pre><code>export PATH="$HOME/.local/bin:$PATH"
+nouli --version</code></pre>
+<p>If you previously installed with Cargo, run <code>cargo uninstall nouli-cli</code> before switching so the old executable does not take precedence.</p>
+<p>To update a Homebrew installation:</p>
+<pre><code>brew update
+brew upgrade standing-desks/tap/nouli</code></pre>
+<p>For a script installation, run the download installer again. Uninstall with <code>brew uninstall standing-desks/tap/nouli</code> for Homebrew, or remove <code>~/.local/bin/nouli</code> for the script. Your configuration and saved sessions are preserved.</p>
+<p>See the <a href="https://github.com/standing-desks/nouli/blob/main/docs/release.md">installation guide</a> for selecting a version, changing the installation directory, inspecting the script, and building from source.</p>
 
 <h2 id="provider"><span class="num">02</span>Configure a provider</h2>
 <p>Nouli reads <code>~/.nouli/config.toml</code>. The first time you make a decision without one, Nouli creates an empty file and asks you to define a provider. For TypeSafe:</p>

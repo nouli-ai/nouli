@@ -129,6 +129,10 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - name: Install site dependencies
         run: npm ci
+      - name: Lint the download installer
+        run: shellcheck public/install.sh
+      - name: Test the download installer
+        run: npm test
       - name: Build site
         run: npm run build
   required:
