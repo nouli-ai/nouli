@@ -1,6 +1,6 @@
 # Local installation and release validation
 
-This is an unsigned local validation build. Public publication and distribution are separate owner decisions. The repository has no declared Nouli license or package-license metadata; this procedure selects no license. Review available dependency licenses/notices, final package metadata, repository/support URLs, versioning policy, and release authority before public distribution. No signing/notarization, registry upload, Git tag, GitHub release, or push is performed.
+This is an unsigned local validation build. Public publication and distribution are separate owner decisions. Nouli and its workspace packages use the MIT license in LICENSE. Review available dependency licenses/notices, final package metadata, repository/support URLs, versioning policy, and release authority before public distribution. No signing/notarization, registry upload, Git tag, GitHub release, or push is performed.
 
 Verified native targets are `aarch64-apple-darwin` and `aarch64-unknown-linux-gnu`. The Linux artifact is built/tested on Debian Bookworm (glibc 2.36); compatible newer GNU/Linux environments still need their own deployment validation. macOS validation uses the local Apple silicon host/SDK; it does not establish a minimum supported macOS version. Windows, x86_64, musl/static Linux, and other targets have no release support claim here.
 
