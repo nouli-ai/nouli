@@ -9,10 +9,16 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<header class="top"><a class="mark" href="./">NOULI</a><nav><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<header class="top"><a class="mark" href="./">NOULI</a><nav><a href="guide/#interactive">interactive</a><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 
 <h1 class="display">Every answer<br><span>remembers.</span></h1>
 <div class="sub"><p><strong>Nouli is a multi-turn decision harness.</strong> It runs decision models over many turns: each turn adds facts, and the model decides again with the whole history in view.</p></div>
+
+<section class="install" aria-label="Install">
+  <div class="shell"><span class="os">macOS</span><span class="dollar" aria-hidden="true">$</span><code>brew install standing-desks/tap/nouli</code><button class="copy" type="button" data-copy="brew install standing-desks/tap/nouli" aria-label="Copy the Homebrew install command">copy</button></div>
+  <div class="shell"><span class="os">Linux</span><span class="dollar" aria-hidden="true">$</span><code>curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh</code><button class="copy" type="button" data-copy="curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh" aria-label="Copy the download installer command">copy</button></div>
+  <p class="meta"><span>v%NOULI_VERSION%</span><span>Apple silicon macOS · Linux ARM64 and x86_64</span><a href="guide/#install">other ways to install</a></p>
+</section>
 
 <section id="hero" aria-label="A recorded Nouli session">
   <div class="panel" id="panel">
@@ -20,6 +26,20 @@
       <div class="keys" id="train"><button type="button" data-v="cancelled" aria-pressed="true">cancelled</button><button type="button" data-v="late" aria-pressed="false">late</button><button type="button" data-v="ontime" aria-pressed="false">on time</button></div></div>
     <div class="group"><span>plan draws on</span>
       <div class="keys" id="sources"><label><input type="checkbox" value="travel" checked>travel</label><label><input type="checkbox" value="budget" checked>budget</label></div></div>
+  </div>
+</section>
+
+<section class="repl" id="interactive" aria-labelledby="repl-title">
+  <div class="repl-side">
+    <p class="kicker">interactive mode</p>
+    <h2 id="repl-title">Open a session.<br><span>Ask as you go.</span></h2>
+    <p>Type facts as you learn them. Start a line with <code>?</code> to ask a question, and the model answers right away with everything the session knows. Questions stay with the session, so every turn asks them again. Correct a fact with <code>/replace</code>, or try a <code>/whatif</code> without saving it.</p>
+    <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open trip</code><button class="copy" type="button" data-copy="nouli open trip" aria-label="Copy the command that opens a session">copy</button></div>
+    <a class="more" href="guide/#interactive">interactive mode in the guide →</a>
+  </div>
+  <div class="term">
+    <div class="term-bar"><span>nouli open trip</span><button class="replay" type="button" id="replay">replay</button></div>
+    <pre class="screen" id="screen" tabindex="0" aria-label="A recorded interactive session"></pre>
   </div>
 </section>
 
@@ -37,6 +57,19 @@
     <tr><td class="t"><a href="examples/conservation/">Energy conservation planning</a></td><td>Corrected telemetry revises a combined plan</td><td class="n">09</td></tr>
   </tbody>
 </table>
+
+<section class="start" aria-labelledby="start-title">
+  <h2 id="start-title">Give it<br><span>a turn.</span></h2>
+  <ol class="steps">
+    <li><b>Install.</b>
+      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>brew install standing-desks/tap/nouli</code><button class="copy" type="button" data-copy="brew install standing-desks/tap/nouli" aria-label="Copy the Homebrew install command">copy</button></div>
+      <p>On Linux, use the <a href="guide/#install">download installer</a>.</p></li>
+    <li><b>Add a provider.</b> Define one in <code>~/.nouli/config.toml</code> (<a href="guide/#provider">how</a>), then log in once:
+      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli auth login typesafe</code><button class="copy" type="button" data-copy="nouli auth login typesafe" aria-label="Copy the login command">copy</button></div></li>
+    <li><b>Open a session.</b> Type a fact, then ask with <code>?</code>:
+      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open trip</code><button class="copy" type="button" data-copy="nouli open trip" aria-label="Copy the command that opens a session">copy</button></div></li>
+  </ol>
+</section>
 
 <footer class="site"><span>MIT</span><a href="guide/">guide</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
 <script type="module" src="/src/home.js"></script>

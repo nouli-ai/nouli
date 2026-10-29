@@ -8,18 +8,18 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<header class="top"><a class="mark" href="../">NOULI</a><nav><a href="./" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<header class="top"><a class="mark" href="../">NOULI</a><nav><a href="#interactive">interactive</a><a href="./" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 <h1 class="display small">Guide</h1>
 
 <div class="guide">
 <ol class="toc">
   <li><a href="#install">Install</a></li>
   <li><a href="#provider">Configure a provider</a></li>
+  <li><a href="#interactive">Interactive mode</a></li>
   <li><a href="#first">Make a decision</a></li>
   <li><a href="#turns">Add a turn</a></li>
   <li><a href="#branch">Branch and blend</a></li>
   <li><a href="#view">See the graph</a></li>
-  <li><a href="#interactive">Interactive mode</a></li>
   <li><a href="#workflows">Run a workflow</a></li>
   <li><a href="#output">Output and exit codes</a></li>
   <li><a href="#help">Troubleshooting</a></li>
@@ -72,8 +72,42 @@ context_budget_tokens = 8192
 reserved_output_tokens = 128</code></pre>
 <p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
 
-<h2 id="first"><span class="num">03</span>Make a decision</h2>
-<p><code>nouli new</code> starts a saved session. Give it the facts, then the questions with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
+<h2 id="interactive"><span class="num">03</span>Interactive mode</h2>
+<p>The quickest way to use Nouli is a session you work in. <code>nouli open trip</code> opens a prompt on a session, creating it if you agree, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Questions stay with the session, so the next question asks them again, and so does return on an empty line:</p>
+<pre><code>$ nouli open trip
+new session "trip" · /help for commands
+
+trip › The train costs 40 USD and arrives 30 minutes before the meeting.
+trip › A taxi costs 70 USD and also arrives in time.
+trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
+  turn 1 · 2 facts · 1 question
+  transport   ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
+trip › The train has been cancelled.
+trip › ?on_time: Will I get to the meeting on time?
+  turn 2 · 1 fact · 2 questions · re-asked 1
+  transport     Take the train                   ██▎                  0.11
+              ▶ Take a taxi                      █████████████████▊   0.89   → was Take the tr… 1.00
+  on_time       yes                              ███████▎             0.36
+trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
+  queued: replace fact 3
+trip › ↵
+  turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2
+  transport   ▶ Take the train                   ███████████▎         0.56   → was Take a taxi 0.89
+                Take a taxi                      ████████▊            0.44
+  on_time       yes                              █████████████▎       0.66   → was 0.36
+trip › /whatif My budget for the trip is 50 USD.
+  (not saved) · 1 fact · 2 questions
+  transport   ▶ Take the train                   ███████████████████▍ 0.97   → was Take the tr… 0.56
+                Take a taxi                      ▋                    0.03
+  on_time       yes                              ██████████████▋      0.73   → was 0.66
+trip › /quit
+  bye</code></pre>
+<p>A question is one line: an ID, a colon, the prompt, and then the answers. <code>[a, b]</code> makes a choice, <code>&lt;low, medium, high&gt;</code> makes a score with levels in order, and no list makes a yes/no question. Quote an answer that contains a comma.</p>
+<p>Slash commands do the rest: <code>/whatif FACT</code> asks without saving, <code>/replace N TEXT</code> and <code>/drop ID</code> queue a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
+
+<h2 id="first"><span class="num">04</span>Make a decision</h2>
+<p>Everything you can do at the prompt is also a command, for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the questions with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
 <pre><code>nouli new travel \
   'The train costs 40 USD and arrives 30 minutes before the meeting.
 A taxi costs 70 USD and also arrives in time. Prefer the cheaper option
@@ -94,7 +128,7 @@ that arrives on time.' \
 </table>
 <p>Put an option in double quotes if it contains a comma or a bracket. A question can sit in a file too: pass <code>--input request.json</code> (JSON or TOON) for the full form with rubrics and structured evidence. Answers are model judgments, not actions: Nouli never books, sends, or changes anything.</p>
 
-<h2 id="turns"><span class="num">04</span>Add a turn</h2>
+<h2 id="turns"><span class="num">05</span>Add a turn</h2>
 <p>A session keeps the facts you gave it and the questions it asks. <code>nouli add</code> sends only what changed, and the earlier facts and answers come along. A question with an ID the session already has takes the place of the old one; <code>--drop ID</code> stops asking one, and <code>nouli ask travel</code> asks again without new facts:</p>
 <pre><code>nouli add travel \
   'The train has been cancelled. The taxi is still available at 70 USD.' \
@@ -109,13 +143,13 @@ that arrives on time.' \
 <p>Sessions are saved under <code>~/.nouli</code> and work from any directory. <code>--store DIR</code> uses a different store.</p>
 <p>Long histories are trimmed to fit the model's context budget: older decisions shrink to their question and answer first, then the oldest optional records drop out. The full record stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached the model for a turn.</p>
 
-<h2 id="branch"><span class="num">05</span>Branch and blend</h2>
+<h2 id="branch"><span class="num">06</span>Branch and blend</h2>
 <p><code>--from</code> starts a new session from saved history. One <code>--from</code> branches, and the branch keeps the source's questions; several blend, and a blend starts with none:</p>
 <pre><code>nouli new travel-late --from travel '…' -q '…'
 nouli new plan --from travel --from budget '…' -q '…'</code></pre>
 <p>A new session captures its sources when you create it. Later turns in <code>travel</code> don't change <code>plan</code>; make a new blend to reconsider with the updated history. To start from an older point, name the turn: <code>--from travel@TURN_ID</code>.</p>
 
-<h2 id="view"><span class="num">06</span>See the graph</h2>
+<h2 id="view"><span class="num">07</span>See the graph</h2>
 <pre><code>nouli view plan
 nouli view plan --mermaid &gt; plan.mmd
 nouli facts plan
@@ -124,29 +158,6 @@ nouli sessions list
 nouli sessions show plan
 nouli sessions export plan --format json &gt; plan.json</code></pre>
 <p><code>nouli view</code> draws the session and every turn it captured as boxes in your terminal, with <code>▶</code> marking each selected answer. <code>--mermaid</code> prints the same graph as Mermaid source; paste it into a <code>```mermaid</code> block and GitHub draws it. <code>nouli facts</code> lists the numbered facts, marking those inherited from another session, and <code>nouli questions</code> prints the session's questions in the one-line form. None of these commands call a model or change the store.</p>
-
-<h2 id="interactive"><span class="num">07</span>Interactive mode</h2>
-<p><code>nouli open travel</code> opens a prompt on a session, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Questions stay with the session, so the next question asks them again, and so does return on an empty line:</p>
-<pre><code>$ nouli open travel
-new session "travel" · /help for commands
-
-travel › The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.
-travel › ?transport: How should I travel to the meeting? [Take the train, Take a taxi]
-  turn 1 · 1 fact · 1 question
-  transport   ▶ Take the train                   ████████████████████ 1.00
-                Take a taxi                                           0.00
-travel › The train has been cancelled. The taxi is still available at 70 USD.
-travel › ?on_time: Will the train get me to the meeting on time?
-  turn 2 · 1 fact · 2 questions · re-asked 1
-  transport     Take the train                   █▎                   0.06
-              ▶ Take a taxi                      ██████████████████▊  0.94   → was Take the tr… 1.00
-  on_time       yes                              █▋                   0.08
-travel › /facts
-   1  The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.
-   2  The train has been cancelled. The taxi is still available at 70 USD.
-travel › /quit
-  bye</code></pre>
-<p>Slash commands do the rest: <code>/whatif FACT</code> asks without saving, <code>/replace N TEXT</code> and <code>/drop ID</code> queue a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
 
 <h2 id="workflows"><span class="num">08</span>Run a workflow</h2>
 <p>When later questions depend on earlier answers, describe the turns as a graph and let Nouli run it. Nodes with no dependency between them run in parallel:</p>

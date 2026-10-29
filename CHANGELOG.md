@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Print turns as text with probability bars for every option, with a marker where an answer moved since the last turn. `--json`, `--jsonl`, and TOON output keep their shape.
 - Select the session by position in `nouli view SESSION`, and rename `nouli workflows` to `nouli workflow`.
 - Update the guide, README, and website walkthroughs to the new commands, with walkthrough outputs recorded from this release.
+- Put the install commands, a recorded interactive session, and a getting-started section on the website's home page, add an "interactive" link to every page, and move interactive mode to the start of the guide. Terminal output on the site uses the system monospace font, so probability bars line up.
 - Take a request file as `--input FILE` without a `session`; the command supplies the session.
 
 ### Fixed

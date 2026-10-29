@@ -8,8 +8,11 @@
   --rule: #1d2a2833;
   --on-teal: #f4f1eb;
   --on-teal-dim: #f4f1eb55;
+  --teal-bright: #5cc8b6;
   --cond: "Archivo", sans-serif;
   --mono: "Martian Mono", monospace;
+  /* Terminal output needs block characters at the same width as letters. */
+  --term: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
@@ -35,6 +38,51 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .sub { display: flex; justify-content: flex-end; padding: 22px 28px 34px; }
 .sub p { font: 400 14px/1.6 var(--mono); font-stretch: 87%; max-width: 46ch; }
 .sub strong { font-weight: 700; color: var(--teal); }
+
+/* Install: both commands, right under the opening line */
+.install { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px 40px; padding: 0 28px 40px; }
+.shell { display: flex; align-items: center; gap: 12px; min-width: 0; padding-bottom: 8px; border-bottom: 2px solid var(--teal); font: 400 13px var(--mono); font-stretch: 87%; }
+.shell .os { flex: none; width: 6ch; font-size: 11px; color: var(--soft); }
+.shell .dollar { color: var(--teal); }
+.shell code { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.copy { flex: none; font: 400 11px var(--mono); font-stretch: 87%; background: none; color: var(--ink); border: 1px solid var(--ink); padding: 4px 10px; cursor: pointer; box-shadow: 0 3px 0 var(--rule); }
+.copy:hover { background: var(--ink); color: var(--paper); }
+.copy[data-copied] { background: var(--teal); border-color: var(--teal); color: var(--on-teal); box-shadow: none; transform: translateY(3px); }
+.copy:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.install .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 22px; font: 400 11px var(--mono); font-stretch: 87%; color: var(--soft); }
+.install .meta span:first-child { color: var(--teal); font-weight: 700; }
+.install .meta a { color: var(--ink); text-underline-offset: 3px; }
+
+/* Interactive mode: a recorded session next to how to start one */
+.repl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); gap: 48px; padding: 96px 28px 0; align-items: start; }
+.repl-side > * + * { margin-top: 18px; }
+.kicker { font: 400 12px var(--mono); font-stretch: 87%; color: var(--teal); }
+.repl h2, .start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
+.repl h2 span, .start h2 span { color: var(--teal); }
+.repl-side p:not(.kicker) { font: 400 14px/1.6 var(--mono); font-stretch: 87%; }
+.repl-side code, .steps code { color: var(--teal); }
+.repl-side .shell { margin-top: 28px; }
+.more { display: inline-block; font: 400 12px var(--mono); font-stretch: 87%; color: var(--teal); text-underline-offset: 3px; }
+.term { background: var(--ink); color: var(--paper); min-width: 0; }
+.term-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #f4f1eb22; font: 400 11px var(--mono); font-stretch: 87%; color: #f4f1eb99; }
+.replay { font: inherit; background: none; color: var(--paper); border: 1px solid #f4f1eb66; padding: 3px 10px; cursor: pointer; }
+.replay:hover { background: var(--paper); color: var(--ink); }
+.screen { height: 51em; overflow: auto; padding: 14px 16px 18px; font: 12px/1.6 var(--term); white-space: pre; }
+.screen:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: -2px; }
+.screen .prompt, .screen .was, .screen .pick { color: var(--teal-bright); }
+.screen .pick { font-weight: 700; }
+.screen .meta { color: #f4f1eb8c; }
+
+/* Get started */
+.start { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 48px; padding: 0 28px 90px; align-items: start; }
+.steps { list-style: none; counter-reset: step; }
+.steps li { counter-increment: step; position: relative; padding: 0 0 26px 44px; font: 400 14px/1.6 var(--mono); font-stretch: 87%; }
+.steps li::before { content: "0" counter(step); position: absolute; left: 0; top: 0; color: var(--teal); }
+.steps li + li { padding-top: 22px; border-top: 1px solid var(--rule); }
+.steps li + li::before { top: 22px; }
+.steps .shell { margin: 12px 0 8px; }
+.steps p { font-size: 12px; color: var(--soft); }
+.steps a { color: var(--teal); text-underline-offset: 3px; }
 
 /* The instrument: one flat teal slab */
 .slab { background: var(--teal); color: var(--on-teal); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr); }
@@ -126,6 +174,7 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
 .prose pre { font-size: 12.5px; line-height: 1.55; padding: 14px 16px; overflow-x: auto; border: 1px solid var(--rule); background: #ffffff55; color: var(--ink); }
 .prose pre code { background: none; padding: 0; font-size: inherit; }
 .prose pre.out { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.prose pre.out code { font-family: var(--term); font-stretch: 100%; }
 .prose .caption { font: 400 11px var(--mono); font-stretch: 87%; color: var(--soft); margin-top: 20px; }
 .prose .caption + pre { margin-top: 6px; }
 .prose .finding { border-left: 3px solid var(--teal); padding-left: 14px; color: var(--ink); }
@@ -159,6 +208,10 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
 .crumb a { text-decoration: none; color: var(--teal); }
 
 @media (max-width: 960px) {
+  .install { grid-template-columns: minmax(0, 1fr); }
+  .repl, .start { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .repl { padding-top: 64px; }
+  .screen { height: 30em; font-size: 10.5px; }
   .slab { grid-template-columns: 1fr; }
   .read { border-left: 0; border-top: 1px solid var(--on-teal-dim); }
   .guide { grid-template-columns: 1fr; gap: 24px; }
@@ -168,6 +221,9 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
   .walk aside { position: sticky; top: 0; height: 52vh; order: -1; z-index: 1; }
   .walk .read { display: none; }
   .walk .story { padding-bottom: 20vh; }
+}
+@media (max-width: 560px) {
+  .top nav { gap: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
