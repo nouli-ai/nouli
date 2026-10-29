@@ -309,9 +309,7 @@ pub(super) fn validate_reserved_input(
     let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
     // The caller's questions stay unexpanded in the frozen request; the attempt
     // must carry the same expansion the engine executes.
-    let effective = ledger
-        .effective_turn(&frozen)
-        .map_err(|_| StorageError::Conflict)?;
+    let effective = ledger.effective_turn(&frozen).map_err(validation_error)?;
     if owner != guard.owner.to_string()
         || state != "pending"
         || input.request != effective
@@ -333,6 +331,15 @@ pub(super) fn validate_reserved_input(
         return Err(StorageError::Conflict);
     }
     Ok(())
+}
+
+/// A failure to read the ledger stays a storage failure; only history that no
+/// longer fits the reserved request is a conflict.
+fn validation_error(error: TurnError) -> StorageError {
+    match error {
+        TurnError::Storage(error) | TurnError::Session(SessionError::Storage(error)) => error,
+        _ => StorageError::Conflict,
+    }
 }
 
 impl Ledger {
@@ -632,6 +639,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fingerprint(&json).unwrap(), fingerprint(&toon).unwrap());
+    }
+
+    #[test]
+    fn reserved_input_validation_keeps_storage_failures_apart_from_conflicts() {
+        assert!(matches!(
+            validation_error(TurnError::Storage(StorageError::Payload)),
+            StorageError::Payload
+        ));
+        assert!(matches!(
+            validation_error(TurnError::Session(SessionError::Storage(
+                StorageError::Busy
+            ))),
+            StorageError::Busy
+        ));
+        assert!(matches!(
+            validation_error(TurnError::History(HistoryError::InvalidSelection)),
+            StorageError::Conflict
+        ));
     }
 
     #[test]
