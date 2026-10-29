@@ -14,6 +14,8 @@ use std::{io::Write, path::Path};
 use thiserror::Error;
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Print a session's decision graph, including its captured source history.
+    View(crate::view::Args),
     /// Inspect global saved sessions without changing the store.
     Sessions {
         #[command(subcommand)]
@@ -92,9 +94,19 @@ pub(crate) fn run(
     store: &Path,
     sink: &mut impl Write,
     format: Format,
+    color: bool,
 ) -> Result<(), InspectError> {
     let ledger = Ledger::open(store, OpenMode::ReadOnlyExisting)?;
     let (label, value) = match command {
+        Command::View(args) => {
+            let export = ledger.export_session(&args.session)?;
+            return if args.mermaid {
+                crate::view::write_mermaid(&export, sink)
+            } else {
+                crate::view::write(&export, sink, color)
+            }
+            .map_err(Into::into);
+        }
         Command::Sessions {
             command: SessionCommand::List,
         } => {

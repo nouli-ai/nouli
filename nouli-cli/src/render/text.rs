@@ -7,7 +7,7 @@ use nouli_core::{
     workflow::reference::{ReferenceValue, ResultField},
 };
 use std::io::Write;
-pub(super) fn clean(value: &str) -> String {
+pub(crate) fn clean(value: &str) -> String {
     value
         .chars()
         .flat_map(|character| {
