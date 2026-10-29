@@ -125,8 +125,13 @@ protocol = "typesafe"
 base_url = "https://api.typesafe.ai"
 api_key_env = "TYPESAFE_API_KEY"</code></pre></div>
         <p id="provider-note" class="muted">Use a Jev model available to your TypeSafe account.</p>
-        <div class="codebox" id="credential-box"><div class="codehead"><span>Your shell</span><button class="copy" type="button" data-copy="credential-command">Copy</button></div><pre><code id="credential-command">export TYPESAFE_API_KEY="your-api-key"</code></pre></div>
-        <div class="note">Put the environment-variable <strong>name</strong> in <code>api_key_env</code>. Set its value in your shell or secret manager. Keep API keys out of configuration files and request files.</div>
+        <div class="codebox" id="credential-box"><div class="codehead"><span>.env</span><button class="copy" type="button" data-copy="credential-command">Copy</button></div><pre><code id="credential-command">TYPESAFE_API_KEY="your-api-key"</code></pre></div>
+        <div class="note">Put the environment-variable <strong>name</strong> in <code>api_key_env</code>. Set its value in your shell, secret manager, or local <code>.env</code> file. Keep API keys out of configuration files and request files.</div>
+        <h3>Load credentials from .env</h3>
+        <p>Save the credential example above in <code>.env</code> in the directory where you run Nouli. Nouli loads it automatically for decisions and workflow execution, including resume. It does not search parent directories or your config directory. Exported shell values take precedence over the file.</p>
+        <p>Use <code>--env-file FILE</code> to select another file, such as <code>nouli --env-file .env.test --input request.json</code>. Relative paths start in the current directory. An explicit file replaces the automatic <code>.env</code>.</p>
+        <p>If your variable is named <code>TYPESAFE_TOKEN</code>, set <code>api_key_env = "TYPESAFE_TOKEN"</code> in your provider definition. Names must match. Env files support comments, quoted values, and optional <code>export</code> prefixes.</p>
+        <p>A missing automatic <code>.env</code> is fine. Missing explicit files, unreadable files, or malformed files stop execution, even when a key is exported. Help and read-only inspection do not load env files. Keep <code>.env</code> out of version control.</p>
         <p>Place <code>default_provider</code>, <code>default_model</code>, and <code>output</code> before the first <code>[providers.NAME]</code> section. When adding another provider, add its section without repeating those top-level settings.</p>
         <h3>Choose a model</h3>
         <p>Use <code>--model MODEL_ID</code> to select another model for a call. To switch services too, pass <code>--provider NAME --model MODEL_ID</code>. The provider and model are selected independently; changing the provider does not choose a different model for you.</p>
@@ -222,7 +227,7 @@ nouli workflows show RUN_ID
 nouli workflows resume RUN_ID --jsonl</code></pre></div>
         <p><button class="download" type="button" id="download-workflow">↓ Download workflow.json</button></p>
         <p>The example chooses a route, then asks whether to book it. Edit the facts and questions before running it.</p>
-        <p>Replace <code>RUN_ID</code> with the ID returned by your run. Resume reuses completed results and uses the original provider/model settings. Make the original credential environment variable available when resuming. <code>--jsonl</code> streams progress followed by a final result.</p>
+        <p>Replace <code>RUN_ID</code> with the ID returned by your run. Resume reuses completed results and uses the original provider/model settings. Supply the original credential variable through your shell or the env file used when resuming. <code>--jsonl</code> streams progress followed by a final result.</p>
         <p>For individual decisions, supply a stable <code>--request-id NAME</code> to retrieve a completed result on a repeated call. If an interrupted request needs another attempt, repeat that same call with <code>--retry-interrupted</code>. An interrupted provider call may have run without a saved result, so retrying can repeat it.</p>
       </section>
       <section id="help" aria-labelledby="help-title">
@@ -232,7 +237,10 @@ nouli workflows resume RUN_ID --jsonl</code></pre></div>
           <tr><td><code>provider_required</code></td><td>Set <code>default_provider</code> to an existing provider name or pass <code>--provider NAME</code>.</td></tr>
           <tr><td><code>model_required</code></td><td>Set top-level <code>default_model</code>, pass <code>--model MODEL_ID</code>, or select a model in your request.</td></tr>
           <tr><td><code>unknown_provider</code></td><td>Check that the selected name matches a provider defined in your config.</td></tr>
-          <tr><td><code>credential_unavailable</code></td><td>Set the environment variable named in the error. Ensure it is available in the shell running Nouli and contains a valid key.</td></tr>
+          <tr><td><code>credential_unavailable</code></td><td>Set the environment variable named in the error. Supply it in the shell or the selected env file and ensure it contains a valid key.</td></tr>
+          <tr><td><code>env_file_not_found</code></td><td>Check the path supplied to <code>--env-file</code>. An explicitly selected file must exist.</td></tr>
+          <tr><td><code>env_file_unreadable</code></td><td>Check the env file path and read permissions.</td></tr>
+          <tr><td><code>invalid_env_file</code></td><td>Check env-file assignment syntax, balanced quotes, and UTF-8 encoding.</td></tr>
           <tr><td><code>invalid_model_budget</code></td><td>For an unrecognized model or custom/local endpoint, add a supported budget under <code>[providers.NAME.models."MODEL_ID"]</code> or pass <code>--context-budget TOKENS</code>. Keep it within the model's capacity.</td></tr>
           <tr><td><code>configuration_not_found</code></td><td>Check the path supplied to <code>--config</code>. Nouli only scaffolds its default configuration file.</td></tr>
           <tr><td><code>invalid_configuration_syntax</code></td><td>Check TOML syntax and setting names. Keep top-level settings before provider sections.</td></tr>
@@ -309,7 +317,7 @@ nouli workflows resume RUN_ID --jsonl</code></pre></div>
       document.getElementById('provider-config').textContent=example.config;
       document.getElementById('provider-note').textContent=example.note;
       document.getElementById('credential-box').hidden=!example.key;
-      document.getElementById('credential-command').textContent=example.key ? `export ${example.key}="your-api-key"` : '';
+      document.getElementById('credential-command').textContent=example.key ? `${example.key}="your-api-key"` : '';
     }));
     document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
       try {

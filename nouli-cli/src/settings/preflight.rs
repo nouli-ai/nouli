@@ -58,12 +58,13 @@ fn snapshot(
         .map_err(config)
 }
 fn validate(
+    settings: &Settings,
     snapshot: SettingsSnapshot,
     request: &nouli_core::decision::TurnRequest,
 ) -> Result<(), PreflightError> {
     ResolvedLimits::for_profile(&snapshot.profile)?.validate_request(request, Modality::Text)?;
     snapshot
-        .with_credentials(|name| std::env::var(name).ok())
+        .with_credentials(|name| settings.environment.lookup(name))
         .map_err(config)?;
     Ok(())
 }
@@ -79,6 +80,7 @@ pub(crate) fn turn(
         return Ok(());
     }
     validate(
+        settings,
         snapshot(settings, overrides, &request.model)?,
         &request.turn,
     )
@@ -95,7 +97,11 @@ pub(crate) fn workflow(
     for node in &request.workflow.nodes {
         let mut node_overrides = overrides.clone();
         node_overrides.selection = node.model.clone();
-        validate(snapshot(settings, &node_overrides, &run_model)?, &node.turn)?;
+        validate(
+            settings,
+            snapshot(settings, &node_overrides, &run_model)?,
+            &node.turn,
+        )?;
     }
     Ok(())
 }

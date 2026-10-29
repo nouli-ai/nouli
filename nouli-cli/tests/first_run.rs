@@ -14,7 +14,10 @@ use std::{
 };
 fn command(home: &Home) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_nouli"));
-    command.env_clear().env("HOME", &home.0);
+    command
+        .env_clear()
+        .env("HOME", &home.0)
+        .current_dir(&home.0);
     command
 }
 fn error(output: Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {

@@ -53,6 +53,41 @@ in URL userinfo/query/fragment are rejected. Put only environment-variable names
 in `api_key_env`. Unauthenticated local providers omit it. Only the selected
 provider's variable is read; unrelated missing keys do not block a request.
 
+The CLI automatically reads `.env` from the current working directory for
+provider credentials. It does not search parent directories or the config
+file's directory. Use `--env-file FILE` to select one different file; relative
+paths are resolved from the current working directory. That file replaces the
+automatic `.env`, rather than merging with it.
+
+```dotenv
+TYPESAFE_TOKEN="your-api-key"
+```
+
+Set `api_key_env = "TYPESAFE_TOKEN"` in your provider definition to use that name.
+Assignments, comments, quoted values, and optional `export` prefixes are supported.
+Env files are parsed as data, never executed as shell scripts. Exported shell
+values take precedence, including an exported empty value, which still fails
+credential validation. File values do not change configuration/store paths or
+`HOME`.
+
+```sh
+nouli --input request.json
+nouli --env-file .env.test --input request.json
+nouli workflows resume RUN_ID --env-file /path/to/keys.env
+```
+
+A missing automatic `.env` is fine. An explicitly selected missing file reports
+`env_file_not_found`; unreadable files report `env_file_unreadable`; invalid
+syntax or UTF-8 reports `invalid_env_file`. Errors show the file path without
+its contents. Execution commands validate an existing file even when credentials
+are exported or the result is a completed replay. Help, version, invalid input,
+and read-only inspection do not load env files. Env-file failures occur before
+opening a ledger or sending a provider request.
+
+Workflow resume keeps its saved credential variable name and resolves its current
+value from the shell or the env file selected for that invocation. The env file
+path and credential values are not frozen into the run.
+
 The library receives explicit home paths, override layers, and an injected
 credential lookup. It never reads process environment or installs a tracing
 subscriber. `Credential` redacts Debug output and has no Serialize implementation.
@@ -96,7 +131,7 @@ context_budget_tokens = 8192
 reserved_output_tokens = 128
 ```
 
-The offline [walkthrough](walkthrough.md) generates a temporary loopback provider instead. Hosted examples in `fixtures/config/providers.toml` name environment sources, never credentials. No key is collected interactively; setting a key is the invoking program's responsibility. Full request syntax, selection, and stdin rules are in [direct evaluation](cli-evaluation.md).
+The offline [walkthrough](walkthrough.md) generates a temporary loopback provider instead. Hosted examples in `fixtures/config/providers.toml` name environment sources, never credentials. No key is collected interactively; supply it through the shell or an env file. Full request syntax, selection, and stdin rules are in [direct evaluation](cli-evaluation.md).
 
 One provider can serve multiple models. Add a settings table for each model that
 needs explicit limits, then select a model for a call:

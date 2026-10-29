@@ -19,7 +19,7 @@ The walkthrough runs the real CLI against a temporary loopback fixture and isola
 
 The first valid evaluation creates `~/.nouli/config.toml` if it is missing. Define
 a `[providers.NAME]` section in that barebones file, then set `default_provider`
-and `default_model`, or pass `--provider NAME --model MODEL`. Supply the selected credential environment variable. Setup errors show the file
+and `default_model`, or pass `--provider NAME --model MODEL`. Supply the selected credential variable in your shell or the current directory's `.env`; `--env-file FILE` selects another env file. Setup errors show the file
 path and stop before creating a new ledger. Help and inspection do not create config.
 
 For a provider you have separately configured and authorized, evaluation is the default action:

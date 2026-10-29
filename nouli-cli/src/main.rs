@@ -25,6 +25,9 @@ struct Args {
     /// User configuration file (defaults to ~/.nouli/config.toml).
     #[arg(long, value_name = "FILE", global = true)]
     config: Option<std::path::PathBuf>,
+    /// Credential env file (defaults to .env in the current directory).
+    #[arg(long, value_name = "FILE", global = true)]
+    env_file: Option<std::path::PathBuf>,
     /// Relocate the user ledger root.
     #[arg(long, value_name = "DIR", global = true)]
     store: Option<std::path::PathBuf>,
@@ -164,7 +167,10 @@ fn main() -> ExitCode {
                     );
                 }
             };
-            if let Err(error) = settings.initialize() {
+            if let Err(error) = settings
+                .load_environment()
+                .and_then(|()| settings.initialize())
+            {
                 return render_error(&args, settings.config.output, error);
             }
             let overrides = evaluate::overrides(&args.decision, &settings);

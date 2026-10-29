@@ -156,6 +156,9 @@ async fn execute(
             .map_err(|error| nouli_core::protocol::stream::StreamError::Sink { run: None, error })?
             .with_config(settings.config_path.clone()),
     );
+    let environment = settings.environment.clone();
+    let lookup: nouli_core::engine::workflow::CredentialLookup =
+        Arc::new(move |name| environment.lookup(name));
     let evaluation = async {
         match command {
             Command::Run(args) => {
@@ -171,7 +174,7 @@ async fn execute(
                                 overrides: &overrides,
                                 home: &settings.home,
                             },
-                            Arc::new(|name| std::env::var(name).ok()),
+                            lookup,
                             cancel.clone(),
                             sink,
                         )
@@ -182,7 +185,7 @@ async fn execute(
                 .resume_workflow_report(
                     worker.as_ref().ok_or(boundary::InputError::Shape)?,
                     *run,
-                    Arc::new(|name| std::env::var(name).ok()),
+                    lookup,
                     cancel.clone(),
                     sink,
                 )
@@ -226,22 +229,28 @@ pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 
     }
     let mut settings = settings.clone();
     let prepared = (|| {
-        if let Command::Run(args) = command {
+        let request = if let Command::Run(args) = command {
             let request = args.request(&mut std::io::stdin().lock())?;
             // Compile before first-run filesystem setup or opening a ledger.
             nouli_core::workflow::compile::compile(&request.workflow)
                 .map_err(WorkflowEngineError::from)?;
+            Some(request)
+        } else {
+            None
+        };
+        settings
+            .load_environment()
+            .map_err(WorkflowCliError::Setup)?;
+        if let (Command::Run(args), Some(request)) = (command, request.as_ref()) {
             settings.initialize().map_err(WorkflowCliError::Setup)?;
             crate::settings::preflight::workflow(
                 &settings,
                 &args.overrides(&settings.store),
-                &request,
+                request,
             )
             .map_err(|error| WorkflowCliError::Setup(error.report(&settings)))?;
-            Ok(Some(request))
-        } else {
-            Ok(None)
         }
+        Ok(request)
     })();
     let result = prepared.and_then(|request| {
         tokio::runtime::Builder::new_current_thread()
