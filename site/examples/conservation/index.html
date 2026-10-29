@@ -37,10 +37,10 @@ conservation request, not a market dispatch instruction.&#x27; \
     Request clarification before choosing any response]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  request     ▶ Reduce nonessential use while p… ████████████████████ 1.00
+  request     ▶ Reduce nonessential use while p… ███████████████████▊ 0.99
                 Include critical operations in …                      0.00
-                Request clarification before ch…                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-69d9-73c2-9c95-b4121d9f0465 · turn 01a1875f-69df-7234-821f-56e98e8f7fcb</code></pre>
+                Request clarification before ch… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1ae9-7515-941a-960f8cda6716 · turn 01a1878e-1aed-726e-9ea3-f0f5505d4788</code></pre>
 <p>The model selects reducing nonessential use while preserving critical operations. This is voluntary conservation context, not a market dispatch instruction.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
@@ -59,7 +59,7 @@ reserve.&#x27; \
   battery       100 kW                                                0.00
                 150 kW                                                0.00
               ▶ 200 kW                           ████████████████████ 1.00
-  typesafe/jev-1.14.0 · session 01a1875f-69eb-72ba-a7f5-76f4a9af1c4e · turn 01a1875f-69ef-72f2-9c4b-163ac35f5204</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1af5-754b-a8f2-d740fe0e7696 · turn 01a1878e-1af7-7361-bc56-f90fb9783887</code></pre>
 <p>The battery power limit is 200 kW. The reserve policy and interval duration will constrain how much of that limit can actually be used.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
@@ -79,7 +79,7 @@ flexible loads. The local conservation goal is 250 kW for the interval.&#x27; \
   facility    ▶ Defer vehicle charging           ████████████████████ 1.00
                 Curtail refrigeration                                 0.00
                 Request a review of operating c…                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-69fa-7542-bd21-0c2051bb0944 · turn 01a1875f-69fe-731c-a2fc-8e69b715a8fe</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1aff-766c-a28c-7a1ec4690846 · turn 01a1878e-1b01-7730-b028-e6655f869436</code></pre>
 <p>The model selects deferring vehicle charging. The 100 kW flexible load can be removed for the whole interval without affecting departures.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
@@ -94,10 +94,10 @@ not executed.&#x27; \
     Discharge at 200 kW for two hours]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  battery_pl…   Discharge at 100 kW for two hou… ████▎                0.21
-              ▶ Discharge at 150 kW for two hou… ███████████▋         0.58
-                Discharge at 200 kW for two hou… ████▎                0.21
-  typesafe/jev-1.14.0 · session 01a1875f-6a09-726c-b197-eeda324f1694 · turn 01a1875f-6a11-70e4-9dec-1d5610c71054</code></pre>
+  battery_pl…   Discharge at 100 kW for two hou… ███▋                 0.18
+              ▶ Discharge at 150 kW for two hou… █████████            0.45
+                Discharge at 200 kW for two hou… ███████▍             0.37
+  typesafe/jev-1.14.0 · session 01a1878e-1b08-7111-a1a7-4d934c8bf0d7 · turn 01a1878e-1b0b-7192-9708-1a3f48b3b135</code></pre>
 <p>The recorded 150 kW contribution uses 300 kWh and leaves the 500 kWh reserve: 800 - (150 x 2) = 500. It is below the 200 kW power limit.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
@@ -111,10 +111,10 @@ the facility obligations.&#x27; \
     Request a revised operating plan before offering a reduction]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  load_plan   ▶ Defer 100 kW of vehicle chargin… █████████████████▎   0.86
-                Defer charging and refrigeratio… ▎                    0.01
-                Request a revised operating pla… ██▋                  0.13
-  typesafe/jev-1.14.0 · session 01a1875f-6a1d-7411-8004-2bd4fc56699a · turn 01a1875f-6a26-7262-aad5-f1090dba0dc8</code></pre>
+  load_plan   ▶ Defer 100 kW of vehicle chargin… ███████████████████▊ 0.99
+                Defer charging and refrigeratio…                      0.00
+                Request a revised operating pla… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1b12-7791-a137-7ba51dd513e2 · turn 01a1878e-1b15-7313-9996-4af074c5af0b</code></pre>
 <p>The model selects deferring 100 kW of charging for two hours while preserving refrigeration. This branch shares facility policy with the battery branch.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
@@ -130,10 +130,10 @@ are alternatives before execution, not successive discharges.&#x27; \
     Request a revised plan because neither offer fits the constraints]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  plan        ▶ Reduce imports by 250 kW: 150 k… ██████████████▎      0.71
-                Reduce imports by 200 kW: 100 k… ██▉                  0.15
-                Request a revised plan because … ██▉                  0.15
-  typesafe/jev-1.14.0 · session 01a1875f-6a32-73bb-8568-9ebf555d34fb · turn 01a1875f-6a41-77f1-b736-5ccb570eccf3</code></pre>
+  plan        ▶ Reduce imports by 250 kW: 150 k… █████████████▍       0.67
+                Reduce imports by 200 kW: 100 k… █████▊               0.29
+                Request a revised plan because … ▊                    0.04
+  typesafe/jev-1.14.0 · session 01a1878e-1b1c-7263-b398-6f29cdc74cc3 · turn 01a1878e-1b1f-733e-98ad-5fdd03704689</code></pre>
 <p>The model selects 150 kW from the battery plus 100 kW of deferred charging, a 250 kW reduction in grid imports. The command records an offer; it does not operate equipment.</p>
 </section>
 <section class="step" id="step-7">
@@ -150,9 +150,9 @@ charging, and two-hour interval. Choose the largest feasible offer toward the
   --drop plan</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  (not saved) · 1 fact · 1 question
-  what_if     ▶ Reduce imports by 250 kW: 150 k… ███████████████▍     0.77
-                Reduce imports by 200 kW: 100 k… ██▎                  0.12
-                Request a revised plan because … ██▎                  0.12
+  what_if     ▶ Reduce imports by 250 kW: 150 k… ████████████▍        0.62
+                Reduce imports by 200 kW: 100 k… ██████               0.30
+                Request a revised plan because … █▋                   0.08
   typesafe/jev-1.14.0</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model keeps the full 250 kW offer. With 700 kWh stored and a 500 kWh reserve, only 200 kWh can be used over two hours, allowing 100 kW from the battery. The feasible combined offer is 200 kW, with a 50 kW shortfall. The captured what-if answer is incorrect.</p>
 </section>
@@ -169,10 +169,10 @@ starts.&#x27; \
     Request a fresh reading]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
-  battery     ▶ 700 kWh                          ████████████████████ 1.00
-                800 kWh                                               0.00
-                Request a fresh reading                               0.00
-  typesafe/jev-1.14.0 · session 01a1875f-69eb-72ba-a7f5-76f4a9af1c4e · turn 01a1875f-6a6c-775d-996d-4afe85c7be50</code></pre>
+  battery     ▶ 700 kWh                          ███████████████████▎ 0.96
+                800 kWh                          ▎                    0.01
+                Request a fresh reading          ▋                    0.03
+  typesafe/jev-1.14.0 · session 01a1878e-1af5-754b-a8f2-d740fe0e7696 · turn 01a1878e-1b32-751a-b1a9-ebb627c4c708</code></pre>
 <p>The model identifies 700 kWh as the latest reading. The original plan has still not executed, so no discharge needs to be subtracted from that reading.</p>
 </section>
 <section class="step" id="step-9" data-node="7">
@@ -187,11 +187,11 @@ not executed.&#x27; \
     Discharge at 200 kW for two hours]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  battery_pl…   Discharge at 100 kW for two hou… ██████               0.30
-              ▶ Discharge at 150 kW for two hou… ██████████▊          0.54
-                Discharge at 200 kW for two hou… ███▎                 0.16
-  typesafe/jev-1.14.0 · session 01a1875f-6a78-7185-ae7f-9b31ad180b46 · turn 01a1875f-6a82-7036-953f-8c3e47add9e1</code></pre>
-<p class="finding"><strong>Review finding:</strong> the model selects 150 kW again. That would leave 700 - (150 x 2) = 400 kWh, below the 500 kWh reserve. The largest feasible candidate is 100 kW.</p>
+  battery_pl…   Discharge at 100 kW for two hou… ████▊                0.24
+                Discharge at 150 kW for two hou… ███████▎             0.36
+              ▶ Discharge at 200 kW for two hou… ████████             0.40
+  typesafe/jev-1.14.0 · session 01a1878e-1b39-70d4-8f12-2299cfd138a4 · turn 01a1878e-1b3c-71a1-90b6-b934076a2479</code></pre>
+<p class="finding"><strong>Review finding:</strong> the model selects 200 kW, the full power limit. That would leave 700 - (200 x 2) = 300 kWh, below the 500 kWh reserve. The largest feasible candidate is 100 kW.</p>
 </section>
 <section class="step" id="step-10" data-node="8">
 <h2><span class="num">10</span>Save a revised combined plan</h2>
@@ -209,7 +209,7 @@ are alternatives before execution, not successive discharges.&#x27; \
   plan_updat… ▶ Reduce imports by 250 kW: 150 k… █████████████▎       0.66
                 Reduce imports by 200 kW: 100 k… ██████               0.30
                 Request a revised plan because … ▊                    0.04
-  typesafe/jev-1.14.0 · session 01a1875f-6a8f-7631-9958-af9770fb2fef · turn 01a1875f-6aa0-779f-bfd7-058b4f024756</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1b44-7215-b729-118c218eae6e · turn 01a1878e-1b48-7150-9f61-8b58975e9a05</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model retains the 250 kW offer. The supplied constraints support 100 kW of battery discharge plus 100 kW of deferred charging, or 200 kW total. This recorded recommendation should be rejected by an independent reserve check before any equipment action.</p>
 </section>
 </article>

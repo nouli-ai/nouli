@@ -2,7 +2,7 @@
  "session": "catalog-review",
  "nodes": [
   {
-   "id": "01a1878e-1cfc-751c-af61-aa64c6605ac5",
+   "id": "01a18790-5f47-7068-80f3-12779b29a857",
    "session": "catalog",
    "turn": 1,
    "kind": "new",
@@ -38,7 +38,7 @@
    "command": "nouli new catalog '…' -q '…'"
   },
   {
-   "id": "01a1878e-1d05-7315-9694-996f3fb314d8",
+   "id": "01a18790-6026-75fa-a1b8-bcd142b5b19b",
    "session": "policy",
    "turn": 1,
    "kind": "new",
@@ -57,7 +57,7 @@
    "command": "nouli new policy '…' -q '…'"
   },
   {
-   "id": "01a1878e-1d0f-761e-98a7-5b307c1b7e6f",
+   "id": "01a18790-60c2-7542-8407-b4353c3886db",
    "session": "pick",
    "turn": 1,
    "kind": "blend",
@@ -75,7 +75,7 @@
       {
        "id": "nudge_the_covering_item_aside_to_expose_the_target_s_label",
        "label": "Nudge the covering item aside to expose the target's label",
-       "p": 0.8
+       "p": 0.83
       },
       {
        "id": "attempt_suction_on_the_visible_bag_film",
@@ -85,7 +85,7 @@
       {
        "id": "request_remote_assistance_now",
        "label": "Request remote assistance now",
-       "p": 0.16
+       "p": 0.13
       }
      ],
      "selected": "nudge_the_covering_item_aside_to_expose_the_target_s_label"
@@ -105,7 +105,7 @@
    "command": "nouli new pick --from catalog --from policy '…' -q '…'"
   },
   {
-   "id": "01a1878e-1d1a-75d9-8d53-c2c53ee7fb34",
+   "id": "01a18790-61a9-7295-9b8b-7e8020bd3f6a",
    "session": "pick",
    "turn": 2,
    "kind": "continued",
@@ -122,17 +122,17 @@
       {
        "id": "try_a_two_finger_pinch_on_the_bottle_neck",
        "label": "Try a two-finger pinch on the bottle neck",
-       "p": 0.85
+       "p": 0.72
       },
       {
        "id": "retry_suction_on_the_same_spot",
        "label": "Retry suction on the same spot",
-       "p": 0.14
+       "p": 0.26
       },
       {
        "id": "stop_and_request_remote_assistance",
        "label": "Stop and request remote assistance",
-       "p": 0.01
+       "p": 0.02
       }
      ],
      "selected": "try_a_two_finger_pinch_on_the_bottle_neck"
@@ -156,14 +156,14 @@
    "command": "nouli add pick '…'"
   },
   {
-   "id": "01a1878e-1d2e-7300-a54a-aaa3bf607884",
+   "id": "01a18790-62f2-7087-b24c-a423ec074079",
    "session": "pick",
    "turn": 3,
    "kind": "continued",
    "parents": [
     3
    ],
-   "state": "Sensor update: the remote operator chose a pinch on the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.",
+   "state": "Sensor update: the arm pinched the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.",
    "questions": [
     {
      "id": "load",
@@ -211,7 +211,7 @@
    "command": "nouli add pick '…'"
   },
   {
-   "id": "01a1878e-1d3a-7288-964c-05f782ca623a",
+   "id": "01a18790-63dc-7318-b86b-93a1eeb6fa42",
    "session": "pick",
    "turn": 4,
    "kind": "continued",
@@ -270,7 +270,7 @@
    "command": "nouli add pick '…'"
   },
   {
-   "id": "01a1878e-1d46-70ed-b3f7-ab31afcf6208",
+   "id": "01a18790-6495-747f-b1a4-39c6168402d6",
    "session": "catalog-review",
    "turn": 1,
    "kind": "blend",
@@ -288,12 +288,12 @@
       {
        "id": "prefer_a_neck_pinch_and_check_the_weight_before_placing",
        "label": "Prefer a neck pinch, and check the weight before placing",
-       "p": 0.75
+       "p": 0.81
       },
       {
        "id": "keep_suction_on_the_label_area_as_the_first_choice",
        "label": "Keep suction on the label area as the first choice",
-       "p": 0.25
+       "p": 0.19
       },
       {
        "id": "always_request_remote_assistance_for_this_item",
