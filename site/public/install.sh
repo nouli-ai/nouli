@@ -72,7 +72,9 @@ else
 fi
 [ "$actual" = "$expected" ] || fail 'release checksum mismatch; existing installation was not changed'
 tar -xzf "$installer_tmp/$archive" -C "$installer_tmp" nouli
-[ -f "$installer_tmp/nouli" ] && [ ! -L "$installer_tmp/nouli" ] || fail 'archive does not contain a regular nouli executable'
+if [ ! -f "$installer_tmp/nouli" ] || [ -L "$installer_tmp/nouli" ]; then
+  fail 'archive does not contain a regular nouli executable'
+fi
 
 [ ! -d "$install_dir/nouli" ] || fail "$install_dir/nouli is a directory"
 mkdir -p "$install_dir"
