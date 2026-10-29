@@ -166,7 +166,7 @@ fn whatif_saves_nothing_and_keeps_what_was_queued() {
         /whatif The train is CANCELLED\nA queued fact\n/whatif Another what-if\n/facts\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     assert!(
-        transcript.contains("  (not saved) · 1 fact · 1 question · re-asked 1"),
+        transcript.contains("  (not saved) · 1 fact · 1 question"),
         "{transcript}"
     );
     assert!(transcript.contains("(queued)"), "{transcript}");

@@ -248,7 +248,7 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
     let what = home.run(["whatif", "Trip", "--format", "text"]);
     let text = String::from_utf8(what.stdout).unwrap();
     assert!(
-        text.starts_with("  (not saved) · 0 facts · 3 questions · re-asked 3\n"),
+        text.starts_with("  (not saved) · 0 facts · 3 questions\n"),
         "{text}"
     );
     // A replayed request keeps its record IDs, so the same command replays.
