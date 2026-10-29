@@ -36,8 +36,9 @@ itself: it receives explicit paths and an injected credential lookup.
   Parse errors never repeat the file's text, because the parser's own messages
   quote the line they failed on.
 - **Command sources.** A command runs directly with no shell, in an environment
-  of only `PATH` and `HOME`, with a 10-second limit. Its trimmed output is the
-  key. A nonzero exit, a timeout, or empty output is `credential_unavailable`.
+  of only `PATH` and `HOME`, with a 10-second limit, in its own process group that is killed whole on a
+  timeout or cancellation. Its trimmed output is the key. A nonzero exit, a
+  timeout, output over 64 KiB, or empty output is `credential_unavailable`.
   The output and error text are never logged or reported.
 - **File safety.** The directory is created with mode 0700 and the file with
   0600 from the moment it exists: the writer opens a temporary file in the same

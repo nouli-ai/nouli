@@ -14,7 +14,7 @@ use nouli_core::{
         Engine, EngineError, EvaluationInput,
         execution::{NativeProvider, TokioClock},
     },
-    history::{ModelSelection, SessionSelection},
+    history::{EvaluationRequest, ModelSelection, SessionSelection},
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
     storage::{Ledger, OpenMode, worker::LedgerWorker},
@@ -48,10 +48,50 @@ impl EvaluationError {
 }
 pub(crate) async fn run(draft: &Draft, settings: &Settings) -> ResultEnvelope {
     let result = execute(draft, settings).await;
+    settings.credentials.forget();
     ResultEnvelope::new(match result {
         Ok(report) => Report::Turn(Box::new(report)),
         Err(error) => Report::Error(error.report(settings)),
     })
+}
+/// Runs the command behind the turn's provider credential, if it has one,
+/// before the engine asks for it, so the wait is off the async runtime and ends
+/// on Ctrl-C. When this cannot tell which provider the turn will use, the
+/// engine's own lookup runs the command instead.
+async fn fetch_credential(
+    settings: &Settings,
+    overrides: &RuntimeOverrides,
+    request: &EvaluationRequest,
+    worker: Option<&LedgerWorker>,
+    cancel: &CancellationToken,
+) {
+    let defaults = match (&request.session, worker) {
+        (SessionSelection::Continue { session }, Some(worker)) => {
+            let selector = session.clone();
+            match worker.call(move |ledger| ledger.session(&selector)).await {
+                Ok(Ok(session)) => session.defaults,
+                _ => return,
+            }
+        }
+        _ => ModelSelection::default(),
+    };
+    let Ok(snapshot) =
+        settings
+            .config
+            .resolve_snapshot(overrides, &request.model, &defaults, &settings.home)
+    else {
+        return;
+    };
+    if snapshot.profile.api_key_env.is_some() || snapshot.profile.stored_credential {
+        settings
+            .credentials
+            .fetch(
+                &snapshot.profile_name,
+                snapshot.profile.api_key_env.as_deref(),
+                cancel,
+            )
+            .await;
+    }
 }
 async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, EvaluationError> {
     let request = &draft.request;
@@ -87,6 +127,7 @@ async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, Evalu
     };
     let cancel = CancellationToken::new();
     let evaluation = async {
+        fetch_credential(settings, &overrides, request, worker.as_ref(), &cancel).await;
         if ephemeral {
             let result = engine
                 .evaluate_ephemeral(

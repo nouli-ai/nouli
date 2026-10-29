@@ -10,12 +10,13 @@ use clap::Subcommand;
 use input::RunArgs;
 use nouli_core::{
     codec,
+    config::resolve::{RuntimeOverrides, select_model},
     engine::{
         Engine,
         execution::{NativeProvider, TokioClock},
         workflow::{WorkflowEngineError, WorkflowInput},
     },
-    history::SessionSelection,
+    history::{ModelSelection, SessionSelection},
     identity::Id,
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, InspectionReference, Report, ResultEnvelope},
@@ -23,7 +24,7 @@ use nouli_core::{
         Ledger, OpenMode,
         worker::{LedgerWorker, WorkerError},
     },
-    workflow::RunMode,
+    workflow::{RunMode, WorkflowRequest},
 };
 use std::{io::Write, sync::Arc};
 use thiserror::Error;
@@ -111,6 +112,38 @@ impl WorkflowCliError {
 pub(crate) fn needs_config(command: &Command) -> bool {
     matches!(command, Command::Run(_))
 }
+/// Runs the commands behind the credentials the run's nodes will use, before
+/// the engine asks for them; see `evaluate::fetch_credential`.
+async fn fetch_credentials(
+    settings: &Settings,
+    overrides: &RuntimeOverrides,
+    request: &WorkflowRequest,
+    cancel: &CancellationToken,
+) {
+    let run_model = select_model(&[&overrides.selection, &request.workflow.model]);
+    for node in &request.workflow.nodes {
+        let mut node_overrides = overrides.clone();
+        node_overrides.selection = node.model.clone();
+        let Ok(snapshot) = settings.config.resolve_snapshot(
+            &node_overrides,
+            &run_model,
+            &ModelSelection::default(),
+            &settings.home,
+        ) else {
+            continue;
+        };
+        if snapshot.profile.api_key_env.is_some() || snapshot.profile.stored_credential {
+            settings
+                .credentials
+                .fetch(
+                    &snapshot.profile_name,
+                    snapshot.profile.api_key_env.as_deref(),
+                    cancel,
+                )
+                .await;
+        }
+    }
+}
 async fn execute(
     command: &Command,
     settings: &Settings,
@@ -164,6 +197,7 @@ async fn execute(
             Command::Run(args) => {
                 let request = request.as_ref().ok_or(boundary::InputError::Shape)?;
                 let overrides = args.overrides(settings);
+                fetch_credentials(settings, &overrides, request, &cancel).await;
                 Ok::<ResultEnvelope, WorkflowCliError>(
                     engine
                         .evaluate_workflow_report(
