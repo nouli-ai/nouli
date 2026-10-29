@@ -117,7 +117,7 @@ flexible loads. The local conservation goal is 250 kW for the interval.&#x27; \
 <h2><span class="num">04</span>Choose the battery contribution</h2>
 <p>Blend telemetry and facility policy to choose constant battery output for two hours. The plan has not executed.</p>
 <pre class="repl"><code>facility › /blend battery facility as battery-plan
-  new session "battery-plan" from battery + facility · no standing questions
+  new session "battery-plan" from battery + facility
 battery-plan › Choose the greatest constant battery output for 18:00-20:00 that leaves at least the recorded reserve. Use the latest telemetry. The proposed plan has not executed.
 battery-plan › ?battery_plan: What constant battery contribution is feasible? [Discharge at 100 kW for two hours, Discharge at 150 kW for two hours, Discharge at 200 kW for two hours]
   turn 1 · 1 fact · 1 question
@@ -143,7 +143,7 @@ not executed.&#x27; \
 <h2><span class="num">05</span>Choose the load contribution</h2>
 <p>Blend the conservation request with facility policy to choose a load response independently of battery dispatch.</p>
 <pre class="repl"><code>battery-plan › /blend request facility as load-plan
-  new session "load-plan" from request + facility · no standing questions
+  new session "load-plan" from request + facility
 load-plan › Choose a voluntary load reduction consistent with the conservation request and the facility obligations.
 load-plan › ?load_plan: Which load response should the facility offer? [Defer 100 kW of vehicle charging for two hours, Defer charging and refrigeration for two hours, Request a revised operating plan before offering a reduction]
   turn 1 · 1 fact · 1 question
@@ -168,7 +168,7 @@ the facility obligations.&#x27; \
 <h2><span class="num">06</span>Combine the two plans</h2>
 <p>Combine both planning branches into one offer toward the sample local target.</p>
 <pre class="repl"><code>load-plan › /blend battery-plan load-plan as plan
-  new session "plan" from battery-plan + load-plan · no standing questions
+  new session "plan" from battery-plan + load-plan
 plan › Choose a combined offer consistent with battery reserve, power limit, flexible loads, and the local goal. Prefer meeting the goal when feasible. Otherwise choose the largest feasible offer and report its shortfall. All proposed plans are alternatives before execution, not successive discharges.
 plan › ?plan: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging, Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall, Request a revised plan because neither offer fits the constraints]
   turn 1 · 1 fact · 1 question
@@ -193,8 +193,8 @@ are alternatives before execution, not successive discharges.&#x27; \
 </section>
 <section class="step" id="step-7">
 <h2><span class="num">07</span>Try an unsaved alternative</h2>
-<p>Use <code>whatif</code> to evaluate a hypothetical 700 kWh reading without saving a new decision or updating the telemetry session. A session keeps asking its questions, so <code>--drop plan</code> leaves the plan question out of this one turn.</p>
-<p class="repl-only note">This what-if asks a question of its own, so it runs from the shell:</p>
+<p>Use <code>whatif</code> to evaluate a hypothetical 700 kWh reading without saving a new decision or updating the telemetry session. It asks only its own question; the saved plan keeps its answer.</p>
+<p class="repl-only note">This what-if runs from the shell:</p>
 <pre class="repl-only"><code>nouli --format text whatif &quot;plan&quot; \
   &#x27;What-if only: replace the stored-energy reading with 700 kWh for this
 evaluation. Keep the 500 kWh reserve, 200 kW power limit, 100 kW deferrable
@@ -202,8 +202,7 @@ charging, and two-hour interval. Choose the largest feasible offer toward the
 250 kW goal. No plan has executed.&#x27; \
   -q &#x27;what_if: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
     Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall,
-    Request a revised plan because neither offer fits the constraints]&#x27; \
-  --drop plan</code></pre>
+    Request a revised plan because neither offer fits the constraints]&#x27;</code></pre>
 <pre><code>nouli --format text whatif &quot;$example-plan&quot; \
   &#x27;What-if only: replace the stored-energy reading with 700 kWh for this
 evaluation. Keep the 500 kWh reserve, 200 kW power limit, 100 kW deferrable
@@ -211,8 +210,7 @@ charging, and two-hour interval. Choose the largest feasible offer toward the
 250 kW goal. No plan has executed.&#x27; \
   -q &#x27;what_if: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
     Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall,
-    Request a revised plan because neither offer fits the constraints]&#x27; \
-  --drop plan</code></pre>
+    Request a revised plan because neither offer fits the constraints]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  (not saved) · 1 fact · 1 question
   what_if     ▶ Reduce imports by 250 kW: 150 k… ████████████▍        0.62
@@ -223,12 +221,12 @@ charging, and two-hour interval. Choose the largest feasible offer toward the
 </section>
 <section class="step" id="step-8" data-node="6">
 <h2><span class="num">08</span>Record corrected telemetry</h2>
-<p>Continue the telemetry session with the corrected 700 kWh reading. Unlike the what-if, this becomes saved source evidence for new decisions. The same question ID replaces the session's standing question with the reworded one.</p>
+<p>Continue the telemetry session with the corrected 700 kWh reading. Unlike the what-if, this becomes saved source evidence for new decisions. It asks a reworded question under the same ID, and the first reading's answer stays in the history.</p>
 <pre class="repl"><code>plan › /use battery
-  battery · 1 standing question
+  battery
 battery › Confirmed illustrative correction at 17:55, replacing the 17:50 reading: stored AC-deliverable energy is 700 kWh. The power limit remains 200 kW. No discharge has occurred; this is a corrected measurement before the interval starts.
 battery › ?battery: What stored-energy reading should the next plan use? [700 kWh, 800 kWh, Request a fresh reading]
-  turn 2 · 1 fact · 1 question · re-asked 1
+  turn 2 · 1 fact · 1 question
   battery     ▶ 700 kWh                          ███████████████████▎ 0.96
                 800 kWh                          ▎                    0.01
                 Request a fresh reading          ▋                    0.03</code></pre>
@@ -241,7 +239,7 @@ starts.&#x27; \
     800 kWh,
     Request a fresh reading]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+<pre class="out"><code>  turn 2 · 1 fact · 1 question
   battery     ▶ 700 kWh                          ███████████████████▎ 0.96
                 800 kWh                          ▎                    0.01
                 Request a fresh reading          ▋                    0.03
@@ -252,7 +250,7 @@ starts.&#x27; \
 <h2><span class="num">09</span>Recompute the battery plan from its sources</h2>
 <p>Create a new battery plan from updated telemetry and unchanged facility obligations. This brings the corrected source into a fresh blend.</p>
 <pre class="repl"><code>battery › /blend battery facility as battery-plan-updated
-  new session "battery-plan-updated" from battery + facility · no standing questions
+  new session "battery-plan-updated" from battery + facility
 battery-plan-updated › Choose the greatest constant battery output for 18:00-20:00 that leaves at least the recorded reserve. Use the latest telemetry. The proposed plan has not executed.
 battery-plan-updated › ?battery_plan_updated: What constant battery contribution is feasible? [Discharge at 100 kW for two hours, Discharge at 150 kW for two hours, Discharge at 200 kW for two hours]
   turn 1 · 1 fact · 1 question
@@ -278,7 +276,7 @@ not executed.&#x27; \
 <h2><span class="num">10</span>Save a revised combined plan</h2>
 <p>Combine the revised battery branch with the unchanged load plan to save a new overall recommendation.</p>
 <pre class="repl"><code>battery-plan-updated › /blend battery-plan-updated load-plan as plan-updated
-  new session "plan-updated" from battery-plan-updated + load-plan · no standing questions
+  new session "plan-updated" from battery-plan-updated + load-plan
 plan-updated › Choose a combined offer consistent with battery reserve, power limit, flexible loads, and the local goal. Prefer meeting the goal when feasible. Otherwise choose the largest feasible offer and report its shortfall. All proposed plans are alternatives before execution, not successive discharges.
 plan-updated › ?plan_updated: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging, Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall, Request a revised plan because neither offer fits the constraints]
   turn 1 · 1 fact · 1 question

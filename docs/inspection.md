@@ -3,7 +3,6 @@
 ```sh
 nouli sessions list
 nouli facts Research
-nouli questions Research
 nouli view Research
 nouli view Research | less -S
 nouli view Research --mermaid > research.mmd
@@ -13,7 +12,7 @@ nouli sessions export Research --format json > research.json
 nouli sessions export Research --format toon > research.toon
 ```
 
-`nouli facts SESSION` lists the session's numbered facts, as `nouli add` and `--replace N` number them. A fact that came from a branch or blend source is marked `(from SESSION)`, and a replaced fact shows the text it replaced (`(replaced; was: ...)`). `nouli questions SESSION` prints the standing questions in the one-line grammar, one per line, in the order they were first set. Both support `--json` (and `--format toon`); a fact that blended branches replaced differently lists every alternative and `--replace N` settles it, the JSON lists each fact's number, records, key, text, turn, source session, and previous text (plus `alternatives` for a conflicted fact), and each question's ID, grammar line, and full definition.
+`nouli facts SESSION` lists the session's numbered facts, as `nouli add` and `--replace N` number them. A fact that came from a branch or blend source is marked `(from SESSION)`, and a replaced fact shows the text it replaced (`(replaced; was: ...)`). It supports `--json` (and `--format toon`); a fact that blended branches replaced differently lists every alternative and `--replace N` settles it, and the JSON lists each fact's number, records, key, text, turn, source session, and previous text (plus `alternatives` for a conflicted fact). The questions a session asked are in its turns, shown by `nouli view` and `nouli context`.
 
 `view SESSION` prints a decision graph and exits. Each turn is a
 box containing its session name, unambiguous short turn ID, questions, and result

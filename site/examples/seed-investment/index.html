@@ -108,7 +108,7 @@ fund › ?check: Which check fits the fund policy for this round? [Request $1.2M
 <h2><span class="num">04</span>Plan diligence from team and traction</h2>
 <p>Blend team and traction to choose what diligence should test first. The fund policy isn't needed for that.</p>
 <pre class="repl"><code>fund › /blend team traction as diligence
-  new session "diligence" from team + traction · no standing questions
+  new session "diligence" from team + traction
 diligence › Plan the week of diligence before the investment committee. Start with the largest unresolved risk in the team and traction records.
 diligence › ?diligence: What should diligence test first? [Call practices outside the founders' network about retention and switching risk, Review the claim-preparation model's accuracy and error handling, Assess the founders' plan to hire a first sales lead]
   turn 1 · 1 fact · 1 question
@@ -132,7 +132,7 @@ diligence › ?diligence: What should diligence test first? [Call practices outs
 <h2><span class="num">05</span>Draft the investment committee recommendation</h2>
 <p>Blend the diligence plan with the fund policy to draft the recommendation for Monday's committee.</p>
 <pre class="repl"><code>diligence › /blend diligence fund as ic
-  new session "ic" from diligence + fund · no standing questions
+  new session "ic" from diligence + fund
 ic › Prepare a recommendation for Monday'\''s investment committee. It must respect the fund policy and name any diligence that is still open.
 ic › ?recommendation: What should the partner recommend to the investment committee? ["Invest $1.2M, conditional on completing the planned diligence", Invest $1.2M now without further diligence, Pass on the round]
   turn 1 · 1 fact · 1 question
@@ -154,11 +154,9 @@ ic › ?recommendation: What should the partner recommend to the investment comm
 </section>
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Add the reference calls</h2>
-<p>The reference calls come back mid-week. Add them to the traction session as its second turn; the first turn stays in its history. The new question replaces the old one with <code>--drop traction</code>.</p>
+<p>The reference calls come back mid-week. Add them to the traction session as its second turn; the first turn stays in its history. The turn asks a new question; the traction answer from the first turn stays as it was.</p>
 <pre class="repl"><code>ic › /use traction
-  traction · 1 standing question
-traction › /drop traction
-  queued: drop traction
+  traction
 traction › Reference call update: the partner spoke with 4 practices outside the founders'\'' network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.
 traction › ?risk: What is now the biggest risk to Tidewell's growth? [A practice-management vendor bundling a competing feature, Weak demand for faster claims collection, The founders' ability to build the product]
   turn 2 · 1 fact · 1 question
@@ -169,8 +167,7 @@ traction › ?risk: What is now the biggest risk to Tidewell's growth? [A practi
   &#x27;Reference call update: the partner spoke with 4 practices outside the founders&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27; network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.&#x27; \
   -q &quot;risk: What is now the biggest risk to Tidewell&#x27;s growth? [A practice-management vendor bundling a competing feature,
     Weak demand for faster claims collection,
-    The founders&#x27; ability to build the product]&quot; \
-  --drop traction</code></pre>
+    The founders&#x27; ability to build the product]&quot;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 2 · 1 fact · 1 question
   risk        ▶ A practice-management vendor bu… ███████████████████▊ 0.99
@@ -183,7 +180,7 @@ traction › ?risk: What is now the biggest risk to Tidewell's growth? [A practi
 <h2><span class="num">07</span>Replan diligence with the updated traction</h2>
 <p>Blend the team with the updated traction. The earlier diligence session doesn't change; this is a new plan from the new history.</p>
 <pre class="repl"><code>traction › /blend team traction as diligence-updated
-  new session "diligence-updated" from team + traction · no standing questions
+  new session "diligence-updated" from team + traction
 diligence-updated › Plan the remaining diligence before the investment committee. Use the latest traction record, including the reference calls.
 diligence-updated › ?diligence: What should diligence test first? [Test whether practices would keep Tidewell if their software vendor bundles a claims assistant, Review the claim-preparation model's accuracy and error handling, Assess the founders' plan to hire a first sales lead]
   turn 1 · 1 fact · 1 question
@@ -207,7 +204,7 @@ diligence-updated › ?diligence: What should diligence test first? [Test whethe
 <h2><span class="num">08</span>Reconsider the recommendation</h2>
 <p>Blend the new diligence plan with the same fund policy.</p>
 <pre class="repl"><code>diligence-updated › /blend diligence-updated fund as ic-updated
-  new session "ic-updated" from diligence-updated + fund · no standing questions
+  new session "ic-updated" from diligence-updated + fund
 ic-updated › Prepare the recommendation for Monday'\''s investment committee. It must respect the fund policy and use the latest diligence record.
 ic-updated › ?recommendation: What should the partner recommend to the investment committee? [Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant, Invest $1.2M now on the current evidence, "Invest $500,000 to hold a smaller position while the platform risk plays out", Pass until Tidewell shows it can win against the bundled feature]
   turn 1 · 1 fact · 1 question
@@ -232,20 +229,18 @@ ic-updated › ?recommendation: What should the partner recommend to the investm
 </section>
 <section class="step" id="step-9">
 <h2><span class="num">09</span>Try new terms without saving</h2>
-<p>Try a repriced round from the updated recommendation. <code>whatif</code> runs it from the updated recommendation without saving anything. <code>--drop</code> leaves the recommendation question out of this one turn, because a session keeps asking its questions.</p>
-<p class="repl-only note">This what-if asks a question of its own, so it runs from the shell:</p>
+<p>Try a repriced round from the updated recommendation. <code>whatif</code> runs it from the updated recommendation without saving anything. It asks only its own question, so the saved recommendation keeps its answer.</p>
+<p class="repl-only note">This what-if runs from the shell:</p>
 <pre class="repl-only"><code>nouli --format text whatif &quot;ic-updated&quot; \
   &#x27;What-if: the lead investor reprices the round to $3M at a $25M post-money valuation. Everything else is unchanged.&#x27; \
   -q &#x27;terms: What should the partner do under these terms? [Keep the $1.2M recommendation,
     Ask for a smaller allocation at the new price,
-    &quot;Decline, because the new price is above the fund&#x27;\&#x27;&#x27;s valuation limit&quot;]&#x27; \
-  --drop recommendation</code></pre>
+    &quot;Decline, because the new price is above the fund&#x27;\&#x27;&#x27;s valuation limit&quot;]&#x27;</code></pre>
 <pre><code>nouli --format text whatif &quot;$example-ic-updated&quot; \
   &#x27;What-if: the lead investor reprices the round to $3M at a $25M post-money valuation. Everything else is unchanged.&#x27; \
   -q &#x27;terms: What should the partner do under these terms? [Keep the $1.2M recommendation,
     Ask for a smaller allocation at the new price,
-    &quot;Decline, because the new price is above the fund&#x27;\&#x27;&#x27;s valuation limit&quot;]&#x27; \
-  --drop recommendation</code></pre>
+    &quot;Decline, because the new price is above the fund&#x27;\&#x27;&#x27;s valuation limit&quot;]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  (not saved) · 1 fact · 1 question
   terms         Keep the $1.2M recommendation    █▋                   0.08

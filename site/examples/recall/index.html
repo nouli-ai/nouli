@@ -110,7 +110,7 @@ has not responded. There were no other shipments of this batch.&#x27; \
 <h2><span class="num">04</span>Choose a warehouse action</h2>
 <p>Blend published scope and warehouse records to choose a stock action under the sample hold policy.</p>
 <pre class="repl"><code>customers › /blend scope stock as stock-plan
-  new session "stock-plan" from scope + stock · no standing questions
+  new session "stock-plan" from scope + stock
 stock-plan › Our example stock policy is to quarantine confirmed recalled jars and hold unreadable codes for identification. Apply the scope only to products and lots it actually covers.
 stock-plan › ?stock_plan: What should the warehouse do with its stock? [Quarantine matching jars and hold unreadable codes for identification, Hold every jar pending further review, Identify unreadable codes before choosing any stock action]
   turn 1 · 1 fact · 1 question
@@ -136,7 +136,7 @@ it actually covers.&#x27; \
 <h2><span class="num">05</span>Choose a customer follow-up</h2>
 <p>Blend the same recall scope with the independent customer history to decide what outreach is needed.</p>
 <pre class="repl"><code>stock-plan › /blend scope customers as outreach
-  new session "outreach" from scope + customers · no standing questions
+  new session "outreach" from scope + customers
 outreach › Apply the recall scope to ingredient lot 1352425 and the snack boxes made from it. Following recall communication guidance, establish that affected customers received and followed the notice. Under our example response policy, missing acknowledgment requires direct follow-up; reported sales require escalation and verification of downstream notification. Use the latest dated response for each customer.
 outreach › ?outreach: What customer follow-up is needed now? [Ask Summit to acknowledge the notice and account for its boxes, Verify that both customers have isolated all affected boxes, Escalate reported sales to the recall lead and verify downstream notification]
   turn 1 · 1 fact · 1 question
@@ -165,7 +165,7 @@ each customer.&#x27; \
 <h2><span class="num">06</span>Combine stock and customer decisions</h2>
 <p>Combine the stock and outreach decisions. Both sources are blends, so this response includes the independent warehouse and customer branches.</p>
 <pre class="repl"><code>outreach › /blend stock-plan outreach as response
-  new session "response" from stock-plan + outreach · no standing questions
+  new session "response" from stock-plan + outreach
 response › Combine the warehouse and customer decisions into a recommendation for the recall lead. A warehouse hold does not account for shipped products. Coordinate any unresolved customer or downstream follow-up alongside the stock action. Use the latest dated customer records.
 response › ?response: Which response should the recall lead coordinate? [Coordinate warehouse holds only, Coordinate warehouse holds and missing customer responses, Coordinate warehouse holds and escalation of sales to end customers]
   turn 1 · 1 fact · 1 question
@@ -192,10 +192,10 @@ action. Use the latest dated customer records.&#x27; \
 <h2><span class="num">07</span>Add the next customer response</h2>
 <p>Continue the customer history with the later reply. Summit has isolated 18 boxes and reports 12 sold; downstream notification is still unknown. The session already has a <code>customers</code> question, so the new <code>-q</code> with the same ID replaces it.</p>
 <pre class="repl"><code>response › /use customers
-  customers · 1 standing question
+  customers
 customers › Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to end customers. Whether those buyers have been notified is unknown. This replaces the earlier Summit nonresponse. Harbor still has all 30 boxes isolated.
 customers › ?customers: What is the next action for Summit? [Confirm acknowledgment only, Escalate the 12 sold boxes and verify downstream notification, Treat the customer response as complete]
-  turn 2 · 1 fact · 1 question · re-asked 1
+  turn 2 · 1 fact · 1 question
   customers     Confirm acknowledgment only      ▎                    0.01
               ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
                 Treat the customer response as … ▎                    0.01</code></pre>
@@ -209,7 +209,7 @@ isolated.&#x27; \
     Escalate the 12 sold boxes and verify downstream notification,
     Treat the customer response as complete]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+<pre class="out"><code>  turn 2 · 1 fact · 1 question
   customers     Confirm acknowledgment only      ▎                    0.01
               ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
                 Treat the customer response as … ▎                    0.01
@@ -220,7 +220,7 @@ isolated.&#x27; \
 <h2><span class="num">08</span>Reassess outreach using the updated source</h2>
 <p>Create a new outreach blend from scope and the updated customer history. Updating the customer session did not rewrite the earlier outreach decision.</p>
 <pre class="repl"><code>customers › /blend scope customers as outreach-updated
-  new session "outreach-updated" from scope + customers · no standing questions
+  new session "outreach-updated" from scope + customers
 outreach-updated › Apply the recall scope to ingredient lot 1352425 and the snack boxes made from it. Following recall communication guidance, establish that affected customers received and followed the notice. Under our example response policy, missing acknowledgment requires direct follow-up; reported sales require escalation and verification of downstream notification. Use the latest dated response for each customer.
 outreach-updated › ?outreach_updated: What customer follow-up is needed now? [Ask Summit to acknowledge the notice and account for its boxes, Verify that both customers have isolated all affected boxes, Escalate reported sales to the recall lead and verify downstream notification]
   turn 1 · 1 fact · 1 question
@@ -249,7 +249,7 @@ each customer.&#x27; \
 <h2><span class="num">09</span>Combine the revised decisions</h2>
 <p>Reuse the unchanged stock plan and combine it with revised outreach to form a new coordinated response.</p>
 <pre class="repl"><code>outreach-updated › /blend stock-plan outreach-updated as response-updated
-  new session "response-updated" from stock-plan + outreach-updated · no standing questions
+  new session "response-updated" from stock-plan + outreach-updated
 response-updated › Combine the warehouse and customer decisions into a recommendation for the recall lead. A warehouse hold does not account for shipped products. Coordinate any unresolved customer or downstream follow-up alongside the stock action. Use the latest dated customer records.
 response-updated › ?response_updated: Which response should the recall lead coordinate? [Coordinate warehouse holds only, Coordinate warehouse holds and missing customer responses, Coordinate warehouse holds and escalation of sales to end customers]
   turn 1 · 1 fact · 1 question

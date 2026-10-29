@@ -73,7 +73,7 @@ reserved_output_tokens = 128</code></pre>
 <p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
 
 <h2 id="interactive"><span class="num">03</span>Interactive mode</h2>
-<p>The quickest way to use Nouli is a session you work in. <code>nouli open trip</code> opens a prompt on a session, creating it if you agree, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Questions stay with the session, so the next question asks them again, and so does return on an empty line:</p>
+<p>The quickest way to use Nouli is a session you work in. <code>nouli open trip</code> opens a prompt on a session, creating it if you agree, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Each question is asked once, in its own call. Earlier answers stay as they were, and the model sees them as history when it answers the next question:</p>
 <pre><code>$ nouli open trip
 new session "trip" · /help for commands
 
@@ -81,30 +81,27 @@ trip › The train costs 40 USD and arrives 30 minutes before the meeting.
 trip › A taxi costs 70 USD and also arrives in time.
 trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
   turn 1 · 2 facts · 1 question
-  transport   ▶ Take the train                   ████████████████████ 1.00
-                Take a taxi                                           0.00
+  transport   ▶ Take the train                   ███████████████████▊ 0.99
+                Take a taxi                      ▎                    0.01
 trip › The train has been cancelled.
-trip › ?on_time: Will I get to the meeting on time?
-  turn 2 · 1 fact · 2 questions · re-asked 1
-  transport     Take the train                   ██▎                  0.11
-              ▶ Take a taxi                      █████████████████▊   0.89   → was Take the tr… 1.00
-  on_time       yes                              ███████▎             0.36
+trip › ?rebook: How should I get to the meeting now? [Take the train, Take a taxi]
+  turn 2 · 1 fact · 1 question
+  rebook        Take the train                   ▊                    0.04
+              ▶ Take a taxi                      ███████████████████▎ 0.96
 trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
   queued: replace fact 3
-trip › ↵
-  turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2
-  transport   ▶ Take the train                   ███████████▎         0.56   → was Take a taxi 0.89
-                Take a taxi                      ████████▊            0.44
-  on_time       yes                              █████████████▎       0.66   → was 0.36
-trip › /whatif My budget for the trip is 50 USD.
-  (not saved) · 1 fact · 2 questions
-  transport   ▶ Take the train                   ███████████████████▍ 0.97   → was Take the tr… 0.56
-                Take a taxi                      ▋                    0.03
-  on_time       yes                              ██████████████▋      0.73   → was 0.66
+trip › ?on_time: Will I get to the meeting on time?
+  turn 3 · 1 fact (1 replaced, kept in history) · 1 question
+  on_time       yes                              ██████████████████▎  0.91
+trip › My budget for the trip is 50 USD.
+trip › /whatif ?budget: Which option fits my budget? [Take the train, Take a taxi]
+  (not saved) · 1 fact · 1 question
+  budget      ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
 trip › /quit
   bye</code></pre>
 <p>A question is one line: an ID, a colon, the prompt, and then the answers. <code>[a, b]</code> makes a choice, <code>&lt;low, medium, high&gt;</code> makes a score with levels in order, and no list makes a yes/no question. Quote an answer that contains a comma.</p>
-<p>Slash commands do the rest: <code>/whatif FACT</code> asks without saving, <code>/replace N TEXT</code> and <code>/drop ID</code> queue a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
+<p>Slash commands do the rest: <code>/whatif ?id: prompt</code> asks its own question with the queued facts without saving, <code>/replace N TEXT</code> queues a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
 
 <h2 id="first"><span class="num">04</span>Make a decision</h2>
 <p>Everything you can do at the prompt is also a command, for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the questions with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
@@ -116,7 +113,7 @@ that arrives on time.' \
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
   transport   ▶ Take the train                   ████████████████████ 1.00
                 Take a taxi                                           0.00
-  typesafe/jev-1.14.0 · session 01a18762-58ce-726d-83d9-70cf6801a1ff · turn 01a18762-58d4-71ca-9344-e84e399dedd0</code></pre>
+  typesafe/jev-1.14.0 · session 01a188cf-5a98-7734-9645-715ee6bd9e7d · turn 01a188cf-5b18-75dc-8b15-90393e62bd69</code></pre>
 <p>Every option gets a probability, and <code>▶</code> marks the answer. Each question has one of three answer types:</p>
 <table>
   <thead><tr><th>type</th><th>answer</th><th>how to write it</th></tr></thead>
@@ -129,17 +126,15 @@ that arrives on time.' \
 <p>Put an option in double quotes if it contains a comma or a bracket. A question can sit in a file too: pass <code>--input request.json</code> (JSON or TOON) for the full form with rubrics and structured evidence. Answers are model judgments, not actions: Nouli never books, sends, or changes anything.</p>
 
 <h2 id="turns"><span class="num">05</span>Add a turn</h2>
-<p>A session keeps the facts you gave it and the questions it asks. <code>nouli add</code> sends only what changed, and the earlier facts and answers come along. A question with an ID the session already has takes the place of the old one; <code>--drop ID</code> stops asking one, and <code>nouli ask travel</code> asks again without new facts:</p>
+<p>A session keeps the facts you gave it and every answer. <code>nouli add</code> sends only what changed, with the next question, and the earlier facts and answers come along as history. Nothing is asked again, so <code>transport</code> keeps the answer it was given. <code>nouli ask travel -q …</code> asks without new facts:</p>
 <pre><code>nouli add travel \
   'The train has been cancelled. The taxi is still available at 70 USD.' \
-  -q 'on_time: Will the train get me to the meeting on time?' \
-  -q 'transport: How should I travel to the meeting now? [Take the train, Take a taxi]'</code></pre>
-<pre class="out"><code>  turn 2 · 1 fact · 2 questions · re-asked 1
-  transport     Take the train                   ▎                    0.01
-              ▶ Take a taxi                      ███████████████████▊ 0.99   → was Take the tr… 1.00
-  on_time       yes                              ██▋                  0.13
-  typesafe/jev-1.14.0 · session 01a18762-58ce-726d-83d9-70cf6801a1ff · turn 01a18762-58e6-77f4-b3ff-6f0834a4344f</code></pre>
-<p>The arrow shows what changed since the last answer to the same question. Facts are numbered, and <code>--replace 1 'new text'</code> corrects fact 1: the model sees only the new text, and the old one stays in the history. <code>nouli whatif travel 'The taxi fare has doubled to 140 USD.'</code> asks the same questions of a hypothetical fact and saves nothing.</p>
+  -q 'rebook: How should I travel to the meeting now? [Take the train, Take a taxi]'</code></pre>
+<pre class="out"><code>  turn 2 · 1 fact · 1 question
+  rebook        Take the train                   ▎                    0.01
+              ▶ Take a taxi                      ███████████████████▊ 0.99
+  typesafe/jev-1.14.0 · session 01a188cf-5a98-7734-9645-715ee6bd9e7d · turn 01a188cf-5caa-7258-85eb-d6c2ae37dfc0</code></pre>
+<p>Every turn needs a question. Facts are numbered, and <code>--replace 1 'new text'</code> corrects fact 1 in the turn that asks the next question: the model sees only the new text, and the old one stays in the history. <code>nouli whatif travel 'The taxi fare has doubled to 140 USD.' -q 'fare: Is the taxi still worth it?'</code> asks a question of a hypothetical fact and saves nothing.</p>
 <p>Sessions are saved under <code>~/.nouli</code> and work from any directory. <code>--store DIR</code> uses a different store.</p>
 <p>Long histories are trimmed to fit the model's context budget: older decisions shrink to their question and answer first, then the oldest optional records drop out. The full record stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached the model for a turn.</p>
 
@@ -206,8 +201,8 @@ nouli workflow resume RUN_ID</code></pre>
     <tr><td><code>unknown_provider</code></td><td>Use a provider name defined in your configuration.</td></tr>
     <tr><td><code>credential_unavailable</code></td><td>Run <code>nouli auth login PROVIDER</code>, or set the environment variable named in the error, in your shell or the env file.</td></tr>
     <tr><td><code>auth_store_insecure</code></td><td>Others can read <code>~/.nouli/auth.toml</code>. Run <code>chmod 600</code> on it.</td></tr>
-    <tr><td><code>questions_required</code></td><td>The session has no questions yet. Add one with <code>-q</code>.</td></tr>
-    <tr><td><code>invalid_standing_question</code></td><td><code>--drop</code> named a question the session does not have, or a one-off question repeats an ID it already asks.</td></tr>
+    <tr><td><code>questions_required</code></td><td>The turn has no question. Add one with <code>-q</code>.</td></tr>
+    <tr><td><code>invalid_standing_question</code></td><td>A request file sets <code>standing</code>, which Nouli no longer supports. List the questions in <code>turn.questions</code>.</td></tr>
     <tr><td><code>env_file_not_found</code></td><td>Check the path passed to <code>--env-file</code>.</td></tr>
     <tr><td><code>invalid_env_file</code></td><td>Check assignments, quotes, and UTF-8 encoding in the env file.</td></tr>
     <tr><td><code>invalid_model_budget</code></td><td>Add <code>context_budget_tokens</code> under <code>[providers.NAME.models."MODEL"]</code> or pass <code>--context-budget TOKENS</code>.</td></tr>

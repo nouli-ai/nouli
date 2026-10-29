@@ -31,26 +31,14 @@ migrate atomically. The repository stores no credential values and performs no
 HTTP calls. Request replay, process guards, active revision/conflict projection,
 and source branch/blend creation are subsequent task responsibilities.
 
-## Standing questions
+## Questions are asked once
 
-A session remembers the questions it keeps asking. The ledger has no separate
-table for them: each finalized turn carries `standing`, the
-`StandingChanges { set, drop }` it made, saved in the same transaction as the
-turn (`AttemptInput.standing` becomes `FinalizedTurn.standing`). Turns written
-by 0.1.0 have no such field and read as having made no changes. A failed,
-interrupted, or retried attempt changes nothing, because only a finalized turn
-carries changes.
+A session keeps facts and history, not questions. Each turn asks exactly the
+questions its request lists, and no later turn, branch, or blend asks them
+again; later turns see earlier questions and answers only as history.
 
-A session's standing set is a fold over its own turns' changes in canonical
-ancestry order, on top of a base. `set` inserts a question or replaces the one
-with the same ID in place, and `drop` removes one, so the set keeps the order in
-which questions were first set. A session created from exactly one source (a
-branch) starts from the source's set at the captured frontier, computed the same
-way and recursively, so a branch from an older point inherits the set as it was
-then. A new session, or one created from several sources (a blend), starts with
-no standing questions.
-
-`Ledger::standing_questions(&SessionSelector)` returns the current set, and
-`SessionExport.standing_questions` includes it. Neither the set nor the
-inheritance rule is stored anywhere but in the turns, so they cannot disagree
-with the history.
+Turns written by 0.2.0 may carry `standing`, the `StandingChanges { set, drop }`
+of questions that release asked again on every turn, and their attempts carry
+`AttemptInput.standing`. Both are still read so 0.2.0 stores open, but nothing
+applies them: a 0.2.0 session's saved questions are never asked again. See
+[ADR 0004](../adr/0004-ask-each-question-once.md).
