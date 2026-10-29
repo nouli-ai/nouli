@@ -11,6 +11,8 @@ pub(crate) enum Command {
     Ask(crate::turns::Ask),
     /// Run one turn from a session's head and save nothing.
     Whatif(crate::turns::Whatif),
+    /// Open the interactive session loop on a session.
+    Open(crate::repl::Open),
     /// Execute, inspect, or explicitly resume a frozen decision workflow.
     #[command(name = "workflow")]
     Workflow {

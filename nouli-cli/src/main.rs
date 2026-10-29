@@ -9,6 +9,7 @@ mod input;
 mod inspect;
 mod present;
 mod render;
+mod repl;
 mod selection;
 mod settings;
 mod turns;
@@ -87,6 +88,9 @@ fn main() -> ExitCode {
                         );
                     }
                 }
+                if !outputs && io::stdin().is_terminal() && io::stdout().is_terminal() {
+                    return repl::run(&args, repl::Target::Pick, None);
+                }
                 return match Args::command().write_long_help(&mut io::stdout().lock()) {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(_) => ExitCode::from(6),
@@ -104,6 +108,9 @@ fn main() -> ExitCode {
                 }
                 commands::Command::Whatif(verb) => {
                     return evaluate::command(&args, turns::Verb::Whatif(verb));
+                }
+                commands::Command::Open(open) => {
+                    return repl::run(&args, repl::Target::Named(open.session.clone()), Some(open));
                 }
                 commands::Command::Workflow { .. } | commands::Command::Inspect(_) => {}
             }
