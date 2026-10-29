@@ -94,7 +94,7 @@ nouli facts trip
    3  The train is running 10 minutes late but still arrives 20 minutes before the meeting.   (replaced; was: The train has been cancelled.)
 ```
 
-Every turn needs a `-q` question. `nouli ask trip -q …` asks without new facts, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
+Every turn asks one `-q` question, in its own call. `nouli ask trip -q …` asks without new facts, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
 ## A longer example
 

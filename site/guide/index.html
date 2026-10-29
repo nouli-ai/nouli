@@ -104,7 +104,7 @@ trip › /quit
 <p>Slash commands do the rest: <code>/whatif ?id: prompt</code> asks its own question with the queued facts without saving, <code>/replace N TEXT</code> queues a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
 
 <h2 id="first"><span class="num">04</span>Make a decision</h2>
-<p>Everything you can do at the prompt is also a command, for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the questions with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
+<p>Everything you can do at the prompt is also a command, for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the question with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
 <pre><code>nouli new travel \
   'The train costs 40 USD and arrives 30 minutes before the meeting.
 A taxi costs 70 USD and also arrives in time. Prefer the cheaper option
@@ -134,7 +134,7 @@ that arrives on time.' \
   rebook        Take the train                   ▎                    0.01
               ▶ Take a taxi                      ███████████████████▊ 0.99
   typesafe/jev-1.14.0 · session 01a188cf-5a98-7734-9645-715ee6bd9e7d · turn 01a188cf-5caa-7258-85eb-d6c2ae37dfc0</code></pre>
-<p>Every turn needs a question. Facts are numbered, and <code>--replace 1 'new text'</code> corrects fact 1 in the turn that asks the next question: the model sees only the new text, and the old one stays in the history. <code>nouli whatif travel 'The taxi fare has doubled to 140 USD.' -q 'fare: Is the taxi still worth it?'</code> asks a question of a hypothetical fact and saves nothing.</p>
+<p>Every turn asks one question, in its own call. Facts are numbered, and <code>--replace 1 'new text'</code> corrects fact 1 in the turn that asks the next question: the model sees only the new text, and the old one stays in the history. <code>nouli whatif travel 'The taxi fare has doubled to 140 USD.' -q 'fare: Is the taxi still worth it?'</code> asks a question of a hypothetical fact and saves nothing.</p>
 <p>Sessions are saved under <code>~/.nouli</code> and work from any directory. <code>--store DIR</code> uses a different store.</p>
 <p>Long histories are trimmed to fit the model's context budget: older decisions shrink to their question and answer first, then the oldest optional records drop out. The full record stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached the model for a turn.</p>
 

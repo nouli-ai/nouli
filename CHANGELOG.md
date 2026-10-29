@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Ask each question once. A turn asks only the questions given with it, `-q` or a `?` line, in one call, and no later turn, branch, or blend asks them again, so a saved answer is never decided again. Sessions saved by 0.2.0 keep reading, and the questions they saved are no longer asked.
+- Take one question per command: `-q` no longer repeats, so each question is its own call, and a second `-q` is a usage error. Request files and workflow nodes can still ask several independent questions in one call.
 - Require a question for every turn: `nouli add`, `ask`, and `whatif`, and `new` with facts, fail with `questions_required` without `-q`. In `nouli open`, facts wait in the queue until a `?` line sends them.
 - Make `/whatif` ask its own question, `/whatif ?id: prompt [a, b]`, with the queued facts; it still saves nothing. An empty line now sends again only what a failed turn left queued.
 - Drop `re-asked N` from turn headers.

@@ -313,7 +313,7 @@
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli add cashflow '…'"
+   "command": "nouli add cashflow '…' -q '…'"
   },
   {
    "id": "01a1878e-1bc0-72db-bd3d-6f495246f85d",

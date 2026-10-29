@@ -254,7 +254,7 @@
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli add traction '…'"
+   "command": "nouli add traction '…' -q '…'"
   },
   {
    "id": "01a1878e-1da2-7420-bddc-60bd42f1282a",

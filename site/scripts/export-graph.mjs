@@ -86,7 +86,7 @@ function toGraph(exp, rename) {
   for (const node of nodes) {
     const from = node.parents.map((p) => nodes[p].session);
     node.command =
-      node.kind === "continued" ? `nouli add ${node.session} '…'`
+      node.kind === "continued" ? (node.state ? `nouli add ${node.session} '…' -q '…'` : `nouli ask ${node.session} -q '…'`)
       : node.kind === "new" ? `nouli new ${node.session} '…' -q '…'`
       : `nouli new ${node.session} ${from.map((f) => `--from ${f}`).join(" ")} '…' -q '…'`;
   }
