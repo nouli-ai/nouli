@@ -160,7 +160,8 @@ fn resolve<L: Lines, W: Write>(
     };
     if interactive {
         let raw = format!("Create session \"{}\"? [Y/n] ", name.as_str());
-        match lines.read(&raw, &raw, out)? {
+        // Anything but a yes, including Ctrl-C, declines.
+        match lines.confirm(&raw, out)? {
             Event::Line(answer)
                 if matches!(answer.trim().to_lowercase().as_str(), "" | "y" | "yes") => {}
             _ => {
@@ -349,6 +350,41 @@ mod tests {
         assert!(!error.message.is_empty());
         let found = resolve(&settings, selector(), false, &mut lines, &mut out).unwrap();
         assert!(found.is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// One answer to the creation prompt.
+    struct Answer(Option<Event>);
+
+    impl Lines for Answer {
+        fn read(&mut self, _: &str, _: &str, _: &mut dyn Write) -> io::Result<Event> {
+            Ok(self.0.take().unwrap_or(Event::Eof))
+        }
+    }
+
+    #[test]
+    fn only_a_yes_creates_a_missing_session() {
+        let root = std::env::temp_dir().join(format!("nouli-repl-confirm-{}", Id::generate()));
+        let settings = Settings::for_test(root.clone());
+        let ask = |answer: Event| {
+            let selector = SessionSelector::Name(SessionName::try_from("Trip".to_owned()).unwrap());
+            let mut out = Vec::new();
+            resolve(
+                &settings,
+                selector,
+                true,
+                &mut Answer(Some(answer)),
+                &mut out,
+            )
+            .unwrap()
+        };
+        for declined in [Event::Interrupt, Event::Eof, Event::Line("n".into())] {
+            let Err(error) = ask(declined) else {
+                panic!("a declined prompt created the session")
+            };
+            assert_eq!(error.code, "session_not_created");
+        }
+        assert!(matches!(ask(Event::Line(String::new())), Ok((_, true))));
         let _ = fs::remove_dir_all(&root);
     }
 }
