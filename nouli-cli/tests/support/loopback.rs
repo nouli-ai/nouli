@@ -21,7 +21,14 @@ impl Server {
         Self::with_handler(move |_| (200, response.to_owned()))
     }
     pub fn with_handler(handler: impl Fn(&Value) -> (u16, String) + Send + 'static) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        Self::bind("127.0.0.1:0", handler).unwrap()
+    }
+    /// A server on a chosen address, for a ledger that names its provider's address.
+    pub fn bind(
+        address: &str,
+        handler: impl Fn(&Value) -> (u16, String) + Send + 'static,
+    ) -> std::io::Result<Self> {
+        let listener = TcpListener::bind(address)?;
         let address = listener.local_addr().unwrap();
         let calls = Arc::new(Mutex::new(vec![]));
         let captured = calls.clone();
@@ -88,13 +95,13 @@ impl Server {
                 }
             }
         });
-        Self {
+        Ok(Self {
             url: format!("http://{address}"),
             calls,
             authorizations,
             stop,
             thread: Some(thread),
-        }
+        })
     }
     pub fn count(&self) -> usize {
         self.calls.lock().unwrap().len()
