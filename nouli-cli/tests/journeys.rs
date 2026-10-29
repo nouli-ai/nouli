@@ -97,25 +97,27 @@ fn configure(home: &Home, jev: &Server, openai: &Server, router: &Server, attemp
     }
     std::fs::write(home.0.join("config.toml"), text).unwrap();
 }
+/// Writes an `--input` request file. It names no session: the verb supplies it.
 fn write_request(
     home: &Home,
     name: &str,
     turn: TurnRequest,
-    session: SessionSelection,
     updates: Vec<ContextUpdate>,
     key: Option<&str>,
 ) -> std::path::PathBuf {
     let request = EvaluationRequest {
         standing: Default::default(),
         turn,
-        session,
+        session: SessionSelection::New { name: None },
         updates,
         required_records: vec![],
         model: ModelSelection::default(),
         request_id: key.map(str::to_owned),
     };
+    let mut file = serde_json::to_value(&request).unwrap();
+    file.as_object_mut().unwrap().remove("session");
     let path = home.0.join(name);
-    std::fs::write(&path, serde_json::to_vec_pretty(&request).unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_vec_pretty(&file).unwrap()).unwrap();
     path
 }
 fn named(name: &str) -> Option<SessionName> {
@@ -158,9 +160,6 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         &home,
         "food.json",
         first,
-        SessionSelection::New {
-            name: named("Dinner"),
-        },
         vec![
             ContextUpdate::Append {
                 record: optional.clone(),
@@ -173,14 +172,13 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         ],
         Some("meal-seed"),
     );
-    let meal = report(home.run(&["--input", path.to_str().unwrap()]));
+    let meal = report(home.run(["new", "Dinner", "--input", path.to_str().unwrap()]));
     assert_eq!(score(&meal.outcome), 1.43);
     assert_eq!(jev.count(), 1);
-    let request: EvaluationRequest =
-        codec::decode(&std::fs::read(&path).unwrap(), codec::InputFormat::Json).unwrap();
+    let request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let toon = home.0.join("equivalent.toon");
     std::fs::write(&toon, codec::encode_toon(&request).unwrap()).unwrap();
-    let replay = report(home.run(&["--input", toon.to_str().unwrap()]));
+    let replay = report(home.run(["new", "Dinner", "--input", toon.to_str().unwrap()]));
     assert!(replay.replayed);
     assert_eq!(replay.turn, meal.turn);
     assert_eq!(jev.count(), 1);
@@ -194,9 +192,6 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         &home,
         "budget.json",
         fixture("budget"),
-        SessionSelection::Continue {
-            session: SessionSelector::Name(named("Dinner").unwrap()),
-        },
         vec![ContextUpdate::Pin {
             target: PinTarget::New {
                 record: commitment.clone(),
@@ -204,7 +199,9 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         }],
         None,
     );
-    let follow = report(home.run(&[
+    let follow = report(home.run([
+        "add",
+        "Dinner",
         "--input",
         path.to_str().unwrap(),
         "--context-budget",
@@ -275,13 +272,13 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
     value.as_object_mut().unwrap().remove("session");
     let path = home.0.join("unpin.json");
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    let branch = report(home.run(&[
+    let branch = report(home.run([
+        "new",
+        "Relaxed",
         "--input",
         path.to_str().unwrap(),
         "--from",
         "Dinner",
-        "--name",
-        "Relaxed",
         "--provider",
         "router",
         "--context-budget",
@@ -326,15 +323,15 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
     drop(captured);
     let file = home.0.join("plain-food.json");
     std::fs::write(&file, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
-    let blend = report(home.run(&[
+    let blend = report(home.run([
+        "new",
+        "Blend",
         "--input",
         file.to_str().unwrap(),
         "--from",
         "Dinner",
         "--from",
         "Relaxed",
-        "--name",
-        "Blend",
         "--provider",
         "openai",
     ]));
@@ -405,9 +402,6 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         &home,
         "changed.json",
         changed,
-        SessionSelection::Continue {
-            session: SessionSelector::Name(named("Dinner").unwrap()),
-        },
         vec![ContextUpdate::Supersede {
             targets: vec![budget.id],
             replacement: replacement.clone(),
@@ -415,8 +409,8 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         }],
         None,
     );
-    report(home.run(&["--input", path.to_str().unwrap()]));
-    let continued = report(home.run(&["--input", file.to_str().unwrap(), "--session", "Blend"]));
+    report(home.run(["add", "Dinner", "--input", path.to_str().unwrap()]));
+    let continued = report(home.run(["add", "Blend", "--input", file.to_str().unwrap()]));
     assert_eq!(continued.session, blend.session);
     let calls = openai.calls.lock().unwrap();
     let actual = body_context(calls.last().unwrap());
@@ -427,22 +421,21 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
     assert!(actual.contains("Excellent"));
     drop(calls);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let ephemeral = report(home.run(&[
+    let ephemeral = report(home.run([
+        "whatif",
+        "Blend",
         "--input",
         file.to_str().unwrap(),
-        "--from",
-        "Blend",
-        "--no-session",
         "--provider",
         "router",
     ]));
     assert!(ephemeral.turn.is_none());
     assert!(bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
-    let exported = home.run(&["sessions", "export", "Blend", "--json"]);
+    let exported = home.run(["sessions", "export", "Blend", "--json"]);
     assert!(exported.status.success());
     let export: SessionExport = serde_json::from_slice(&exported.stdout).unwrap();
     assert_eq!(export.turns.len(), 5);
-    let list = home.run(&["sessions", "list", "--json"]);
+    let list = home.run(["sessions", "list", "--json"]);
     let list: Value = serde_json::from_slice(&list.stdout).unwrap();
     assert_eq!(list["sessions"].as_array().unwrap().len(), 3);
     assert_eq!((jev.count(), openai.count(), router.count()), (3, 2, 2));
@@ -466,23 +459,27 @@ fn protected_context_overflow_precedes_native_dispatch_for_every_protocol() {
             &home,
             &format!("{profile}.json"),
             fixture("food"),
-            SessionSelection::New {
-                name: named(&format!("Pinned_{profile}")),
-            },
             vec![ContextUpdate::Pin {
                 target: PinTarget::New { record },
             }],
             None,
         );
-        let first = report(home.run(&["--input", file.to_str().unwrap(), "--provider", profile]));
+        let first = report(home.run([
+            "new",
+            &format!("Pinned_{profile}"),
+            "--input",
+            file.to_str().unwrap(),
+            "--provider",
+            profile,
+        ]));
         let count = jev.count() + openai.count() + router.count();
         let next = home.0.join("next.json");
         std::fs::write(&next, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
-        let output = home.run(&[
+        let output = home.run([
+            "add",
+            &first.session.unwrap().to_string(),
             "--input",
             next.to_str().unwrap(),
-            "--session",
-            &first.session.unwrap().to_string(),
             "--context-budget",
             "1000",
         ]);
@@ -632,7 +629,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     let path = home.0.join("parallel.json");
     std::fs::write(&path, serde_json::to_vec(&graph).unwrap()).unwrap();
     let partial = run_report(
-        home.run(&[
+        home.run([
             "workflows",
             "run",
             path.to_str().unwrap(),
@@ -657,7 +654,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
         panic!("whole refusal")
     };
     assert_eq!(value.value()["status"], "refused");
-    let output = home.run(&["workflows", "resume", &run.to_string(), "--jsonl"]);
+    let output = home.run(["workflows", "resume", &run.to_string(), "--jsonl"]);
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let events = String::from_utf8(output.stdout)
@@ -711,11 +708,11 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     let final_head = done.nodes[4].turn.unwrap();
     let input = home.0.join("continue.json");
     std::fs::write(&input, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
-    let continued = report(home.run(&[
+    let continued = report(home.run([
+        "add",
+        &done.session.unwrap().to_string(),
         "--input",
         input.to_str().unwrap(),
-        "--session",
-        &done.session.unwrap().to_string(),
     ]));
     assert_eq!(continued.manifest.sources[0].frontier, vec![final_head]);
     let calls = jev.calls.lock().unwrap();
@@ -742,7 +739,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     assert!(body_context(calls.last().unwrap()).contains("refused"));
     drop(calls);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let output = home.run(&[
+    let output = home.run([
         "workflows",
         "run",
         path.to_str().unwrap(),
@@ -776,29 +773,29 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
     std::fs::write(&config, format!("output = \"text\"\n{original}")).unwrap();
     let file = home.0.join("food.json");
     std::fs::write(&file, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
-    let output = home.run(&["--input", file.to_str().unwrap(), "--no-session"]);
+    // A what-if needs a saved session to start from.
+    let file_arg = file.to_str().unwrap();
+    report(home.run(["new", "Meal", "--input", file_arg, "--json"]));
+    let output = home.run(["whatif", "Meal", "--input", file_arg]);
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let text = String::from_utf8(output.stdout).unwrap();
     for expected in [
+        "(not saved) · 0 facts · 3 questions",
         "Lentil stew",
-        "P(selected)=0.7",
-        "P(yes)=1",
-        "expected score: 1.43",
+        "0.70",
+        "yes",
+        "1.00",
+        "expected 1.43 of 2",
+        "Poor 0.00 · Adequate 0.57 · Excellent 0.43",
         "laya-food-fixture",
-        "Native confidence",
     ] {
-        assert!(text.contains(expected));
+        assert!(text.contains(expected), "{expected}: {text}");
     }
-    report(home.run(&["--input", file.to_str().unwrap(), "--no-session", "--json"]));
-    report(home.run(&[
-        "--input",
-        file.to_str().unwrap(),
-        "--no-session",
-        "--format",
-        "auto",
-    ]));
-    let output = home.run(&["--input", file.to_str().unwrap(), "--no-session", "--jsonl"]);
+    assert!(!text.contains('\x1b'));
+    report(home.run(["whatif", "Meal", "--input", file_arg, "--json"]));
+    report(home.run(["whatif", "Meal", "--input", file_arg, "--format", "auto"]));
+    let output = home.run(["whatif", "Meal", "--input", file_arg, "--jsonl"]);
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let events = String::from_utf8(output.stdout)
@@ -814,20 +811,27 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
             .count(),
         1
     );
-    assert_eq!(jev.count(), 4);
+    assert_eq!(jev.count(), 5);
     let file = home.0.join("refusal.json");
     std::fs::write(&file, serde_json::to_vec(&fixture("refusal")).unwrap()).unwrap();
-    let output = home.run(&[
+    let output = home.run([
+        "whatif",
+        "Meal",
         "--input",
         file.to_str().unwrap(),
         "--provider",
         "openai",
-        "--no-session",
     ]);
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.contains("private: refused:"));
-    assert!(text.contains("expected score: 1.43"));
-    assert!(!home.store().exists());
+    assert!(text.contains("refused:"), "{text}");
+    assert!(text.contains("private"));
+    assert!(text.contains("expected 1.43 of 2"));
+    // Only the session's own turn was saved; every what-if left no trace.
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    assert_eq!(ledger.list_sessions().unwrap().len(), 1);
+    let session = ledger.list_sessions().unwrap().remove(0);
+    assert_eq!(session.frontier.len(), 1);
+    assert_eq!(ledger.list_attempts(session.id).unwrap().len(), 1);
 }

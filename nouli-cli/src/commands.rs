@@ -3,6 +3,14 @@
 pub(crate) enum Command {
     #[command(flatten)]
     Inspect(crate::inspect::Command),
+    /// Create a session, and run its first turn when facts or questions are given.
+    New(crate::turns::New),
+    /// Run a turn on an existing session: new facts, changed questions, or both.
+    Add(crate::turns::Add),
+    /// Ask a session's questions again without new facts.
+    Ask(crate::turns::Ask),
+    /// Run one turn from a session's head and save nothing.
+    Whatif(crate::turns::Whatif),
     /// Execute, inspect, or explicitly resume a frozen decision workflow.
     Workflows {
         #[command(subcommand)]

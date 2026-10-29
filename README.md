@@ -145,7 +145,7 @@ More [examples](https://standing-desks.github.io/nouli/examples/) cover robotic 
 
 - [User guide](https://standing-desks.github.io/nouli/guide/): setup, sessions, branching, blending, and workflows
 - [Configuration](docs/configuration.md): providers, models, credentials, and storage
-- [CLI guide](docs/cli-evaluation.md): request files, sessions, branching, and blending
+- [CLI guide](docs/cli.md): sessions, facts, standing questions, request files, branching, and blending
 - [Question types](docs/contracts/decisions.md): `choice`, `noul`, and `score`
 - [Output formats](docs/output.md): text, JSON, JSONL, and TOON
 - [Workflows](docs/cli-workflows.md): dependent decisions and resuming interrupted runs

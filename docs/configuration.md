@@ -17,8 +17,8 @@ preserved. Missing explicit `--config` files are errors and are never generated.
 The template is `nouli-cli/config.default.toml`.
 
 Help, version, invalid decision/graph input, inspection, and saved workflow resume
-do not initialize configuration. `--no-session` still allows first-run configuration
-setup, but creates no ledger. The library loader remains read-only and accepts a
+do not initialize configuration. A `whatif` still allows first-run configuration
+setup, but needs an existing ledger and creates none. The library loader remains read-only and accepts a
 missing optional default as empty settings. CLI setup errors identify the missing
 provider/model or selected credential variable and show the configuration path.
 
@@ -71,8 +71,8 @@ credential validation. File values do not change configuration/store paths or
 `HOME`.
 
 ```sh
-nouli --input request.json
-nouli --env-file .env.test --input request.json
+nouli add Trip --input request.json
+nouli add Trip --env-file .env.test --input request.json
 nouli workflows resume RUN_ID --env-file /path/to/keys.env
 ```
 
@@ -131,14 +131,14 @@ context_budget_tokens = 8192
 reserved_output_tokens = 128
 ```
 
-The offline [walkthrough](walkthrough.md) generates a temporary loopback provider instead. Hosted examples in `fixtures/config/providers.toml` name environment sources, never credentials. No key is collected interactively; supply it through the shell or an env file. Full request syntax, selection, and stdin rules are in [direct evaluation](cli-evaluation.md).
+The offline [walkthrough](walkthrough.md) generates a temporary loopback provider instead. Hosted examples in `fixtures/config/providers.toml` name environment sources, never credentials. No key is collected interactively; supply it through the shell or an env file. Full request syntax, selection, and stdin rules are in [the command line guide](cli.md).
 
 One provider can serve multiple models. Add a settings table for each model that
 needs explicit limits, then select a model for a call:
 
 ```sh
-nouli --input request.json --model another-model --context-budget 4096
-nouli --input request.json --provider another-provider --model compatible-model
+nouli add Trip --input request.json --model another-model --context-budget 4096
+nouli add Trip --input request.json --provider another-provider --model compatible-model
 ```
 
 Use only models supported by the selected service and protocol. Models without

@@ -101,8 +101,34 @@ fn projection(error: &ProjectionError) -> ErrorReport {
         message(Category::Input, "invalid_context")
     }
 }
+/// Standing-question mistakes name the question ID, which is caller input.
+fn history(error: &crate::history::HistoryError) -> Option<ErrorReport> {
+    use crate::{decision::ContractError, history::HistoryError};
+    match error {
+        HistoryError::UnknownStanding(_) | HistoryError::StandingCollision(_) => {
+            Some(ErrorReport {
+                category: Category::Input,
+                code: "invalid_standing_question".into(),
+                message: error.to_string(),
+                retryable: false,
+            })
+        }
+        HistoryError::Decision(ContractError::Empty("questions")) => Some(ErrorReport {
+            category: Category::Input,
+            code: "questions_required".into(),
+            message:
+                "No questions to ask: add one with -q, or the session has no standing questions"
+                    .into(),
+            retryable: false,
+        }),
+        _ => None,
+    }
+}
 fn turn(error: &TurnError) -> ErrorReport {
     match error {
+        TurnError::History(error) => {
+            history(error).unwrap_or_else(|| message(Category::Input, "invalid_turn"))
+        }
         TurnError::Storage(error) => storage(error),
         TurnError::Session(error) => session(error),
         TurnError::Projection(error) => projection(error),
@@ -237,7 +263,10 @@ impl EngineError {
                 },
                 _ => message(Category::Contract, "provider_contract"),
             },
-            Self::History(_) | Self::EphemeralOptions | Self::EphemeralStore => {
+            Self::History(error) => {
+                history(error).unwrap_or_else(|| message(Category::Input, "invalid_evaluation"))
+            }
+            Self::EphemeralOptions | Self::EphemeralStore => {
                 message(Category::Input, "invalid_evaluation")
             }
         }

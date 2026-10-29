@@ -267,6 +267,25 @@ pub(super) fn result(sink: &mut impl Write, envelope: &ResultEnvelope) -> Result
                 projection(sink, output)?;
             }
         }
+        Report::Session(report) => {
+            if let Some(name) = &report.name {
+                writeln!(sink, "Created session {}", clean(name.as_str()))?;
+            }
+            writeln!(sink, "Session: {}", report.session)?;
+            for source in &report.sources {
+                writeln!(
+                    sink,
+                    "From: {} @ {}",
+                    source.session,
+                    source
+                        .frontier
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )?;
+            }
+        }
         Report::Error(_) => return Err(RenderError::Protocol),
     }
     sink.flush()?;

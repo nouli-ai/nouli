@@ -2,7 +2,7 @@
 pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
-use harness::{Home, questions, report, run_report, turn, workflow};
+use harness::{Home, QUESTIONS, report, run_report, turn, workflow};
 use loopback::Server;
 use nouli_core::{
     codec,
@@ -19,82 +19,77 @@ use std::{
 };
 #[test]
 fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engine() {
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let questions = questions();
-    let seed = report(home.run(&[
-        "-s",
-        "ORIGINAL",
-        "-q",
-        &questions,
-        "--name",
-        "Origin",
-        "--request-id",
-        "seed",
-    ]));
+    let seed = report(
+        home.run(
+            [
+                &["new", "Origin", "ORIGINAL"][..],
+                &QUESTIONS,
+                &["--request-id", "seed"],
+            ]
+            .concat(),
+        ),
+    );
     let first = seed.turn.unwrap();
     let original = seed.session.unwrap();
-    let next = report(home.run(&["-s", "LATER", "-q", &questions, "--session", "Origin"]));
+    // The standing questions are asked again with only a new fact.
+    let next = report(home.run(["add", "Origin", "LATER"]));
     assert_eq!(next.session, Some(original));
-    let branch = report(home.run(&[
-        "-s",
+    assert_eq!(next.questions, seed.questions);
+    let branch = report(home.run([
+        "new",
+        "Branch",
         "BRANCH",
-        "-q",
-        &questions,
         "--from",
         &format!("Origin@{first}"),
-        "--name",
-        "Branch",
     ]));
     assert_ne!(branch.session, Some(original));
     assert_eq!(branch.manifest.sources[0].frontier, vec![first]);
-    let blend = report(home.run(&[
-        "-s", "BLEND", "-q", &questions, "--from", "Branch", "--from", "Origin", "--name", "Blend",
-    ]));
+    assert_eq!(branch.questions, seed.questions);
+    let blend = report(
+        home.run(
+            [
+                &[
+                    "new", "Blend", "BLEND", "--from", "Branch", "--from", "Origin",
+                ][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
+    );
     assert_eq!(blend.manifest.sources.len(), 2);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let ephemeral = report(home.run(&[
-        "-s",
-        "TEMPORARY",
-        "-q",
-        &questions,
-        "--from",
-        "Blend",
-        "--no-session",
-    ]));
+    let ephemeral = report(home.run(["whatif", "Blend", "TEMPORARY"]));
     assert!(ephemeral.session.is_none());
     assert!(ephemeral.turn.is_none());
     assert!(
         bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap(),
         "Read-only operations changed ledger bytes"
     );
+    // A what-if needs a saved session, and never creates a store to look for one.
     let fresh_store = home.0.join("never-created");
-    let fresh = report(
-        home.command_at(&fresh_store)
-            .args(["-s", "FRESH", "-q", &questions, "--no-session"])
-            .output()
-            .unwrap(),
-    );
-    assert!(fresh.session.is_none());
+    let fresh = home
+        .command_at(&fresh_store)
+        .args(["whatif", "Blend", "FRESH"])
+        .output()
+        .unwrap();
+    assert_eq!(fresh.status.code(), Some(6));
     assert!(!fresh_store.exists());
-    let no_home = report(
-        Command::new(env!("CARGO_BIN_EXE_nouli"))
-            .env_clear()
-            .arg("--config")
-            .arg(home.0.join("config.toml"))
-            .arg("--store")
-            .arg(&fresh_store)
-            .args(["-q", &questions, "--no-session"])
-            .output()
-            .unwrap(),
-    );
-    assert!(no_home.turn.is_none());
+    let no_home = Command::new(env!("CARGO_BIN_EXE_nouli"))
+        .env_clear()
+        .arg("--config")
+        .arg(home.0.join("config.toml"))
+        .arg("--store")
+        .arg(&fresh_store)
+        .args(["whatif", "Blend", "FRESH"])
+        .output()
+        .unwrap();
+    assert_eq!(no_home.status.code(), Some(6));
     assert!(!fresh_store.exists());
 
-    assert_eq!(server.count(), 7);
+    assert_eq!(server.count(), 5);
     let calls = server.calls.lock().unwrap();
     assert!(calls[1]["state"].as_str().unwrap().contains("ORIGINAL"));
     assert!(!calls[2]["state"].as_str().unwrap().contains("LATER"));
@@ -102,9 +97,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
 }
 #[test]
 fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_input() {
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let record = ContextRecord {
@@ -115,13 +108,14 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
     };
     let path = home.request(
         "request.json",
-        SessionSelection::New { name: None },
         "FULL_STATE",
         vec![ContextUpdate::Append {
             record: record.clone(),
         }],
     );
-    let first = report(home.run(&[
+    let first = report(home.run([
+        "new",
+        "Full",
         "--input",
         path.to_str().unwrap(),
         "--request-id",
@@ -134,11 +128,23 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
     assert_eq!(first.manifest.budget, 90000);
     assert_eq!(first.outcome.provider.model, "laya-english-fixture");
     assert_eq!(server.calls.lock().unwrap()[0]["model"], "requested-alias");
-    let request: EvaluationRequest =
+    let mut file: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert!(file.get("session").is_none());
+    let request = EvaluationRequest {
+        standing: Default::default(),
+        turn: serde_json::from_value(file["turn"].clone()).unwrap(),
+        session: SessionSelection::New { name: None },
+        updates: serde_json::from_value(file["updates"].clone()).unwrap(),
+        required_records: vec![],
+        model: Default::default(),
+        request_id: None,
+    };
     let toon = home.0.join("same.toon");
-    std::fs::write(&toon, codec::encode_toon(&request).unwrap()).unwrap();
-    let replay = report(home.run(&[
+    std::fs::write(&toon, codec::encode_toon(&file).unwrap()).unwrap();
+    let replay = report(home.run([
+        "new",
+        "Full",
         "--input",
         toon.to_str().unwrap(),
         "--request-id",
@@ -165,7 +171,10 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
     );
     drop(ledger);
     let mut cmd = home.command();
-    cmd.args(["--input", "-", "--input-format", "json", "--no-session"])
+    // A what-if starts from the saved session, so its update needs a new record.
+    file["updates"][0]["record"]["id"] = serde_json::json!(Id::generate());
+    file["updates"][0]["record"]["key"] = serde_json::json!("whatif-only");
+    cmd.args(["whatif", "Full", "--input", "-", "--input-format", "json"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -174,41 +183,37 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
         .stdin
         .take()
         .unwrap()
-        .write_all(&serde_json::to_vec(&request).unwrap())
+        .write_all(&serde_json::to_vec(&file).unwrap())
         .unwrap();
     let result = report(child.wait_with_output().unwrap());
     assert!(result.turn.is_none());
     assert_eq!(server.count(), 2);
+    // A request file that names a session is refused: the verb supplies it.
+    file["session"] = serde_json::json!({"mode": "new", "name": null});
+    let named = home.0.join("named.json");
+    std::fs::write(&named, serde_json::to_vec(&file).unwrap()).unwrap();
+    let refused = home.run(["add", "Full", "--input", named.to_str().unwrap()]);
+    assert_eq!(refused.status.code(), Some(2));
+    assert_eq!(server.count(), 2);
 }
 #[test]
 fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not_dispatch() {
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", true);
-    let questions = questions();
-    let missing = home.run(&[
-        "-q",
-        &questions,
-        "--request-id",
-        "credentials",
-        "--name",
-        "Named",
-    ]);
+    let named = [
+        &["new", "Named"][..],
+        &QUESTIONS,
+        &["--request-id", "credentials"],
+    ]
+    .concat();
+    let missing = home.run(&named);
     assert_eq!(missing.status.code(), Some(3));
     assert_eq!(server.count(), 0);
     assert!(!home.store().exists());
     let recovered = report(
         home.command()
-            .args([
-                "-q",
-                &questions,
-                "--request-id",
-                "credentials",
-                "--name",
-                "Named",
-            ])
+            .args(&named)
             .env("NOULI_FIXTURE_KEY", "SECRET_FIXTURE_TOKEN")
             .output()
             .unwrap(),
@@ -216,30 +221,25 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
     assert!(recovered.turn.is_some());
     assert_eq!(server.count(), 1);
     for (args, code) in [
-        (vec!["-q", questions.as_str(), "--session", "Unknown"], 2),
-        (vec!["-q", questions.as_str(), "--name", "Named"], 5),
+        ([&["add", "Unknown"][..], &QUESTIONS].concat(), 2),
+        ([&["new", "Named"][..], &QUESTIONS].concat(), 5),
         (
-            vec![
-                "-s",
-                "changed",
-                "-q",
-                questions.as_str(),
-                "--request-id",
-                "credentials",
-            ],
+            [
+                &["new", "Named", "changed"][..],
+                &QUESTIONS,
+                &["--request-id", "credentials"],
+            ]
+            .concat(),
             5,
         ),
+        // A what-if has no request identity to replay.
+        (vec!["whatif", "Named", "--request-id", "ephemeral"], 2),
+        (vec!["add", "Named", "--retry-interrupted"], 2),
+        // A request file cannot be combined with facts or questions.
         (
-            vec![
-                "-q",
-                questions.as_str(),
-                "--no-session",
-                "--request-id",
-                "ephemeral",
-            ],
+            [&["add", "Named", "--input", "unused.json"][..], &QUESTIONS].concat(),
             2,
         ),
-        (vec!["-q", questions.as_str(), "--retry-interrupted"], 2),
     ] {
         let output = home
             .command()
@@ -274,22 +274,24 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
             "openai/gpt-6-luna-decisions-fixture",
         ),
     ] {
-        let server = Server::new(response);
+        // The compact grammar writes plain score labels, so the router's legend
+        // must match them.
+        let mut body: serde_json::Value = serde_json::from_str(response).unwrap();
+        if !full_questions {
+            body["answers"]["quality"]["legend"]["1"] = serde_json::json!("Adequate");
+        }
+        let server = Server::new(Box::leak(body.to_string().into_boxed_str()));
         let home = Home::create();
         home.configure(&server, protocol, false);
-        let mut request = turn();
+        let mut args = [&["new", "Dispatch"][..], &QUESTIONS].concat();
         if full_questions {
-            request = serde_json::from_str(include_str!(
-                "../../fixtures/contracts/decision-request.json"
-            ))
-            .unwrap();
+            args.extend(["-q", "private: Is private information available?"]);
         }
-        let questions = serde_json::to_string(&request.questions).unwrap();
-        let result = report(home.run(&["-q", &questions, "--provider", "local", "--no-session"]));
+        args.extend(["--provider", "local"]);
+        let result = report(home.run(&args));
         assert_eq!(result.outcome.provider.model, expected);
         assert_eq!(server.count(), 1);
-        assert!(result.session.is_none());
-        assert!(!home.store().exists());
+        assert!(result.session.is_some());
         if full_questions {
             assert!(matches!(
                 result.outcome.outcomes[3],
@@ -300,9 +302,7 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
 }
 #[test]
 fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let path = home.0.join("config.toml");
@@ -311,43 +311,36 @@ fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
         .replace("context_budget_tokens = 100000\n", "")
         .replace("context_window_tokens = 100000\n", "");
     std::fs::write(&path, config).unwrap();
-    let questions = questions();
-    let missing = home.run(&["-q", &questions, "--no-session"]);
+    let create = [&["new", "Budgeted"][..], &QUESTIONS].concat();
+    let missing = home.run(&create);
     assert_eq!(missing.status.code(), Some(2));
     assert_eq!(server.count(), 0);
     assert!(!home.store().exists());
-    let valid = report(home.run(&[
-        "-q",
-        &questions,
-        "--no-session",
-        "--context-budget",
-        "90000",
-    ]));
+    let valid = report(home.run([&create[..], &["--context-budget", "90000"]].concat()));
     assert_eq!(valid.manifest.budget, 90000);
     assert_eq!(server.count(), 1);
-    let file = home.request(
-        "competing.json",
-        SessionSelection::New { name: None },
-        "unused",
-        vec![],
-    );
-    let output = home.run(&["--input", file.to_str().unwrap(), "--from", "Other"]);
+    let file = home.request("competing.json", "unused", vec![]);
+    // A request file that names its own session competes with the verb.
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    value["session"] = serde_json::json!({"mode": "new", "name": null});
+    let competing = home.0.join("session-named.json");
+    std::fs::write(&competing, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = home.run(["new", "Other", "--input", competing.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(server.count(), 1);
-    assert!(!home.store().exists());
+    assert_eq!(before_count(&home), 1);
 }
 
 #[test]
 fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_later_or_unrelated_work()
  {
     use nouli_core::{
-        history::{Representation, SourceSelection},
-        identity::{SessionName, SessionSelector},
+        history::Representation,
+        identity::SessionSelector,
         storage::inspection::{ContextView, SessionExport, TurnInspection},
     };
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", true);
     let keyed = |args: &[&str]| {
@@ -366,9 +359,6 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     let original = "ARCHIVED_EVIDENCE_".repeat(3000);
     let root = home.request(
         "root.json",
-        SessionSelection::New {
-            name: Some(SessionName::try_from("Root".to_owned()).unwrap()),
-        },
         &original,
         vec![ContextUpdate::Pin {
             target: nouli_core::context::PinTarget::New {
@@ -376,7 +366,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             },
         }],
     );
-    let root = report(keyed(&["--input", root.to_str().unwrap()]));
+    let root = report(keyed(&["new", "Root", "--input", root.to_str().unwrap()]));
     let mut branches = vec![];
     for (name, kind) in [
         ("Left", ContextKind::Evidence),
@@ -390,33 +380,28 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         };
         let path = home.request(
             &format!("{name}.json"),
-            SessionSelection::From {
-                sources: vec![SourceSelection {
-                    session: SessionSelector::Id(root.session.unwrap()),
-                    frontier: None,
-                }],
-                name: Some(SessionName::try_from(name.to_owned()).unwrap()),
-            },
             name,
             vec![ContextUpdate::Append { record }],
         );
-        branches.push(report(keyed(&["--input", path.to_str().unwrap()])));
+        branches.push(report(keyed(&[
+            "new",
+            name,
+            "--from",
+            &root.session.unwrap().to_string(),
+            "--input",
+            path.to_str().unwrap(),
+        ])));
     }
-    let questions = questions();
-    let blend = report(keyed(&[
-        "-s",
-        "BLENDED",
-        "-q",
-        &questions,
-        "--from",
-        "Left",
-        "--from",
-        "Right",
-        "--name",
-        "Diamond",
-        "--context-budget",
-        "2500",
-    ]));
+    let blend = report(keyed(
+        &[
+            &[
+                "new", "Diamond", "BLENDED", "--from", "Left", "--from", "Right",
+            ][..],
+            &QUESTIONS,
+            &["--context-budget", "2500"],
+        ]
+        .concat(),
+    ));
     assert!(
         blend
             .manifest
@@ -425,22 +410,16 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             .any(|record| record.record == root.turn.unwrap()
                 && record.representation != Representation::Full)
     );
-    report(keyed(&[
-        "-s",
-        "AFTER_CAPTURE",
-        "-q",
-        &questions,
-        "--session",
-        "Root",
-    ]));
-    report(keyed(&[
-        "-s",
-        "UNRELATED_PRIVATE_STATE",
-        "-q",
-        &questions,
-        "--name",
-        "Unrelated",
-    ]));
+    report(keyed(
+        &[&["add", "Root", "AFTER_CAPTURE"][..], &QUESTIONS].concat(),
+    ));
+    report(keyed(
+        &[
+            &["new", "Unrelated", "UNRELATED_PRIVATE_STATE"][..],
+            &QUESTIONS,
+        ]
+        .concat(),
+    ));
     let count = server.count();
     let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
     // A changed/invalid provider profile must not block store-only inspection.
@@ -448,7 +427,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         .unwrap()
         .replace("protocol = \"typesafe\"", "protocol = \"removed-protocol\"");
     std::fs::write(home.0.join("config.toml"), config).unwrap();
-    let output = home.run(&["sessions", "export", "Diamond", "--format", "json"]);
+    let output = home.run(["sessions", "export", "Diamond", "--format", "json"]);
     assert!(
         output.status.success(),
         "{:?}",
@@ -492,11 +471,19 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     let ContextView::Resolved { records } = &export.context else {
         panic!("resolved context")
     };
-    assert_eq!(records.len(), 3);
+    // The pinned budget, both branches' records, and the blend's own fact.
+    assert_eq!(records.len(), 4);
     assert!(
         records
             .iter()
             .any(|record| record.record.id == pinned.id && record.pinned)
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.record.key.starts_with("fact:"))
+            .count(),
+        1
     );
     assert!(
         records
@@ -515,11 +502,11 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     assert!(!json.contains("EXPORT_PRIVATE_TOKEN"));
     assert_eq!(export.attempts.len(), 4);
     assert_eq!(export.requests.len(), 4);
-    let toon = home.run(&["sessions", "export", "Diamond", "--format", "toon"]);
+    let toon = home.run(["sessions", "export", "Diamond", "--format", "toon"]);
     assert!(toon.status.success());
     let decoded: SessionExport = codec::decode(&toon.stdout, codec::InputFormat::Toon).unwrap();
     assert_eq!(decoded, export);
-    let context = home.run(&[
+    let context = home.run([
         "context",
         "Diamond",
         "--turn",
@@ -537,7 +524,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     assert_eq!(context.turn.manifest, blend.manifest);
     assert_eq!(context.attempts.len(), 1);
     assert_eq!(context.turn.outcome.usage, blend.outcome.usage);
-    let foreign = home.run(&[
+    let foreign = home.run([
         "context",
         "Diamond",
         "--turn",
@@ -545,12 +532,12 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         "--json",
     ]);
     assert_eq!(foreign.status.code(), Some(2));
-    let list = home.run(&["sessions", "list", "--format", "text"]);
+    let list = home.run(["sessions", "list", "--format", "text"]);
     assert!(list.status.success());
     let text = String::from_utf8(list.stdout).unwrap();
     assert!(text.contains("Diamond"));
     assert!(text.contains("Unrelated"));
-    let shown = home.run(&["sessions", "show", "Diamond", "--format", "text"]);
+    let shown = home.run(["sessions", "show", "Diamond", "--format", "text"]);
     assert!(shown.status.success());
     assert!(
         String::from_utf8(shown.stdout)
@@ -611,7 +598,7 @@ fn readonly_inspection_rejects_newer_and_migration_required_stores_without_chang
             .unwrap();
         drop(ledger);
         let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-        let output = home.run(&["sessions", "list", "--json"]);
+        let output = home.run(["sessions", "list", "--json"]);
         assert_eq!(output.status.code(), Some(6));
         let error: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
         assert!(matches!(error.result,Report::Error(error) if error.code==code));
@@ -628,15 +615,13 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
         protocol::{EngineEvent, EventKind, validate_events},
         workflow::{NodeStatus, RunStatus},
     };
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
     let result = run_report(
-        home.run(&[
+        home.run([
             "workflows",
             "run",
             file.to_str().unwrap(),
@@ -660,7 +645,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     assert!(result.nodes[4].turn.is_some());
     assert_eq!(server.count(), 4);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let output = home.run(&[
+    let output = home.run([
         "workflows",
         "show",
         &result.run.unwrap().to_string(),
@@ -682,7 +667,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     );
     assert_eq!(shown.inspection.run.nodes[2].status, NodeStatus::Skipped);
     assert_eq!(before_count(&home), 1);
-    let replay = home.run(&[
+    let replay = home.run([
         "workflows",
         "resume",
         &result.run.unwrap().to_string(),
@@ -700,7 +685,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
         matches!(&events.last().unwrap().event,EventKind::Terminal {result} if matches!(&result.result,Report::Run(report) if report.replayed))
     );
     assert_eq!(server.count(), 4);
-    let ephemeral = home.run(&[
+    let ephemeral = home.run([
         "workflows",
         "run",
         file.to_str().unwrap(),
@@ -764,10 +749,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
         {
             (503, "{}".into())
         } else {
-            (
-                200,
-                include_str!("../../fixtures/providers/typesafe/response.json").into(),
-            )
+            (200, harness::TYPESAFE.into())
         }
     });
     let home = Home::create();
@@ -780,9 +762,6 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     };
     let seed = home.request(
         "seed.json",
-        SessionSelection::New {
-            name: Some(nouli_core::identity::SessionName::try_from("Source".to_owned()).unwrap()),
-        },
         "SOURCE_BEFORE",
         vec![ContextUpdate::Pin {
             target: PinTarget::New {
@@ -790,7 +769,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
             },
         }],
     );
-    let source = report(home.run(&["--input", seed.to_str().unwrap()]));
+    let source = report(home.run(["new", "Source", "--input", seed.to_str().unwrap()]));
     let mut definition = workflow();
     definition.nodes[1].when = None;
     definition.nodes[2].when = None;
@@ -804,7 +783,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     let file = home.0.join("parallel.json");
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
     let partial = run_report(
-        home.run(&[
+        home.run([
             "workflows",
             "run",
             file.to_str().unwrap(),
@@ -831,9 +810,6 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     };
     let change = home.request(
         "source-change.json",
-        SessionSelection::Continue {
-            session: nouli_core::identity::SessionSelector::Id(source.session.unwrap()),
-        },
         "SOURCE_AFTER",
         vec![ContextUpdate::Supersede {
             targets: vec![budget.id],
@@ -841,7 +817,12 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
             pinned: None,
         }],
     );
-    report(home.run(&["--input", change.to_str().unwrap()]));
+    report(home.run([
+        "add",
+        &source.session.unwrap().to_string(),
+        "--input",
+        change.to_str().unwrap(),
+    ]));
     std::fs::write(&file, "edited invalid workflow").unwrap();
     let config = std::fs::read_to_string(home.0.join("config.toml"))
         .unwrap()
@@ -849,7 +830,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
         .replace("offline", "changed-model");
     std::fs::write(home.0.join("config.toml"), config).unwrap();
     let before = server.count();
-    let resumed = home.run(&["workflows", "resume", &run.to_string(), "--jsonl"]);
+    let resumed = home.run(["workflows", "resume", &run.to_string(), "--jsonl"]);
     assert!(
         resumed.status.success(),
         "{}",
@@ -886,7 +867,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     assert!(!context.contains(&replacement.id.to_string()));
     assert!(!context.contains("SOURCE_AFTER"));
     drop(calls);
-    let show = home.run(&["workflows", "show", &run.to_string(), "--json"]);
+    let show = home.run(["workflows", "show", &run.to_string(), "--json"]);
     assert!(show.status.success());
     let inspection: nouli_core::storage::workflows::recovery::WorkflowInspection =
         serde_json::from_slice(&show.stdout).unwrap();
@@ -905,29 +886,28 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
         {
             (503, "{}".into())
         } else {
-            (
-                200,
-                include_str!("../../fixtures/providers/typesafe/response.json").into(),
-            )
+            (200, harness::TYPESAFE.into())
         }
     });
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
-    let partial = run_report(home.run(&["workflows", "run", file.to_str().unwrap()]), 4);
+    let partial = run_report(home.run(["workflows", "run", file.to_str().unwrap()]), 4);
     assert_eq!(partial.nodes[1].status, NodeStatus::Failed);
     let run = partial.run.unwrap();
-    let questions = questions();
-    report(home.run(&[
-        "-q",
-        &questions,
-        "--session",
-        &partial.session.unwrap().to_string(),
-    ]));
+    report(
+        home.run(
+            [
+                &["add", &partial.session.unwrap().to_string()][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
+    );
     let count = server.count();
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let conflict = home.run(&["workflows", "resume", &run.to_string()]);
+    let conflict = home.run(["workflows", "resume", &run.to_string()]);
     assert_eq!(conflict.status.code(), Some(5));
     let error: ResultEnvelope = serde_json::from_slice(&conflict.stdout).unwrap();
     assert!(matches!(error.result,Report::Error(error) if error.code=="advanced_session_head"));
@@ -966,7 +946,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     let mut definition = workflow();
     definition.nodes[0].dependencies = vec!["final".into()];
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
-    let output = home.run(&["workflows", "run", file.to_str().unwrap(), "--jsonl"]);
+    let output = home.run(["workflows", "run", file.to_str().unwrap(), "--jsonl"]);
     assert_eq!(output.status.code(), Some(2));
     let events = String::from_utf8(output.stdout)
         .unwrap()
@@ -982,16 +962,14 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
         protocol::{EngineEvent, EventKind, validate_events},
         workflow::WorkflowRequest,
     };
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let spec = workflow();
     let file = home.0.join("workflow.toon");
     std::fs::write(&file, codec::encode_toon(&spec).unwrap()).unwrap();
     let report = run_report(
-        home.run(&["workflows", "run", file.to_str().unwrap(), "--no-session"]),
+        home.run(["workflows", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert!(report.run.is_none());
@@ -1055,10 +1033,7 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
     let server = Server::with_handler(move |_| {
         started.send(()).unwrap();
         held.recv_timeout(Duration::from_secs(5)).unwrap();
-        (
-            200,
-            include_str!("../../fixtures/providers/typesafe/response.json").into(),
-        )
+        (200, harness::TYPESAFE.into())
     });
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -1123,9 +1098,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
         io::{BufRead, BufReader, Read},
         time::Duration,
     };
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = workflow();
@@ -1191,9 +1164,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
 #[test]
 fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files() {
     use nouli_core::protocol::{EngineEvent, validate_events};
-    let server = Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = workflow();
@@ -1202,7 +1173,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     graph.outputs.clear();
     let file = home.0.join("large.json");
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
-    let output = home.run(&[
+    let output = home.run([
         "workflows",
         "run",
         file.to_str().unwrap(),

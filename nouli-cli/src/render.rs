@@ -1,7 +1,5 @@
 //! Application output policy over explicit sinks, with no logging subscriber.
 mod text;
-// The verbs (HAND-178) and the REPL (HAND-180) are the callers.
-#[allow(dead_code)]
 pub(crate) mod turn;
 use clap::{Args, ValueEnum};
 use nouli_core::{
@@ -95,7 +93,7 @@ fn color_for(
 }
 pub(crate) fn exit_code(result: &ResultEnvelope) -> u8 {
     match &result.result {
-        Report::Turn(_) => 0,
+        Report::Turn(_) | Report::Session(_) => 0,
         Report::Run(run) => match run.status {
             RunStatus::Completed => 0,
             RunStatus::Failed | RunStatus::Partial => 4,
