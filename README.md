@@ -33,66 +33,60 @@ nouli auth login typesafe
 
 ## Open a session
 
-`nouli open trip` opens a prompt on a session. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed:
+`nouli open catalog` opens a prompt on a session. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
 
 ```text
-$ nouli open trip
-new session "trip" · /help for commands
+$ nouli open catalog
+new session "catalog" · /help for commands
 
-trip › The train costs 40 USD and arrives 30 minutes before the meeting.
-trip › A taxi costs 70 USD and also arrives in time.
-trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
-  turn 1 · 2 facts · 1 question
-  transport   ▶ Take the train                   ███████████████████▊ 0.99
-                Take a taxi                      ▎                    0.01
-trip › The train has been cancelled.
-trip › ?rebook: How should I get to the meeting now? [Take the train, Take a taxi]
+catalog › Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.
+catalog › ?grasp: Which grasp should the arm prefer for this item? [Suction on the flat label area of the bottle, Suction on any flat bag surface, A two-finger pinch on the bottle neck]
+  turn 1 · 1 fact · 1 question
+  grasp       ▶ Suction on the flat label area … ███████████████████▊ 0.99
+                Suction on any flat bag surface                       0.00
+                A two-finger pinch on the bottl… ▎                    0.01
+catalog › /new policy
+  new session "policy"
+policy › Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.
+policy › ?overweight: May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?
+  turn 1 · 1 fact · 1 question
+  overweight    yes                              ▋                    0.03
+policy › /blend catalog policy as pick
+  new session "pick" from catalog + policy
+pick › Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.
+pick › ?action: What should the arm do first? [Nudge the covering item aside to expose the target's label, Attempt suction on the visible bag film, Request remote assistance now]
+  turn 1 · 1 fact · 1 question
+  action      ▶ Nudge the covering item aside t… ████████████████▊    0.84
+                Attempt suction on the visible … ▋                    0.03
+                Request remote assistance now    ██▋                  0.13
+pick › Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.
+pick › ?next: What should the arm do next? [Try a two-finger pinch on the bottle neck, Retry suction on the same spot, Stop and request remote assistance]
   turn 2 · 1 fact · 1 question
-  rebook        Take the train                   ▊                    0.04
-              ▶ Take a taxi                      ███████████████████▎ 0.96
-trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
-  queued: replace fact 3
-trip › ?on_time: Will I get to the meeting on time?
-  turn 3 · 1 fact (1 replaced, kept in history) · 1 question
-  on_time       yes                              ██████████████████▎  0.91
-trip › My budget for the trip is 50 USD.
-trip › /whatif ?budget: Which option fits my budget? [Take the train, Take a taxi]
+  next        ▶ Try a two-finger pinch on the b… ██████████████▋      0.73
+                Retry suction on the same spot   █████                0.25
+                Stop and request remote assista… ▍                    0.02
+pick › What-if: the arm pinches the bottle neck, and pinch attempt 2 lifts the target. The wrist force sensor reads 0.46 kg against an expected 0.45 kg, and the tote camera shows a single bottle in the gripper.
+pick › /whatif ?placed: What should the arm do with the load? [Lower the load back into the tote and request remote assistance, Place the load in box B-12, "Shake the load to check for anything attached, then place it"]
   (not saved) · 1 fact · 1 question
-  budget      ▶ Take the train                   ████████████████████ 1.00
-                Take a taxi                                           0.00
-trip › /quit
+  placed        Lower the load back into the to…                      0.00
+              ▶ Place the load in box B-12       ██████████████████▊  0.94
+                Shake the load to check for any… █▎                   0.06
+pick › /quit
   bye
 ```
 
 - **Facts wait for a question.** Plain lines are facts. A `?` line sends them with the question as one turn.
-- **Each question is asked once.** A `?` line asks only that question, in one call. Earlier answers stay as they were: the cancellation changed what `rebook` answered, not what `transport` answered before it.
-- **Corrections keep history.** `/replace 3` gave fact 3 new text. The model sees only the new text, and the old one stays in the session.
+- **Sessions combine.** `catalog` holds the item's grasp history and `policy` the station's rules. `/blend catalog policy as pick` starts `pick` with both, so its questions are answered with that history in view.
+- **Each question is asked once, with its own options.** A `?` line asks only that question, in one call. Earlier answers stay as they were: the failed suction attempt shaped the answer to `next`, and `action` keeps the answer it had.
 - **What-ifs save nothing.** `/whatif` asks its own question with the queued facts and leaves the session as it was.
 
-A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/branch NAME` starts a new session from this one, `/blend A B as NAME` combines sessions, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
+A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/replace N TEXT` corrects a fact and keeps the old text in history, `/branch NAME` starts a new session from this one, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
 
 ## Use it from scripts and agents
 
-Everything you can do at the prompt is also a command. In the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag. A `catalog` session holds the item's grasp history and a `policy` session the station's rules, each made with one `nouli new`. `pick` blends the two, then each turn adds the latest sensor report and asks the next question, each with its own options:
+Everything you can do at the prompt is also a command. The `pick` session continues from a script, and each command adds the latest sensor report and asks the next question:
 
 ```text
-$ nouli new pick --from catalog --from policy \
-    'Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.' \
-    -q "action: What should the arm do first? [Nudge the covering item aside to expose the target's label,
-      Attempt suction on the visible bag film,
-      Request remote assistance now]"
-  turn 1 · 1 fact · 1 question
-  action      ▶ Nudge the covering item aside t… ████████████████▎    0.81
-                Attempt suction on the visible … ▋                    0.03
-                Request remote assistance now    ███▎                 0.16
-$ nouli add pick 'Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.' \
-    -q 'action: What should the arm do next? [Try a two-finger pinch on the bottle neck,
-      Retry suction on the same spot,
-      Stop and request remote assistance]'
-  turn 2 · 1 fact · 1 question
-  action      ▶ Try a two-finger pinch on the b… ██████████████▊      0.74
-                Retry suction on the same spot   ████▊                0.24
-                Stop and request remote assista… ▍                    0.02
 $ nouli add pick 'Sensor update: the arm pinched the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.' \
     -q 'load: What should the arm do with the load? [Lower the load back into the tote and request remote assistance,
       Place the load in box B-12 and let the packer remove the extra bottle,
@@ -111,9 +105,9 @@ $ nouli add pick "Remote assistance, 40 seconds: the operator separated the bott
                 Return it to the tote                                 0.00
 ```
 
-Each answer builds on the turns before it. The answers to turns 3 and 4 match station rules that no command in `pick` repeats: a load more than 15% off its expected weight is never placed, and a torn bag goes to the exception station. Those rules are in `policy`, and `pick` inherited them along with the item's history. `nouli context pick` shows exactly what reached the model for a turn, and every saved answer stays as it was decided.
+The answers match station rules that no command in `pick` repeats: a load more than 15% off its expected weight is never placed, and a torn bag goes to the exception station. Those rules are in `policy`, and `pick` inherited them along with the item's history. `nouli context pick` shows exactly what reached the model for a turn.
 
-Every turn asks one `-q` question, in its own call. `nouli ask pick -q …` asks without new facts, `--replace N TEXT` corrects fact N, `nouli whatif pick … -q …` asks without saving, `nouli facts pick` lists the numbered facts, and `nouli view pick` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
+Every turn asks one `-q` question, in its own call. `nouli new NAME [FACT...] -q …` starts a session and `--from A --from B` blends sessions, `nouli ask pick -q …` asks without new facts, `--replace N TEXT` corrects fact N, `nouli whatif pick … -q …` asks without saving, `nouli facts pick` lists the numbered facts, and `nouli view pick` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
 ## A longer example
 

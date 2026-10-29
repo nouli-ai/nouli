@@ -73,32 +73,43 @@ reserved_output_tokens = 128</code></pre>
 <p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
 
 <h2 id="interactive"><span class="num">03</span>Interactive mode</h2>
-<p>The quickest way to use Nouli is a session you work in. <code>nouli open trip</code> opens a prompt on a session, creating it if you agree, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Each question is asked once, in its own call. Earlier answers stay as they were, and the model sees them as history when it answers the next question:</p>
-<pre><code>$ nouli open trip
-new session "trip" · /help for commands
+<p>The quickest way to use Nouli is a session you work in. <code>nouli open catalog</code> opens a prompt on a session, creating it if you agree, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Each question is asked once, in its own call. Earlier answers stay as they were, and the model sees them as history when it answers the next question. In this session, from the <a href="../examples/robot-picking/">robot-picking walkthrough</a>, a warehouse arm picks a shampoo bottle in a polybag:</p>
+<pre><code>$ nouli open catalog
+new session "catalog" · /help for commands
 
-trip › The train costs 40 USD and arrives 30 minutes before the meeting.
-trip › A taxi costs 70 USD and also arrives in time.
-trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
-  turn 1 · 2 facts · 1 question
-  transport   ▶ Take the train                   ███████████████████▊ 0.99
-                Take a taxi                      ▎                    0.01
-trip › The train has been cancelled.
-trip › ?rebook: How should I get to the meeting now? [Take the train, Take a taxi]
+catalog › Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.
+catalog › ?grasp: Which grasp should the arm prefer for this item? [Suction on the flat label area of the bottle, Suction on any flat bag surface, A two-finger pinch on the bottle neck]
+  turn 1 · 1 fact · 1 question
+  grasp       ▶ Suction on the flat label area … ███████████████████▊ 0.99
+                Suction on any flat bag surface                       0.00
+                A two-finger pinch on the bottl… ▎                    0.01
+catalog › /new policy
+  new session "policy"
+policy › Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.
+policy › ?overweight: May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?
+  turn 1 · 1 fact · 1 question
+  overweight    yes                              ▋                    0.03
+policy › /blend catalog policy as pick
+  new session "pick" from catalog + policy
+pick › Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.
+pick › ?action: What should the arm do first? [Nudge the covering item aside to expose the target's label, Attempt suction on the visible bag film, Request remote assistance now]
+  turn 1 · 1 fact · 1 question
+  action      ▶ Nudge the covering item aside t… ████████████████▊    0.84
+                Attempt suction on the visible … ▋                    0.03
+                Request remote assistance now    ██▋                  0.13
+pick › Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.
+pick › ?next: What should the arm do next? [Try a two-finger pinch on the bottle neck, Retry suction on the same spot, Stop and request remote assistance]
   turn 2 · 1 fact · 1 question
-  rebook        Take the train                   ▊                    0.04
-              ▶ Take a taxi                      ███████████████████▎ 0.96
-trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
-  queued: replace fact 3
-trip › ?on_time: Will I get to the meeting on time?
-  turn 3 · 1 fact (1 replaced, kept in history) · 1 question
-  on_time       yes                              ██████████████████▎  0.91
-trip › My budget for the trip is 50 USD.
-trip › /whatif ?budget: Which option fits my budget? [Take the train, Take a taxi]
+  next        ▶ Try a two-finger pinch on the b… ██████████████▋      0.73
+                Retry suction on the same spot   █████                0.25
+                Stop and request remote assista… ▍                    0.02
+pick › What-if: the arm pinches the bottle neck, and pinch attempt 2 lifts the target. The wrist force sensor reads 0.46 kg against an expected 0.45 kg, and the tote camera shows a single bottle in the gripper.
+pick › /whatif ?placed: What should the arm do with the load? [Lower the load back into the tote and request remote assistance, Place the load in box B-12, "Shake the load to check for anything attached, then place it"]
   (not saved) · 1 fact · 1 question
-  budget      ▶ Take the train                   ████████████████████ 1.00
-                Take a taxi                                           0.00
-trip › /quit
+  placed        Lower the load back into the to…                      0.00
+              ▶ Place the load in box B-12       ██████████████████▊  0.94
+                Shake the load to check for any… █▎                   0.06
+pick › /quit
   bye</code></pre>
 <p>A question is one line: an ID, a colon, the prompt, and then the answers. <code>[a, b]</code> makes a choice, <code>&lt;low, medium, high&gt;</code> makes a score with levels in order, and no list makes a yes/no question. Quote an answer that contains a comma.</p>
 <p>Slash commands do the rest: <code>/whatif ?id: prompt</code> asks its own question with the queued facts without saving, <code>/replace N TEXT</code> queues a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
