@@ -2,12 +2,12 @@
  "session": "response-updated",
  "nodes": [
   {
-   "id": "01a1875f-6d6a-7092-a120-14f771a79e72",
+   "id": "01a1878e-1c7c-722e-a61d-599f6b5c7101",
    "session": "scope",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "",
+   "state": "The FDA May 2022 recall includes Jif 16 ounce creamy peanut butter, identifier\n5150025516 as printed in the notice. A jar is in scope when the first seven\ndigits of its lot code are between 1274425 and 2140425 and end in 425. The\nrange alone is insufficient. This is the published scope for this historical\nexample.",
    "questions": [
     {
      "id": "scope",
@@ -33,46 +33,36 @@
      "selected": "match_the_product_and_both_lot_code_conditions"
     }
    ],
-   "context": [
-    {
-     "turn": null,
-     "representation": "full"
-    }
-   ],
+   "context": [],
    "model": "typesafe/jev-1.14.0",
    "command": "nouli new scope '…' -q '…'"
   },
   {
-   "id": "01a1875f-6d78-74ef-9f3c-db41abd6f78f",
+   "id": "01a1878e-1c85-75ee-a441-1a2f8db9238b",
    "session": "stock",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "",
+   "state": "Illustrative warehouse inventory: 40 sealed jars have lot code 1352425, 10\nhave lot code 1352426, and 6 have unreadable lot codes. All are Jif 16 ounce\ncreamy peanut butter, identifier 5150025516. No other jars are on hand.",
    "questions": [
     {
      "id": "stock",
      "prompt": "Can every jar in this inventory be matched to an identifiable lot?",
      "type": "noul",
-     "probability": 0.06
+     "probability": 0.07
     }
    ],
-   "context": [
-    {
-     "turn": null,
-     "representation": "full"
-    }
-   ],
+   "context": [],
    "model": "typesafe/jev-1.14.0",
    "command": "nouli new stock '…' -q '…'"
   },
   {
-   "id": "01a1875f-6d86-769b-9683-3acd7b62d06c",
+   "id": "01a1878e-1c8e-7729-bc83-a55a5c438b98",
    "session": "customers",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "",
+   "state": "Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used\nin 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30.\nHarbor acknowledges the recall notice and confirms all 30 are isolated. Summit\nhas not responded. There were no other shipments of this batch.",
    "questions": [
     {
      "id": "customers",
@@ -98,17 +88,12 @@
      "selected": "contact_summit"
     }
    ],
-   "context": [
-    {
-     "turn": null,
-     "representation": "full"
-    }
-   ],
+   "context": [],
    "model": "typesafe/jev-1.14.0",
    "command": "nouli new customers '…' -q '…'"
   },
   {
-   "id": "01a1875f-6d99-74f3-8fd8-0698ef7fd353",
+   "id": "01a1878e-1c98-7682-8718-7eea0fe0db26",
    "session": "stock-plan",
    "turn": 1,
    "kind": "blend",
@@ -116,7 +101,7 @@
     0,
     1
    ],
-   "state": "",
+   "state": "Our example stock policy is to quarantine confirmed recalled jars and hold\nunreadable codes for identification. Apply the scope only to products and lots\nit actually covers.",
    "questions": [
     {
      "id": "stock_plan",
@@ -126,7 +111,7 @@
       {
        "id": "quarantine_matching_jars_and_hold_unreadable_codes_for_identific",
        "label": "Quarantine matching jars and hold unreadable codes for identification",
-       "p": 0.99
+       "p": 1
       },
       {
        "id": "hold_every_jar_pending_further_review",
@@ -136,7 +121,7 @@
       {
        "id": "identify_unreadable_codes_before_choosing_any_stock_action",
        "label": "Identify unreadable codes before choosing any stock action",
-       "p": 0.01
+       "p": 0
       }
      ],
      "selected": "quarantine_matching_jars_and_hold_unreadable_codes_for_identific"
@@ -148,19 +133,7 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 1,
-     "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     }
    ],
@@ -168,7 +141,7 @@
    "command": "nouli new stock-plan --from scope --from stock '…' -q '…'"
   },
   {
-   "id": "01a1875f-6dad-71a7-b81b-00ad1ee1d6f9",
+   "id": "01a1878e-1ca3-779f-bdeb-b70fb207c50c",
    "session": "outreach",
    "turn": 1,
    "kind": "blend",
@@ -176,7 +149,7 @@
     0,
     2
    ],
-   "state": "",
+   "state": "Apply the recall scope to ingredient lot 1352425 and the snack boxes made from\nit. Following recall communication guidance, establish that affected customers\nreceived and followed the notice. Under our example response policy, missing\nacknowledgment requires direct follow-up; reported sales require escalation\nand verification of downstream notification. Use the latest dated response for\neach customer.",
    "questions": [
     {
      "id": "outreach",
@@ -208,19 +181,7 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 2,
-     "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     }
    ],
@@ -228,7 +189,7 @@
    "command": "nouli new outreach --from scope --from customers '…' -q '…'"
   },
   {
-   "id": "01a1875f-6dc8-7651-ad76-d889ed202637",
+   "id": "01a1878e-1cae-742a-ac59-0cbda5899e8e",
    "session": "response",
    "turn": 1,
    "kind": "blend",
@@ -236,7 +197,7 @@
     3,
     4
    ],
-   "state": "",
+   "state": "Combine the warehouse and customer decisions into a recommendation for the\nrecall lead. A warehouse hold does not account for shipped products.\nCoordinate any unresolved customer or downstream follow-up alongside the stock\naction. Use the latest dated customer records.",
    "questions": [
     {
      "id": "response",
@@ -246,17 +207,17 @@
       {
        "id": "coordinate_warehouse_holds_only",
        "label": "Coordinate warehouse holds only",
-       "p": 0.0050000000000000044
+       "p": 0
       },
       {
        "id": "coordinate_warehouse_holds_and_missing_customer_responses",
        "label": "Coordinate warehouse holds and missing customer responses",
-       "p": 0.99
+       "p": 1
       },
       {
        "id": "coordinate_warehouse_holds_and_escalation_of_sales_to_end_custom",
        "label": "Coordinate warehouse holds and escalation of sales to end customers",
-       "p": 0.0050000000000000044
+       "p": 0
       }
      ],
      "selected": "coordinate_warehouse_holds_and_missing_customer_responses"
@@ -268,15 +229,7 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 1,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     },
     {
@@ -284,27 +237,11 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 2,
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 4,
-     "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     }
    ],
@@ -312,14 +249,14 @@
    "command": "nouli new response --from stock-plan --from outreach '…' -q '…'"
   },
   {
-   "id": "01a1875f-6ddf-7142-b42f-006a3796a594",
+   "id": "01a1878e-1cb8-7535-b38e-94a0e8358f64",
    "session": "customers",
    "turn": 2,
    "kind": "continued",
    "parents": [
     2
    ],
-   "state": "",
+   "state": "Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the\nnotice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to\nend customers. Whether those buyers have been notified is unknown. This\nreplaces the earlier Summit nonresponse. Harbor still has all 30 boxes\nisolated.",
    "questions": [
     {
      "id": "customers",
@@ -329,17 +266,17 @@
       {
        "id": "confirm_acknowledgment_only",
        "label": "Confirm acknowledgment only",
-       "p": 0
+       "p": 0.01
       },
       {
        "id": "escalate_the_12_sold_boxes_and_verify_downstream_notification",
        "label": "Escalate the 12 sold boxes and verify downstream notification",
-       "p": 1
+       "p": 0.98
       },
       {
        "id": "treat_the_customer_response_as_complete",
        "label": "Treat the customer response as complete",
-       "p": 0
+       "p": 0.01
       }
      ],
      "selected": "escalate_the_12_sold_boxes_and_verify_downstream_notification"
@@ -349,21 +286,13 @@
     {
      "turn": 2,
      "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
    "command": "nouli add customers '…'"
   },
   {
-   "id": "01a1875f-6df5-7677-b741-2d8746c6ac76",
+   "id": "01a1878e-1cc2-76b4-862f-f1daef12e7a8",
    "session": "outreach-updated",
    "turn": 1,
    "kind": "blend",
@@ -371,7 +300,7 @@
     0,
     6
    ],
-   "state": "",
+   "state": "Apply the recall scope to ingredient lot 1352425 and the snack boxes made from\nit. Following recall communication guidance, establish that affected customers\nreceived and followed the notice. Under our example response policy, missing\nacknowledgment requires direct follow-up; reported sales require escalation\nand verification of downstream notification. Use the latest dated response for\neach customer.",
    "questions": [
     {
      "id": "outreach_updated",
@@ -403,27 +332,11 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 2,
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 6,
-     "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     }
    ],
@@ -431,7 +344,7 @@
    "command": "nouli new outreach-updated --from scope --from customers '…' -q '…'"
   },
   {
-   "id": "01a1875f-6e13-7546-b05c-bb02209d3695",
+   "id": "01a1878e-1ccd-7795-8314-ed035c87cfed",
    "session": "response-updated",
    "turn": 1,
    "kind": "blend",
@@ -439,7 +352,7 @@
     3,
     7
    ],
-   "state": "",
+   "state": "Combine the warehouse and customer decisions into a recommendation for the\nrecall lead. A warehouse hold does not account for shipped products.\nCoordinate any unresolved customer or downstream follow-up alongside the stock\naction. Use the latest dated customer records.",
    "questions": [
     {
      "id": "response_updated",
@@ -454,12 +367,12 @@
       {
        "id": "coordinate_warehouse_holds_and_missing_customer_responses",
        "label": "Coordinate warehouse holds and missing customer responses",
-       "p": 0.01
+       "p": 0
       },
       {
        "id": "coordinate_warehouse_holds_and_escalation_of_sales_to_end_custom",
        "label": "Coordinate warehouse holds and escalation of sales to end customers",
-       "p": 0.99
+       "p": 1
       }
      ],
      "selected": "coordinate_warehouse_holds_and_escalation_of_sales_to_end_custom"
@@ -471,15 +384,7 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 1,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     },
     {
@@ -487,15 +392,7 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 2,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     },
     {
@@ -503,19 +400,7 @@
      "representation": "full"
     },
     {
-     "turn": null,
-     "representation": "full"
-    },
-    {
      "turn": 7,
-     "representation": "full"
-    },
-    {
-     "turn": null,
-     "representation": "full"
-    },
-    {
-     "turn": null,
      "representation": "full"
     }
    ],

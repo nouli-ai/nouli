@@ -46,6 +46,10 @@ function toGraph(exp, rename) {
   const names = new Map(exp.provenance.map((s) => [s.id, displayName(s.name, rename)]));
   const sources = new Map(exp.provenance.map((s) => [s.id, s.sources?.length ?? 0]));
   const index = new Map(exp.turns.map((t, i) => [t.id, i]));
+  // Facts are records added by a turn's updates; context lists them by record, so map each
+  // record back to the turn that saved it.
+  const added = (t) => (t.updates ?? []).map((u) => u.record ?? u.replacement).filter(Boolean);
+  for (const t of exp.turns) for (const r of added(t)) if (!index.has(r.id)) index.set(r.id, index.get(t.id));
   const counts = new Map();
   const nodes = exp.turns.map((t) => {
     const n = (counts.get(t.session) ?? 0) + 1;
@@ -61,10 +65,21 @@ function toGraph(exp, rename) {
       turn: n,
       kind,
       parents,
-      state: t.request.state.map((s) => (s.type === "text" ? s.text : JSON.stringify(s.value))).join("\n"),
+      state: [
+        ...t.request.state.map((s) => (s.type === "text" ? s.text : JSON.stringify(s.value))),
+        ...added(t).map((r) => (typeof r.value === "string" ? r.value : JSON.stringify(r.value))),
+      ].join("\n"),
       questions: t.request.questions.map((q) => question(q, outcomes.get(q.id))),
       // Records Nouli actually placed in this turn's model context, in context order.
-      context: t.manifest.records.map((r) => ({ turn: index.get(r.record) ?? null, representation: r.representation })),
+      // Earlier turns, each once, whether through its answers or the facts it added.
+      context: [
+        ...new Map(
+          t.manifest.records
+            .map((r) => ({ turn: index.get(r.record) ?? null, representation: r.representation }))
+            .filter((c) => c.turn !== null && c.turn !== index.get(t.id))
+            .map((c) => [c.turn, c]),
+        ).values(),
+      ],
       model: `${t.outcome.provider.provider}/${t.outcome.provider.model}`,
     };
   });
