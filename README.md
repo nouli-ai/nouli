@@ -7,7 +7,7 @@
 
 **Nouli is a multi-turn decision harness: it runs decision models over many turns.**
 
-A decision model doesn't write text. You give it facts and a question with a fixed set of answers, and it returns a probability for each answer. That makes it useful for real decisions, but each call is stateless: the model forgets everything once it answers. Nouli gives it a memory. A session keeps every fact, question, and answer, so when something changes you add only what is new, and the model decides again with the whole history in view. Nouli ships as a CLI and a Rust library.
+A decision model doesn't write text. You give it facts and a question with a fixed set of answers, and it returns a probability for each answer. That makes it useful for real decisions, but each call is stateless: the model forgets everything once it answers. Nouli gives it a memory. A session keeps every fact, question, and answer, so when something changes you add only what is new and ask your next question, and the model answers it with the whole history in view. Each question is asked once, so earlier answers stay as they were. Nouli ships as a CLI and a Rust library.
 
 ## Install
 
@@ -43,34 +43,31 @@ trip › The train costs 40 USD and arrives 30 minutes before the meeting.
 trip › A taxi costs 70 USD and also arrives in time.
 trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
   turn 1 · 2 facts · 1 question
-  transport   ▶ Take the train                   ████████████████████ 1.00
-                Take a taxi                                           0.00
+  transport   ▶ Take the train                   ███████████████████▊ 0.99
+                Take a taxi                      ▎                    0.01
 trip › The train has been cancelled.
-trip › ?on_time: Will I get to the meeting on time?
-  turn 2 · 1 fact · 2 questions · re-asked 1
-  transport     Take the train                   ██▎                  0.11
-              ▶ Take a taxi                      █████████████████▊   0.89   → was Take the tr… 1.00
-  on_time       yes                              ███████▎             0.36
+trip › ?rebook: How should I get to the meeting now? [Take the train, Take a taxi]
+  turn 2 · 1 fact · 1 question
+  rebook        Take the train                   ▊                    0.04
+              ▶ Take a taxi                      ███████████████████▎ 0.96
 trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
   queued: replace fact 3
-trip › ↵
-  turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2
-  transport   ▶ Take the train                   ███████████▎         0.56   → was Take a taxi 0.89
-                Take a taxi                      ████████▊            0.44
-  on_time       yes                              █████████████▎       0.66   → was 0.36
-trip › /whatif My budget for the trip is 50 USD.
-  (not saved) · 1 fact · 2 questions
-  transport   ▶ Take the train                   ███████████████████▍ 0.97   → was Take the tr… 0.56
-                Take a taxi                      ▋                    0.03
-  on_time       yes                              ██████████████▋      0.73   → was 0.66
+trip › ?on_time: Will I get to the meeting on time?
+  turn 3 · 1 fact (1 replaced, kept in history) · 1 question
+  on_time       yes                              ██████████████████▎  0.91
+trip › My budget for the trip is 50 USD.
+trip › /whatif ?budget: Which option fits my budget? [Take the train, Take a taxi]
+  (not saved) · 1 fact · 1 question
+  budget      ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
 trip › /quit
   bye
 ```
 
 - **Facts wait for a question.** Plain lines are facts. A `?` line sends them with the question as one turn.
-- **Questions stay.** The second turn asked `transport` again without retyping it, and `→ was` shows how each answer moved.
-- **Corrections keep history.** `/replace 3` gave fact 3 new text. The model sees only the new text, and the old one stays in the session. Return on an empty line asks the questions again.
-- **What-ifs save nothing.** `/whatif` asks with one more fact and leaves the session as it was.
+- **Each question is asked once.** A `?` line asks only that question, in one call. Earlier answers stay as they were: the cancellation changed what `rebook` answered, not what `transport` answered before it.
+- **Corrections keep history.** `/replace 3` gave fact 3 new text. The model sees only the new text, and the old one stays in the session.
+- **What-ifs save nothing.** `/whatif` asks its own question with the queued facts and leaves the session as it was.
 
 A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/branch NAME` starts a new session from this one, `/blend A B as NAME` combines sessions, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
 
@@ -82,9 +79,12 @@ Everything you can do at the prompt is also a command. This is the same session:
 nouli new trip 'The train costs 40 USD and arrives 30 minutes before the meeting.' \
   'A taxi costs 70 USD and also arrives in time.' \
   -q 'transport: How should I get to the meeting? [Take the train, Take a taxi]'
-nouli add trip 'The train has been cancelled.' -q 'on_time: Will I get to the meeting on time?'
-nouli add trip --replace 3 'The train is running 10 minutes late but still arrives 20 minutes before the meeting.'
-nouli whatif trip 'My budget for the trip is 50 USD.'
+nouli add trip 'The train has been cancelled.' \
+  -q 'rebook: How should I get to the meeting now? [Take the train, Take a taxi]'
+nouli add trip --replace 3 'The train is running 10 minutes late but still arrives 20 minutes before the meeting.' \
+  -q 'on_time: Will I get to the meeting on time?'
+nouli whatif trip 'My budget for the trip is 50 USD.' \
+  -q 'budget: Which option fits my budget? [Take the train, Take a taxi]'
 nouli facts trip
 ```
 
@@ -94,11 +94,11 @@ nouli facts trip
    3  The train is running 10 minutes late but still arrives 20 minutes before the meeting.   (replaced; was: The train has been cancelled.)
 ```
 
-`nouli ask trip` asks the session's questions again, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
+Every turn needs a `-q` question. `nouli ask trip -q …` asks without new facts, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
 ## A longer example
 
-A food distributor handles a peanut butter recall. It keeps the recall scope, its warehouse stock, and its customers in separate sessions, then blends them into one coordinated response. When a customer reports that 12 affected boxes were already sold, it adds that one fact and builds a revised response. The turn that changed:
+A food distributor handles a peanut butter recall. It keeps the recall scope, its warehouse stock, and its customers in separate sessions, then blends them into one coordinated response. When a customer reports that 12 affected boxes were already sold, it adds that one fact with a new question about it, and builds a revised response in new sessions, so the first response stays as it was decided. The new turn:
 
 ```sh
 nouli add recall-customers \
@@ -113,7 +113,7 @@ isolated.' \
 ```
 
 ```text
-  turn 2 · 1 fact · 1 question · re-asked 1
+  turn 2 · 1 fact · 1 question
   customers     Confirm acknowledgment only      ▎                    0.01
               ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
                 Treat the customer response as … ▎                    0.01
@@ -149,7 +149,7 @@ The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/
 
 - [User guide](https://standing-desks.github.io/nouli/guide/): setup, interactive mode, sessions, branching, blending, and workflows
 - [Configuration](docs/configuration.md): providers, models, credentials (`nouli auth login`), and storage
-- [CLI guide](docs/cli.md): the interactive prompt, sessions, facts, standing questions, request files, branching, and blending
+- [CLI guide](docs/cli.md): the interactive prompt, sessions, facts, questions, request files, branching, and blending
 - [Question types](docs/contracts/decisions.md): `choice`, `noul`, and `score`
 - [Output formats](docs/output.md): text, JSON, JSONL, and TOON
 - [Workflows](docs/cli-workflows.md): dependent decisions and resuming interrupted runs

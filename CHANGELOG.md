@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Ask each question once. A turn asks only the questions given with it, `-q` or a `?` line, in one call, and no later turn, branch, or blend asks them again, so a saved answer is never decided again. Sessions saved by 0.2.0 keep reading, and the questions they saved are no longer asked.
+- Require a question for every turn: `nouli add`, `ask`, and `whatif`, and `new` with facts, fail with `questions_required` without `-q`. In `nouli open`, facts wait in the queue until a `?` line sends them.
+- Make `/whatif` ask its own question, `/whatif ?id: prompt [a, b]`, with the queued facts; it still saves nothing. An empty line now sends again only what a failed turn left queued.
+- Drop `re-asked N` from turn headers.
+
+### Removed
+
+- Remove standing questions: `--drop`, `nouli questions`, and the `/drop`, `/questions`, and `/ask` commands. A request file that sets `standing` fails with `invalid_standing_question`, and session exports no longer list `standing_questions`.
+
 ## [0.2.0] - 2026-10-29
 
 ### Added

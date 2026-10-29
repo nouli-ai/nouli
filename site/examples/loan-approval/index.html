@@ -119,7 +119,7 @@ for it; otherwise refer for manual review. No funds have been advanced.&#x27; \
 <h2><span class="num">04</span>Review affordability for both loan sizes</h2>
 <p>Blend the cash-flow and policy sessions to evaluate each quoted installment. Repeated --from supplies both source histories to a new decision.</p>
 <pre class="repl"><code>policy › /blend cashflow policy as affordability
-  new session "affordability" from cashflow + policy · no standing questions
+  new session "affordability" from cashflow + policy
 affordability › Apply the sample product policy to the latest verified cash-flow record. Subtract each quoted installment separately, since these are alternative offers, not two concurrent loans. Compare the remainder with the 1000 USD sample threshold.
 affordability › ?affordability: Which quoted loans satisfy the sample affordability policy? [Both quoted loans meet the affordability threshold, Only the 3000 USD loan meets the affordability threshold, Neither quoted loan meets the affordability threshold, Required affordability evidence is missing]
   turn 1 · 1 fact · 1 question
@@ -149,7 +149,7 @@ threshold.&#x27; \
 <h2><span class="num">05</span>Review the credit-history gate</h2>
 <p>Blend the independent repayment record with the same policy. This branch checks history requirements without treating payment performance as proof of affordability.</p>
 <pre class="repl"><code>affordability › /blend history policy as credit-review
-  new session "credit-review" from history + policy · no standing questions
+  new session "credit-review" from history + policy
 credit-review › Apply the sample policy requirements for repayment records only. Do not infer affordability from this review.
 credit-review › ?credit_review: Does the documented repayment record pass the sample history gate? [The complete record meets the history requirements, The record fails the history requirements, Required history evidence is missing]
   turn 1 · 1 fact · 1 question
@@ -174,7 +174,7 @@ affordability from this review.&#x27; \
 <h2><span class="num">06</span>Combine both reviews into a lending recommendation</h2>
 <p>Combine the two review sessions. Each source is already a blend, so the recommendation includes cash flow, repayment history, and the shared policy.</p>
 <pre class="repl"><code>credit-review › /blend affordability credit-review as recommendation
-  new session "recommendation" from affordability + credit-review · no standing questions
+  new session "recommendation" from affordability + credit-review
 recommendation › Combine the affordability and credit-history reviews using the sample product policy. A passing history gate cannot override an affordability failure. Prefer the requested 6000 USD loan if eligible; otherwise recommend the eligible 3000 USD alternative; otherwise refer for manual review. This is a recommendation for a loan officer, not an executed lending decision.
 recommendation › ?recommendation: What should the loan officer review? [Recommend the requested 6000 USD loan at the quoted 250 USD installment, Recommend review of the 3000 USD alternative at the quoted 150 USD installment, Refer for manual review without recommending either loan]
   turn 1 · 1 fact · 1 question
@@ -202,10 +202,10 @@ for a loan officer, not an executed lending decision.&#x27; \
 <h2><span class="num">07</span>Record corrected income verification</h2>
 <p>Continue the cash-flow session with corrected income of 4800 USD. The later verification explicitly replaces the earlier 5000 USD figure for subsequent decisions.</p>
 <pre class="repl"><code>recommendation › /use cashflow
-  cashflow · 1 standing question
+  cashflow
 cashflow › Fictional application L-101, corrected verification at 11:00: recurring net income is 4800 USD per month, replacing the 09:00 figure of 5000 USD. Essential living expenses remain 3000 USD and existing debt payments remain 600 USD. There are no other obligations. The proposed loan has not been approved or disbursed.
 cashflow › ?cashflow: What monthly amount now remains before a new loan payment? [1200 USD, 1400 USD, Request missing cash-flow records]
-  turn 2 · 1 fact · 1 question · re-asked 1
+  turn 2 · 1 fact · 1 question
   cashflow    ▶ 1200 USD                         ██████████████████▋  0.93   → was 1400 USD 1.00
                 1400 USD                         █▎                   0.06
                 Request missing cash-flow recor… ▎                    0.01</code></pre>
@@ -218,7 +218,7 @@ no other obligations. The proposed loan has not been approved or disbursed.&#x27
     1400 USD,
     Request missing cash-flow records]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+<pre class="out"><code>  turn 2 · 1 fact · 1 question
   cashflow    ▶ 1200 USD                         ██████████████████▋  0.93   → was 1400 USD 1.00
                 1400 USD                         █▎                   0.06
                 Request missing cash-flow recor… ▎                    0.01
@@ -229,7 +229,7 @@ no other obligations. The proposed loan has not been approved or disbursed.&#x27
 <h2><span class="num">08</span>Create an updated affordability review</h2>
 <p>Create a new affordability blend from the updated cash-flow session and the original policy. The earlier affordability decision remains saved with its original sources.</p>
 <pre class="repl"><code>cashflow › /blend cashflow policy as affordability-updated
-  new session "affordability-updated" from cashflow + policy · no standing questions
+  new session "affordability-updated" from cashflow + policy
 affordability-updated › Apply the sample product policy to the latest verified cash-flow record. Subtract each quoted installment separately, since these are alternative offers, not two concurrent loans. Compare the remainder with the 1000 USD sample threshold.
 affordability-updated › ?affordability_updated: Which quoted loans satisfy the sample affordability policy now? [Both quoted loans meet the affordability threshold, Only the 3000 USD loan meets the affordability threshold, Neither quoted loan meets the affordability threshold, Required affordability evidence is missing]
   turn 1 · 1 fact · 1 question
@@ -259,7 +259,7 @@ threshold.&#x27; \
 <h2><span class="num">09</span>Reconsider the offer using the updated review</h2>
 <p>Combine the updated affordability review with the unchanged repayment-history review to obtain a new recommendation.</p>
 <pre class="repl"><code>affordability-updated › /blend affordability-updated credit-review as recommendation-updated
-  new session "recommendation-updated" from affordability-updated + credit-review · no standing questions
+  new session "recommendation-updated" from affordability-updated + credit-review
 recommendation-updated › Combine the affordability and credit-history reviews using the sample product policy. A passing history gate cannot override an affordability failure. Prefer the requested 6000 USD loan if eligible; otherwise recommend the eligible 3000 USD alternative; otherwise refer for manual review. This is a recommendation for a loan officer, not an executed lending decision.
 recommendation-updated › ?recommendation_updated: What should the loan officer review now? [Recommend the requested 6000 USD loan at the quoted 250 USD installment, Recommend review of the 3000 USD alternative at the quoted 150 USD installment, Refer for manual review without recommending either loan]
   turn 1 · 1 fact · 1 question

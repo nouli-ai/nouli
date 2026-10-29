@@ -123,7 +123,7 @@ requires manual review.&#x27; \
 <h2><span class="num">04</span>Review capacity at each candidate limit</h2>
 <p>Blend cash flow and policy to compare the candidate total lines. Assess each separately using its supplied stressed minimum payment.</p>
 <pre class="repl"><code>policy › /blend cashflow policy as capacity
-  new session "capacity" from cashflow + policy · no standing questions
+  new session "capacity" from cashflow + policy
 capacity › Use the latest verified income and obligations with the sample policy. Assess each candidate total line separately, not as an additional amount on top of the existing line. Subtract the supplied stressed card payment once. Determine the highest total line that leaves at least 600 USD each month.
 capacity › ?capacity: What is the highest total line supported by the sample capacity test? [The 10000 USD requested total line meets the capacity threshold, Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold, Only the current 5000 USD line meets the capacity threshold, No line qualifies or required verification is missing]
   turn 1 · 1 fact · 1 question
@@ -153,7 +153,7 @@ the highest total line that leaves at least 600 USD each month.&#x27; \
 <h2><span class="num">05</span>Review account eligibility</h2>
 <p>Blend the account history and policy to evaluate the standing gate. This branch shares policy with the capacity branch while using different evidence.</p>
 <pre class="repl"><code>capacity › /blend account policy as standing
-  new session "standing" from account + policy · no standing questions
+  new session "standing" from account + policy
 standing › Apply only the account-standing gate from the sample policy to the recorded account. Do not use account standing to infer income or payment capacity.
 standing › ?standing: Does the account pass the sample standing gate? [The complete account record meets the standing requirements, The account fails the standing requirements, Required account records are missing]
   turn 1 · 1 fact · 1 question
@@ -178,7 +178,7 @@ account. Do not use account standing to infer income or payment capacity.&#x27; 
 <h2><span class="num">06</span>Combine the reviews into a limit recommendation</h2>
 <p>Combine capacity and standing into a limit recommendation. Both branches must support the offer.</p>
 <pre class="repl"><code>standing › /blend capacity standing as limit
-  new session "limit" from capacity + standing · no standing questions
+  new session "limit" from capacity + standing
 limit › Combine the capacity and account-standing reviews. Recommend the highest eligible total line up to the requested 10000 USD only when both gates pass. A passing account review cannot override insufficient payment capacity. If the account-standing gate fails or lacks evidence, refer for manual review. If standing passes but no increase qualifies, retain 5000 USD only if its capacity test passes; otherwise refer for manual review. This recommendation does not change the account.
 limit › ?limit: Which total credit line should the reviewer consider? [Recommend a 10000 USD total line, Recommend a 6000 USD total line, Retain the current 5000 USD line, Refer for manual review without recommending a limit]
   turn 1 · 1 fact · 1 question
@@ -210,10 +210,10 @@ test passes; otherwise refer for manual review. This recommendation does not cha
 <h2><span class="num">07</span>Record new verified income</h2>
 <p>Continue the cash-flow session with verified income of 4500 USD, explicitly replacing the earlier amount. No account change has been applied.</p>
 <pre class="repl"><code>limit › /use cashflow
-  cashflow · 1 standing question
+  cashflow
 cashflow › Fictional card application C-202, new verification at 11:00: recurring net monthly income is now 4500 USD, replacing the 09:00 value of 4000 USD. Essential living expenses remain 2500 USD and other debt payments remain 700 USD, excluding this credit card. There are no other obligations. The customer supplied verified evidence of the income change. No limit increase has been applied.
 cashflow › ?cashflow: What monthly amount is now available before this card payment? [1300 USD, 800 USD, Request missing income or obligation records]
-  turn 2 · 1 fact · 1 question · re-asked 1
+  turn 2 · 1 fact · 1 question
   cashflow    ▶ 1300 USD                         █████████████████▋   0.88   → was 800 USD 0.99
                 800 USD                          ██▍                  0.12
                 Request missing income or oblig…                      0.00</code></pre>
@@ -227,7 +227,7 @@ verified evidence of the income change. No limit increase has been applied.&#x27
     800 USD,
     Request missing income or obligation records]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+<pre class="out"><code>  turn 2 · 1 fact · 1 question
   cashflow    ▶ 1300 USD                         █████████████████▋   0.88   → was 800 USD 0.99
                 800 USD                          ██▍                  0.12
                 Request missing income or oblig…                      0.00
@@ -238,7 +238,7 @@ verified evidence of the income change. No limit increase has been applied.&#x27
 <h2><span class="num">08</span>Review capacity with the updated source</h2>
 <p>Create a fresh capacity blend from the updated cash-flow history and the same policy. The initial capacity review remains a separate saved decision.</p>
 <pre class="repl"><code>cashflow › /blend cashflow policy as capacity-updated
-  new session "capacity-updated" from cashflow + policy · no standing questions
+  new session "capacity-updated" from cashflow + policy
 capacity-updated › Use the latest verified income and obligations with the sample policy. Assess each candidate total line separately, not as an additional amount on top of the existing line. Subtract the supplied stressed card payment once. Determine the highest total line that leaves at least 600 USD each month.
 capacity-updated › ?capacity_updated: What is the highest total line supported by the updated capacity test? [The 10000 USD requested total line meets the capacity threshold, Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold, Only the current 5000 USD line meets the capacity threshold, No line qualifies or required verification is missing]
   turn 1 · 1 fact · 1 question
@@ -268,7 +268,7 @@ the highest total line that leaves at least 600 USD each month.&#x27; \
 <h2><span class="num">09</span>Reconsider the limit using both review branches</h2>
 <p>Reuse the account-standing review and combine it with updated capacity. This creates a revised recommendation without rewriting the initial limit decision.</p>
 <pre class="repl"><code>capacity-updated › /blend capacity-updated standing as limit-updated
-  new session "limit-updated" from capacity-updated + standing · no standing questions
+  new session "limit-updated" from capacity-updated + standing
 limit-updated › Combine the capacity and account-standing reviews. Recommend the highest eligible total line up to the requested 10000 USD only when both gates pass. A passing account review cannot override insufficient payment capacity. If the account-standing gate fails or lacks evidence, refer for manual review. If standing passes but no increase qualifies, retain 5000 USD only if its capacity test passes; otherwise refer for manual review. This recommendation does not change the account.
 limit-updated › ?limit_updated: Which total credit line should the reviewer consider now? [Recommend a 10000 USD total line, Recommend a 6000 USD total line, Retain the current 5000 USD line, Refer for manual review without recommending a limit]
   turn 1 · 1 fact · 1 question

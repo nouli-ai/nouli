@@ -4,25 +4,22 @@ trip › The train costs 40 USD and arrives 30 minutes before the meeting.
 trip › A taxi costs 70 USD and also arrives in time.
 trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
   turn 1 · 2 facts · 1 question
-  transport   ▶ Take the train                   ████████████████████ 1.00
-                Take a taxi                                           0.00
+  transport   ▶ Take the train                   ███████████████████▊ 0.99
+                Take a taxi                      ▎                    0.01
 trip › The train has been cancelled.
-trip › ?on_time: Will I get to the meeting on time?
-  turn 2 · 1 fact · 2 questions · re-asked 1
-  transport     Take the train                   ██▎                  0.11
-              ▶ Take a taxi                      █████████████████▊   0.89   → was Take the tr… 1.00
-  on_time       yes                              ███████▎             0.36
+trip › ?rebook: How should I get to the meeting now? [Take the train, Take a taxi]
+  turn 2 · 1 fact · 1 question
+  rebook        Take the train                   ▊                    0.04
+              ▶ Take a taxi                      ███████████████████▎ 0.96
 trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
   queued: replace fact 3
-trip › ↵
-  turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2
-  transport   ▶ Take the train                   ███████████▎         0.56   → was Take a taxi 0.89
-                Take a taxi                      ████████▊            0.44
-  on_time       yes                              █████████████▎       0.66   → was 0.36
-trip › /whatif My budget for the trip is 50 USD.
-  (not saved) · 1 fact · 2 questions
-  transport   ▶ Take the train                   ███████████████████▍ 0.97   → was Take the tr… 0.56
-                Take a taxi                      ▋                    0.03
-  on_time       yes                              ██████████████▋      0.73   → was 0.66
+trip › ?on_time: Will I get to the meeting on time?
+  turn 3 · 1 fact (1 replaced, kept in history) · 1 question
+  on_time       yes                              ██████████████████▎  0.91
+trip › My budget for the trip is 50 USD.
+trip › /whatif ?budget: Which option fits my budget? [Take the train, Take a taxi]
+  (not saved) · 1 fact · 1 question
+  budget      ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
 trip › /quit
   bye

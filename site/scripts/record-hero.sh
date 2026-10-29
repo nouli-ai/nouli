@@ -26,7 +26,6 @@ done_ "$OUT/travel-1.json" || n new hero-travel 'The train costs 40 USD and arri
 done_ "$OUT/budget-1.json" || n new hero-budget 'The travel budget is 50 USD. Spending more requires approval before booking. No exception has been approved.' -q "$APPROVAL" > "$OUT/budget-1.json"
 T1=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["result"]["report"]["turn"])' "$OUT/travel-1.json" 2>/dev/null || true)
 
-# A branch keeps its source's questions, so a plan from one source drops the ones it should not ask.
 for time in cancelled late ontime; do
   case $time in
     cancelled) facts='The train has been cancelled. The taxi is still available at 70 USD.' ;;
@@ -45,11 +44,11 @@ for time in cancelled late ontime; do
     if [ "$srcs" = both ]; then
       done_ "$OUT/plan-1-$time-$srcs.json" || n new "$plan" --from "$travel" --from hero-budget "$PLAN_FACTS" -q "$BOOKING" > "$OUT/plan-1-$time-$srcs.json"
     else
-      done_ "$OUT/plan-1-$time-$srcs.json" || { n new "$plan" --from "$travel" > /dev/null; n add "$plan" "$PLAN_FACTS" -q "$BOOKING" --drop on_time --drop transport > "$OUT/plan-1-$time-$srcs.json"; }
+      done_ "$OUT/plan-1-$time-$srcs.json" || { n new "$plan" --from "$travel" > /dev/null; n add "$plan" "$PLAN_FACTS" -q "$BOOKING" > "$OUT/plan-1-$time-$srcs.json"; }
     fi
     done_ "$OUT/plan-2-$time-$srcs.json" || n add "$plan" "$APPROVED" -q "$BOOKING2" > "$OUT/plan-2-$time-$srcs.json"
   done
 done
-done_ "$OUT/plan-1-budget.json" || { n new hero-plan-budget --from hero-budget > /dev/null; n add hero-plan-budget "$PLAN_FACTS" -q "$BOOKING" --drop approval > "$OUT/plan-1-budget.json"; }
+done_ "$OUT/plan-1-budget.json" || { n new hero-plan-budget --from hero-budget > /dev/null; n add hero-plan-budget "$PLAN_FACTS" -q "$BOOKING" > "$OUT/plan-1-budget.json"; }
 done_ "$OUT/plan-2-budget.json" || n add hero-plan-budget "$APPROVED" -q "$BOOKING2" > "$OUT/plan-2-budget.json"
 echo recorded

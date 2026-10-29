@@ -8,7 +8,9 @@ the histories used to make subsequent decisions.
 
 **Decision question**:
 A caller-supplied question with instructions and a defined answer space or
-rubric.
+rubric. A turn asks it once; later turns see its result only as history and
+never ask it again.
+_Avoid_: Standing question
 
 **Decision result**:
 A typed model judgment for a decision question, with the uncertainty information
@@ -105,11 +107,6 @@ _Avoid_: Failed node
 **Blocked node**:
 A workflow node unable to proceed because a required result is unavailable.
 _Avoid_: Intentionally skipped node
-
-**Standing question**:
-A decision question a session keeps asking. Each later turn re-asks it until it
-is replaced or dropped, so a turn only needs new facts.
-_Avoid_: Saved prompt
 
 **Fact**:
 Caller-supplied evidence stored as a numbered evidence record in a session.

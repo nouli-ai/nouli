@@ -59,7 +59,7 @@ The page's commands run through `sh`. A page may print apostrophes inside single
 
 ## Interactive view of walkthroughs
 
-Walkthroughs show their steps as interactive lines by default, with a toggle for the commands. `scripts/repl-view.mjs` turns each step's command into what you would type in `nouli open`: `/new`, `/blend A B as NAME`, `/use`, `/drop`, the facts, and then the question, which sends the turn. It runs them all in one `nouli open` session against the offline stub and writes each step's part of the transcript into a `<pre class="repl">` block. Session names drop the `$example-` prefix. A `whatif` that asks a question of its own has no interactive form, so its step shows the command instead. The script fails if any turn prints differently from the step's recorded output. Run it after replaying a walkthrough:
+Walkthroughs show their steps as interactive lines by default, with a toggle for the commands. `scripts/repl-view.mjs` turns each step's command into what you would type in `nouli open`: `/new`, `/blend A B as NAME`, `/use`, the facts, and then the question, which sends the turn. It runs them all in one `nouli open` session against the offline stub and writes each step's part of the transcript into a `<pre class="repl">` block. Session names drop the `$example-` prefix. A `whatif` step shows its command instead. The script fails if any turn prints differently from the step's recorded output. Run it after replaying a walkthrough:
 
 ```sh
 node scripts/repl-view.mjs --example all --nouli ../target/debug/nouli

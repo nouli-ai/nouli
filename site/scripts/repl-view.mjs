@@ -2,11 +2,11 @@
 //
 //   node scripts/repl-view.mjs --example NAME|all --nouli PATH [--check]
 //
-// The steps' commands become interactive lines (`/new`, `/blend A B as NAME`, `/use`, `/drop`,
-// facts, then `?question`), and one `nouli open` session runs them all against the offline
-// stub, which answers with the result recorded for each step. Nothing calls a provider. Each
-// step's share of the transcript goes into a <pre class="repl"> block before its command. A
-// what-if that asks its own question has no interactive form, so its step keeps the command.
+// The steps' commands become interactive lines (`/new`, `/blend A B as NAME`, `/use`, facts,
+// then `?question`), and one `nouli open` session runs them all against the offline stub,
+// which answers with the result recorded for each step. Nothing calls a provider. Each step's
+// share of the transcript goes into a <pre class="repl"> block before its command. A what-if
+// step keeps its command.
 // Every turn the session prints must match the step's recorded output. With --check nothing is
 // written, and the script fails when a page's interactive blocks are out of date.
 import { spawn } from "node:child_process";
@@ -32,16 +32,15 @@ function argumentsOf(command) {
   });
 }
 
-/** A step's verb, session, sources, facts, questions, and dropped questions. */
+/** A step's verb, session, sources, facts, and questions. */
 function parse(args) {
   const name = (value) => value.replace(new RegExp(`^${PREFIX}-`), "");
-  const step = { verb: null, session: null, from: [], facts: [], questions: [], drops: [] };
+  const step = { verb: null, session: null, from: [], facts: [], questions: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--format") i++;
     else if (arg === "--from") step.from.push(name(args[++i]));
     else if (arg === "-q" || arg === "--question") step.questions.push(oneLine(args[++i]));
-    else if (arg === "--drop") step.drops.push(args[++i]);
     else if (arg.startsWith("-")) throw new Error(`no interactive form for ${arg}`);
     else if (!step.verb) step.verb = arg;
     else if (!step.session) step.session = name(arg);
@@ -71,10 +70,9 @@ function interactive(steps) {
       throw new Error(`no interactive form for ${step.verb}`);
     }
     current = step.session;
-    lines.push(...step.drops.map((id) => `/drop ${id}`), ...step.facts);
-    // A question sends the turn, so a step asks its new questions last.
-    lines.push(...step.questions.map((q) => `?${q}`));
-    if (!step.questions.length) lines.push("");
+    // A `?` line sends the turn with one question, so it comes last.
+    if (step.questions.length !== 1) throw new Error(`a step at the prompt asks one question: ${step.session}`);
+    lines.push(...step.facts, `?${step.questions[0]}`);
     return lines;
   });
 }
@@ -115,9 +113,10 @@ function split(transcript, perStep, first) {
 
 /** The turn a step's command printed, without the line naming the model and IDs. */
 const turnOf = (output) => output.replace(/\n+$/, "").replace(/\n {2}\S+\/\S+( · session .*)?$/, "");
-const turnIn = (block) => block.split("\n").filter((line) => !/ › /.test(line) && !line.startsWith("$ ") && !/^ {2}(queued: |new session |\S+ · )/.test(line) && !/^new session /.test(line) && line !== "").join("\n");
+// Leaves out typed lines and what /use, /branch, /blend, and /replace print.
+const turnIn = (block) => block.split("\n").filter((line) => !/ › /.test(line) && !line.startsWith("$ ") && !/^ {2}(queued: |new session |\S+$)/.test(line) && !/^new session /.test(line) && line !== "").join("\n");
 
-const NOTE = '<p class="repl-only note">This what-if asks a question of its own, so it runs from the shell:</p>';
+const NOTE = '<p class="repl-only note">This what-if runs from the shell:</p>';
 const VIEWS = (first) => `<div class="views" role="group" aria-label="Show the steps as">
 <span>show the steps as</span><button type="button" data-view="repl" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
 <p class="repl-only">Open the first session with <code>nouli open ${first}</code>, then type each step's lines at the prompt. A question sends the turn.</p>
