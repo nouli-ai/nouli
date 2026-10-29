@@ -2,7 +2,7 @@
 use crate::{
     Args,
     input::InputError,
-    present::{self, PresentError},
+    present,
     render::{self, Format},
     render_error, settings,
     settings::Settings,
@@ -19,7 +19,7 @@ use nouli_core::{
     protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
     storage::{Ledger, OpenMode, replay::ReplayError, worker::LedgerWorker},
 };
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
 #[derive(Debug, thiserror::Error)]
@@ -314,19 +314,25 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
     if format == Format::Text
         && let Report::Turn(report) = &result.result
     {
-        let color = render::color_enabled(io::stdout().is_terminal());
-        return match present::turn_text(
-            &mut io::stdout().lock(),
+        // The turn is saved, so failing to draw it must not look like a failed
+        // turn: render into a buffer, and fall back to the plain result.
+        let mut text = Vec::new();
+        let drawn = present::turn_text(
+            &mut text,
             report,
             &draft.request.updates,
             &settings.store,
-            color,
+            render::color_enabled(io::stdout().is_terminal()),
             true,
-        ) {
-            Ok(()) => ExitCode::from(render::exit_code(&result)),
-            Err(PresentError::Render(_)) => ExitCode::from(6),
-            Err(PresentError::History(error)) => render_error(args, settings.config.output, error),
-        };
+        );
+        if drawn.is_ok() {
+            let mut stdout = io::stdout().lock();
+            return match stdout.write_all(&text).and_then(|()| stdout.flush()) {
+                Ok(()) => ExitCode::from(render::exit_code(&result)),
+                Err(_) => ExitCode::from(6),
+            };
+        }
+        tracing::warn!("cannot draw the saved turn; writing its plain result");
     }
     write_result(&result, format)
 }
