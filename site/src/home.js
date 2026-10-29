@@ -8,8 +8,8 @@ import session from "./data/repl-session.txt?raw";
 copyButtons();
 playTranscript(document.getElementById("screen"), session, document.getElementById("replay"));
 
-const POSITIONS = [{ x: 0, y: 0 }, { x: 290, y: 0 }, { x: 0, y: 170 }, { x: 145, y: 340 }, { x: 145, y: 510 }];
-const PLAN = 4;
+const POSITIONS = [{ x: 0, y: 0 }, { x: 290, y: 0 }, { x: 0, y: 170 }, { x: 0, y: 340 }, { x: 145, y: 510 }, { x: 145, y: 680 }];
+const PLAN = 5;
 
 const root = document.createElement("div");
 const panel = document.getElementById("panel");
