@@ -50,6 +50,29 @@ impl Default for ExecutionSettings {
     }
 }
 
+/// Connection and execution policy shared by every model at this provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderDefinition {
+    pub protocol: Protocol,
+    pub base_url: String,
+    pub api_key_env: Option<String>,
+    pub max_attempts: Option<u32>,
+    pub attempt_timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub models: BTreeMap<String, ModelSettings>,
+}
+
+/// Optional limits for one exact model ID, not an allowlist of selectable models.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ModelSettings {
+    pub context_budget_tokens: Option<u64>,
+    pub context_window_tokens: Option<u64>,
+    pub reserved_output_tokens: Option<u64>,
+}
+
+/// Complete selected provider/model settings, also used by frozen snapshots.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderProfile {
@@ -68,10 +91,11 @@ pub struct ProviderProfile {
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub default_provider: Option<String>,
+    pub default_model: Option<String>,
     pub output: OutputFormat,
     pub store: Option<PathBuf>,
     pub execution: ExecutionSettings,
-    pub providers: BTreeMap<String, ProviderProfile>,
+    pub providers: BTreeMap<String, ProviderDefinition>,
 }
 
 /// Store/presentation discovery for inspection and saved-run recovery. Provider
@@ -120,14 +144,24 @@ pub enum ConfigError {
     Syntax,
     #[error("invalid configuration setting: {0}")]
     Invalid(&'static str),
+    #[error("no provider profiles are defined")]
+    NoProviders,
     #[error("no provider was selected")]
     MissingProvider,
-    #[error("selected provider profile does not exist")]
+    #[error("no model was selected")]
+    MissingModel,
+    #[error("selected provider does not exist")]
     UnknownProvider,
     #[error("selected credential environment variable is unavailable or empty")]
     MissingCredential,
     #[error("selected credential contains invalid header characters")]
     InvalidCredential,
+    #[error("credential environment variable {variable} is unavailable or invalid")]
+    CredentialSource {
+        variable: String,
+        #[source]
+        source: Box<ConfigError>,
+    },
 }
 
 fn env_name(name: &str) -> bool {
@@ -152,50 +186,91 @@ impl ExecutionSettings {
     }
 }
 
-impl ProviderProfile {
+fn validate_connection(
+    base_url: &str,
+    api_key_env: Option<&str>,
+    max_attempts: Option<u32>,
+    attempt_timeout_seconds: Option<u64>,
+) -> Result<(), ConfigError> {
+    let url = Url::parse(base_url).map_err(|_| ConfigError::Invalid("base_url"))?;
+    let local = match url.host() {
+        Some(url::Host::Domain(host)) => host == "localhost",
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Some(url::Host::Ipv6(ip)) => {
+            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+        }
+        None => false,
+    };
+    if (url.scheme() != "https" && !(url.scheme() == "http" && local))
+        || url.host().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(ConfigError::Invalid("base_url"));
+    }
+    if api_key_env.is_some_and(|name| !env_name(name)) {
+        return Err(ConfigError::Invalid("api_key_env"));
+    }
+    if max_attempts == Some(0) || attempt_timeout_seconds == Some(0) {
+        return Err(ConfigError::Invalid("provider limits"));
+    }
+    Ok(())
+}
+
+impl ModelSettings {
     pub fn validate(&self) -> Result<(), ConfigError> {
-        let url = Url::parse(&self.base_url).map_err(|_| ConfigError::Invalid("base_url"))?;
-        let local = match url.host() {
-            Some(url::Host::Domain(host)) => host == "localhost",
-            Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
-            Some(url::Host::Ipv6(ip)) => {
-                ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
-            }
-            None => false,
-        };
-        if (url.scheme() != "https" && !(url.scheme() == "http" && local))
-            || url.host().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(ConfigError::Invalid("base_url"));
-        }
-        if self.model.trim().is_empty() {
-            return Err(ConfigError::Invalid("model"));
-        }
-        if self
-            .api_key_env
-            .as_ref()
-            .is_some_and(|name| !env_name(name))
-        {
-            return Err(ConfigError::Invalid("api_key_env"));
-        }
         if [
             self.context_budget_tokens,
             self.context_window_tokens,
             self.reserved_output_tokens,
-            self.attempt_timeout_seconds,
         ]
         .into_iter()
         .flatten()
-        .any(|n| n == 0)
-            || self.max_attempts == Some(0)
+        .any(|value| value == 0)
         {
-            return Err(ConfigError::Invalid("profile limits"));
+            return Err(ConfigError::Invalid("model limits"));
         }
         Ok(())
+    }
+}
+
+impl ProviderDefinition {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_connection(
+            &self.base_url,
+            self.api_key_env.as_deref(),
+            self.max_attempts,
+            self.attempt_timeout_seconds,
+        )?;
+        for (model, settings) in &self.models {
+            if model.trim().is_empty() {
+                return Err(ConfigError::Invalid("model name"));
+            }
+            settings.validate()?;
+        }
+        Ok(())
+    }
+}
+
+impl ProviderProfile {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_connection(
+            &self.base_url,
+            self.api_key_env.as_deref(),
+            self.max_attempts,
+            self.attempt_timeout_seconds,
+        )?;
+        if self.model.trim().is_empty() {
+            return Err(ConfigError::Invalid("model"));
+        }
+        ModelSettings {
+            context_budget_tokens: self.context_budget_tokens,
+            context_window_tokens: self.context_window_tokens,
+            reserved_output_tokens: self.reserved_output_tokens,
+        }
+        .validate()
     }
 }
 
@@ -225,9 +300,16 @@ impl Config {
         self.execution.validate()?;
         for (name, profile) in &self.providers {
             if name.trim().is_empty() {
-                return Err(ConfigError::Invalid("profile name"));
+                return Err(ConfigError::Invalid("provider name"));
             }
             profile.validate()?;
+        }
+        if self
+            .default_model
+            .as_ref()
+            .is_some_and(|model| model.trim().is_empty())
+        {
+            return Err(ConfigError::Invalid("default_model"));
         }
         if self
             .default_provider
@@ -270,9 +352,8 @@ mod tests {
         ] {
             assert!(Config::parse(input).is_err());
         }
-        let template = |url: &str| {
-            format!("[providers.local]\nprotocol='typesafe'\nbase_url='{url}'\nmodel='local'")
-        };
+        let template =
+            |url: &str| format!("[providers.local]\nprotocol='typesafe'\nbase_url='{url}'");
         for url in [
             "not a URL",
             "file:///tmp/model",
@@ -294,5 +375,27 @@ mod tests {
         assert!(
             Config::parse(&template("https://example.org").replace("typesafe", "unknown")).is_err()
         );
+    }
+
+    #[test]
+    fn definitions_allow_missing_defaults_but_reject_misplaced_fields_and_invalid_models() {
+        let provider = "[providers.local]\nprotocol='typesafe'\nbase_url='http://localhost:8000'\n";
+        let config = Config::parse(provider).unwrap();
+        assert!(config.default_model.is_none());
+        assert!(config.providers["local"].models.is_empty());
+        for input in [
+            format!("default_model=' '\n{provider}"),
+            format!("{provider}model='a'"),
+            format!("{provider}context_budget_tokens=1024"),
+            format!("{provider}context_window_tokens=1024"),
+            format!("{provider}reserved_output_tokens=128"),
+            format!("{provider}[providers.local.models.' ']\ncontext_budget_tokens=1024"),
+            format!("{provider}[providers.local.models.a]\ncontext_budget_tokens=0"),
+            format!("{provider}[providers.local.models.a]\ncontext_window_tokens=0"),
+            format!("{provider}[providers.local.models.a]\nreserved_output_tokens=0"),
+            format!("{provider}[providers.local.models.a]\nunknown=1"),
+        ] {
+            assert!(Config::parse(&input).is_err(), "accepted {input}");
+        }
     }
 }

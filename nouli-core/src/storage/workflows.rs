@@ -544,8 +544,22 @@ mod tests {
     fn settings(request: &WorkflowRequest) -> Vec<SettingsSnapshot> {
         let config =
             Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap();
-        let mut profile = config.providers["local"].clone();
-        profile.model = "offline".into();
+        let mut profile = config
+            .resolve_snapshot(
+                &crate::config::resolve::RuntimeOverrides {
+                    selection: ModelSelection {
+                        provider: Some("local".into()),
+                        model: Some("offline".into()),
+                    },
+                    context_budget_tokens: Some(4096),
+                    ..Default::default()
+                },
+                &Default::default(),
+                &Default::default(),
+                std::path::Path::new("/unused"),
+            )
+            .unwrap()
+            .profile;
         profile.context_budget_tokens = Some(4096);
         request
             .workflow

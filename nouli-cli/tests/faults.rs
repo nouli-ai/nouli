@@ -95,7 +95,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         "attempt_timeout_seconds = 30",
     );
     text += &format!(
-        "[providers.other]\nprotocol=\"typesafe\"\nbase_url=\"{}\"\nmodel=\"offline\"\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n",
+        "[providers.other]\nprotocol=\"typesafe\"\nbase_url=\"{}\"\n[providers.other.models.offline]\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n",
         other.url
     );
     std::fs::write(config, text).unwrap();

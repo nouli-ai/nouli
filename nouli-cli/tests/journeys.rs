@@ -84,7 +84,7 @@ fn server(protocol: &'static str) -> Server {
 }
 fn configure(home: &Home, jev: &Server, openai: &Server, router: &Server, attempts: u32) {
     let mut text = format!(
-        "default_provider = \"jev\"\n[execution]\nmax_attempts = {attempts}\nattempt_timeout_seconds = 10\n"
+        "default_provider = \"jev\"\ndefault_model = \"fixture-requested-alias\"\n[execution]\nmax_attempts = {attempts}\nattempt_timeout_seconds = 10\n"
     );
     for (name, protocol, endpoint) in [
         ("jev", "typesafe", &jev.url),
@@ -92,7 +92,7 @@ fn configure(home: &Home, jev: &Server, openai: &Server, router: &Server, attemp
         ("router", "openrouter-decisions", &router.url),
     ] {
         text += &format!(
-            "[providers.{name}]\nprotocol = \"{protocol}\"\nbase_url = \"{endpoint}\"\nmodel = \"fixture-requested-alias\"\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n"
+            "[providers.{name}]\nprotocol = \"{protocol}\"\nbase_url = \"{endpoint}\"\n[providers.{name}.models.\"fixture-requested-alias\"]\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n"
         );
     }
     std::fs::write(home.0.join("config.toml"), text).unwrap();

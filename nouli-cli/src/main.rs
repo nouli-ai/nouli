@@ -76,7 +76,7 @@ fn main() -> ExitCode {
                         return render_error(
                             &args,
                             nouli_core::config::OutputFormat::Auto,
-                            nouli_core::engine::EngineError::Config(error).report(),
+                            settings::error(&args, error),
                         );
                     }
                 };
@@ -127,13 +127,13 @@ fn main() -> ExitCode {
                     Err(_) => ExitCode::from(6),
                 };
             }
-            let settings = match settings::load(&args) {
+            let mut settings = match settings::load(&args) {
                 Ok(settings) => settings,
                 Err(error) => {
                     return render_error(
                         &args,
                         nouli_core::config::OutputFormat::Auto,
-                        nouli_core::engine::EngineError::Config(error).report(),
+                        settings::error(&args, error),
                     );
                 }
             };
@@ -164,6 +164,13 @@ fn main() -> ExitCode {
                     );
                 }
             };
+            if let Err(error) = settings.initialize() {
+                return render_error(&args, settings.config.output, error);
+            }
+            let overrides = evaluate::overrides(&args.decision, &settings);
+            if let Err(error) = settings::preflight::turn(&settings, &overrides, &request) {
+                return render_error(&args, settings.config.output, error.report(&settings));
+            }
             let format = match render::resolve(
                 &args.output,
                 settings.config.output,
