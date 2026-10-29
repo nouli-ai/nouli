@@ -63,6 +63,7 @@ mod tests {
             kind: ContextKind::Commitment,
         };
         let input = AttemptInput {
+            standing: Default::default(),
             request: fixture.request,
             manifest: fixture.manifest,
             updates: vec![ContextUpdate::Pin {

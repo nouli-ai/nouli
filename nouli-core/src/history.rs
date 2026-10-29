@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{
     context::{ContextError, ContextUpdate},
-    decision::{ContractError, TurnRequest},
+    decision::{ContractError, Question, TurnRequest},
     identity::{Id, SessionName, SessionSelector},
     outcome::{ProviderIdentity, TurnOutcome},
 };
@@ -51,11 +51,97 @@ pub struct ModelSelection {
     pub model: Option<String>,
 }
 
+/// Changes a turn makes to its session's standing questions. They are saved
+/// on the turn that makes them, so a failed turn leaves the set unchanged.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandingChanges {
+    /// Questions to insert, or to replace by ID.
+    #[serde(default)]
+    pub set: Vec<Question>,
+    /// IDs of standing questions to remove.
+    #[serde(default)]
+    pub drop: Vec<String>,
+}
+
+impl StandingChanges {
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty() && self.drop.is_empty()
+    }
+
+    pub fn validate(&self) -> Result<(), HistoryError> {
+        let mut set = std::collections::HashSet::new();
+        for question in &self.set {
+            question.validate()?;
+            if !set.insert(question.id.as_str()) {
+                return Err(ContractError::Duplicate("standing.set").into());
+            }
+        }
+        let mut dropped = std::collections::HashSet::new();
+        for id in &self.drop {
+            // One ID cannot be both set and dropped, or dropped twice.
+            if id.trim().is_empty() {
+                return Err(ContractError::Empty("standing.drop").into());
+            }
+            if set.contains(id.as_str()) || !dropped.insert(id.as_str()) {
+                return Err(ContractError::Duplicate("standing.drop").into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies the changes to a standing set, keeping the order in which
+    /// questions were first set.
+    pub fn apply(&self, mut base: Vec<Question>) -> Result<Vec<Question>, HistoryError> {
+        for id in &self.drop {
+            let position = base
+                .iter()
+                .position(|question| &question.id == id)
+                .ok_or_else(|| HistoryError::UnknownStanding(id.clone()))?;
+            base.remove(position);
+        }
+        for question in &self.set {
+            match base.iter_mut().find(|known| known.id == question.id) {
+                Some(known) => *known = question.clone(),
+                None => base.push(question.clone()),
+            }
+        }
+        Ok(base)
+    }
+
+    /// The questions a turn asks: the standing set after these changes, then
+    /// the turn's own one-off questions.
+    pub fn effective_turn(
+        &self,
+        base: Vec<Question>,
+        turn: &TurnRequest,
+    ) -> Result<TurnRequest, HistoryError> {
+        let mut questions = self.apply(base)?;
+        if let Some(clash) = turn
+            .questions
+            .iter()
+            .find(|one_off| questions.iter().any(|standing| standing.id == one_off.id))
+        {
+            return Err(HistoryError::StandingCollision(clash.id.clone()));
+        }
+        questions.extend(turn.questions.iter().cloned());
+        let effective = TurnRequest {
+            version: turn.version,
+            state: turn.state.clone(),
+            questions,
+        };
+        effective.validate()?;
+        Ok(effective)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EvaluationRequest {
     pub turn: TurnRequest,
     pub session: SessionSelection,
+    #[serde(default, skip_serializing_if = "StandingChanges::is_empty")]
+    pub standing: StandingChanges,
     #[serde(default)]
     pub updates: Vec<ContextUpdate>,
     #[serde(default)]
@@ -141,6 +227,9 @@ pub struct FinalizedTurn {
     pub request: TurnRequest,
     pub outcome: TurnOutcome,
     pub updates: Vec<ContextUpdate>,
+    /// Standing-question changes made by this turn; empty for 0.1.0 turns.
+    #[serde(default, skip_serializing_if = "StandingChanges::is_empty")]
+    pub standing: StandingChanges,
     pub manifest: EvaluationManifest,
 }
 
@@ -197,6 +286,10 @@ pub enum HistoryError {
     InvalidManifest,
     #[error("invalid evaluation selection or request metadata")]
     InvalidSelection,
+    #[error("cannot drop unknown standing question `{0}`")]
+    UnknownStanding(String),
+    #[error("one-off question `{0}` repeats a standing question")]
+    StandingCollision(String),
     #[error(transparent)]
     Decision(#[from] ContractError),
     #[error(transparent)]
@@ -204,8 +297,11 @@ pub enum HistoryError {
 }
 
 impl EvaluationRequest {
+    /// Questions may be empty here: the session's standing set can supply them.
+    /// The engine rejects an empty effective list after expansion.
     pub fn validate(&self) -> Result<(), HistoryError> {
-        self.turn.validate()?;
+        self.turn.validate_questions()?;
+        self.standing.validate()?;
         for update in &self.updates {
             update.validate()?;
         }
@@ -387,6 +483,7 @@ mod tests {
     #[test]
     fn evaluation_metadata_rejects_empty_sources_ids_and_duplicate_requirements() {
         let mut request = EvaluationRequest {
+            standing: Default::default(),
             turn: turn().request,
             session: SessionSelection::From {
                 sources: vec![],
@@ -406,5 +503,50 @@ mod tests {
         let id = Id::generate();
         request.required_records = vec![id, id];
         assert_eq!(request.validate(), Err(HistoryError::InvalidSelection));
+    }
+
+    #[test]
+    fn standing_changes_allow_empty_turn_questions_but_reject_ambiguous_ids() {
+        let question = turn().request.questions[0].clone();
+        let mut request = EvaluationRequest {
+            standing: Default::default(),
+            turn: TurnRequest {
+                questions: vec![],
+                ..turn().request
+            },
+            session: SessionSelection::New { name: None },
+            updates: vec![],
+            required_records: vec![],
+            model: ModelSelection::default(),
+            request_id: None,
+        };
+        // The standing set may supply the questions, so none is acceptable here.
+        request.validate().unwrap();
+        request.standing.set = vec![question.clone(), question.clone()];
+        assert_eq!(
+            request.validate(),
+            Err(HistoryError::Decision(ContractError::Duplicate(
+                "standing.set"
+            )))
+        );
+        request.standing.set = vec![question.clone()];
+        request.standing.drop = vec![question.id.clone()];
+        assert_eq!(
+            request.validate(),
+            Err(HistoryError::Decision(ContractError::Duplicate(
+                "standing.drop"
+            )))
+        );
+        request.standing.drop = vec!["other".into(), "other".into()];
+        assert!(request.validate().is_err());
+        request.standing.drop = vec!["other".into()];
+        request.validate().unwrap();
+        // Empty changes stay out of the serialized form.
+        request.standing = StandingChanges::default();
+        assert!(
+            !serde_json::to_string(&request)
+                .unwrap()
+                .contains("standing")
+        );
     }
 }

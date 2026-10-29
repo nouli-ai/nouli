@@ -237,6 +237,7 @@ impl<
                         request: evaluation.request.clone(),
                         outcome: ancestor.output.outcome.clone(),
                         updates: evaluation.updates.clone(),
+                        standing: Default::default(),
                         manifest: evaluation.manifest.clone(),
                     });
                 }
@@ -261,6 +262,7 @@ impl<
                     context_base: Some(&definition.base),
                     runtime_only: definition.base.runtime_only,
                     request: &request,
+                    turn: &request.turn,
                     sources: &sources,
                     history: &history,
                     settings: self.frozen.settings[node].clone(),
@@ -846,6 +848,7 @@ mod tests {
     }
     fn ordinary() -> EvaluationRequest {
         EvaluationRequest {
+            standing: Default::default(),
             turn: serde_json::from_str(include_str!(
                 "../../../fixtures/contracts/decision-request.json"
             ))

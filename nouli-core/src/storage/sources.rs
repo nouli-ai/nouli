@@ -173,6 +173,7 @@ mod tests {
             .prepare_attempt(
                 &guard,
                 AttemptInput {
+                    standing: Default::default(),
                     request: fixture.request,
                     updates,
                     manifest: fixture.manifest,
@@ -377,6 +378,7 @@ mod tests {
         let guard = ledger.session_guard(blend.id).unwrap();
         let fixture = fixture();
         let mut input = AttemptInput {
+            standing: Default::default(),
             request: fixture.request,
             manifest: fixture.manifest,
             updates: vec![],
@@ -435,6 +437,7 @@ mod tests {
         let captured = ledger.session_sources(derived.id).unwrap();
         let fixture = fixture();
         let request = EvaluationRequest {
+            standing: Default::default(),
             turn: fixture.request,
             session: SessionSelection::Continue {
                 session: SessionSelector::Id(derived.id),

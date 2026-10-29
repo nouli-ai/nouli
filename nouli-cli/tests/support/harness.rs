@@ -62,6 +62,7 @@ impl Home {
             text: marker.into(),
         });
         let request = EvaluationRequest {
+            standing: Default::default(),
             turn,
             session: selection,
             updates,

@@ -30,3 +30,27 @@ events, and separate mutable attempt-state projections. Existing v1 catalogs
 migrate atomically. The repository stores no credential values and performs no
 HTTP calls. Request replay, process guards, active revision/conflict projection,
 and source branch/blend creation are subsequent task responsibilities.
+
+## Standing questions
+
+A session remembers the questions it keeps asking. The ledger has no separate
+table for them: each finalized turn carries `standing`, the
+`StandingChanges { set, drop }` it made, saved in the same transaction as the
+turn (`AttemptInput.standing` becomes `FinalizedTurn.standing`). Turns written
+by 0.1.0 have no such field and read as having made no changes. A failed,
+interrupted, or retried attempt changes nothing, because only a finalized turn
+carries changes.
+
+A session's standing set is a fold over its own turns' changes in canonical
+ancestry order, on top of a base. `set` inserts a question or replaces the one
+with the same ID in place, and `drop` removes one, so the set keeps the order in
+which questions were first set. A session created from exactly one source (a
+branch) starts from the source's set at the captured frontier, computed the same
+way and recursively, so a branch from an older point inherits the set as it was
+then. A new session, or one created from several sources (a blend), starts with
+no standing questions.
+
+`Ledger::standing_questions(&SessionSelector)` returns the current set, and
+`SessionExport.standing_questions` includes it. Neither the set nor the
+inheritance rule is stored anywhere but in the turns, so they cannot disagree
+with the history.

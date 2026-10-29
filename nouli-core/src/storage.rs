@@ -9,6 +9,7 @@ pub mod replay;
 mod schema;
 pub mod sessions;
 pub mod sources;
+pub mod standing;
 pub mod turns;
 pub mod worker;
 pub mod workflows;

@@ -150,6 +150,7 @@ impl DecisionArgs {
                 };
                 (
                     EvaluationRequest {
+                        standing: Default::default(),
                         turn,
                         session: new_session(),
                         updates: vec![],
@@ -177,6 +178,7 @@ impl DecisionArgs {
                 serde_json::from_value(value).map_err(|_| InputError::Shape)?;
             (
                 EvaluationRequest {
+                    standing: Default::default(),
                     turn: TurnRequest {
                         version: CONTRACT_VERSION,
                         state: self
@@ -269,6 +271,7 @@ mod tests {
         .unwrap();
         turn.questions.truncate(3);
         let request = EvaluationRequest {
+            standing: Default::default(),
             turn,
             session: SessionSelection::New { name: None },
             updates: vec![nouli_core::context::ContextUpdate::Append {

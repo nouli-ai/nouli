@@ -69,6 +69,9 @@ pub struct SessionExport {
     pub workflows: Vec<WorkflowArchive>,
     pub node_intents: Vec<NodeIntent>,
     pub context: ContextView,
+    /// The session's current standing questions, in the order first set.
+    #[serde(default)]
+    pub standing_questions: Vec<crate::decision::Question>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TurnInspection {
@@ -343,6 +346,7 @@ impl Ledger {
             .map(|run| workflows::frozen(&tx, run))
             .collect::<Result<_, _>>()?;
         let context = context(self, &heads, session.id)?;
+        let standing_questions = self.standing_at(session.id, &session.frontier)?;
         tx.commit()
             .map_err(|error| sql_error("finish complete session export", error))?;
         Ok(SessionExport {
@@ -357,6 +361,7 @@ impl Ledger {
             workflows,
             node_intents,
             context,
+            standing_questions,
         })
     }
 }
