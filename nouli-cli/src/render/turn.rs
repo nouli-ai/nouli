@@ -50,12 +50,15 @@ impl Header {
             None => "(not saved)".into(),
         }];
         let mut facts = plural(self.facts, "fact");
-        if self.replaced > 0 {
+        // What was replaced or asked again is a fact about the saved history,
+        // which a turn that was not saved does not touch.
+        let saved = self.turn.is_some();
+        if saved && self.replaced > 0 {
             facts.push_str(&format!(" ({} replaced, kept in history)", self.replaced));
         }
         parts.push(facts);
         parts.push(plural(self.questions, "question"));
-        if self.reasked > 0 {
+        if saved && self.reasked > 0 {
             parts.push(format!("re-asked {}", self.reasked));
         }
         parts.join(" · ")
@@ -481,6 +484,18 @@ mod tests {
             "turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2"
         );
         assert_eq!(header(None).text(), "(not saved) · 1 fact · 2 questions");
+        // An unsaved turn leaves out what only a saved one has.
+        assert_eq!(
+            Header {
+                turn: None,
+                facts: 3,
+                replaced: 1,
+                questions: 3,
+                reasked: 3
+            }
+            .text(),
+            "(not saved) · 3 facts · 3 questions"
+        );
         assert_eq!(
             Header {
                 turn: Some(1),
