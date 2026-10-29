@@ -128,6 +128,18 @@ pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
     }
 }
 
+/// Fills in the v1 `version` of the `turn` object in an evaluation request
+/// value, so a request that wraps a turn may omit it as a bare turn does.
+pub fn default_turn_version(value: &mut Value) -> Result<(), CodecError> {
+    let turn = value
+        .get_mut("turn")
+        .and_then(Value::as_object_mut)
+        .ok_or(CodecError::Shape)?;
+    turn.entry("version")
+        .or_insert(Value::from(CONTRACT_VERSION));
+    Ok(())
+}
+
 /// Replaces each compact-grammar string in a turn's `questions` with the full
 /// question it parses to; objects pass through for the contract to check.
 fn expand_questions(
@@ -224,6 +236,20 @@ mod tests {
                 decode_request(&serde_json::to_vec(&value).unwrap(), InputFormat::Json).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn a_wrapped_turn_defaults_its_version() {
+        let mut value = serde_json::json!({"turn": {"questions": []}});
+        default_turn_version(&mut value).unwrap();
+        assert_eq!(value["turn"]["version"], CONTRACT_VERSION);
+        let mut explicit = serde_json::json!({"turn": {"version": 1, "questions": []}});
+        default_turn_version(&mut explicit).unwrap();
+        assert_eq!(explicit["turn"]["version"], 1);
+        assert_eq!(
+            default_turn_version(&mut serde_json::json!({"turn": 3})),
+            Err(CodecError::Shape)
+        );
     }
 
     #[test]
