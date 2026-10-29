@@ -321,6 +321,7 @@ impl Parts<'_> {
                     "session".into(),
                     serde_json::json!({"mode":"new","name":null}),
                 );
+                codec::default_turn_version(&mut value)?;
                 serde_json::from_value::<EvaluationRequest>(value).map_err(|_| InputError::Shape)?
             } else {
                 let codec::Request::Turn(turn) = codec::request_from_value(value)? else {
@@ -528,6 +529,24 @@ mod tests {
             draft(&["ask", "Trip", "--retry-interrupted"]),
             Err(InputError::Retry)
         ));
+    }
+
+    #[test]
+    fn an_input_file_with_a_turn_wrapper_may_omit_the_turn_version() {
+        let dir = std::env::temp_dir().join(format!("nouli-turns-{}", Id::generate()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("request.json");
+        let question =
+            nouli_core::decision::grammar::parse("transport: How? [train, taxi]").unwrap();
+        let value = serde_json::json!({
+            "turn": {"state": [{"type": "text", "text": "A fact"}], "questions": [question]}
+        });
+        std::fs::write(&path, value.to_string()).unwrap();
+        let drafted = draft(&["add", "Trip", "--input", path.to_str().unwrap()]);
+        std::fs::remove_dir_all(&dir).unwrap();
+        let request = drafted.unwrap().request;
+        assert_eq!(request.turn.version, nouli_core::decision::CONTRACT_VERSION);
+        assert_eq!(request.turn.questions[0].id, "transport");
     }
 
     #[test]
