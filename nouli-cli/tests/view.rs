@@ -35,7 +35,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     home.configure(&server, "typesafe", false);
     for name in ["Travel", "Appointments"] {
         report(home.run([&["new", name, name][..], &QUESTIONS].concat()));
-        report(home.run(["add", name, "More evidence"]));
+        report(home.run([&["add", name, "More evidence"][..], &QUESTIONS].concat()));
     }
     let combined = report(
         home.run(
@@ -64,7 +64,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert!(initial.contains("Expected score:"));
     assert!(!initial.contains('\u{1b}'));
 
-    report(home.run(["add", "Travel", "Later source evidence"]));
+    report(home.run([&["add", "Travel", "Later source evidence"][..], &QUESTIONS].concat()));
     report(home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTIONS].concat()));
     let calls = server.count();
     // Store-only discovery must tolerate removed/invalid provider definitions.

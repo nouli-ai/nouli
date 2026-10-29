@@ -87,11 +87,6 @@ pub(crate) fn turn_text(
         facts,
         replaced,
         questions: report.questions.len(),
-        reasked: report
-            .questions
-            .iter()
-            .filter(|question| previous(&question.id).is_some())
-            .count(),
     };
     turn::write(
         sink,

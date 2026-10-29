@@ -24,7 +24,7 @@ use crate::{
 pub struct AttemptInput {
     pub request: TurnRequest,
     pub updates: Vec<ContextUpdate>,
-    /// Standing-question changes saved with the turn, in the same transaction.
+    /// Standing-question changes a 0.2.0 attempt saved; empty for new attempts.
     #[serde(default, skip_serializing_if = "StandingChanges::is_empty")]
     pub standing: StandingChanges,
     pub manifest: EvaluationManifest,
@@ -138,7 +138,6 @@ impl Ledger {
         let session = guard.session();
         guard.validate(self, session).map_err(write_error)?;
         input.request.validate().map_err(HistoryError::from)?;
-        input.standing.validate()?;
         input.manifest.validate()?;
         for update in &input.updates {
             update.validate().map_err(HistoryError::from)?;

@@ -9,7 +9,6 @@ pub mod replay;
 mod schema;
 pub mod sessions;
 pub mod sources;
-pub mod standing;
 pub mod turns;
 pub mod worker;
 pub mod workflows;
@@ -211,35 +210,6 @@ impl Ledger {
             .commit()
             .map_err(|error| E::from(sql_error("commit", error)))?;
         Ok(result)
-    }
-
-    /// Like [`Ledger::transaction`], but the closure gets the ledger, so it can
-    /// call ledger methods that read what the transaction has written so far.
-    /// An error rolls back everything the closure wrote.
-    pub(crate) fn transaction_with<T, E: From<StorageError>>(
-        &mut self,
-        operation: &'static str,
-        write: impl FnOnce(&mut Self) -> Result<T, E>,
-    ) -> Result<T, E> {
-        if self.mode == OpenMode::ReadOnlyExisting {
-            return Err(StorageError::ReadOnly.into());
-        }
-        self.connection
-            .execute_batch("BEGIN IMMEDIATE")
-            .map_err(|error| E::from(sql_error(operation, error)))?;
-        let result = write(self);
-        let finished = match &result {
-            Ok(_) => self.connection.execute_batch("COMMIT"),
-            Err(_) => self.connection.execute_batch("ROLLBACK"),
-        };
-        match (result, finished) {
-            (Ok(value), Ok(())) => Ok(value),
-            (Ok(_), Err(error)) => {
-                let _ = self.connection.execute_batch("ROLLBACK");
-                Err(E::from(sql_error("commit", error)))
-            }
-            (Err(error), _) => Err(error),
-        }
     }
 
     /// Full supported data is serialized with the same strict TOON codec used

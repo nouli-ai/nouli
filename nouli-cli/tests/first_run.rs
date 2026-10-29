@@ -139,7 +139,12 @@ fn configured_first_run_persists_and_replays_without_requiring_current_profiles(
     ]
     .concat();
     let first = report(command(&home).args(&args).output().unwrap());
-    let continued = report(command(&home).args(["add", "First"]).output().unwrap());
+    let continued = report(
+        command(&home)
+            .args([&["add", "First"][..], &QUESTIONS].concat())
+            .output()
+            .unwrap(),
+    );
     assert_eq!(first.session, continued.session);
     assert_eq!(std::fs::read(&path).unwrap(), original);
     let database = std::fs::read(path.parent().unwrap().join("ledger.sqlite3")).unwrap();

@@ -178,7 +178,14 @@ async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, Evalu
 pub(crate) fn input_error(error: &InputError) -> ErrorReport {
     ErrorReport {
         category: ErrorCategory::Input,
-        code: "invalid_decision_input".into(),
+        code: match error {
+            InputError::NoQuestion => "questions_required",
+            InputError::History(nouli_core::history::HistoryError::Standing) => {
+                "invalid_standing_question"
+            }
+            _ => "invalid_decision_input",
+        }
+        .into(),
         message: error.to_string(),
         retryable: false,
     }

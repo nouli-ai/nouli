@@ -1,5 +1,7 @@
-//! A ledger written by the 0.1.0 binary: three sessions' worth of history with
-//! two completed `--request-id` turns and one request interrupted in flight.
+//! Ledgers written by released binaries. 0.1.0: three sessions' worth of
+//! history with two completed `--request-id` turns and one request interrupted
+//! in flight. 0.2.0: a session whose two turns saved the standing questions
+//! `transport` and `on_time`, and a branch of it with no turns of its own.
 #[path = "support/harness.rs"]
 pub mod harness;
 #[path = "support/loopback.rs"]
@@ -13,10 +15,15 @@ use std::path::Path;
 const INTERRUPTED_ADDRESS: &str = "127.0.0.1:38817";
 
 fn install(home: &Home) {
+    install_version(home, "0.1.0");
+}
+
+fn install_version(home: &Home, version: &str) {
     let store = home.store();
     std::fs::create_dir_all(&store).unwrap();
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../fixtures/contracts/ledger-v0.1.0/ledger.sqlite3");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../fixtures/contracts/ledger-v{version}/ledger.sqlite3"
+    ));
     std::fs::copy(fixture, store.join("ledger.sqlite3")).unwrap();
 }
 
@@ -66,8 +73,6 @@ fn a_ledger_from_0_1_0_opens_lists_views_and_replays_its_completed_requests() {
         String::from_utf8(facts.stdout).unwrap().trim(),
         "no facts yet"
     );
-    let questions = home.run(["questions", "Trip"]);
-    assert!(questions.status.success(), "{questions:?}");
     assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
     // The turns that 0.1.0 completed replay without calling the provider.
     let first = write(&home, "first.json", &first_request());
@@ -94,7 +99,6 @@ fn a_ledger_from_0_1_0_opens_lists_views_and_replays_its_completed_requests() {
     assert!(again.replayed && again.turn != replay.turn);
     assert_eq!(server.count(), 0);
     // The old session takes a new turn in the new format.
-    // 0.1.0 had no standing questions, so the first new turn brings its own.
     let added = report(
         home.run(
             [
@@ -145,4 +149,68 @@ fn an_attempt_interrupted_under_0_1_0_is_reported_and_retried_with_its_saved_set
     assert!(!retried.replayed);
     assert_eq!(saved.count(), 1);
     assert_eq!(server.count(), 0);
+}
+
+#[test]
+fn a_ledger_from_0_2_0_reads_and_never_asks_its_standing_questions_again() {
+    let server = answering();
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    install_version(&home, "0.2.0");
+    let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    for args in [
+        &["view", "Trip", "--format", "text"][..],
+        &["facts", "Branch", "--format", "text"],
+        &["sessions", "export", "Trip", "--json"],
+    ] {
+        let output = home.run(args);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+    }
+    assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
+    // Each call asks only the questions given, never the saved `transport`, and
+    // `on_time` is a new question rather than a clash with the saved one.
+    let asked = |server: &Server| {
+        let calls = server.calls.lock().unwrap();
+        let mut ids: Vec<String> = calls.last().unwrap()["questions"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
+    };
+    for args in [
+        &["add", "Trip", "A taxi is waiting."][..],
+        &["add", "Branch", "The branch has its own fact."],
+        &["whatif", "Trip", "The taxi is gone."],
+    ] {
+        report(home.run([args, &harness::QUESTIONS[..], &["--json"]].concat()));
+        assert_eq!(asked(&server), ["on_time", "quality", "travel"], "{args:?}");
+    }
+    assert_eq!(server.count(), 3);
+    // A request ID that 0.2.0 used is taken: a new command under it conflicts.
+    let used = "01a188ca-9c22-7292-8946-686ab75b22b8";
+    for extra in [&[][..], &["--replace", "1", "The train costs 45 USD."]] {
+        let args = [
+            &[
+                "add",
+                "Trip",
+                "-q",
+                "x: Is it?",
+                "--request-id",
+                used,
+                "--json",
+            ][..],
+            extra,
+        ]
+        .concat();
+        let output = home.run(&args);
+        assert_eq!(output.status.code(), Some(5), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("request_conflict"),
+            "{output:?}"
+        );
+    }
+    assert_eq!(server.count(), 3);
 }

@@ -134,18 +134,11 @@ impl Question {
 
 impl TurnRequest {
     pub fn validate(&self) -> Result<(), ContractError> {
-        self.validate_questions()?;
-        if self.questions.is_empty() {
-            return Err(ContractError::Empty("questions"));
-        }
-        Ok(())
-    }
-
-    /// Validates the version and any questions present, allowing none. A
-    /// request may leave its questions to the session's standing set.
-    pub fn validate_questions(&self) -> Result<(), ContractError> {
         if self.version != CONTRACT_VERSION {
             return Err(ContractError::Version(self.version));
+        }
+        if self.questions.is_empty() {
+            return Err(ContractError::Empty("questions"));
         }
         let mut ids = HashSet::new();
         for question in &self.questions {

@@ -84,7 +84,7 @@ impl RequestOwner {
         Ok(ledger.prepare_attempt(
             &self.session_guard,
             AttemptInput {
-                request: ledger.effective_turn(&self.frozen)?,
+                request: self.frozen.request.turn.clone(),
                 updates: self.frozen.request.updates.clone(),
                 standing: self.frozen.request.standing.clone(),
                 manifest,
@@ -122,6 +122,13 @@ pub enum ReplayError {
 /// explicit CLI provider/model overrides into request.model before this call.
 pub fn fingerprint(request: &EvaluationRequest) -> Result<String, ReplayError> {
     request.validate()?;
+    intent_hash(request)
+}
+
+/// The hash of a request's intent, without checking it against the rules for
+/// new requests, so a request saved by an earlier release still matches its
+/// stored hash. `standing` stays in the intent: 0.2.0 hashes include it.
+fn intent_hash(request: &EvaluationRequest) -> Result<String, ReplayError> {
     #[derive(Serialize)]
     struct Intent<'a> {
         turn: &'a crate::decision::TurnRequest,
@@ -176,7 +183,7 @@ fn reservation(connection: &Connection, key: &str) -> Result<Option<Reservation>
     row.map(|(session, hash, state, frozen, result, recovery)| {
         let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
         let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
-        if frozen.session != session || fingerprint(&frozen.request)? != hash {
+        if frozen.session != session || intent_hash(&frozen.request)? != hash {
             return Err(StorageError::Payload.into());
         }
         Ok(Reservation {
@@ -307,12 +314,9 @@ pub(super) fn validate_reserved_input(
     let row:Option<(String,String,String)>=ledger.connection.query_row("SELECT owner_id,state,frozen_toon FROM request_reservations WHERE request_id=?1 AND session_id=?2",params![key,guard.session.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error|sql_error("validate request owner",error))?;
     let (owner, state, frozen) = row.ok_or(StorageError::Conflict)?;
     let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
-    // The caller's questions stay unexpanded in the frozen request; the attempt
-    // must carry the same expansion the engine executes.
-    let effective = ledger.effective_turn(&frozen).map_err(validation_error)?;
     if owner != guard.owner.to_string()
         || state != "pending"
-        || input.request != effective
+        || input.request != frozen.request.turn
         || input.standing != frozen.request.standing
         || input.updates != frozen.request.updates
         || input.manifest.sources != frozen.sources
@@ -331,15 +335,6 @@ pub(super) fn validate_reserved_input(
         return Err(StorageError::Conflict);
     }
     Ok(())
-}
-
-/// A failure to read the ledger stays a storage failure; only history that no
-/// longer fits the reserved request is a conflict.
-fn validation_error(error: TurnError) -> StorageError {
-    match error {
-        TurnError::Storage(error) | TurnError::Session(SessionError::Storage(error)) => error,
-        _ => StorageError::Conflict,
-    }
 }
 
 impl Ledger {
@@ -479,16 +474,12 @@ impl Ledger {
             }
         };
         let guard = guards::acquire_session(self, id)?;
-        let frozen=self.transaction_with::<_,ReplayError>("accept unique request",|ledger| {
-            let transaction=&ledger.connection;
+        let frozen=self.transaction::<_,ReplayError>("accept unique request",|transaction| {
             let current=if new {Session {id,name,defaults:ModelSelection {provider:Some(settings.profile_name.clone()),model:Some(settings.profile.model.clone())},frontier:vec![],revision:0}} else {read_session(transaction,&SessionSelector::Id(id))?};
             let captured=super::sources::resolve_selection(transaction,&request.session,&current)?;
             if new {insert_session(transaction,&current,&captured).map_err(|error|if current.name.is_some() && matches!(error,StorageError::Sqlite {code:Some(rusqlite::ErrorCode::ConstraintViolation),..}) {ReplayError::Session(SessionError::NameCollision)} else {ReplayError::Storage(error)})?;}
             let frozen=FrozenRequest {request:request.clone(),settings,sources:captured,session:id,frontier:current.frontier,revision:current.revision};
             transaction.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon) VALUES(?1,?2,?3,?4,'pending',?5)",params![id.to_string(),key,hash,guard.owner.to_string(),Ledger::encode_payload(&frozen)?]).map_err(|error|sql_error("reserve unique request",error))?;
-            // The turn's standing changes must apply to the session as it is now;
-            // a mistake rolls back the reservation and any new session with it.
-            ledger.effective_turn(&frozen)?;
             Ok(frozen)
         })?;
         Ok(RequestDecision::Accepted(Box::new(RequestOwner {
@@ -639,75 +630,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fingerprint(&json).unwrap(), fingerprint(&toon).unwrap());
-    }
-
-    #[test]
-    fn reserved_input_validation_keeps_storage_failures_apart_from_conflicts() {
-        assert!(matches!(
-            validation_error(TurnError::Storage(StorageError::Payload)),
-            StorageError::Payload
-        ));
-        assert!(matches!(
-            validation_error(TurnError::Session(SessionError::Storage(
-                StorageError::Busy
-            ))),
-            StorageError::Busy
-        ));
-        assert!(matches!(
-            validation_error(TurnError::History(HistoryError::InvalidSelection)),
-            StorageError::Conflict
-        ));
-    }
-
-    #[test]
-    fn a_standing_change_that_no_longer_applies_leaves_no_reservation_or_session() {
-        let store = Store::new();
-        let mut ledger = store.open();
-        let mut seed = request();
-        seed.request_id = Some("seed".into());
-        let owner = accepted(ledger.accept_request(&seed, settings(&store)).unwrap());
-        finish(&mut ledger, &owner);
-        let source = owner.frozen.session;
-        drop(owner);
-        // A drop of a question the session does not have, as when another
-        // writer removed it between the preview and the acceptance.
-        let mut conflicting = request();
-        conflicting.standing.drop = vec!["not-asked".into()];
-        for selection in [
-            SessionSelection::New { name: None },
-            SessionSelection::From {
-                name: None,
-                sources: vec![SourceSelection {
-                    session: SessionSelector::Id(source),
-                    frontier: None,
-                }],
-            },
-            SessionSelection::Continue {
-                session: SessionSelector::Id(source),
-            },
-        ] {
-            conflicting.session = selection;
-            let result = ledger
-                .accept_request(&conflicting, settings(&store))
-                .map(|_| ());
-            assert!(matches!(result, Err(ReplayError::Turn(_))), "{result:?}");
-            assert_eq!(count(&ledger, "sessions"), 1);
-            assert_eq!(count(&ledger, "request_reservations"), 1);
-            assert!(
-                ledger
-                    .saved_request_by_id("stable-request")
-                    .unwrap()
-                    .is_none()
-            );
-        }
-        // The ledger is not left inside a transaction.
-        let mut valid = request();
-        valid.request_id = Some("next".into());
-        valid.session = SessionSelection::Continue {
-            session: SessionSelector::Id(source),
-        };
-        accepted(ledger.accept_request(&valid, settings(&store)).unwrap());
-        assert_eq!(count(&ledger, "request_reservations"), 2);
     }
 
     #[test]

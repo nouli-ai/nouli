@@ -38,7 +38,7 @@ pub(crate) enum InputError {
     Selection(#[from] SelectionError),
     #[error("--retry-interrupted requires a request ID and persisted evaluation")]
     Retry,
-    #[error("--input cannot be combined with facts, -q, --drop, or --replace")]
+    #[error("--input cannot be combined with facts, -q, or --replace")]
     InputConflict,
     #[error("the request file must not name a session; the command supplies it")]
     SessionInRequest,
@@ -47,6 +47,8 @@ pub(crate) enum InputError {
         position: usize,
         source: GrammarError,
     },
+    #[error("No questions to ask: add one with -q, or in the request's turn.questions")]
+    NoQuestion,
     #[error(transparent)]
     Fact(#[from] FactError),
     #[error(
@@ -59,8 +61,6 @@ pub(crate) enum InputError {
     UnknownFact(usize),
     #[error("fact {0} is replaced more than once")]
     DuplicateReplace(usize),
-    #[error("no question to drop is named")]
-    DropEmpty,
     #[error(transparent)]
     History(#[from] nouli_core::history::HistoryError),
 }

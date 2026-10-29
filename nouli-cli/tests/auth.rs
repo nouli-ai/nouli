@@ -137,7 +137,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     assert!(turn.turn.is_some());
     // Logging in again replaces the key.
     assert!(login(&home, "SECOND_KEY").status.success());
-    report(home.run(["add", "Trip", "More"]));
+    report(home.run([&["add", "Trip", "More"][..], &QUESTIONS].concat()));
     assert_eq!(
         server.authorizations.lock().unwrap()[1].as_deref(),
         Some("Bearer SECOND_KEY")

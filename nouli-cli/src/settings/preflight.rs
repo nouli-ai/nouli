@@ -60,12 +60,9 @@ fn snapshot(
 fn validate(
     settings: &Settings,
     snapshot: SettingsSnapshot,
-    request: Option<&nouli_core::decision::TurnRequest>,
+    request: &nouli_core::decision::TurnRequest,
 ) -> Result<(), PreflightError> {
-    if let Some(request) = request {
-        ResolvedLimits::for_profile(&snapshot.profile)?
-            .validate_request(request, Modality::Text)?;
-    }
+    ResolvedLimits::for_profile(&snapshot.profile)?.validate_request(request, Modality::Text)?;
     snapshot
         .with_credentials(|source| settings.credentials.lookup(source))
         .map_err(config)?;
@@ -82,14 +79,10 @@ pub(crate) fn turn(
     if existing(settings)? {
         return Ok(());
     }
-    // Without a ledger there are no standing questions, so the turn's own and
-    // its standing changes are everything it asks. Other mistakes in the
-    // request surface when the engine expands it against the session.
-    let asked = request.standing.effective_turn(vec![], &request.turn).ok();
     validate(
         settings,
         snapshot(settings, overrides, &request.model)?,
-        asked.as_ref(),
+        &request.turn,
     )
 }
 pub(crate) fn workflow(
@@ -107,7 +100,7 @@ pub(crate) fn workflow(
         validate(
             settings,
             snapshot(settings, &node_overrides, &run_model)?,
-            Some(&node.turn),
+            &node.turn,
         )?;
     }
     Ok(())

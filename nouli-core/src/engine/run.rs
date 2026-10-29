@@ -9,7 +9,6 @@ use crate::{
         builder::{ContextBuilder, ContextInput, RequiredItem},
         compact::Staged,
     },
-    decision::TurnRequest,
     history::{EvaluationManifest, EvaluationRequest, FinalizedTurn, SourcePoint},
     identity::Id,
     limits::{LimitError, ResolvedLimits, count::TokenCounter},
@@ -30,8 +29,6 @@ pub(super) struct RunInput<'a> {
     pub context_base: Option<&'a crate::history::base::ContextBase>,
     pub runtime_only: bool,
     pub request: &'a EvaluationRequest,
-    /// The questions to ask: the request's turn after standing expansion.
-    pub turn: &'a TurnRequest,
     pub sources: &'a [SourcePoint],
     pub history: &'a [FinalizedTurn],
     pub settings: SettingsSnapshot,
@@ -216,7 +213,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     runtime_only: input.runtime_only,
                     history: input.history,
                     sources: input.sources,
-                    request: input.turn,
+                    request: &input.request.turn,
                     updates: &input.request.updates,
                     required: &required,
                     workflow_base: &[],
@@ -248,11 +245,11 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             recorder.begin(plan.manifest.clone()).await?;
             let dispatched = tokio::select! {biased;
                 _=cancel.cancelled()=>Err(ProviderError::Transport(TransportError::Canceled)),
-                result=tokio::time::timeout(timeout,self.provider.attempt(&settings,input.turn,&plan.manifest.context_toon,&self.counter,cancel))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
+                result=tokio::time::timeout(timeout,self.provider.attempt(&settings,&input.request.turn,&plan.manifest.context_toon,&self.counter,cancel))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
             };
             let error = match dispatched {
                 Ok(outcome) => {
-                    if let Err(error) = outcome.validate(input.turn) {
+                    if let Err(error) = outcome.validate(&input.request.turn) {
                         ProviderError::Contract(error)
                     } else {
                         return recorder.succeed(outcome, plan.manifest).await;

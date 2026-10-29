@@ -222,7 +222,6 @@ mod tests {
             sources: vec![],
             attempts: vec![],
             requests: vec![],
-            standing_questions: vec![],
             workflow_definitions: vec![],
             workflows: vec![],
             node_intents: vec![],

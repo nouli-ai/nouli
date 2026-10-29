@@ -45,7 +45,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             } => Some(sources.clone()),
             _ => return Err(EngineError::EphemeralOptions),
         };
-        let (sources, history, base) = if let Some(selections) = selections {
+        let (sources, history) = if let Some(selections) = selections {
             ledger
                 .ok_or(EngineError::EphemeralStore)?
                 .call(move |ledger| {
@@ -54,15 +54,12 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     }
                     let sources = ledger.resolve_sources(&selections)?;
                     let history = ledger.ancestry(&sources)?;
-                    let base = ledger.source_standing(&sources)?;
-                    Ok::<_, EngineError>((sources, history, base))
+                    Ok::<_, EngineError>((sources, history))
                 })
                 .await??
         } else {
-            (vec![], vec![], vec![])
+            (vec![], vec![])
         };
-        // Standing changes apply in memory only; nothing is saved.
-        let turn = request.standing.effective_turn(base, &request.turn)?;
         let settings = input.config.resolve_snapshot(
             input.overrides,
             &request.model,
@@ -75,7 +72,6 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     context_base: None,
                     runtime_only: true,
                     request,
-                    turn: &turn,
                     sources: &sources,
                     history: &history,
                     settings,
@@ -88,7 +84,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             .await?
         {
             Executed::Ephemeral { outcome, manifest } => Ok(EphemeralResult {
-                request: turn.clone(),
+                request: request.turn.clone(),
                 outcome: *outcome,
                 manifest: *manifest,
             }),
@@ -107,7 +103,6 @@ mod tests {
         },
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
         data::{Data, Input},
-        decision::Question,
         engine::execution::{DecisionProvider, TokioClock},
         history::{EvaluationRequest, Representation, SourceSelection},
         identity::{SessionName, SessionSelector},
@@ -324,82 +319,6 @@ mod tests {
         ));
         assert_eq!(engine.provider.calls.lock().unwrap().len(), 1);
         assert!(!store.0.exists());
-    }
-    #[tokio::test]
-    async fn ephemeral_runs_read_the_source_standing_set_and_apply_changes_in_memory_only() {
-        let store = Store::new();
-        let writer = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
-            .await
-            .unwrap();
-        let overrides = RuntimeOverrides::default();
-        let config = config();
-        let cancel = CancellationToken::new();
-        let all = request().turn.questions;
-        let mut seed = request();
-        seed.turn.questions = all[3..].to_vec();
-        seed.standing.set = all[..3].to_vec();
-        let saved = engine(false)
-            .evaluate(
-                &writer,
-                input(&seed, &config, &overrides, &store.0),
-                |_| None,
-                &cancel,
-            )
-            .await
-            .unwrap();
-        let readonly = LedgerWorker::open(store.0.clone(), OpenMode::ReadOnlyExisting)
-            .await
-            .unwrap();
-        let before = snapshot(&store.0);
-        let mut what_if = request();
-        what_if.turn.questions = all[3..].to_vec();
-        what_if.standing.set = vec![Question {
-            prompt: "Will it be late?".into(),
-            ..all[1].clone()
-        }];
-        what_if.session = SessionSelection::From {
-            sources: vec![SourceSelection {
-                session: SessionSelector::Id(saved.turn.session),
-                frontier: None,
-            }],
-            name: None,
-        };
-        let result = engine(false)
-            .evaluate_ephemeral(
-                Some(&readonly),
-                input(&what_if, &config, &overrides, &store.0),
-                |_| None,
-                &cancel,
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.request.questions.len(), 4);
-        assert_eq!(result.request.questions[0], all[0]);
-        assert_eq!(result.request.questions[1].prompt, "Will it be late?");
-        assert!(snapshot(&store.0) == before, "nothing may be saved");
-        let session = saved.turn.session;
-        let current = readonly
-            .call(move |ledger| ledger.standing_questions(&SessionSelector::Id(session)))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(current, all[..3]);
-        // Dropping an unknown ID is still an error in memory.
-        what_if.standing.set.clear();
-        what_if.standing.drop = vec!["nope".into()];
-        assert!(matches!(
-            engine(false)
-                .evaluate_ephemeral(
-                    Some(&readonly),
-                    input(&what_if, &config, &overrides, &store.0),
-                    |_| None,
-                    &cancel
-                )
-                .await,
-            Err(EngineError::History(
-                crate::history::HistoryError::UnknownStanding(_)
-            ))
-        ));
     }
     #[tokio::test]
     async fn readonly_sources_survive_success_refusal_failure_reduction_and_temporary_updates() {
