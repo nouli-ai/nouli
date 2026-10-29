@@ -10,6 +10,12 @@
   - Do not directly edit cargo.toml to add dependencies.
   - Let cargo pick the version unless a certain version is strictly necessary.
 
+## Architecture Decision Records
+
+- This repository records architectural decisions in [docs/adr/](docs/adr/). Read relevant ADRs before changing architecture or established design choices.
+- Record significant architectural decisions in `docs/adr/NNNN-short-title.md`, using the next sequential four-digit number. Include the context, decision, considered alternatives, and consequences; follow the existing ADR format with `status` and `date` frontmatter.
+- When replacing an accepted decision, add a new ADR and link the records to show which decision supersedes the earlier one.
+
 ## Build, Test, and Development Commands
 
 No build or development commands are runnable in the current checkout. Once `Cargo.toml` and crate sources exist, run these from the workspace root:
