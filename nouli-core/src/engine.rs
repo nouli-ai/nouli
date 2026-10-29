@@ -709,6 +709,55 @@ mod tests {
         assert_eq!(engine.provider.calls.lock().unwrap().len(), 2);
     }
     #[tokio::test]
+    async fn a_replaced_fact_reaches_model_context_as_the_replacement_only() {
+        use crate::context::facts;
+        let store = Store::new();
+        let mut ledger = store.open();
+        let engine = make_engine(Fake::default());
+        let config = config();
+        let cancel = CancellationToken::new();
+        let mut first = request();
+        first.turn.state = vec![];
+        first.updates = vec![
+            facts::append("the flight costs ORIGINALPRICE").unwrap(),
+            facts::append("the train takes four hours").unwrap(),
+        ];
+        let first = run(&engine, &mut ledger, &config, &first, false, &cancel)
+            .await
+            .unwrap();
+        let session = first.turn.session;
+        let listed = ledger
+            .worker
+            .inspect(|ledger| ledger.facts(&SessionSelector::Id(session)))
+            .unwrap();
+        let mut second = request();
+        second.turn.state = vec![];
+        second.session = continue_session(session);
+        second.updates =
+            vec![facts::replace(&listed[0], "the flight costs REPLACEMENTPRICE").unwrap()];
+        run(&engine, &mut ledger, &config, &second, false, &cancel)
+            .await
+            .unwrap();
+        let mut third = request();
+        third.turn.state = vec![];
+        third.session = continue_session(session);
+        let third = run(&engine, &mut ledger, &config, &third, false, &cancel)
+            .await
+            .unwrap();
+        let calls = engine.provider.calls.lock().unwrap();
+        let evidence = &calls[2].evidence;
+        assert_eq!(evidence, &third.turn.manifest.context_toon);
+        assert!(evidence.contains("REPLACEMENTPRICE"));
+        assert!(!evidence.contains("ORIGINALPRICE"));
+        assert!(evidence.contains("the train takes four hours"));
+        // The original text is still in the ledger's history.
+        let original = ledger
+            .worker
+            .inspect(|ledger| ledger.turn(first.turn.id))
+            .unwrap();
+        assert!(format!("{:?}", original.updates).contains("ORIGINALPRICE"));
+    }
+    #[tokio::test]
     async fn retries_record_each_actual_attempt_without_provider_model_fallback() {
         let store = Store::new();
         let mut ledger = store.open();

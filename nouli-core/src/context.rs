@@ -2,6 +2,7 @@
 
 pub mod builder;
 pub mod compact;
+pub mod facts;
 pub mod projection;
 
 use std::collections::HashSet;

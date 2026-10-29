@@ -176,6 +176,14 @@ fn context_entry(
         })?,
     })
 }
+fn is_replaced_fact(entry: &ContextEntry) -> bool {
+    let value = entry.value.value();
+    entry.kind == EntryKind::Context
+        && value["active"] == false
+        && value["record"]["key"]
+            .as_str()
+            .is_some_and(|key| key.starts_with(super::facts::KEY_PREFIX))
+}
 fn append_base(
     base: &crate::history::base::ContextBase,
     active: &[super::projection::ActiveRecord],
@@ -476,6 +484,14 @@ impl ContextBuilder {
                 )?;
             }
             entry.protected = true;
+        }
+        // A replaced fact is evicted from model context so the model sees only
+        // the current text. The ledger keeps it, and an explicit requirement
+        // still includes it.
+        for entry in &mut entries {
+            if !entry.protected && is_replaced_fact(entry) {
+                entry.representation = Representation::Omitted;
+            }
         }
         let mandatory = render(&input, &entries, true)?;
         if let Err(error) = limits.assess(&mandatory, input.request, counter) {
