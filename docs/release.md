@@ -41,7 +41,7 @@ If you installed an archive manually, remove that copy from your PATH before swi
 curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
 ```
 
-The script selects the archive for Linux x86_64 or ARM64, verifies its SHA-256 checksum, and installs `nouli` into `~/.local/bin`. It also supports Apple silicon macOS. Linux requires GNU libc 2.38 or newer; musl-based systems such as Alpine need a source build. The published `0.1.0` downloads are ARM64-only; Linux x86_64 requires a newer release.
+The script selects the archive for Linux x86_64 or ARM64, verifies its SHA-256 checksum, and installs `nouli` into `~/.local/bin`. It also supports Apple silicon macOS. Linux requires GNU libc 2.38 or newer; musl-based systems such as Alpine need a source build.
 
 Add `~/.local/bin` to your PATH if your shell cannot find the command:
 

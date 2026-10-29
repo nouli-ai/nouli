@@ -7,71 +7,101 @@
 
 **Nouli is a multi-turn decision harness: it runs decision models over many turns.**
 
-A decision model doesn't write text. You give it facts and a question with a fixed set of answers, and it returns the answer it picks along with a probability. That makes it useful for real decisions, but each call is stateless. The model forgets everything once it answers.
-
-Nouli adds the parts a single model call doesn't have, much as an agent harness wraps an LLM:
-
-- **Memory across turns.** A session records every fact, question, and answer. When new information arrives, you add only that information, and the model decides with the whole history in view.
-- **Typed answers.** Every question has a defined answer space: `choice` (pick an option), `noul` (probability of yes), or `score` (a position on an ordered rubric). Results are probabilities, not prose.
-- **Branching and blending.** Start a new session from one history to explore an alternative, or combine several independent histories into one decision.
-- **An interactive mode.** `nouli open recall` opens a prompt on a session: type facts, define questions with `?id: prompt [a, b]`, and press return on an empty line to ask. `/whatif`, `/branch`, and `/blend` explore alternatives.
-- **A durable record.** Sessions are stored locally, so you can trace any decision back to the facts and earlier answers it was based on.
-
-Nouli ships as a CLI and a Rust library.
+A decision model doesn't write text. You give it facts and a question with a fixed set of answers, and it returns a probability for each answer. That makes it useful for real decisions, but each call is stateless: the model forgets everything once it answers. Nouli gives it a memory. A session keeps every fact, question, and answer, so when something changes you add only what is new, and the model decides again with the whole history in view. Nouli ships as a CLI and a Rust library.
 
 ## Install
 
-On **macOS (Apple silicon)**, use Homebrew:
+On **macOS (Apple silicon)**:
 
 ```sh
 brew install standing-desks/tap/nouli
 ```
 
-On **Linux**, use the download installer:
+On **Linux**, or on macOS without Homebrew:
 
 ```sh
 curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
 ```
 
-The script installs into `~/.local/bin` and also works on Apple silicon macOS. Linux needs glibc 2.38 or newer. The `0.1.0` downloads are ARM64-only; Linux x86_64 requires a newer release.
+The script installs into `~/.local/bin` after checking the download's checksum. Linux builds are for ARM64 and x86_64 and need glibc 2.38 or newer. See [installation and upgrades](docs/release.md) for choosing a version or directory and for switching from a Cargo installation.
 
-Run `nouli --version`, then [configure a provider](https://standing-desks.github.io/nouli/guide/#provider). See [installation and upgrades](docs/release.md) for changing the install directory, selecting a version, release downloads, and switching from a Cargo installation.
-
-## Example: a decision that changes when new facts arrive
-
-A food distributor is handling a peanut butter recall. It shipped 30 affected snack boxes to each of two customers, Harbor and Summit. Below are two turns of the same session.
-
-### Turn 1: start a session
-
-Start a session named `recall`, add what is known so far, and ask a question. The question is written on one line, with its options in brackets:
+Then define a provider in `~/.nouli/config.toml` ([how](https://standing-desks.github.io/nouli/guide/#provider)) and log in once. Nouli asks for the key without showing it and keeps it in a file only you can read:
 
 ```sh
-nouli new recall \
-  'Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used
-in 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30.
-Harbor acknowledges the recall notice and confirms all 30 are isolated. Summit
-has not responded. There were no other shipments of this batch.' \
-  -q 'customers: Which customer needs a response follow-up first? [Contact Harbor,
-    Contact Summit,
-    Contact both customers again]'
+nouli auth login typesafe
+```
+
+## Open a session
+
+`nouli open trip` opens a prompt on a session. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed:
+
+```text
+$ nouli open trip
+new session "trip" · /help for commands
+
+trip › The train costs 40 USD and arrives 30 minutes before the meeting.
+trip › A taxi costs 70 USD and also arrives in time.
+trip › ?transport: How should I get to the meeting? [Take the train, Take a taxi]
+  turn 1 · 2 facts · 1 question
+  transport   ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
+trip › The train has been cancelled.
+trip › ?on_time: Will I get to the meeting on time?
+  turn 2 · 1 fact · 2 questions · re-asked 1
+  transport     Take the train                   ██▎                  0.11
+              ▶ Take a taxi                      █████████████████▊   0.89   → was Take the tr… 1.00
+  on_time       yes                              ███████▎             0.36
+trip › /replace 3 The train is running 10 minutes late but still arrives 20 minutes before the meeting.
+  queued: replace fact 3
+trip › ↵
+  turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2
+  transport   ▶ Take the train                   ███████████▎         0.56   → was Take a taxi 0.89
+                Take a taxi                      ████████▊            0.44
+  on_time       yes                              █████████████▎       0.66   → was 0.36
+trip › /whatif My budget for the trip is 50 USD.
+  (not saved) · 1 fact · 2 questions
+  transport   ▶ Take the train                   ███████████████████▍ 0.97   → was Take the tr… 0.56
+                Take a taxi                      ▋                    0.03
+  on_time       yes                              ██████████████▋      0.73   → was 0.66
+trip › /quit
+  bye
+```
+
+- **Facts wait for a question.** Plain lines are facts. A `?` line sends them with the question as one turn.
+- **Questions stay.** The second turn asked `transport` again without retyping it, and `→ was` shows how each answer moved.
+- **Corrections keep history.** `/replace 3` gave fact 3 new text. The model sees only the new text, and the old one stays in the session. Return on an empty line asks the questions again.
+- **What-ifs save nothing.** `/whatif` asks with one more fact and leaves the session as it was.
+
+A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/branch NAME` starts a new session from this one, `/blend A B as NAME` combines sessions, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
+
+## Use it from scripts and agents
+
+Everything you can do at the prompt is also a command. This is the same session:
+
+```sh
+nouli new trip 'The train costs 40 USD and arrives 30 minutes before the meeting.' \
+  'A taxi costs 70 USD and also arrives in time.' \
+  -q 'transport: How should I get to the meeting? [Take the train, Take a taxi]'
+nouli add trip 'The train has been cancelled.' -q 'on_time: Will I get to the meeting on time?'
+nouli add trip --replace 3 'The train is running 10 minutes late but still arrives 20 minutes before the meeting.'
+nouli whatif trip 'My budget for the trip is 50 USD.'
+nouli facts trip
 ```
 
 ```text
-  turn 1 · 1 fact · 1 question
-  customers     Contact Harbor                                        0.00
-              ▶ Contact Summit                   ████████████████████ 1.00
-                Contact both customers again                          0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6d86-769b-9683-3acd7b62d06c
+   1  The train costs 40 USD and arrives 30 minutes before the meeting.
+   2  A taxi costs 70 USD and also arrives in time.
+   3  The train is running 10 minutes late but still arrives 20 minutes before the meeting.   (replaced; was: The train has been cancelled.)
 ```
 
-Harbor has isolated its boxes and Summit hasn't replied, so the model picks Summit. Every option's probability is shown, and `▶` marks the answer.
+`nouli ask trip` asks the session's questions again, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
-### Turn 2: add only what is new
+## A longer example
 
-Later that morning, Summit replies. Continue the same session with `add`. You don't repeat the earlier facts because Nouli already has them, and a question with the same ID takes the place of the one the session was asking:
+A food distributor handles a peanut butter recall. It keeps the recall scope, its warehouse stock, and its customers in separate sessions, then blends them into one coordinated response. When a customer reports that 12 affected boxes were already sold, it adds that one fact and builds a revised response. The turn that changed:
 
 ```sh
-nouli add recall \
+nouli add recall-customers \
   'Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
 notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to
 end customers. Whether those buyers have been notified is unknown. This
@@ -84,36 +114,24 @@ isolated.' \
 
 ```text
   turn 2 · 1 fact · 1 question · re-asked 1
-  customers     Confirm acknowledgment only                           0.00
-              ▶ Escalate the 12 sold boxes and … ████████████████████ 1.00
-                Treat the customer response as …                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6ddf-7142-b42f-006a3796a594
+  customers     Confirm acknowledgment only      ▎                    0.01
+              ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
+                Treat the customer response as … ▎                    0.01
 ```
 
-The session is the same and the turn is new. The model decides using what it learned in turn 1: SNACK-A is the affected batch, Summit received 30 boxes, and Harbor's boxes are already isolated. The 12 boxes that reached end customers make escalation necessary. Turn 1 stays in the history, and you can inspect it at any time:
-
-```sh
-nouli view recall
-nouli facts recall
-```
-
-Questions stay with the session, so a later `nouli ask recall` or an empty line in the interactive mode, `nouli open recall`, asks them again. These outputs come from a recorded run. Answers and probabilities depend on your model.
-
-### Going further
-
-The [full recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) keeps going. It records the recall scope and warehouse stock in separate sessions, then blends them into a coordinated response with `new --from`. When Summit's reply arrives, it builds a revised response. Each walkthrough ends with the decision graph that `nouli view recall-response-updated --mermaid` prints:
+`nouli view recall-response-updated --mermaid` prints the whole history behind the final response, and GitHub draws it:
 
 ```mermaid
-%% Nouli session: recall-response-updated (01a18651-c1e2-729b-9c2a-25b69d0de3d3)
+%% Nouli session: recall-response-updated (01a187b5-e29d-775b-be9b-429228ad43ff)
 %%{init: {"flowchart": {"wrappingWidth": 320}}}%%
 flowchart TD
-  t0["<b>recall-scope · 01a18651-c150</b><br/><br/>How should a jar be matched to this recall?<br/><br/><b>▶ Match the product and both lot-code conditions · 1</b><br/>Use the product name alone · 0<br/>Request a clearer recall notice · 0"]
-  t1["<b>recall-stock · 01a18651-c15f</b><br/><br/>Can every jar in this inventory be matched to an identifiable lot?<br/><br/><b>▶ P(yes)=0.06</b>"]
-  t2["<b>recall-stock-plan · 01a18651-c180</b><br/><br/>What should the warehouse do with its stock?<br/><br/><b>▶ Quarantine matching jars and hold unreadable codes for identification · 0.99</b><br/>Hold every jar pending further review · 0<br/>Identify unreadable codes before choosing any stock action · 0.01"]
-  t3["<b>recall-customers · 01a18651-c16e</b><br/><br/>Which customer needs a response follow-up first?<br/><br/>Contact Harbor · 0<br/><b>▶ Contact Summit · 1</b><br/>Contact both customers again · 0"]
-  t4["<b>recall-customers · 01a18651-c1c0</b><br/><br/>What is the next action for Summit?<br/><br/>Confirm acknowledgment only · 0<br/><b>▶ Escalate the 12 sold boxes and verify downstream notification · 1</b><br/>Treat the customer response as complete · 0"]
-  t5["<b>recall-outreach-updated · 01a18651-c1d5</b><br/><br/>What customer follow-up is needed now?<br/><br/>Ask Summit to acknowledge the notice and account for its boxes · 0<br/>Verify that both customers have isolated all affected boxes · 0<br/><b>▶ Escalate reported sales to the recall lead and verify downstream notification · 1</b>"]
-  t6["<b>recall-response-updated · 01a18651-c1f0 [latest]</b><br/><br/>Which response should the recall lead coordinate?<br/><br/>Coordinate warehouse holds only · 0<br/>Coordinate warehouse holds and missing customer responses · 0.01<br/><b>▶ Coordinate warehouse holds and escalation of sales to end customers · 0.99</b>"]
+  t0["<b>recall-scope · 01a187b5-e23</b><br/><br/>How should a jar be matched to this recall?<br/><br/><b>▶ Match the product and both lot-code conditions · 1</b><br/>Use the product name alone · 0<br/>Request a clearer recall notice · 0"]
+  t1["<b>recall-stock · 01a187b5-e24</b><br/><br/>Can every jar in this inventory be matched to an identifiable lot?<br/><br/><b>▶ P(yes)=0.07</b>"]
+  t2["<b>recall-stock-plan · 01a187b5-e26</b><br/><br/>What should the warehouse do with its stock?<br/><br/><b>▶ Quarantine matching jars and hold unreadable codes for identification · 1</b><br/>Hold every jar pending further review · 0<br/>Identify unreadable codes before choosing any stock action · 0"]
+  t3["<b>recall-customers · 01a187b5-e25</b><br/><br/>Which customer needs a response follow-up first?<br/><br/>Contact Harbor · 0<br/><b>▶ Contact Summit · 1</b><br/>Contact both customers again · 0"]
+  t4["<b>recall-customers · 01a187b5-e28</b><br/><br/>What is the next action for Summit?<br/><br/>Confirm acknowledgment only · 0.01<br/><b>▶ Escalate the 12 sold boxes and verify downstream notification · 0.98</b><br/>Treat the customer response as complete · 0.01"]
+  t5["<b>recall-outreach-updated · 01a187b5-e29</b><br/><br/>What customer follow-up is needed now?<br/><br/>Ask Summit to acknowledge the notice and account for its boxes · 0<br/>Verify that both customers have isolated all affected boxes · 0<br/><b>▶ Escalate reported sales to the recall lead and verify downstream notification · 1</b>"]
+  t6["<b>recall-response-updated · 01a187b5-e2a [latest]</b><br/><br/>Which response should the recall lead coordinate?<br/><br/>Coordinate warehouse holds only · 0<br/>Coordinate warehouse holds and missing customer responses · 0<br/><b>▶ Coordinate warehouse holds and escalation of sales to end customers · 1</b>"]
   t0 --> t2
   t1 --> t2
   t3 --> t4
@@ -125,13 +143,13 @@ flowchart TD
   class t6 latest
 ```
 
-More [examples](https://standing-desks.github.io/nouli/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning.
+The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) goes through every step, and more [examples](https://standing-desks.github.io/nouli/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning. Each one shows its steps at the prompt or as commands.
 
 ## Documentation
 
-- [User guide](https://standing-desks.github.io/nouli/guide/): setup, sessions, branching, blending, and workflows
+- [User guide](https://standing-desks.github.io/nouli/guide/): setup, interactive mode, sessions, branching, blending, and workflows
 - [Configuration](docs/configuration.md): providers, models, credentials (`nouli auth login`), and storage
-- [CLI guide](docs/cli.md): sessions, facts, standing questions, request files, branching, and blending
+- [CLI guide](docs/cli.md): the interactive prompt, sessions, facts, standing questions, request files, branching, and blending
 - [Question types](docs/contracts/decisions.md): `choice`, `noul`, and `score`
 - [Output formats](docs/output.md): text, JSON, JSONL, and TOON
 - [Workflows](docs/cli-workflows.md): dependent decisions and resuming interrupted runs
