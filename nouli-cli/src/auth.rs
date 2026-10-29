@@ -137,9 +137,11 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
                     return Err(settings.config_error(ConfigError::UnknownProvider));
                 }
                 let source = key_source(login)?;
-                let mut entries = store::read(&path).map_err(|error| error.report())?;
-                entries.insert(login.provider.clone(), AuthEntry::ApiKey(source.clone()));
-                store::write(&path, &entries).map_err(|error| error.report())?;
+                store::update(&path, |entries| {
+                    entries.insert(login.provider.clone(), AuthEntry::ApiKey(source.clone()));
+                    ((), true)
+                })
+                .map_err(|error| error.report())?;
                 Ok((
                     "Stored credential",
                     serde_json::json!({
@@ -151,11 +153,11 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
                 ))
             }
             Command::Logout { provider } => {
-                let mut entries = store::read(&path).map_err(|error| error.report())?;
-                let removed = entries.remove(provider);
-                if removed {
-                    store::write(&path, &entries).map_err(|error| error.report())?;
-                }
+                let removed = store::update(&path, |entries| {
+                    let removed = entries.remove(provider);
+                    (removed, removed)
+                })
+                .map_err(|error| error.report())?;
                 Ok((
                     "Removed credential",
                     serde_json::json!({"version": 1, "provider": provider, "removed": removed}),

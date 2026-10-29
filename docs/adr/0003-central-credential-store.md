@@ -43,6 +43,9 @@ itself: it receives explicit paths and an injected credential lookup.
 - **File safety.** The directory is created with mode 0700 and the file with
   0600 from the moment it exists: the writer opens a temporary file in the same
   directory with mode 0600, flushes and syncs it, and renames it into place.
+  `auth login` and `auth logout` hold an exclusive lock on a sibling
+  `auth.toml.lock` (mode 0600) from the read to the rename, so concurrent
+  commands do not lose each other's entries.
   Reading refuses a file that is group- or world-accessible, not owned by the
   current user, or a symbolic link, with `auth_store_insecure`, naming the path
   and the fix (`chmod 600`). Credential values never appear in errors, `Debug`

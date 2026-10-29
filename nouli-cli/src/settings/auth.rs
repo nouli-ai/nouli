@@ -143,6 +143,42 @@ pub(crate) fn write(path: &Path, store: &AuthStore) -> Result<(), AuthFileError>
     Ok(())
 }
 
+/// Reads the store, applies `change`, and writes the result back when `change`
+/// says it modified the store, all under an exclusive lock on a sibling
+/// `auth.toml.lock`, so two commands cannot overwrite each other's entries. The
+/// lock is released when this returns.
+pub(crate) fn update<T>(
+    path: &Path,
+    change: impl FnOnce(&mut AuthStore) -> (T, bool),
+) -> Result<T, AuthFileError> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let failed = || AuthFileError::Write { path: path.into() };
+    let parent = path.parent().ok_or_else(failed)?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(parent)
+        .map_err(|_| failed())?;
+    let mut lock_name = path.file_name().ok_or_else(failed)?.to_owned();
+    lock_name.push(".lock");
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(nix::libc::O_NOFOLLOW)
+        .open(parent.join(lock_name))
+        .map_err(|_| failed())?;
+    lock.lock().map_err(|_| failed())?;
+    let mut store = read(path)?;
+    let (result, modified) = change(&mut store);
+    if modified {
+        write(path, &store)?;
+    }
+    Ok(result)
+}
+
 /// Runs a command source directly, without a shell, and returns its trimmed
 /// output. Its error output is discarded and its output is never reported.
 pub(crate) fn run_command(argv: &[String], timeout: Duration) -> Option<String> {
@@ -397,6 +433,40 @@ mod tests {
             read(&directory.0.join("absent.toml")).unwrap(),
             AuthStore::default()
         );
+    }
+
+    #[test]
+    fn concurrent_updates_all_survive_under_the_lock() {
+        let directory = Directory::new();
+        let path = directory.0.join(FILE_NAME);
+        let handles: Vec<_> = (0..8)
+            .map(|index| {
+                let path = path.clone();
+                thread::spawn(move || {
+                    for round in 0..5 {
+                        update(&path, |store| {
+                            store.insert(
+                                format!("provider-{index}-{round}"),
+                                AuthEntry::ApiKey(KeySource::Env("KEY".into())),
+                            );
+                            ((), true)
+                        })
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(read(&path).unwrap().providers().count(), 40);
+        // The lock file is private, and nothing is left beside the store.
+        let lock = path.with_file_name(format!("{FILE_NAME}.lock"));
+        assert_eq!(mode(&lock), 0o600);
+        assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
+        // An unmodified store is not rewritten, and a missing entry is reported.
+        let removed = update(&path, |store| (store.remove("absent"), false)).unwrap();
+        assert!(!removed);
     }
 
     #[test]
