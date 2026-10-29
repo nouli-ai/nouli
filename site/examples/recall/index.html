@@ -27,284 +27,172 @@
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record the recall scope</h2>
 <p>Save the historical recall scope as an independent source. The lot-code rule has two conditions: the seven-digit range and the 425 suffix.</p>
-<pre><code>nouli --format text --name &quot;$example-scope&quot; \
-  --state &#x27;The FDA May 2022 recall includes Jif 16 ounce creamy peanut butter, identifier
+<pre><code>nouli --format text new &quot;$example-scope&quot; \
+  &#x27;The FDA May 2022 recall includes Jif 16 ounce creamy peanut butter, identifier
 5150025516 as printed in the notice. A jar is in scope when the first seven
 digits of its lot code are between 1274425 and 2140425 and end in 425. The
 range alone is insufficient. This is the published scope for this historical
 example.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;scope&quot;,
-    &quot;prompt&quot;: &quot;How should a jar be matched to this recall?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;product_and_lot&quot;, &quot;description&quot;: &quot;Match the product and both lot-code conditions&quot;},
-        {&quot;id&quot;: &quot;product_only&quot;, &quot;description&quot;: &quot;Use the product name alone&quot;},
-        {&quot;id&quot;: &quot;unresolved&quot;, &quot;description&quot;: &quot;Request a clearer recall notice&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;scope: How should a jar be matched to this recall? [Match the product and both lot-code conditions,
+    Use the product name alone,
+    Request a clearer recall notice]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1509-77c6-8302-1e2bb0a72f92
-Turn: 01a18684-150e-7509-9f75-5226a894ecc8
-Provider: typesafe/jev-1.14.0
-scope: choice: product_and_lot (Match the product and both lot-code conditions), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  scope       ▶ Match the product and both lot-… ████████████████████ 1.00
+                Use the product name alone                            0.00
+                Request a clearer recall notice                       0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6d65-7603-b07b-9b477acb7915 · turn 01a1875f-6d6a-7092-a120-14f771a79e72</code></pre>
 <p>The model selects matching both product and lot conditions. Product identity alone, or the numeric range without the suffix condition, would overstate the scope.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review warehouse traceability</h2>
 <p>Record warehouse traceability in a new history. This question asks whether every jar has an identifiable lot, before applying recall scope.</p>
-<pre><code>nouli --format text --name &quot;$example-stock&quot; \
-  --state &#x27;Illustrative warehouse inventory: 40 sealed jars have lot code 1352425, 10
+<pre><code>nouli --format text new &quot;$example-stock&quot; \
+  &#x27;Illustrative warehouse inventory: 40 sealed jars have lot code 1352425, 10
 have lot code 1352426, and 6 have unreadable lot codes. All are Jif 16 ounce
 creamy peanut butter, identifier 5150025516. No other jars are on hand.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;stock&quot;,
-    &quot;prompt&quot;: &quot;Can every jar in this inventory be matched to an identifiable lot?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;noul&quot;
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;stock: Can every jar in this inventory be matched to an identifiable lot?&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1518-7783-9239-363598f813e8
-Turn: 01a18684-151c-7217-9a67-52a9533fff7c
-Provider: typesafe/jev-1.14.0
-stock: noul: P(yes)=0.06</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  stock         yes                              █▎                   0.06
+  typesafe/jev-1.14.0 · session 01a1875f-6d74-74cc-a523-c732dd335215 · turn 01a1875f-6d78-74ef-9f3c-db41abd6f78f</code></pre>
 <p>P(yes)=0.06 reflects the model answer to whether every jar can be identified. Six codes are unreadable; this result is not itself a recall-scope decision.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Review distribution and customer responses</h2>
 <p>Record shipments and customer responses separately. The 60 snack boxes were made from an earlier ingredient delivery, not from the jars still in the warehouse.</p>
-<pre><code>nouli --format text --name &quot;$example-customers&quot; \
-  --state &#x27;Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used
+<pre><code>nouli --format text new &quot;$example-customers&quot; \
+  &#x27;Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used
 in 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30.
 Harbor acknowledges the recall notice and confirms all 30 are isolated. Summit
 has not responded. There were no other shipments of this batch.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;customers&quot;,
-    &quot;prompt&quot;: &quot;Which customer needs a response follow-up first?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;harbor&quot;, &quot;description&quot;: &quot;Contact Harbor&quot;},
-        {&quot;id&quot;: &quot;summit&quot;, &quot;description&quot;: &quot;Contact Summit&quot;},
-        {&quot;id&quot;: &quot;both&quot;, &quot;description&quot;: &quot;Contact both customers again&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;customers: Which customer needs a response follow-up first? [Contact Harbor,
+    Contact Summit,
+    Contact both customers again]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1526-7211-8603-b9e477faf7f2
-Turn: 01a18684-152a-76f3-a971-6039cc76676b
-Provider: typesafe/jev-1.14.0
-customers: choice: summit (Contact Summit), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  customers     Contact Harbor                                        0.00
+              ▶ Contact Summit                   ████████████████████ 1.00
+                Contact both customers again                          0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6d86-769b-9683-3acd7b62d06c</code></pre>
 <p>Harbor has acknowledged the notice and isolated its boxes. Summit has not replied, so the model selects Summit for follow-up.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Choose a warehouse action</h2>
 <p>Blend published scope and warehouse records to choose a stock action under the sample hold policy.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-scope&quot; \
-  --from &quot;$example-stock&quot; \
-  --name &quot;$example-stock-plan&quot; \
-  --state &#x27;Our example stock policy is to quarantine confirmed recalled jars and hold
+<pre><code>nouli --format text new &quot;$example-stock-plan&quot; --from &quot;$example-scope&quot; --from &quot;$example-stock&quot; \
+  &#x27;Our example stock policy is to quarantine confirmed recalled jars and hold
 unreadable codes for identification. Apply the scope only to products and lots
 it actually covers.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;stock_plan&quot;,
-    &quot;prompt&quot;: &quot;What should the warehouse do with its stock?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;targeted_hold&quot;, &quot;description&quot;: &quot;Quarantine matching jars and hold unreadable codes for identification&quot;},
-        {&quot;id&quot;: &quot;hold_all&quot;, &quot;description&quot;: &quot;Hold every jar pending further review&quot;},
-        {&quot;id&quot;: &quot;identify_first&quot;, &quot;description&quot;: &quot;Identify unreadable codes before choosing any stock action&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;stock_plan: What should the warehouse do with its stock? [Quarantine matching jars and hold unreadable codes for identification,
+    Hold every jar pending further review,
+    Identify unreadable codes before choosing any stock action]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1537-707f-b657-dd55c15994d6
-Turn: 01a18684-153e-7226-a17b-62277fcc8ac7
-Provider: typesafe/jev-1.14.0
-stock_plan: choice: targeted_hold (Quarantine matching jars and hold unreadable codes for identification), P(selected)=0.99
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  stock_plan  ▶ Quarantine matching jars and ho… ███████████████████▊ 0.99
+                Hold every jar pending further …                      0.00
+                Identify unreadable codes befor… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1875f-6d91-74df-98fa-02b78b44784f · turn 01a1875f-6d99-74f3-8fd8-0698ef7fd353</code></pre>
 <p>The matching lot is held, unreadable codes are held for identification, and the identified nonmatching lot is distinguished from them. The chosen label summarizes the action; the source records retain the counts and lot codes.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Choose a customer follow-up</h2>
 <p>Blend the same recall scope with the independent customer history to decide what outreach is needed.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-scope&quot; \
-  --from &quot;$example-customers&quot; \
-  --name &quot;$example-outreach&quot; \
-  --state &#x27;Apply the recall scope to ingredient lot 1352425 and the snack boxes made from
+<pre><code>nouli --format text new &quot;$example-outreach&quot; --from &quot;$example-scope&quot; --from &quot;$example-customers&quot; \
+  &#x27;Apply the recall scope to ingredient lot 1352425 and the snack boxes made from
 it. Following recall communication guidance, establish that affected customers
 received and followed the notice. Under our example response policy, missing
 acknowledgment requires direct follow-up; reported sales require escalation
 and verification of downstream notification. Use the latest dated response for
 each customer.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;outreach&quot;,
-    &quot;prompt&quot;: &quot;What customer follow-up is needed now?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;request_response&quot;, &quot;description&quot;: &quot;Ask Summit to acknowledge the notice and account for its boxes&quot;},
-        {&quot;id&quot;: &quot;verify_isolation&quot;, &quot;description&quot;: &quot;Verify that both customers have isolated all affected boxes&quot;},
-        {&quot;id&quot;: &quot;escalate_sales&quot;, &quot;description&quot;: &quot;Escalate reported sales to the recall lead and verify downstream notification&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;outreach: What customer follow-up is needed now? [Ask Summit to acknowledge the notice and account for its boxes,
+    Verify that both customers have isolated all affected boxes,
+    Escalate reported sales to the recall lead and verify downstream notification]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1549-7594-a489-97c81ecd81c0
-Turn: 01a18684-1551-70a2-a2d9-3bb815be94d8
-Provider: typesafe/jev-1.14.0
-outreach: choice: request_response (Ask Summit to acknowledge the notice and account for its boxes), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  outreach    ▶ Ask Summit to acknowledge the n… ████████████████████ 1.00
+                Verify that both customers have…                      0.00
+                Escalate reported sales to the …                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6da5-77ff-9257-2757c83f4824 · turn 01a1875f-6dad-71a7-b81b-00ad1ee1d6f9</code></pre>
 <p>The model asks Summit to acknowledge the notice and account for its boxes. This addresses products already distributed, which the warehouse action cannot resolve.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine stock and customer decisions</h2>
 <p>Combine the stock and outreach decisions. Both sources are blends, so this response includes the independent warehouse and customer branches.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-stock-plan&quot; \
-  --from &quot;$example-outreach&quot; \
-  --name &quot;$example-response&quot; \
-  --state &#x27;Combine the warehouse and customer decisions into a recommendation for the
+<pre><code>nouli --format text new &quot;$example-response&quot; --from &quot;$example-stock-plan&quot; --from &quot;$example-outreach&quot; \
+  &#x27;Combine the warehouse and customer decisions into a recommendation for the
 recall lead. A warehouse hold does not account for shipped products.
 Coordinate any unresolved customer or downstream follow-up alongside the stock
 action. Use the latest dated customer records.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;response&quot;,
-    &quot;prompt&quot;: &quot;Which response should the recall lead coordinate?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;warehouse&quot;, &quot;description&quot;: &quot;Coordinate warehouse holds only&quot;},
-        {&quot;id&quot;: &quot;customers&quot;, &quot;description&quot;: &quot;Coordinate warehouse holds and missing customer responses&quot;},
-        {&quot;id&quot;: &quot;downstream&quot;, &quot;description&quot;: &quot;Coordinate warehouse holds and escalation of sales to end customers&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;response: Which response should the recall lead coordinate? [Coordinate warehouse holds only,
+    Coordinate warehouse holds and missing customer responses,
+    Coordinate warehouse holds and escalation of sales to end customers]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-155d-763c-a75a-7e40cc266e78
-Turn: 01a18684-1569-7346-a794-840c0158523a
-Provider: typesafe/jev-1.14.0
-response: choice: customers (Coordinate warehouse holds and missing customer responses), P(selected)=0.99
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  response      Coordinate warehouse holds only  ▏                    0.01
+              ▶ Coordinate warehouse holds and … ███████████████████▊ 0.99
+                Coordinate warehouse holds and … ▏                    0.01
+  typesafe/jev-1.14.0 · session 01a1875f-6dba-7370-835a-708d1072fd01 · turn 01a1875f-6dc8-7651-ad76-d889ed202637</code></pre>
 <p>The coordinated response includes stock holds and follow-up for the missing customer response. The recommendation does not send notices or move inventory.</p>
 </section>
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Add the next customer response</h2>
-<p>Continue the customer history with the later reply. Summit has isolated 18 boxes and reports 12 sold; downstream notification is still unknown.</p>
-<pre><code>nouli --format text --session &quot;$example-customers&quot; \
-  --state &#x27;Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
+<p>Continue the customer history with the later reply. Summit has isolated 18 boxes and reports 12 sold; downstream notification is still unknown. The session already has a <code>customers</code> question, so the new <code>-q</code> with the same ID replaces it.</p>
+<pre><code>nouli --format text add &quot;$example-customers&quot; \
+  &#x27;Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
 notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to
 end customers. Whether those buyers have been notified is unknown. This
 replaces the earlier Summit nonresponse. Harbor still has all 30 boxes
 isolated.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;customers&quot;,
-    &quot;prompt&quot;: &quot;What is the next action for Summit?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;confirm&quot;, &quot;description&quot;: &quot;Confirm acknowledgment only&quot;},
-        {&quot;id&quot;: &quot;escalate&quot;, &quot;description&quot;: &quot;Escalate the 12 sold boxes and verify downstream notification&quot;},
-        {&quot;id&quot;: &quot;close&quot;, &quot;description&quot;: &quot;Treat the customer response as complete&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;customers: What is the next action for Summit? [Confirm acknowledgment only,
+    Escalate the 12 sold boxes and verify downstream notification,
+    Treat the customer response as complete]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1526-7211-8603-b9e477faf7f2
-Turn: 01a18684-157b-7003-8333-dc316143184e
-Provider: typesafe/jev-1.14.0
-customers: choice: escalate (Escalate the 12 sold boxes and verify downstream notification), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+  customers     Confirm acknowledgment only                           0.00
+              ▶ Escalate the 12 sold boxes and … ████████████████████ 1.00
+                Treat the customer response as …                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6ddf-7142-b42f-006a3796a594</code></pre>
 <p>The model selects escalation of the 12 sold boxes and verification of downstream notification. The earlier nonresponse stays in history but is no longer the latest customer status.</p>
 </section>
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Reassess outreach using the updated source</h2>
 <p>Create a new outreach blend from scope and the updated customer history. Updating the customer session did not rewrite the earlier outreach decision.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-scope&quot; \
-  --from &quot;$example-customers&quot; \
-  --name &quot;$example-outreach-updated&quot; \
-  --state &#x27;Apply the recall scope to ingredient lot 1352425 and the snack boxes made from
+<pre><code>nouli --format text new &quot;$example-outreach-updated&quot; --from &quot;$example-scope&quot; --from &quot;$example-customers&quot; \
+  &#x27;Apply the recall scope to ingredient lot 1352425 and the snack boxes made from
 it. Following recall communication guidance, establish that affected customers
 received and followed the notice. Under our example response policy, missing
 acknowledgment requires direct follow-up; reported sales require escalation
 and verification of downstream notification. Use the latest dated response for
 each customer.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;outreach_updated&quot;,
-    &quot;prompt&quot;: &quot;What customer follow-up is needed now?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;request_response&quot;, &quot;description&quot;: &quot;Ask Summit to acknowledge the notice and account for its boxes&quot;},
-        {&quot;id&quot;: &quot;verify_isolation&quot;, &quot;description&quot;: &quot;Verify that both customers have isolated all affected boxes&quot;},
-        {&quot;id&quot;: &quot;escalate_sales&quot;, &quot;description&quot;: &quot;Escalate reported sales to the recall lead and verify downstream notification&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;outreach_updated: What customer follow-up is needed now? [Ask Summit to acknowledge the notice and account for its boxes,
+    Verify that both customers have isolated all affected boxes,
+    Escalate reported sales to the recall lead and verify downstream notification]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1587-7216-856f-5c68c9bf8383
-Turn: 01a18684-158f-74b2-ae4a-f488fac993f5
-Provider: typesafe/jev-1.14.0
-outreach_updated: choice: escalate_sales (Escalate reported sales to the recall lead and verify downstream notification), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  outreach_u…   Ask Summit to acknowledge the n…                      0.00
+                Verify that both customers have…                      0.00
+              ▶ Escalate reported sales to the … ████████████████████ 1.00
+  typesafe/jev-1.14.0 · session 01a1875f-6dea-7050-9877-f15f8efa818b · turn 01a1875f-6df5-7677-b741-2d8746c6ac76</code></pre>
 <p>The model now selects escalation of reported sales. Acknowledgment alone is insufficient because some affected products reached end customers.</p>
 </section>
 <section class="step" id="step-9" data-node="8">
 <h2><span class="num">09</span>Combine the revised decisions</h2>
 <p>Reuse the unchanged stock plan and combine it with revised outreach to form a new coordinated response.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-stock-plan&quot; \
-  --from &quot;$example-outreach-updated&quot; \
-  --name &quot;$example-response-updated&quot; \
-  --state &#x27;Combine the warehouse and customer decisions into a recommendation for the
+<pre><code>nouli --format text new &quot;$example-response-updated&quot; --from &quot;$example-stock-plan&quot; --from &quot;$example-outreach-updated&quot; \
+  &#x27;Combine the warehouse and customer decisions into a recommendation for the
 recall lead. A warehouse hold does not account for shipped products.
 Coordinate any unresolved customer or downstream follow-up alongside the stock
 action. Use the latest dated customer records.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;response_updated&quot;,
-    &quot;prompt&quot;: &quot;Which response should the recall lead coordinate?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;warehouse&quot;, &quot;description&quot;: &quot;Coordinate warehouse holds only&quot;},
-        {&quot;id&quot;: &quot;customers&quot;, &quot;description&quot;: &quot;Coordinate warehouse holds and missing customer responses&quot;},
-        {&quot;id&quot;: &quot;downstream&quot;, &quot;description&quot;: &quot;Coordinate warehouse holds and escalation of sales to end customers&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;response_updated: Which response should the recall lead coordinate? [Coordinate warehouse holds only,
+    Coordinate warehouse holds and missing customer responses,
+    Coordinate warehouse holds and escalation of sales to end customers]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-159c-7551-9ff4-d37f72091eff
-Turn: 01a18684-15aa-7209-9900-b38ba6616338
-Provider: typesafe/jev-1.14.0
-response_updated: choice: downstream (Coordinate warehouse holds and escalation of sales to end customers), P(selected)=0.99
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  response_u…   Coordinate warehouse holds only                       0.00
+                Coordinate warehouse holds and … ▎                    0.01
+              ▶ Coordinate warehouse holds and … ███████████████████▊ 0.99
+  typesafe/jev-1.14.0 · session 01a1875f-6e02-72d3-81a6-66cb59a63d5b · turn 01a1875f-6e13-7546-b05c-bb02209d3695</code></pre>
 <p>The response now includes downstream follow-up alongside warehouse holds. The customer update changed the response without requiring a new warehouse assessment.</p>
 </section>
 </article>

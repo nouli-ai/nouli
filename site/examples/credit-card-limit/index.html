@@ -27,69 +27,46 @@
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record income and existing obligations</h2>
 <p>Record income, living expenses, and other debt payments. Exclude the existing payment on this card because the capacity review will substitute a stressed payment for the candidate total line.</p>
-<pre><code>nouli --format text --name &quot;$example-cashflow&quot; \
-  --state &#x27;Fictional card application C-202 for an adult over 21, verification at 09:00:
+<pre><code>nouli --format text new &quot;$example-cashflow&quot; \
+  &#x27;Fictional card application C-202 for an adult over 21, verification at 09:00:
 recurring net monthly income is 4000 USD, essential living expenses are 2500 USD,
 and payments on other debts are 700 USD. The 700 USD excludes payments on this
 credit card. There are no other obligations. All records required by the
 sample policy are verified.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;cashflow&quot;,
-    &quot;prompt&quot;: &quot;What monthly amount is available before this card payment?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;s800&quot;, &quot;description&quot;: &quot;800 USD&quot;},
-        {&quot;id&quot;: &quot;s1500&quot;, &quot;description&quot;: &quot;1500 USD&quot;},
-        {&quot;id&quot;: &quot;missing&quot;, &quot;description&quot;: &quot;Request missing income or obligation records&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;cashflow: What monthly amount is available before this card payment? [800 USD,
+    1500 USD,
+    Request missing income or obligation records]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-0fdd-7479-a2b3-8510aee11462
-Turn: 01a18684-0fe2-7661-bfab-7d24566c5b3c
-Provider: typesafe/jev-1.14.0
-cashflow: choice: s800 (800 USD), P(selected)=0.99
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.98</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  cashflow    ▶ 800 USD                          ███████████████████▊ 0.99
+                1500 USD                         ▎                    0.01
+                Request missing income or oblig…                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6b15-729f-a855-a8dd644d085a · turn 01a1875f-6b1a-7674-9caf-3846fe704b3a</code></pre>
 <p>The monthly amount before this card payment is 4000 - 2500 - 700 = 800 USD. Excluding the existing card payment here avoids counting it twice later.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review the existing card account</h2>
 <p>Start a separate history for account behavior. A score records the documented payment performance independently of income.</p>
-<pre><code>nouli --format text --name &quot;$example-account&quot; \
-  --state &#x27;Fictional card account C-202: the current total limit is 5000 USD and the balance
+<pre><code>nouli --format text new &quot;$example-account&quot; \
+  &#x27;Fictional card account C-202: the current total limit is 5000 USD and the balance
 is 1000 USD. All 24 monthly minimum payments were made on time. There is no
 delinquency, over-limit balance, or unresolved account restriction. The
 account record is complete.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;account&quot;,
-    &quot;prompt&quot;: &quot;How strong is the documented payment performance?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;score&quot;,
-      &quot;levels&quot;: [
-        &quot;Adverse payment history&quot;,
-        &quot;Mixed payment history&quot;,
-        &quot;Consistently timely payments&quot;
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;account: How strong is the documented payment performance? &lt;Adverse payment history,
+    Mixed payment history,
+    Consistently timely payments&gt;&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-0fee-7616-ae15-0a1fad9c70c4
-Turn: 01a18684-0ff2-72e5-8719-e401528e7200
-Provider: typesafe/jev-1.14.0
-account: expected score: 2, scale 0..2 [0: Adverse payment history; 1: Mixed payment history; 2: Consistently timely payments]
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  account       expected 2.00 of 2   ▁▁█
+                Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently timely pay…
+  typesafe/jev-1.14.0 · session 01a1875f-6b24-7220-b209-5152e4207a06 · turn 01a1875f-6b28-758f-939f-4e8a9ef65da9</code></pre>
 <p>The score is 2 on a 0-2 rubric: all 24 recorded minimum payments were timely. This does not establish the ability to support a larger credit line.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record the request and sample review policy</h2>
 <p>Record the request, alternative line, and sample bank rules. Stressed monthly payments are supplied all-in estimates at full utilization, not statutory percentage formulas.</p>
-<pre><code>nouli --format text --name &quot;$example-policy&quot; \
-  --state &#x27;Fictional bank review policy for C-202: the customer requests a total credit
+<pre><code>nouli --format text new &quot;$example-policy&quot; \
+  &#x27;Fictional bank review policy for C-202: the customer requests a total credit
 line of 10000 USD, replacing the current 5000 USD line. A 6000 USD total line is an
 alternative. Supplied all-in stressed monthly minimum payments at full
 utilization are 300 USD for 10000 USD, 180 USD for 6000 USD, and 150 USD for the current
@@ -101,228 +78,140 @@ over-limit balance, or unresolved restriction. Recommend the highest eligible
 line up to the request; if no increase qualifies, retain the current line only
 if it qualifies; otherwise refer for manual review. Missing evidence also
 requires manual review.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;policy&quot;,
-    &quot;prompt&quot;: &quot;What does this limit review require?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;both&quot;, &quot;description&quot;: &quot;Evaluate payment capacity and account standing&quot;},
-        {&quot;id&quot;: &quot;account&quot;, &quot;description&quot;: &quot;Use account standing alone&quot;},
-        {&quot;id&quot;: &quot;balance&quot;, &quot;description&quot;: &quot;Use the current balance alone&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;policy: What does this limit review require? [Evaluate payment capacity and account standing,
+    Use account standing alone,
+    Use the current balance alone]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-0ffd-72cb-9a3e-726591ba20f9
-Turn: 01a18684-1002-76b9-88fc-4c1b01da664d
-Provider: typesafe/jev-1.14.0
-policy: choice: both (Evaluate payment capacity and account standing), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  policy      ▶ Evaluate payment capacity and a… ████████████████████ 1.00
+                Use account standing alone                            0.00
+                Use the current balance alone                         0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6b32-7646-a1f0-181b73fc3adf · turn 01a1875f-6b37-7502-a4a3-0a7d53243baf</code></pre>
 <p>The review must consider both capacity and standing. Each candidate is a total line replacing the current limit, not an extra line added to it.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Review capacity at each candidate limit</h2>
 <p>Blend cash flow and policy to compare the candidate total lines. Assess each separately using its supplied stressed minimum payment.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-cashflow&quot; \
-  --from &quot;$example-policy&quot; \
-  --name &quot;$example-capacity&quot; \
-  --state &#x27;Use the latest verified income and obligations with the sample policy. Assess
+<pre><code>nouli --format text new &quot;$example-capacity&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
+  &#x27;Use the latest verified income and obligations with the sample policy. Assess
 each candidate total line separately, not as an additional amount on top of
 the existing line. Subtract the supplied stressed card payment once. Determine
 the highest total line that leaves at least 600 USD each month.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;capacity&quot;,
-    &quot;prompt&quot;: &quot;What is the highest total line supported by the sample capacity test?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;l10000&quot;, &quot;description&quot;: &quot;The 10000 USD requested total line meets the capacity threshold&quot;},
-        {&quot;id&quot;: &quot;l6000&quot;, &quot;description&quot;: &quot;Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold&quot;},
-        {&quot;id&quot;: &quot;l5000&quot;, &quot;description&quot;: &quot;Only the current 5000 USD line meets the capacity threshold&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;No line qualifies or required verification is missing&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;capacity: What is the highest total line supported by the sample capacity test? [The 10000 USD requested total line meets the capacity threshold,
+    Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold,
+    Only the current 5000 USD line meets the capacity threshold,
+    No line qualifies or required verification is missing]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-100d-709d-92c7-e0fa982316bb
-Turn: 01a18684-1015-77a5-be64-f38640392c2b
-Provider: typesafe/jev-1.14.0
-capacity: choice: l6000 (Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold), P(selected)=0.43
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.24</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  capacity      The 10000 USD requested total l… ███▊                 0.19
+              ▶ Only the 6000 USD alternative a… ████████▋            0.43
+                Only the current 5000 USD line … ███▊                 0.19
+                No line qualifies or required v… ███▊                 0.19
+  typesafe/jev-1.14.0 · session 01a1875f-6b41-70bb-acbb-51f9790646fd · turn 01a1875f-6b4a-744c-a1fe-dada3c7a0149</code></pre>
 <p>The model selects 6000 USD. Starting with 800 USD, the 10000 USD line leaves 500 USD, the 6000 USD line leaves 620 USD, and the current line leaves 650 USD. The sample threshold is 600 USD. P(selected)=0.43 is the selected option probability, not a guarantee of correctness.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Review account eligibility</h2>
 <p>Blend the account history and policy to evaluate the standing gate. This branch shares policy with the capacity branch while using different evidence.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-account&quot; \
-  --from &quot;$example-policy&quot; \
-  --name &quot;$example-standing&quot; \
-  --state &#x27;Apply only the account-standing gate from the sample policy to the recorded
+<pre><code>nouli --format text new &quot;$example-standing&quot; --from &quot;$example-account&quot; --from &quot;$example-policy&quot; \
+  &#x27;Apply only the account-standing gate from the sample policy to the recorded
 account. Do not use account standing to infer income or payment capacity.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;standing&quot;,
-    &quot;prompt&quot;: &quot;Does the account pass the sample standing gate?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;pass&quot;, &quot;description&quot;: &quot;The complete account record meets the standing requirements&quot;},
-        {&quot;id&quot;: &quot;fail&quot;, &quot;description&quot;: &quot;The account fails the standing requirements&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Required account records are missing&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;standing: Does the account pass the sample standing gate? [The complete account record meets the standing requirements,
+    The account fails the standing requirements,
+    Required account records are missing]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1020-7567-91fb-c2489121638c
-Turn: 01a18684-1028-714f-b062-a3c67fc19e97
-Provider: typesafe/jev-1.14.0
-standing: choice: pass (The complete account record meets the standing requirements), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  standing    ▶ The complete account record mee… ████████████████████ 1.00
+                The account fails the standing …                      0.00
+                Required account records are mi…                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6b57-75e7-b523-611959566dfc · turn 01a1875f-6b5f-72e7-93bd-265724d7d8fa</code></pre>
 <p>The complete account record passes the sample standing requirements. Capacity still determines which line can be recommended.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine the reviews into a limit recommendation</h2>
 <p>Combine capacity and standing into a limit recommendation. Both branches must support the offer.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-capacity&quot; \
-  --from &quot;$example-standing&quot; \
-  --name &quot;$example-limit&quot; \
-  --state &#x27;Combine the capacity and account-standing reviews. Recommend the highest
+<pre><code>nouli --format text new &quot;$example-limit&quot; --from &quot;$example-capacity&quot; --from &quot;$example-standing&quot; \
+  &#x27;Combine the capacity and account-standing reviews. Recommend the highest
 eligible total line up to the requested 10000 USD only when both gates pass. A
 passing account review cannot override insufficient payment capacity. If the
 account-standing gate fails or lacks evidence, refer for manual review. If
 standing passes but no increase qualifies, retain 5000 USD only if its capacity
 test passes; otherwise refer for manual review. This recommendation does not change the account.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;limit&quot;,
-    &quot;prompt&quot;: &quot;Which total credit line should the reviewer consider?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;l10000&quot;, &quot;description&quot;: &quot;Recommend a 10000 USD total line&quot;},
-        {&quot;id&quot;: &quot;l6000&quot;, &quot;description&quot;: &quot;Recommend a 6000 USD total line&quot;},
-        {&quot;id&quot;: &quot;l5000&quot;, &quot;description&quot;: &quot;Retain the current 5000 USD line&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Refer for manual review without recommending a limit&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;limit: Which total credit line should the reviewer consider? [Recommend a 10000 USD total line,
+    Recommend a 6000 USD total line,
+    Retain the current 5000 USD line,
+    Refer for manual review without recommending a limit]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1033-726e-b27c-471d7bc9ea65
-Turn: 01a18684-1041-73fa-be15-87af2abeac33
-Provider: typesafe/jev-1.14.0
-limit: choice: l6000 (Recommend a 6000 USD total line), P(selected)=0.72
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.63</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  limit         Recommend a 10000 USD total line █▉                   0.09
+              ▶ Recommend a 6000 USD total line  ██████████████▍      0.72
+                Retain the current 5000 USD line █▉                   0.09
+                Refer for manual review without… █▉                   0.09
+  typesafe/jev-1.14.0 · session 01a1875f-6b6c-7013-86ff-1a9bac1106cc · turn 01a1875f-6b7b-70dd-874c-875e8af7efea</code></pre>
 <p>The model recommends a 6000 USD total line. That is the highest candidate meeting the supplied capacity and standing rules with the initial income.</p>
 </section>
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Record new verified income</h2>
 <p>Continue the cash-flow session with verified income of 4500 USD, explicitly replacing the earlier amount. No account change has been applied.</p>
-<pre><code>nouli --format text --session &quot;$example-cashflow&quot; \
-  --state &#x27;Fictional card application C-202, new verification at 11:00: recurring net
+<pre><code>nouli --format text add &quot;$example-cashflow&quot; \
+  &#x27;Fictional card application C-202, new verification at 11:00: recurring net
 monthly income is now 4500 USD, replacing the 09:00 value of 4000 USD. Essential
 living expenses remain 2500 USD and other debt payments remain 700 USD, excluding
 this credit card. There are no other obligations. The customer supplied
 verified evidence of the income change. No limit increase has been applied.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;cashflow&quot;,
-    &quot;prompt&quot;: &quot;What monthly amount is now available before this card payment?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;s1300&quot;, &quot;description&quot;: &quot;1300 USD&quot;},
-        {&quot;id&quot;: &quot;s800&quot;, &quot;description&quot;: &quot;800 USD&quot;},
-        {&quot;id&quot;: &quot;missing&quot;, &quot;description&quot;: &quot;Request missing income or obligation records&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;cashflow: What monthly amount is now available before this card payment? [1300 USD,
+    800 USD,
+    Request missing income or obligation records]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-0fdd-7479-a2b3-8510aee11462
-Turn: 01a18684-1054-74ab-8d17-27e7bcc4e720
-Provider: typesafe/jev-1.14.0
-cashflow: choice: s1300 (1300 USD), P(selected)=0.95
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.92</code></pre>
+<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+  cashflow    ▶ 1300 USD                         ███████████████████  0.95   → was 800 USD 0.99
+                800 USD                          █                    0.05
+                Request missing income or oblig…                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-6b15-729f-a855-a8dd644d085a · turn 01a1875f-6b92-7407-99e8-41f0435bc7a6</code></pre>
 <p>The new monthly amount before this card payment is 4500 - 2500 - 700 = 1300 USD.</p>
 </section>
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Review capacity with the updated source</h2>
 <p>Create a fresh capacity blend from the updated cash-flow history and the same policy. The initial capacity review remains a separate saved decision.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-cashflow&quot; \
-  --from &quot;$example-policy&quot; \
-  --name &quot;$example-capacity-updated&quot; \
-  --state &#x27;Use the latest verified income and obligations with the sample policy. Assess
+<pre><code>nouli --format text new &quot;$example-capacity-updated&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
+  &#x27;Use the latest verified income and obligations with the sample policy. Assess
 each candidate total line separately, not as an additional amount on top of
 the existing line. Subtract the supplied stressed card payment once. Determine
 the highest total line that leaves at least 600 USD each month.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;capacity_updated&quot;,
-    &quot;prompt&quot;: &quot;What is the highest total line supported by the updated capacity test?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;l10000&quot;, &quot;description&quot;: &quot;The 10000 USD requested total line meets the capacity threshold&quot;},
-        {&quot;id&quot;: &quot;l6000&quot;, &quot;description&quot;: &quot;Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold&quot;},
-        {&quot;id&quot;: &quot;l5000&quot;, &quot;description&quot;: &quot;Only the current 5000 USD line meets the capacity threshold&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;No line qualifies or required verification is missing&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;capacity_updated: What is the highest total line supported by the updated capacity test? [The 10000 USD requested total line meets the capacity threshold,
+    Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold,
+    Only the current 5000 USD line meets the capacity threshold,
+    No line qualifies or required verification is missing]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-105f-723d-8f1a-c12b0b073371
-Turn: 01a18684-1069-72dd-a06e-cd4c6c0df156
-Provider: typesafe/jev-1.14.0
-capacity_updated: choice: l10000 (The 10000 USD requested total line meets the capacity threshold), P(selected)=0.65
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.53</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  capacity_u… ▶ The 10000 USD requested total l… █████████████        0.65
+                Only the 6000 USD alternative a… █████                0.25
+                Only the current 5000 USD line … ▍                    0.02
+                No line qualifies or required v… █▋                   0.08
+  typesafe/jev-1.14.0 · session 01a1875f-6b9e-72e9-9302-995324049d17 · turn 01a1875f-6ba9-7637-9e21-99bd3cc6cb3b</code></pre>
 <p>The requested line now leaves 1300 - 300 = 1000 USD, exceeding the sample 600 USD requirement. The model selects the 10000 USD total line.</p>
 </section>
 <section class="step" id="step-9" data-node="8">
 <h2><span class="num">09</span>Reconsider the limit using both review branches</h2>
 <p>Reuse the account-standing review and combine it with updated capacity. This creates a revised recommendation without rewriting the initial limit decision.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-capacity-updated&quot; \
-  --from &quot;$example-standing&quot; \
-  --name &quot;$example-limit-updated&quot; \
-  --state &#x27;Combine the capacity and account-standing reviews. Recommend the highest
+<pre><code>nouli --format text new &quot;$example-limit-updated&quot; --from &quot;$example-capacity-updated&quot; --from &quot;$example-standing&quot; \
+  &#x27;Combine the capacity and account-standing reviews. Recommend the highest
 eligible total line up to the requested 10000 USD only when both gates pass. A
 passing account review cannot override insufficient payment capacity. If the
 account-standing gate fails or lacks evidence, refer for manual review. If
 standing passes but no increase qualifies, retain 5000 USD only if its capacity
 test passes; otherwise refer for manual review. This recommendation does not change the account.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;limit_updated&quot;,
-    &quot;prompt&quot;: &quot;Which total credit line should the reviewer consider now?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;l10000&quot;, &quot;description&quot;: &quot;Recommend a 10000 USD total line&quot;},
-        {&quot;id&quot;: &quot;l6000&quot;, &quot;description&quot;: &quot;Recommend a 6000 USD total line&quot;},
-        {&quot;id&quot;: &quot;l5000&quot;, &quot;description&quot;: &quot;Retain the current 5000 USD line&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Refer for manual review without recommending a limit&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;limit_updated: Which total credit line should the reviewer consider now? [Recommend a 10000 USD total line,
+    Recommend a 6000 USD total line,
+    Retain the current 5000 USD line,
+    Refer for manual review without recommending a limit]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1075-7503-864a-759b954642f5
-Turn: 01a18684-1083-7655-8eb2-95fa0d6d26a5
-Provider: typesafe/jev-1.14.0
-limit_updated: choice: l10000 (Recommend a 10000 USD total line), P(selected)=0.71
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.61</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  limit_upda… ▶ Recommend a 10000 USD total line ██████████████▎      0.71
+                Recommend a 6000 USD total line  ████                 0.20
+                Retain the current 5000 USD line █▎                   0.06
+                Refer for manual review without… ▋                    0.03
+  typesafe/jev-1.14.0 · session 01a1875f-6bb7-70c9-9d2f-7f45db7b5551 · turn 01a1875f-6bc8-7160-9a70-1073cbdb31a4</code></pre>
 <p>The model now recommends the requested 10000 USD total line. The income change affected capacity; the independently reviewed account standing did not need to change.</p>
 </section>
 </article>

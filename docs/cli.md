@@ -16,7 +16,7 @@ nouli whatif Trip "The taxi fare has doubled to 140 USD."
 | `nouli new NAME [--from SRC[@TURN]]... [FACT...] [-q Q...]` | Creates a session: new with no `--from`, a branch with one, a blend with several. With no facts and no questions it only creates the session and prints its ID. Otherwise it runs the first turn, and its `-q` questions become standing questions. |
 | `nouli add SESSION [FACT...] [-q Q...] [--drop ID...] [--replace N TEXT...]` | Runs a turn on an existing session. |
 | `nouli ask SESSION [-q Q...] [--drop ID...]` | Asks again without new facts. It is `add` with no facts. |
-| `nouli whatif SESSION [FACT...] [-q Q...] [--replace N TEXT...]` | Runs one turn from the session's head and saves nothing. |
+| `nouli whatif SESSION [FACT...] [-q Q...] [--drop ID...] [--replace N TEXT...]` | Runs one turn from the session's head and saves nothing. |
 
 `SESSION` is an existing ID or unique case-sensitive name; an unknown selector never creates a session. `--from` names a source session, or `SESSION@TURN_ID` for a fixed finalized turn. Without `@`, acceptance captures the source's current frontier once, so later source changes do not flow into the saved branch or blend. A name belongs to one session.
 
@@ -36,7 +36,7 @@ on_time: Will the train get me there on time?               yes/no
 
 An ID is lowercase letters, digits, `_` or `-`. Items are comma-separated, and an item that contains a comma, bracket, angle bracket, or quote is written in double quotes. A choice option's ID is derived from its label (`"Book the train"` becomes `book_the_train`). A grammar error is an input error (exit code 2) that names the question's position and the problem, never its text.
 
-A question given with `new`, `add`, or `ask` is a standing question: later turns ask it again until `--drop ID` removes it, and `-q` with an existing ID replaces it in place. Standing questions are saved with the turn that changed them, so a turn that fails leaves them as they were. A new session starts with none, a branch inherits its source's questions as they were at the branch point, and a blend starts with none. In a `whatif`, `-q` adds or changes a question for that turn only. Dropping an unknown ID is an error. A turn with no questions at all, from the session or from `-q`, fails with `questions_required`.
+A question given with `new`, `add`, or `ask` is a standing question: later turns ask it again until `--drop ID` removes it, and `-q` with an existing ID replaces it in place. Standing questions are saved with the turn that changed them, so a turn that fails leaves them as they were. A new session starts with none, a branch inherits its source's questions as they were at the branch point, and a blend starts with none. In a `whatif`, `-q` adds or changes a question and `--drop` leaves one out, for that turn only. Dropping an unknown ID is an error. A turn with no questions at all, from the session or from `-q`, fails with `questions_required`.
 
 ## Request files
 

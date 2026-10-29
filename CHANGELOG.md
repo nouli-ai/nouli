@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Record facts as numbered evidence instead of turn text. `--replace N TEXT` corrects fact N; the model sees only the new text and the earlier version stays in the session history.
 - Print turns as text with probability bars for every option, with a marker where an answer moved since the last turn. `--json`, `--jsonl`, and TOON output keep their shape.
 - Select the session by position in `nouli view SESSION`, and rename `nouli workflows` to `nouli workflow`.
+- Show the guide, README, and walkthroughs with the new commands. The walkthrough outputs were replayed from the recorded answers and still need a live re-recording.
 - Take a request file as `--input FILE` without a `session`; the command supplies the session.
 
 ### Fixed

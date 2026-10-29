@@ -2,12 +2,12 @@
  "session": "recommendation-updated",
  "nodes": [
   {
-   "id": "01a18684-1131-739f-bdd5-020cc8fbbcba",
+   "id": "01a1875f-6c44-76a2-88c0-00ee5786782f",
    "session": "cashflow",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Fictional application L-101, initial verification at 09:00: verified recurring\nnet income is 5000 USD per month. Essential living expenses are 3000 USD and\npayments on existing debts are 600 USD. These expenses exclude any proposed new\nloan. There are no other obligations. All figures are documented for this\nsample.",
+   "state": "",
    "questions": [
     {
      "id": "cashflow",
@@ -15,35 +15,40 @@
      "type": "choice",
      "options": [
       {
-       "id": "s1400",
+       "id": "1400_usd",
        "label": "1400 USD",
        "p": 1
       },
       {
-       "id": "s2000",
+       "id": "2000_usd",
        "label": "2000 USD",
        "p": 0
       },
       {
-       "id": "missing",
+       "id": "request_missing_cash_flow_records",
        "label": "Request missing cash-flow records",
        "p": 0
       }
      ],
-     "selected": "s1400"
+     "selected": "1400_usd"
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name cashflow -s … -q …"
+   "command": "nouli new cashflow '…' -q '…'"
   },
   {
-   "id": "01a18684-1140-7154-96eb-339cb9d7706d",
+   "id": "01a1875f-6c53-72d4-88e8-9c8a514c732e",
    "session": "history",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Fictional application L-101: the verified credit record covers 48 scheduled\nmonthly payments. Every payment was on time. There are no defaults or\ndelinquent balances, and the record is complete for this review.",
+   "state": "",
    "questions": [
     {
      "id": "history",
@@ -66,17 +71,22 @@
      "expected": 2
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name history -s … -q …"
+   "command": "nouli new history '…' -q '…'"
   },
   {
-   "id": "01a18684-114f-765f-ae86-78d40dbccb2e",
+   "id": "01a1875f-6c62-711b-9162-fddc19f20bdf",
    "session": "policy",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Fictional bank policy for application L-101: the applicant requests a 6000 USD\npersonal loan with a quoted all-in monthly installment of 250 USD. A smaller\n3000 USD loan has a quoted all-in installment of 150 USD. Either offer requires at\nleast 1000 USD remaining each month after living expenses, existing debt\npayments, and the proposed installment. Repayment records must be complete\nwith no defaults, no current delinquency, and at least 24 timely scheduled\npayments. Missing evidence requires manual review. Prefer the requested loan\nif both gates pass; otherwise recommend the smaller loan if both gates pass\nfor it; otherwise refer for manual review. No funds have been advanced.",
+   "state": "",
    "questions": [
     {
      "id": "policy",
@@ -84,30 +94,35 @@
      "type": "choice",
      "options": [
       {
-       "id": "both",
+       "id": "both_affordability_and_documented_repayment_history",
        "label": "Both affordability and documented repayment history",
        "p": 1
       },
       {
-       "id": "history",
+       "id": "repayment_history_alone",
        "label": "Repayment history alone",
        "p": 0
       },
       {
-       "id": "income",
+       "id": "income_alone",
        "label": "Income alone",
        "p": 0
       }
      ],
-     "selected": "both"
+     "selected": "both_affordability_and_documented_repayment_history"
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name policy -s … -q …"
+   "command": "nouli new policy '…' -q '…'"
   },
   {
-   "id": "01a18684-1162-751f-9650-fba3afc90683",
+   "id": "01a1875f-6c75-728a-9b66-e08490d1699c",
    "session": "affordability",
    "turn": 1,
    "kind": "blend",
@@ -115,7 +130,7 @@
     0,
     2
    ],
-   "state": "Apply the sample product policy to the latest verified cash-flow record.\nSubtract each quoted installment separately, since these are alternative\noffers, not two concurrent loans. Compare the remainder with the 1000 USD sample\nthreshold.",
+   "state": "",
    "questions": [
     {
      "id": "affordability",
@@ -123,27 +138,27 @@
      "type": "choice",
      "options": [
       {
-       "id": "both",
+       "id": "both_quoted_loans_meet_the_affordability_threshold",
        "label": "Both quoted loans meet the affordability threshold",
        "p": 0.81
       },
       {
-       "id": "smaller",
+       "id": "only_the_3000_usd_loan_meets_the_affordability_threshold",
        "label": "Only the 3000 USD loan meets the affordability threshold",
        "p": 0.06333333333333331
       },
       {
-       "id": "neither",
+       "id": "neither_quoted_loan_meets_the_affordability_threshold",
        "label": "Neither quoted loan meets the affordability threshold",
        "p": 0.06333333333333331
       },
       {
-       "id": "review",
+       "id": "required_affordability_evidence_is_missing",
        "label": "Required affordability evidence is missing",
        "p": 0.06333333333333331
       }
      ],
-     "selected": "both"
+     "selected": "both_quoted_loans_meet_the_affordability_threshold"
     }
    ],
    "context": [
@@ -152,15 +167,27 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from cashflow --from policy --name affordability -s … -q …"
+   "command": "nouli new affordability --from cashflow --from policy '…' -q '…'"
   },
   {
-   "id": "01a18684-1175-7522-a384-845962008707",
+   "id": "01a1875f-6c8a-73c1-903d-fb20fe68a518",
    "session": "credit-review",
    "turn": 1,
    "kind": "blend",
@@ -168,7 +195,7 @@
     1,
     2
    ],
-   "state": "Apply the sample policy requirements for repayment records only. Do not infer\naffordability from this review.",
+   "state": "",
    "questions": [
     {
      "id": "credit_review",
@@ -176,22 +203,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "pass",
+       "id": "the_complete_record_meets_the_history_requirements",
        "label": "The complete record meets the history requirements",
        "p": 1
       },
       {
-       "id": "fail",
+       "id": "the_record_fails_the_history_requirements",
        "label": "The record fails the history requirements",
        "p": 0
       },
       {
-       "id": "review",
+       "id": "required_history_evidence_is_missing",
        "label": "Required history evidence is missing",
        "p": 0
       }
      ],
-     "selected": "pass"
+     "selected": "the_complete_record_meets_the_history_requirements"
     }
    ],
    "context": [
@@ -200,15 +227,27 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from history --from policy --name credit-review -s … -q …"
+   "command": "nouli new credit-review --from history --from policy '…' -q '…'"
   },
   {
-   "id": "01a18684-118d-73b9-bd8a-6c6fbdf4e8d9",
+   "id": "01a1875f-6ca5-74fc-a464-186d6b535597",
    "session": "recommendation",
    "turn": 1,
    "kind": "blend",
@@ -216,7 +255,7 @@
     3,
     4
    ],
-   "state": "Combine the affordability and credit-history reviews using the sample product\npolicy. A passing history gate cannot override an affordability failure.\nPrefer the requested 6000 USD loan if eligible; otherwise recommend the eligible\n3000 USD alternative; otherwise refer for manual review. This is a recommendation\nfor a loan officer, not an executed lending decision.",
+   "state": "",
    "questions": [
     {
      "id": "recommendation",
@@ -224,22 +263,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "requested",
+       "id": "recommend_the_requested_6000_usd_loan_at_the_quoted_250_usd_inst",
        "label": "Recommend the requested 6000 USD loan at the quoted 250 USD installment",
        "p": 0.81
       },
       {
-       "id": "smaller",
+       "id": "recommend_review_of_the_3000_usd_alternative_at_the_quoted_150_u",
        "label": "Recommend review of the 3000 USD alternative at the quoted 150 USD installment",
        "p": 0.09499999999999997
       },
       {
-       "id": "manual",
+       "id": "refer_for_manual_review_without_recommending_either_loan",
        "label": "Refer for manual review without recommending either loan",
        "p": 0.09499999999999997
       }
      ],
-     "selected": "requested"
+     "selected": "recommend_the_requested_6000_usd_loan_at_the_quoted_250_usd_inst"
     }
    ],
    "context": [
@@ -248,7 +287,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -256,26 +303,42 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
      "turn": 4,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from affordability --from credit-review --name recommendation -s … -q …"
+   "command": "nouli new recommendation --from affordability --from credit-review '…' -q '…'"
   },
   {
-   "id": "01a18684-119f-73ad-af8f-222f0bdf70b9",
+   "id": "01a1875f-6cbc-71bf-ab9b-2d0cef313b6a",
    "session": "cashflow",
    "turn": 2,
    "kind": "continued",
    "parents": [
     0
    ],
-   "state": "Fictional application L-101, corrected verification at 11:00: recurring net\nincome is 4800 USD per month, replacing the 09:00 figure of 5000 USD. Essential\nliving expenses remain 3000 USD and existing debt payments remain 600 USD. There are\nno other obligations. The proposed loan has not been approved or disbursed.",
+   "state": "",
    "questions": [
     {
      "id": "cashflow",
@@ -283,35 +346,43 @@
      "type": "choice",
      "options": [
       {
-       "id": "s1200",
+       "id": "1200_usd",
        "label": "1200 USD",
        "p": 0.31
       },
       {
-       "id": "s1400",
+       "id": "1400_usd",
        "label": "1400 USD",
        "p": 0.69
       },
       {
-       "id": "missing",
+       "id": "request_missing_cash_flow_records",
        "label": "Request missing cash-flow records",
        "p": 0
       }
      ],
-     "selected": "s1400"
+     "selected": "1400_usd"
     }
    ],
    "context": [
     {
      "turn": 0,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --session cashflow -s … -q …"
+   "command": "nouli add cashflow '…'"
   },
   {
-   "id": "01a18684-11b4-74f1-a1dc-a88fa0debdc2",
+   "id": "01a1875f-6cd2-70ff-8806-233d2cb7d1ec",
    "session": "affordability-updated",
    "turn": 1,
    "kind": "blend",
@@ -319,7 +390,7 @@
     6,
     2
    ],
-   "state": "Apply the sample product policy to the latest verified cash-flow record.\nSubtract each quoted installment separately, since these are alternative\noffers, not two concurrent loans. Compare the remainder with the 1000 USD sample\nthreshold.",
+   "state": "",
    "questions": [
     {
      "id": "affordability_updated",
@@ -327,27 +398,27 @@
      "type": "choice",
      "options": [
       {
-       "id": "both",
+       "id": "both_quoted_loans_meet_the_affordability_threshold",
        "label": "Both quoted loans meet the affordability threshold",
        "p": 0.77
       },
       {
-       "id": "smaller",
+       "id": "only_the_3000_usd_loan_meets_the_affordability_threshold",
        "label": "Only the 3000 USD loan meets the affordability threshold",
        "p": 0.05
       },
       {
-       "id": "neither",
+       "id": "neither_quoted_loan_meets_the_affordability_threshold",
        "label": "Neither quoted loan meets the affordability threshold",
        "p": 0.06
       },
       {
-       "id": "review",
+       "id": "required_affordability_evidence_is_missing",
        "label": "Required affordability evidence is missing",
        "p": 0.12
       }
      ],
-     "selected": "both"
+     "selected": "both_quoted_loans_meet_the_affordability_threshold"
     }
    ],
    "context": [
@@ -356,19 +427,35 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
      "turn": 2,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from cashflow --from policy --name affordability-updated -s … -q …"
+   "command": "nouli new affordability-updated --from cashflow --from policy '…' -q '…'"
   },
   {
-   "id": "01a18684-11ce-74c6-a6cc-cf0abe12583b",
+   "id": "01a1875f-6cf0-775e-bf18-8e5bafc42f6a",
    "session": "recommendation-updated",
    "turn": 1,
    "kind": "blend",
@@ -376,7 +463,7 @@
     7,
     4
    ],
-   "state": "Combine the affordability and credit-history reviews using the sample product\npolicy. A passing history gate cannot override an affordability failure.\nPrefer the requested 6000 USD loan if eligible; otherwise recommend the eligible\n3000 USD alternative; otherwise refer for manual review. This is a recommendation\nfor a loan officer, not an executed lending decision.",
+   "state": "",
    "questions": [
     {
      "id": "recommendation_updated",
@@ -384,22 +471,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "requested",
+       "id": "recommend_the_requested_6000_usd_loan_at_the_quoted_250_usd_inst",
        "label": "Recommend the requested 6000 USD loan at the quoted 250 USD installment",
        "p": 0.73
       },
       {
-       "id": "smaller",
+       "id": "recommend_review_of_the_3000_usd_alternative_at_the_quoted_150_u",
        "label": "Recommend review of the 3000 USD alternative at the quoted 150 USD installment",
        "p": 0.17
       },
       {
-       "id": "manual",
+       "id": "refer_for_manual_review_without_recommending_either_loan",
        "label": "Refer for manual review without recommending either loan",
        "p": 0.1
       }
      ],
-     "selected": "requested"
+     "selected": "recommend_the_requested_6000_usd_loan_at_the_quoted_250_usd_inst"
     }
    ],
    "context": [
@@ -408,7 +495,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -416,7 +511,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 7,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -424,12 +527,24 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 4,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from affordability-updated --from credit-review --name recommendation-updated -s … -q …"
+   "command": "nouli new recommendation-updated --from affordability-updated --from credit-review '…' -q '…'"
   }
  ]
 }

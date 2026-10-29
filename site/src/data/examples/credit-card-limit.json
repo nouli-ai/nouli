@@ -2,12 +2,12 @@
  "session": "limit-updated",
  "nodes": [
   {
-   "id": "01a18684-0fe2-7661-bfab-7d24566c5b3c",
+   "id": "01a1875f-6b1a-7674-9caf-3846fe704b3a",
    "session": "cashflow",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Fictional card application C-202 for an adult over 21, verification at 09:00:\nrecurring net monthly income is 4000 USD, essential living expenses are 2500 USD,\nand payments on other debts are 700 USD. The 700 USD excludes payments on this\ncredit card. There are no other obligations. All records required by the\nsample policy are verified.",
+   "state": "",
    "questions": [
     {
      "id": "cashflow",
@@ -15,35 +15,40 @@
      "type": "choice",
      "options": [
       {
-       "id": "s800",
+       "id": "800_usd",
        "label": "800 USD",
        "p": 0.99
       },
       {
-       "id": "s1500",
+       "id": "1500_usd",
        "label": "1500 USD",
        "p": 0.01
       },
       {
-       "id": "missing",
+       "id": "request_missing_income_or_obligation_records",
        "label": "Request missing income or obligation records",
        "p": 0
       }
      ],
-     "selected": "s800"
+     "selected": "800_usd"
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name cashflow -s … -q …"
+   "command": "nouli new cashflow '…' -q '…'"
   },
   {
-   "id": "01a18684-0ff2-72e5-8719-e401528e7200",
+   "id": "01a1875f-6b28-758f-939f-4e8a9ef65da9",
    "session": "account",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Fictional card account C-202: the current total limit is 5000 USD and the balance\nis 1000 USD. All 24 monthly minimum payments were made on time. There is no\ndelinquency, over-limit balance, or unresolved account restriction. The\naccount record is complete.",
+   "state": "",
    "questions": [
     {
      "id": "account",
@@ -66,17 +71,22 @@
      "expected": 2
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name account -s … -q …"
+   "command": "nouli new account '…' -q '…'"
   },
   {
-   "id": "01a18684-1002-76b9-88fc-4c1b01da664d",
+   "id": "01a1875f-6b37-7502-a4a3-0a7d53243baf",
    "session": "policy",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Fictional bank review policy for C-202: the customer requests a total credit\nline of 10000 USD, replacing the current 5000 USD line. A 6000 USD total line is an\nalternative. Supplied all-in stressed monthly minimum payments at full\nutilization are 300 USD for 10000 USD, 180 USD for 6000 USD, and 150 USD for the current\n5000 USD. These are illustrative account-term estimates, not a statutory\npercentage formula. Each line must leave at least 600 USD per month after living\nexpenses, other debt payments, and its stressed card payment. The account gate\nrequires complete records, at least 12 timely payments, and no delinquency,\nover-limit balance, or unresolved restriction. Recommend the highest eligible\nline up to the request; if no increase qualifies, retain the current line only\nif it qualifies; otherwise refer for manual review. Missing evidence also\nrequires manual review.",
+   "state": "",
    "questions": [
     {
      "id": "policy",
@@ -84,30 +94,35 @@
      "type": "choice",
      "options": [
       {
-       "id": "both",
+       "id": "evaluate_payment_capacity_and_account_standing",
        "label": "Evaluate payment capacity and account standing",
        "p": 1
       },
       {
-       "id": "account",
+       "id": "use_account_standing_alone",
        "label": "Use account standing alone",
        "p": 0
       },
       {
-       "id": "balance",
+       "id": "use_the_current_balance_alone",
        "label": "Use the current balance alone",
        "p": 0
       }
      ],
-     "selected": "both"
+     "selected": "evaluate_payment_capacity_and_account_standing"
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name policy -s … -q …"
+   "command": "nouli new policy '…' -q '…'"
   },
   {
-   "id": "01a18684-1015-77a5-be64-f38640392c2b",
+   "id": "01a1875f-6b4a-744c-a1fe-dada3c7a0149",
    "session": "capacity",
    "turn": 1,
    "kind": "blend",
@@ -115,7 +130,7 @@
     0,
     2
    ],
-   "state": "Use the latest verified income and obligations with the sample policy. Assess\neach candidate total line separately, not as an additional amount on top of\nthe existing line. Subtract the supplied stressed card payment once. Determine\nthe highest total line that leaves at least 600 USD each month.",
+   "state": "",
    "questions": [
     {
      "id": "capacity",
@@ -123,27 +138,27 @@
      "type": "choice",
      "options": [
       {
-       "id": "l10000",
+       "id": "the_10000_usd_requested_total_line_meets_the_capacity_threshold",
        "label": "The 10000 USD requested total line meets the capacity threshold",
        "p": 0.19000000000000003
       },
       {
-       "id": "l6000",
+       "id": "only_the_6000_usd_alternative_and_current_5000_usd_line_meet_the",
        "label": "Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold",
        "p": 0.43
       },
       {
-       "id": "l5000",
+       "id": "only_the_current_5000_usd_line_meets_the_capacity_threshold",
        "label": "Only the current 5000 USD line meets the capacity threshold",
        "p": 0.19000000000000003
       },
       {
-       "id": "review",
+       "id": "no_line_qualifies_or_required_verification_is_missing",
        "label": "No line qualifies or required verification is missing",
        "p": 0.19000000000000003
       }
      ],
-     "selected": "l6000"
+     "selected": "only_the_6000_usd_alternative_and_current_5000_usd_line_meet_the"
     }
    ],
    "context": [
@@ -152,15 +167,27 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from cashflow --from policy --name capacity -s … -q …"
+   "command": "nouli new capacity --from cashflow --from policy '…' -q '…'"
   },
   {
-   "id": "01a18684-1028-714f-b062-a3c67fc19e97",
+   "id": "01a1875f-6b5f-72e7-93bd-265724d7d8fa",
    "session": "standing",
    "turn": 1,
    "kind": "blend",
@@ -168,7 +195,7 @@
     1,
     2
    ],
-   "state": "Apply only the account-standing gate from the sample policy to the recorded\naccount. Do not use account standing to infer income or payment capacity.",
+   "state": "",
    "questions": [
     {
      "id": "standing",
@@ -176,22 +203,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "pass",
+       "id": "the_complete_account_record_meets_the_standing_requirements",
        "label": "The complete account record meets the standing requirements",
        "p": 1
       },
       {
-       "id": "fail",
+       "id": "the_account_fails_the_standing_requirements",
        "label": "The account fails the standing requirements",
        "p": 0
       },
       {
-       "id": "review",
+       "id": "required_account_records_are_missing",
        "label": "Required account records are missing",
        "p": 0
       }
      ],
-     "selected": "pass"
+     "selected": "the_complete_account_record_meets_the_standing_requirements"
     }
    ],
    "context": [
@@ -200,15 +227,27 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from account --from policy --name standing -s … -q …"
+   "command": "nouli new standing --from account --from policy '…' -q '…'"
   },
   {
-   "id": "01a18684-1041-73fa-be15-87af2abeac33",
+   "id": "01a1875f-6b7b-70dd-874c-875e8af7efea",
    "session": "limit",
    "turn": 1,
    "kind": "blend",
@@ -216,7 +255,7 @@
     3,
     4
    ],
-   "state": "Combine the capacity and account-standing reviews. Recommend the highest\neligible total line up to the requested 10000 USD only when both gates pass. A\npassing account review cannot override insufficient payment capacity. If the\naccount-standing gate fails or lacks evidence, refer for manual review. If\nstanding passes but no increase qualifies, retain 5000 USD only if its capacity\ntest passes; otherwise refer for manual review. This recommendation does not change the account.",
+   "state": "",
    "questions": [
     {
      "id": "limit",
@@ -224,27 +263,27 @@
      "type": "choice",
      "options": [
       {
-       "id": "l10000",
+       "id": "recommend_a_10000_usd_total_line",
        "label": "Recommend a 10000 USD total line",
        "p": 0.09333333333333334
       },
       {
-       "id": "l6000",
+       "id": "recommend_a_6000_usd_total_line",
        "label": "Recommend a 6000 USD total line",
        "p": 0.72
       },
       {
-       "id": "l5000",
+       "id": "retain_the_current_5000_usd_line",
        "label": "Retain the current 5000 USD line",
        "p": 0.09333333333333334
       },
       {
-       "id": "review",
+       "id": "refer_for_manual_review_without_recommending_a_limit",
        "label": "Refer for manual review without recommending a limit",
        "p": 0.09333333333333334
       }
      ],
-     "selected": "l6000"
+     "selected": "recommend_a_6000_usd_total_line"
     }
    ],
    "context": [
@@ -253,7 +292,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -261,26 +308,42 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
      "turn": 4,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from capacity --from standing --name limit -s … -q …"
+   "command": "nouli new limit --from capacity --from standing '…' -q '…'"
   },
   {
-   "id": "01a18684-1054-74ab-8d17-27e7bcc4e720",
+   "id": "01a1875f-6b92-7407-99e8-41f0435bc7a6",
    "session": "cashflow",
    "turn": 2,
    "kind": "continued",
    "parents": [
     0
    ],
-   "state": "Fictional card application C-202, new verification at 11:00: recurring net\nmonthly income is now 4500 USD, replacing the 09:00 value of 4000 USD. Essential\nliving expenses remain 2500 USD and other debt payments remain 700 USD, excluding\nthis credit card. There are no other obligations. The customer supplied\nverified evidence of the income change. No limit increase has been applied.",
+   "state": "",
    "questions": [
     {
      "id": "cashflow",
@@ -288,35 +351,43 @@
      "type": "choice",
      "options": [
       {
-       "id": "s1300",
+       "id": "1300_usd",
        "label": "1300 USD",
        "p": 0.95
       },
       {
-       "id": "s800",
+       "id": "800_usd",
        "label": "800 USD",
        "p": 0.05
       },
       {
-       "id": "missing",
+       "id": "request_missing_income_or_obligation_records",
        "label": "Request missing income or obligation records",
        "p": 0
       }
      ],
-     "selected": "s1300"
+     "selected": "1300_usd"
     }
    ],
    "context": [
     {
      "turn": 0,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --session cashflow -s … -q …"
+   "command": "nouli add cashflow '…'"
   },
   {
-   "id": "01a18684-1069-72dd-a06e-cd4c6c0df156",
+   "id": "01a1875f-6ba9-7637-9e21-99bd3cc6cb3b",
    "session": "capacity-updated",
    "turn": 1,
    "kind": "blend",
@@ -324,7 +395,7 @@
     6,
     2
    ],
-   "state": "Use the latest verified income and obligations with the sample policy. Assess\neach candidate total line separately, not as an additional amount on top of\nthe existing line. Subtract the supplied stressed card payment once. Determine\nthe highest total line that leaves at least 600 USD each month.",
+   "state": "",
    "questions": [
     {
      "id": "capacity_updated",
@@ -332,27 +403,27 @@
      "type": "choice",
      "options": [
       {
-       "id": "l10000",
+       "id": "the_10000_usd_requested_total_line_meets_the_capacity_threshold",
        "label": "The 10000 USD requested total line meets the capacity threshold",
        "p": 0.65
       },
       {
-       "id": "l6000",
+       "id": "only_the_6000_usd_alternative_and_current_5000_usd_line_meet_the",
        "label": "Only the 6000 USD alternative and current 5000 USD line meet the capacity threshold",
        "p": 0.25
       },
       {
-       "id": "l5000",
+       "id": "only_the_current_5000_usd_line_meets_the_capacity_threshold",
        "label": "Only the current 5000 USD line meets the capacity threshold",
        "p": 0.02
       },
       {
-       "id": "review",
+       "id": "no_line_qualifies_or_required_verification_is_missing",
        "label": "No line qualifies or required verification is missing",
        "p": 0.08
       }
      ],
-     "selected": "l10000"
+     "selected": "the_10000_usd_requested_total_line_meets_the_capacity_threshold"
     }
    ],
    "context": [
@@ -361,19 +432,35 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
      "turn": 2,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from cashflow --from policy --name capacity-updated -s … -q …"
+   "command": "nouli new capacity-updated --from cashflow --from policy '…' -q '…'"
   },
   {
-   "id": "01a18684-1083-7655-8eb2-95fa0d6d26a5",
+   "id": "01a1875f-6bc8-7160-9a70-1073cbdb31a4",
    "session": "limit-updated",
    "turn": 1,
    "kind": "blend",
@@ -381,7 +468,7 @@
     7,
     4
    ],
-   "state": "Combine the capacity and account-standing reviews. Recommend the highest\neligible total line up to the requested 10000 USD only when both gates pass. A\npassing account review cannot override insufficient payment capacity. If the\naccount-standing gate fails or lacks evidence, refer for manual review. If\nstanding passes but no increase qualifies, retain 5000 USD only if its capacity\ntest passes; otherwise refer for manual review. This recommendation does not change the account.",
+   "state": "",
    "questions": [
     {
      "id": "limit_updated",
@@ -389,27 +476,27 @@
      "type": "choice",
      "options": [
       {
-       "id": "l10000",
+       "id": "recommend_a_10000_usd_total_line",
        "label": "Recommend a 10000 USD total line",
        "p": 0.71
       },
       {
-       "id": "l6000",
+       "id": "recommend_a_6000_usd_total_line",
        "label": "Recommend a 6000 USD total line",
        "p": 0.2
       },
       {
-       "id": "l5000",
+       "id": "retain_the_current_5000_usd_line",
        "label": "Retain the current 5000 USD line",
        "p": 0.06
       },
       {
-       "id": "review",
+       "id": "refer_for_manual_review_without_recommending_a_limit",
        "label": "Refer for manual review without recommending a limit",
        "p": 0.03
       }
      ],
-     "selected": "l10000"
+     "selected": "recommend_a_10000_usd_total_line"
     }
    ],
    "context": [
@@ -418,7 +505,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 6,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -426,7 +521,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 7,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -434,12 +537,24 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 4,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from capacity-updated --from standing --name limit-updated -s … -q …"
+   "command": "nouli new limit-updated --from capacity-updated --from standing '…' -q '…'"
   }
  ]
 }

@@ -27,311 +27,189 @@
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record the conservation request</h2>
 <p>Record the external request separately from the facility limits. The two-hour planning interval is 18:00-20:00, after the historical alert.</p>
-<pre><code>nouli --format text --name &quot;$example-request&quot; \
-  --state &#x27;Cal OES reported a September 6, 2022 emergency alert at 17:45, requesting
+<pre><code>nouli --format text new &quot;$example-request&quot; \
+  &#x27;Cal OES reported a September 6, 2022 emergency alert at 17:45, requesting
 reductions in nonessential electricity use where health permits until 21:00.
 Our illustrative facility is considering 18:00-20:00. This is a voluntary
 conservation request, not a market dispatch instruction.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;request&quot;,
-    &quot;prompt&quot;: &quot;Which type of response fits this request?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;flexible&quot;, &quot;description&quot;: &quot;Reduce nonessential use while preserving critical operations&quot;},
-        {&quot;id&quot;: &quot;critical&quot;, &quot;description&quot;: &quot;Include critical operations in load reductions&quot;},
-        {&quot;id&quot;: &quot;clarify&quot;, &quot;description&quot;: &quot;Request clarification before choosing any response&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;request: Which type of response fits this request? [Reduce nonessential use while preserving critical operations,
+    Include critical operations in load reductions,
+    Request clarification before choosing any response]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-13b0-7486-af83-05bd175a8f1d
-Turn: 01a18684-13b4-7491-859f-9449caa8f172
-Provider: typesafe/jev-1.14.0
-request: choice: flexible (Reduce nonessential use while preserving critical operations), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  request     ▶ Reduce nonessential use while p… ████████████████████ 1.00
+                Include critical operations in …                      0.00
+                Request clarification before ch…                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-69d9-73c2-9c95-b4121d9f0465 · turn 01a1875f-69df-7234-821f-56e98e8f7fcb</code></pre>
 <p>The model selects reducing nonessential use while preserving critical operations. This is voluntary conservation context, not a market dispatch instruction.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Record battery availability</h2>
 <p>Record battery telemetry without applying a reserve requirement yet. Stored energy and the discharge power limit are distinct quantities.</p>
-<pre><code>nouli --format text --name &quot;$example-battery&quot; \
-  --state &#x27;Illustrative reading at 17:50: stored AC-deliverable energy is 800 kWh in a
+<pre><code>nouli --format text new &quot;$example-battery&quot; \
+  &#x27;Illustrative reading at 17:50: stored AC-deliverable energy is 800 kWh in a
 1000 kWh battery. The discharge limit is 200 kW. No charging is planned during
 the two-hour interval. This telemetry record does not define the required
 reserve.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;battery&quot;,
-    &quot;prompt&quot;: &quot;What battery power limit applies before reserve requirements are considered?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;p100&quot;, &quot;description&quot;: &quot;100 kW&quot;},
-        {&quot;id&quot;: &quot;p150&quot;, &quot;description&quot;: &quot;150 kW&quot;},
-        {&quot;id&quot;: &quot;p200&quot;, &quot;description&quot;: &quot;200 kW&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;battery: What battery power limit applies before reserve requirements are considered? [100 kW,
+    150 kW,
+    200 kW]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-13c0-745e-b135-05b6baa6816b
-Turn: 01a18684-13c4-718d-8c14-736242220857
-Provider: typesafe/jev-1.14.0
-battery: choice: p200 (200 kW), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  battery       100 kW                                                0.00
+                150 kW                                                0.00
+              ▶ 200 kW                           ████████████████████ 1.00
+  typesafe/jev-1.14.0 · session 01a1875f-69eb-72ba-a7f5-76f4a9af1c4e · turn 01a1875f-69ef-72f2-9c4b-163ac35f5204</code></pre>
 <p>The battery power limit is 200 kW. The reserve policy and interval duration will constrain how much of that limit can actually be used.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record facility obligations</h2>
 <p>Record facility obligations in a separate history so both planning branches can reuse them. The reserve is 500 kWh and refrigeration cannot be curtailed.</p>
-<pre><code>nouli --format text --name &quot;$example-facility&quot; \
-  --state &#x27;Illustrative facility policy: retain at least 500 kWh of AC-deliverable
+<pre><code>nouli --format text new &quot;$example-facility&quot; \
+  &#x27;Illustrative facility policy: retain at least 500 kWh of AC-deliverable
 battery energy after 20:00 for critical operations. Vehicle charging can be
 deferred by 100 kW throughout 18:00-20:00 without affecting departures.
 Critical refrigeration uses 150 kW and cannot be curtailed. There are no other
 flexible loads. The local conservation goal is 250 kW for the interval.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;facility&quot;,
-    &quot;prompt&quot;: &quot;Which load can be reduced without disrupting critical operations?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;charging&quot;, &quot;description&quot;: &quot;Defer vehicle charging&quot;},
-        {&quot;id&quot;: &quot;refrigeration&quot;, &quot;description&quot;: &quot;Curtail refrigeration&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Request a review of operating constraints&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;facility: Which load can be reduced without disrupting critical operations? [Defer vehicle charging,
+    Curtail refrigeration,
+    Request a review of operating constraints]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-13cf-7321-b51e-7eb0eb8b40a8
-Turn: 01a18684-13d4-7133-a56e-f1a7a58a3010
-Provider: typesafe/jev-1.14.0
-facility: choice: charging (Defer vehicle charging), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  facility    ▶ Defer vehicle charging           ████████████████████ 1.00
+                Curtail refrigeration                                 0.00
+                Request a review of operating c…                      0.00
+  typesafe/jev-1.14.0 · session 01a1875f-69fa-7542-bd21-0c2051bb0944 · turn 01a1875f-69fe-731c-a2fc-8e69b715a8fe</code></pre>
 <p>The model selects deferring vehicle charging. The 100 kW flexible load can be removed for the whole interval without affecting departures.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Choose the battery contribution</h2>
 <p>Blend telemetry and facility policy to choose constant battery output for two hours. The plan has not executed.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-battery&quot; \
-  --from &quot;$example-facility&quot; \
-  --name &quot;$example-battery-plan&quot; \
-  --state &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
+<pre><code>nouli --format text new &quot;$example-battery-plan&quot; --from &quot;$example-battery&quot; --from &quot;$example-facility&quot; \
+  &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
 least the recorded reserve. Use the latest telemetry. The proposed plan has
 not executed.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;battery_plan&quot;,
-    &quot;prompt&quot;: &quot;What constant battery contribution is feasible?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;p100&quot;, &quot;description&quot;: &quot;Discharge at 100 kW for two hours&quot;},
-        {&quot;id&quot;: &quot;p150&quot;, &quot;description&quot;: &quot;Discharge at 150 kW for two hours&quot;},
-        {&quot;id&quot;: &quot;p200&quot;, &quot;description&quot;: &quot;Discharge at 200 kW for two hours&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;battery_plan: What constant battery contribution is feasible? [Discharge at 100 kW for two hours,
+    Discharge at 150 kW for two hours,
+    Discharge at 200 kW for two hours]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-13df-711e-9c97-fe250854aa26
-Turn: 01a18684-13e6-76d7-95f8-d1f1b30bb777
-Provider: typesafe/jev-1.14.0
-battery_plan: choice: p150 (Discharge at 150 kW for two hours), P(selected)=0.58
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.37</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  battery_pl…   Discharge at 100 kW for two hou… ████▎                0.21
+              ▶ Discharge at 150 kW for two hou… ███████████▋         0.58
+                Discharge at 200 kW for two hou… ████▎                0.21
+  typesafe/jev-1.14.0 · session 01a1875f-6a09-726c-b197-eeda324f1694 · turn 01a1875f-6a11-70e4-9dec-1d5610c71054</code></pre>
 <p>The recorded 150 kW contribution uses 300 kWh and leaves the 500 kWh reserve: 800 - (150 x 2) = 500. It is below the 200 kW power limit.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Choose the load contribution</h2>
 <p>Blend the conservation request with facility policy to choose a load response independently of battery dispatch.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-request&quot; \
-  --from &quot;$example-facility&quot; \
-  --name &quot;$example-load-plan&quot; \
-  --state &#x27;Choose a voluntary load reduction consistent with the conservation request and
+<pre><code>nouli --format text new &quot;$example-load-plan&quot; --from &quot;$example-request&quot; --from &quot;$example-facility&quot; \
+  &#x27;Choose a voluntary load reduction consistent with the conservation request and
 the facility obligations.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;load_plan&quot;,
-    &quot;prompt&quot;: &quot;Which load response should the facility offer?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;charging&quot;, &quot;description&quot;: &quot;Defer 100 kW of vehicle charging for two hours&quot;},
-        {&quot;id&quot;: &quot;both&quot;, &quot;description&quot;: &quot;Defer charging and refrigeration for two hours&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Request a revised operating plan before offering a reduction&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;load_plan: Which load response should the facility offer? [Defer 100 kW of vehicle charging for two hours,
+    Defer charging and refrigeration for two hours,
+    Request a revised operating plan before offering a reduction]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-13f2-752b-a4c0-bcb8ebbf7e71
-Turn: 01a18684-13f9-72a5-bf53-905142d38644
-Provider: typesafe/jev-1.14.0
-load_plan: choice: charging (Defer 100 kW of vehicle charging for two hours), P(selected)=0.86
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.79</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  load_plan   ▶ Defer 100 kW of vehicle chargin… █████████████████▎   0.86
+                Defer charging and refrigeratio… ▎                    0.01
+                Request a revised operating pla… ██▋                  0.13
+  typesafe/jev-1.14.0 · session 01a1875f-6a1d-7411-8004-2bd4fc56699a · turn 01a1875f-6a26-7262-aad5-f1090dba0dc8</code></pre>
 <p>The model selects deferring 100 kW of charging for two hours while preserving refrigeration. This branch shares facility policy with the battery branch.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine the two plans</h2>
 <p>Combine both planning branches into one offer toward the sample local target.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-battery-plan&quot; \
-  --from &quot;$example-load-plan&quot; \
-  --name &quot;$example-plan&quot; \
-  --state &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
+<pre><code>nouli --format text new &quot;$example-plan&quot; --from &quot;$example-battery-plan&quot; --from &quot;$example-load-plan&quot; \
+  &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
 loads, and the local goal. Prefer meeting the goal when feasible. Otherwise
 choose the largest feasible offer and report its shortfall. All proposed plans
 are alternatives before execution, not successive discharges.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;plan&quot;,
-    &quot;prompt&quot;: &quot;Which conservation plan is feasible for 18:00-20:00?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;full&quot;, &quot;description&quot;: &quot;Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging&quot;},
-        {&quot;id&quot;: &quot;partial&quot;, &quot;description&quot;: &quot;Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Request a revised plan because neither offer fits the constraints&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;plan: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
+    Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall,
+    Request a revised plan because neither offer fits the constraints]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1405-73b8-9ea4-2a35aa6344ef
-Turn: 01a18684-1411-7412-96f6-18eb59bcc1c5
-Provider: typesafe/jev-1.14.0
-plan: choice: full (Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging), P(selected)=0.71
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.56</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  plan        ▶ Reduce imports by 250 kW: 150 k… ██████████████▎      0.71
+                Reduce imports by 200 kW: 100 k… ██▉                  0.15
+                Request a revised plan because … ██▉                  0.15
+  typesafe/jev-1.14.0 · session 01a1875f-6a32-73bb-8568-9ebf555d34fb · turn 01a1875f-6a41-77f1-b736-5ccb570eccf3</code></pre>
 <p>The model selects 150 kW from the battery plus 100 kW of deferred charging, a 250 kW reduction in grid imports. The command records an offer; it does not operate equipment.</p>
 </section>
 <section class="step" id="step-7">
 <h2><span class="num">07</span>Try an unsaved alternative</h2>
-<p>Use --from with --no-session to evaluate a hypothetical 700 kWh reading without saving a new decision or updating the telemetry session.</p>
-<pre><code>nouli --format text --from &quot;$example-plan&quot; --no-session \
-  --state &#x27;What-if only: replace the stored-energy reading with 700 kWh for this
+<p>Use <code>whatif</code> to evaluate a hypothetical 700 kWh reading without saving a new decision or updating the telemetry session. A session keeps asking its questions, so <code>--drop plan</code> leaves the plan question out of this one turn.</p>
+<pre><code>nouli --format text whatif &quot;$example-plan&quot; \
+  &#x27;What-if only: replace the stored-energy reading with 700 kWh for this
 evaluation. Keep the 500 kWh reserve, 200 kW power limit, 100 kW deferrable
 charging, and two-hour interval. Choose the largest feasible offer toward the
 250 kW goal. No plan has executed.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;what_if&quot;,
-    &quot;prompt&quot;: &quot;Which conservation plan is feasible for 18:00-20:00?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;full&quot;, &quot;description&quot;: &quot;Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging&quot;},
-        {&quot;id&quot;: &quot;partial&quot;, &quot;description&quot;: &quot;Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Request a revised plan because neither offer fits the constraints&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;what_if: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
+    Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall,
+    Request a revised plan because neither offer fits the constraints]&#x27; \
+  --drop plan</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Provider: typesafe/jev-1.14.0
-what_if: choice: full (Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging), P(selected)=0.77
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.66</code></pre>
+<pre class="out"><code>  (not saved) · 1 fact · 1 question
+  what_if     ▶ Reduce imports by 250 kW: 150 k… ███████████████▍     0.77
+                Reduce imports by 200 kW: 100 k… ██▎                  0.12
+                Request a revised plan because … ██▎                  0.12
+  typesafe/jev-1.14.0</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model keeps the full 250 kW offer. With 700 kWh stored and a 500 kWh reserve, only 200 kWh can be used over two hours, allowing 100 kW from the battery. The feasible combined offer is 200 kW, with a 50 kW shortfall. The captured what-if answer is incorrect.</p>
 </section>
 <section class="step" id="step-8" data-node="6">
 <h2><span class="num">08</span>Record corrected telemetry</h2>
-<p>Continue the telemetry session with the corrected 700 kWh reading. Unlike the what-if, this becomes saved source evidence for new decisions.</p>
-<pre><code>nouli --format text --session &quot;$example-battery&quot; \
-  --state &#x27;Confirmed illustrative correction at 17:55, replacing the 17:50 reading:
+<p>Continue the telemetry session with the corrected 700 kWh reading. Unlike the what-if, this becomes saved source evidence for new decisions. The same question ID replaces the session's standing question with the reworded one.</p>
+<pre><code>nouli --format text add &quot;$example-battery&quot; \
+  &#x27;Confirmed illustrative correction at 17:55, replacing the 17:50 reading:
 stored AC-deliverable energy is 700 kWh. The power limit remains 200 kW. No
 discharge has occurred; this is a corrected measurement before the interval
 starts.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;battery&quot;,
-    &quot;prompt&quot;: &quot;What stored-energy reading should the next plan use?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;e700&quot;, &quot;description&quot;: &quot;700 kWh&quot;},
-        {&quot;id&quot;: &quot;e800&quot;, &quot;description&quot;: &quot;800 kWh&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Request a fresh reading&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;battery: What stored-energy reading should the next plan use? [700 kWh,
+    800 kWh,
+    Request a fresh reading]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-13c0-745e-b135-05b6baa6816b
-Turn: 01a18684-1433-7177-be12-51537e7be106
-Provider: typesafe/jev-1.14.0
-battery: choice: e700 (700 kWh), P(selected)=1
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=1</code></pre>
+<pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
+  battery     ▶ 700 kWh                          ████████████████████ 1.00
+                800 kWh                                               0.00
+                Request a fresh reading                               0.00
+  typesafe/jev-1.14.0 · session 01a1875f-69eb-72ba-a7f5-76f4a9af1c4e · turn 01a1875f-6a6c-775d-996d-4afe85c7be50</code></pre>
 <p>The model identifies 700 kWh as the latest reading. The original plan has still not executed, so no discharge needs to be subtracted from that reading.</p>
 </section>
 <section class="step" id="step-9" data-node="7">
 <h2><span class="num">09</span>Recompute the battery plan from its sources</h2>
 <p>Create a new battery plan from updated telemetry and unchanged facility obligations. This brings the corrected source into a fresh blend.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-battery&quot; \
-  --from &quot;$example-facility&quot; \
-  --name &quot;$example-battery-plan-updated&quot; \
-  --state &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
+<pre><code>nouli --format text new &quot;$example-battery-plan-updated&quot; --from &quot;$example-battery&quot; --from &quot;$example-facility&quot; \
+  &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
 least the recorded reserve. Use the latest telemetry. The proposed plan has
 not executed.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;battery_plan_updated&quot;,
-    &quot;prompt&quot;: &quot;What constant battery contribution is feasible?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;p100&quot;, &quot;description&quot;: &quot;Discharge at 100 kW for two hours&quot;},
-        {&quot;id&quot;: &quot;p150&quot;, &quot;description&quot;: &quot;Discharge at 150 kW for two hours&quot;},
-        {&quot;id&quot;: &quot;p200&quot;, &quot;description&quot;: &quot;Discharge at 200 kW for two hours&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;battery_plan_updated: What constant battery contribution is feasible? [Discharge at 100 kW for two hours,
+    Discharge at 150 kW for two hours,
+    Discharge at 200 kW for two hours]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-143e-7298-a348-e317bc9df95d
-Turn: 01a18684-1447-74c8-9b36-3c690b231025
-Provider: typesafe/jev-1.14.0
-battery_plan_updated: choice: p150 (Discharge at 150 kW for two hours), P(selected)=0.54
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.31</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  battery_pl…   Discharge at 100 kW for two hou… ██████               0.30
+              ▶ Discharge at 150 kW for two hou… ██████████▊          0.54
+                Discharge at 200 kW for two hou… ███▎                 0.16
+  typesafe/jev-1.14.0 · session 01a1875f-6a78-7185-ae7f-9b31ad180b46 · turn 01a1875f-6a82-7036-953f-8c3e47add9e1</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model selects 150 kW again. That would leave 700 - (150 x 2) = 400 kWh, below the 500 kWh reserve. The largest feasible candidate is 100 kW.</p>
 </section>
 <section class="step" id="step-10" data-node="8">
 <h2><span class="num">10</span>Save a revised combined plan</h2>
 <p>Combine the revised battery branch with the unchanged load plan to save a new overall recommendation.</p>
-<pre><code>nouli --format text \
-  --from &quot;$example-battery-plan-updated&quot; \
-  --from &quot;$example-load-plan&quot; \
-  --name &quot;$example-plan-updated&quot; \
-  --state &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
+<pre><code>nouli --format text new &quot;$example-plan-updated&quot; --from &quot;$example-battery-plan-updated&quot; --from &quot;$example-load-plan&quot; \
+  &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
 loads, and the local goal. Prefer meeting the goal when feasible. Otherwise
 choose the largest feasible offer and report its shortfall. All proposed plans
 are alternatives before execution, not successive discharges.&#x27; \
-  --questions &#x27;[
-  {
-    &quot;id&quot;: &quot;plan_updated&quot;,
-    &quot;prompt&quot;: &quot;Which conservation plan is feasible for 18:00-20:00?&quot;,
-    &quot;answer_space&quot;: {
-      &quot;type&quot;: &quot;choice&quot;,
-      &quot;options&quot;: [
-        {&quot;id&quot;: &quot;full&quot;, &quot;description&quot;: &quot;Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging&quot;},
-        {&quot;id&quot;: &quot;partial&quot;, &quot;description&quot;: &quot;Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall&quot;},
-        {&quot;id&quot;: &quot;review&quot;, &quot;description&quot;: &quot;Request a revised plan because neither offer fits the constraints&quot;}
-      ]
-    }
-  }
-]&#x27;</code></pre>
+  -q &#x27;plan_updated: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
+    Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall,
+    Request a revised plan because neither offer fits the constraints]&#x27;</code></pre>
 <p class="caption">Output</p>
-<pre class="out"><code>Session: 01a18684-1453-73c7-9091-758c35e65b39
-Turn: 01a18684-1461-767d-8cd3-cd347c661f1b
-Provider: typesafe/jev-1.14.0
-plan_updated: choice: full (Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging), P(selected)=0.66
-  Native confidence (typesafe/jev-1.14.0, native confidence fields from profile typesafe model jev-1.14.0): value=0.49</code></pre>
+<pre class="out"><code>  turn 1 · 1 fact · 1 question
+  plan_updat… ▶ Reduce imports by 250 kW: 150 k… █████████████▎       0.66
+                Reduce imports by 200 kW: 100 k… ██████               0.30
+                Request a revised plan because … ▊                    0.04
+  typesafe/jev-1.14.0 · session 01a1875f-6a8f-7631-9958-af9770fb2fef · turn 01a1875f-6aa0-779f-bfd7-058b4f024756</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model retains the 250 kW offer. The supplied constraints support 100 kW of battery discharge plus 100 kW of deferred charging, or 200 kW total. This recorded recommendation should be rejected by an independent reserve check before any equipment action.</p>
 </section>
 </article>

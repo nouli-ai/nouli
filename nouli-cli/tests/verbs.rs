@@ -126,7 +126,13 @@ fn add_reasks_standing_questions_and_drop_replace_and_whatif_change_only_what_th
     ]));
     assert!(what.session.is_none() && what.turn.is_none());
     assert_eq!(ids(&what.questions), ["travel", "on_time", "extra"]);
-    assert_eq!(server.count(), calls + 1);
+    // A what-if can leave a standing question out for that turn only.
+    let narrower = report(home.run(["whatif", "Trip", "--drop", "on_time", "--json"]));
+    assert_eq!(ids(&narrower.questions), ["travel"]);
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    assert_eq!(ledger.standing_questions(&trip).unwrap().len(), 2);
+    drop(ledger);
+    assert_eq!(server.count(), calls + 2);
     assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
     // Mistakes are input errors that never reach the provider.
     let calls = server.count();

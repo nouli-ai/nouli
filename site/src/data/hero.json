@@ -47,7 +47,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -66,7 +66,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cf9e-7290-a8d9-314804d1f848",
@@ -110,7 +110,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session travel -s … -q …"
+    "command": "nouli add travel '\u2026'"
    },
    {
     "id": "01a18683-33cd-7561-8b3c-5ad44058134a",
@@ -162,7 +162,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --from budget --name plan -s … -q …"
+    "command": "nouli new plan --from travel --from budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-346e-7175-811e-495daa102798",
@@ -217,7 +217,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "cancelled|travel": [
@@ -250,7 +250,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -269,7 +269,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cf9e-7290-a8d9-314804d1f848",
@@ -313,7 +313,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session travel -s … -q …"
+    "command": "nouli add travel '\u2026'"
    },
    {
     "id": "01a18683-3514-7370-a734-30b0a0da9d7d",
@@ -360,7 +360,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name plan -s … -q …"
+    "command": "nouli new plan --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-35e6-760f-a9d1-9c5be915c915",
@@ -411,7 +411,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "cancelled|budget": [
@@ -444,7 +444,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -463,7 +463,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cf9e-7290-a8d9-314804d1f848",
@@ -507,7 +507,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session travel -s … -q …"
+    "command": "nouli add travel '\u2026'"
    },
    {
     "id": "01a18683-3cd0-7561-8c73-54ac2e65763d",
@@ -550,7 +550,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from budget --name plan -s … -q …"
+    "command": "nouli new plan --from budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3d97-7486-a8d8-5ce2bed288ea",
@@ -597,7 +597,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "late|both": [
@@ -630,7 +630,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -649,7 +649,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-d2ca-72d8-8f33-4bd008e6decd",
@@ -693,7 +693,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name travel-late -s … -q …"
+    "command": "nouli new travel-late --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-36a1-76dd-b991-37f5fe0f86a3",
@@ -745,7 +745,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel-late --from budget --name plan -s … -q …"
+    "command": "nouli new plan --from travel-late --from budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3775-7253-b3ce-21da6fb94502",
@@ -800,7 +800,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "late|travel": [
@@ -833,7 +833,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -852,7 +852,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-d2ca-72d8-8f33-4bd008e6decd",
@@ -896,7 +896,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name travel-late -s … -q …"
+    "command": "nouli new travel-late --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3815-751a-bbac-22a9b84c6acd",
@@ -943,7 +943,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel-late --name plan -s … -q …"
+    "command": "nouli new plan --from travel-late '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-38c6-757d-89b4-19aa438cde91",
@@ -994,7 +994,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "late|budget": [
@@ -1027,7 +1027,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -1046,7 +1046,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-d2ca-72d8-8f33-4bd008e6decd",
@@ -1090,7 +1090,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name travel-late -s … -q …"
+    "command": "nouli new travel-late --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3cd0-7561-8c73-54ac2e65763d",
@@ -1133,7 +1133,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from budget --name plan -s … -q …"
+    "command": "nouli new plan --from budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3d97-7486-a8d8-5ce2bed288ea",
@@ -1180,7 +1180,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "ontime|both": [
@@ -1213,7 +1213,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -1232,7 +1232,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-d626-772f-8ae5-39c4a3613528",
@@ -1276,7 +1276,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name travel-ontime -s … -q …"
+    "command": "nouli new travel-ontime --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-39e4-74f0-ad7a-96ae4c36588b",
@@ -1328,7 +1328,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel-ontime --from budget --name plan -s … -q …"
+    "command": "nouli new plan --from travel-ontime --from budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3ab4-7425-a696-362dcb6db096",
@@ -1383,7 +1383,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "ontime|travel": [
@@ -1416,7 +1416,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -1435,7 +1435,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-d626-772f-8ae5-39c4a3613528",
@@ -1479,7 +1479,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name travel-ontime -s … -q …"
+    "command": "nouli new travel-ontime --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3b8a-7779-ad5c-ee93659da473",
@@ -1526,7 +1526,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel-ontime --name plan -s … -q …"
+    "command": "nouli new plan --from travel-ontime '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3c2d-7591-bff3-ab77166042f0",
@@ -1577,7 +1577,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ],
   "ontime|budget": [
@@ -1610,7 +1610,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name travel -s … -q …"
+    "command": "nouli new travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
@@ -1629,7 +1629,7 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --name budget -s … -q …"
+    "command": "nouli new budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18682-d626-772f-8ae5-39c4a3613528",
@@ -1673,7 +1673,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from travel --name travel-ontime -s … -q …"
+    "command": "nouli new travel-ontime --from travel '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3cd0-7561-8c73-54ac2e65763d",
@@ -1716,7 +1716,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --from budget --name plan -s … -q …"
+    "command": "nouli new plan --from budget '\u2026' -q '\u2026'"
    },
    {
     "id": "01a18683-3d97-7486-a8d8-5ce2bed288ea",
@@ -1763,7 +1763,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli --session plan -s … -q …"
+    "command": "nouli add plan '\u2026'"
    }
   ]
  }

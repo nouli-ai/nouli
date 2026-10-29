@@ -2,12 +2,12 @@
  "session": "response-updated",
  "nodes": [
   {
-   "id": "01a18684-150e-7509-9f75-5226a894ecc8",
+   "id": "01a1875f-6d6a-7092-a120-14f771a79e72",
    "session": "scope",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "The FDA May 2022 recall includes Jif 16 ounce creamy peanut butter, identifier\n5150025516 as printed in the notice. A jar is in scope when the first seven\ndigits of its lot code are between 1274425 and 2140425 and end in 425. The\nrange alone is insufficient. This is the published scope for this historical\nexample.",
+   "state": "",
    "questions": [
     {
      "id": "scope",
@@ -15,35 +15,40 @@
      "type": "choice",
      "options": [
       {
-       "id": "product_and_lot",
+       "id": "match_the_product_and_both_lot_code_conditions",
        "label": "Match the product and both lot-code conditions",
        "p": 1
       },
       {
-       "id": "product_only",
+       "id": "use_the_product_name_alone",
        "label": "Use the product name alone",
        "p": 0
       },
       {
-       "id": "unresolved",
+       "id": "request_a_clearer_recall_notice",
        "label": "Request a clearer recall notice",
        "p": 0
       }
      ],
-     "selected": "product_and_lot"
+     "selected": "match_the_product_and_both_lot_code_conditions"
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name scope -s … -q …"
+   "command": "nouli new scope '…' -q '…'"
   },
   {
-   "id": "01a18684-151c-7217-9a67-52a9533fff7c",
+   "id": "01a1875f-6d78-74ef-9f3c-db41abd6f78f",
    "session": "stock",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Illustrative warehouse inventory: 40 sealed jars have lot code 1352425, 10\nhave lot code 1352426, and 6 have unreadable lot codes. All are Jif 16 ounce\ncreamy peanut butter, identifier 5150025516. No other jars are on hand.",
+   "state": "",
    "questions": [
     {
      "id": "stock",
@@ -52,17 +57,22 @@
      "probability": 0.06
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name stock -s … -q …"
+   "command": "nouli new stock '…' -q '…'"
   },
   {
-   "id": "01a18684-152a-76f3-a971-6039cc76676b",
+   "id": "01a1875f-6d86-769b-9683-3acd7b62d06c",
    "session": "customers",
    "turn": 1,
    "kind": "new",
    "parents": [],
-   "state": "Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used\nin 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30.\nHarbor acknowledges the recall notice and confirms all 30 are isolated. Summit\nhas not responded. There were no other shipments of this batch.",
+   "state": "",
    "questions": [
     {
      "id": "customers",
@@ -70,30 +80,35 @@
      "type": "choice",
      "options": [
       {
-       "id": "harbor",
+       "id": "contact_harbor",
        "label": "Contact Harbor",
        "p": 0
       },
       {
-       "id": "summit",
+       "id": "contact_summit",
        "label": "Contact Summit",
        "p": 1
       },
       {
-       "id": "both",
+       "id": "contact_both_customers_again",
        "label": "Contact both customers again",
        "p": 0
       }
      ],
-     "selected": "summit"
+     "selected": "contact_summit"
     }
    ],
-   "context": [],
+   "context": [
+    {
+     "turn": null,
+     "representation": "full"
+    }
+   ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --name customers -s … -q …"
+   "command": "nouli new customers '…' -q '…'"
   },
   {
-   "id": "01a18684-153e-7226-a17b-62277fcc8ac7",
+   "id": "01a1875f-6d99-74f3-8fd8-0698ef7fd353",
    "session": "stock-plan",
    "turn": 1,
    "kind": "blend",
@@ -101,7 +116,7 @@
     0,
     1
    ],
-   "state": "Our example stock policy is to quarantine confirmed recalled jars and hold\nunreadable codes for identification. Apply the scope only to products and lots\nit actually covers.",
+   "state": "",
    "questions": [
     {
      "id": "stock_plan",
@@ -109,22 +124,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "targeted_hold",
+       "id": "quarantine_matching_jars_and_hold_unreadable_codes_for_identific",
        "label": "Quarantine matching jars and hold unreadable codes for identification",
        "p": 0.99
       },
       {
-       "id": "hold_all",
+       "id": "hold_every_jar_pending_further_review",
        "label": "Hold every jar pending further review",
        "p": 0
       },
       {
-       "id": "identify_first",
+       "id": "identify_unreadable_codes_before_choosing_any_stock_action",
        "label": "Identify unreadable codes before choosing any stock action",
        "p": 0.01
       }
      ],
-     "selected": "targeted_hold"
+     "selected": "quarantine_matching_jars_and_hold_unreadable_codes_for_identific"
     }
    ],
    "context": [
@@ -133,15 +148,27 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from scope --from stock --name stock-plan -s … -q …"
+   "command": "nouli new stock-plan --from scope --from stock '…' -q '…'"
   },
   {
-   "id": "01a18684-1551-70a2-a2d9-3bb815be94d8",
+   "id": "01a1875f-6dad-71a7-b81b-00ad1ee1d6f9",
    "session": "outreach",
    "turn": 1,
    "kind": "blend",
@@ -149,7 +176,7 @@
     0,
     2
    ],
-   "state": "Apply the recall scope to ingredient lot 1352425 and the snack boxes made from\nit. Following recall communication guidance, establish that affected customers\nreceived and followed the notice. Under our example response policy, missing\nacknowledgment requires direct follow-up; reported sales require escalation\nand verification of downstream notification. Use the latest dated response for\neach customer.",
+   "state": "",
    "questions": [
     {
      "id": "outreach",
@@ -157,22 +184,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "request_response",
+       "id": "ask_summit_to_acknowledge_the_notice_and_account_for_its_boxes",
        "label": "Ask Summit to acknowledge the notice and account for its boxes",
        "p": 1
       },
       {
-       "id": "verify_isolation",
+       "id": "verify_that_both_customers_have_isolated_all_affected_boxes",
        "label": "Verify that both customers have isolated all affected boxes",
        "p": 0
       },
       {
-       "id": "escalate_sales",
+       "id": "escalate_reported_sales_to_the_recall_lead_and_verify_downstream",
        "label": "Escalate reported sales to the recall lead and verify downstream notification",
        "p": 0
       }
      ],
-     "selected": "request_response"
+     "selected": "ask_summit_to_acknowledge_the_notice_and_account_for_its_boxes"
     }
    ],
    "context": [
@@ -181,15 +208,27 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from scope --from customers --name outreach -s … -q …"
+   "command": "nouli new outreach --from scope --from customers '…' -q '…'"
   },
   {
-   "id": "01a18684-1569-7346-a794-840c0158523a",
+   "id": "01a1875f-6dc8-7651-ad76-d889ed202637",
    "session": "response",
    "turn": 1,
    "kind": "blend",
@@ -197,7 +236,7 @@
     3,
     4
    ],
-   "state": "Combine the warehouse and customer decisions into a recommendation for the\nrecall lead. A warehouse hold does not account for shipped products.\nCoordinate any unresolved customer or downstream follow-up alongside the stock\naction. Use the latest dated customer records.",
+   "state": "",
    "questions": [
     {
      "id": "response",
@@ -205,22 +244,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "warehouse",
+       "id": "coordinate_warehouse_holds_only",
        "label": "Coordinate warehouse holds only",
        "p": 0.0050000000000000044
       },
       {
-       "id": "customers",
+       "id": "coordinate_warehouse_holds_and_missing_customer_responses",
        "label": "Coordinate warehouse holds and missing customer responses",
        "p": 0.99
       },
       {
-       "id": "downstream",
+       "id": "coordinate_warehouse_holds_and_escalation_of_sales_to_end_custom",
        "label": "Coordinate warehouse holds and escalation of sales to end customers",
        "p": 0.0050000000000000044
       }
      ],
-     "selected": "customers"
+     "selected": "coordinate_warehouse_holds_and_missing_customer_responses"
     }
    ],
    "context": [
@@ -229,7 +268,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -237,26 +284,42 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
      "turn": 4,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from stock-plan --from outreach --name response -s … -q …"
+   "command": "nouli new response --from stock-plan --from outreach '…' -q '…'"
   },
   {
-   "id": "01a18684-157b-7003-8333-dc316143184e",
+   "id": "01a1875f-6ddf-7142-b42f-006a3796a594",
    "session": "customers",
    "turn": 2,
    "kind": "continued",
    "parents": [
     2
    ],
-   "state": "Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the\nnotice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to\nend customers. Whether those buyers have been notified is unknown. This\nreplaces the earlier Summit nonresponse. Harbor still has all 30 boxes\nisolated.",
+   "state": "",
    "questions": [
     {
      "id": "customers",
@@ -264,35 +327,43 @@
      "type": "choice",
      "options": [
       {
-       "id": "confirm",
+       "id": "confirm_acknowledgment_only",
        "label": "Confirm acknowledgment only",
        "p": 0
       },
       {
-       "id": "escalate",
+       "id": "escalate_the_12_sold_boxes_and_verify_downstream_notification",
        "label": "Escalate the 12 sold boxes and verify downstream notification",
        "p": 1
       },
       {
-       "id": "close",
+       "id": "treat_the_customer_response_as_complete",
        "label": "Treat the customer response as complete",
        "p": 0
       }
      ],
-     "selected": "escalate"
+     "selected": "escalate_the_12_sold_boxes_and_verify_downstream_notification"
     }
    ],
    "context": [
     {
      "turn": 2,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --session customers -s … -q …"
+   "command": "nouli add customers '…'"
   },
   {
-   "id": "01a18684-158f-74b2-ae4a-f488fac993f5",
+   "id": "01a1875f-6df5-7677-b741-2d8746c6ac76",
    "session": "outreach-updated",
    "turn": 1,
    "kind": "blend",
@@ -300,7 +371,7 @@
     0,
     6
    ],
-   "state": "Apply the recall scope to ingredient lot 1352425 and the snack boxes made from\nit. Following recall communication guidance, establish that affected customers\nreceived and followed the notice. Under our example response policy, missing\nacknowledgment requires direct follow-up; reported sales require escalation\nand verification of downstream notification. Use the latest dated response for\neach customer.",
+   "state": "",
    "questions": [
     {
      "id": "outreach_updated",
@@ -308,22 +379,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "request_response",
+       "id": "ask_summit_to_acknowledge_the_notice_and_account_for_its_boxes",
        "label": "Ask Summit to acknowledge the notice and account for its boxes",
        "p": 0
       },
       {
-       "id": "verify_isolation",
+       "id": "verify_that_both_customers_have_isolated_all_affected_boxes",
        "label": "Verify that both customers have isolated all affected boxes",
        "p": 0
       },
       {
-       "id": "escalate_sales",
+       "id": "escalate_reported_sales_to_the_recall_lead_and_verify_downstream",
        "label": "Escalate reported sales to the recall lead and verify downstream notification",
        "p": 1
       }
      ],
-     "selected": "escalate_sales"
+     "selected": "escalate_reported_sales_to_the_recall_lead_and_verify_downstream"
     }
    ],
    "context": [
@@ -332,19 +403,35 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
      "turn": 6,
      "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from scope --from customers --name outreach-updated -s … -q …"
+   "command": "nouli new outreach-updated --from scope --from customers '…' -q '…'"
   },
   {
-   "id": "01a18684-15aa-7209-9900-b38ba6616338",
+   "id": "01a1875f-6e13-7546-b05c-bb02209d3695",
    "session": "response-updated",
    "turn": 1,
    "kind": "blend",
@@ -352,7 +439,7 @@
     3,
     7
    ],
-   "state": "Combine the warehouse and customer decisions into a recommendation for the\nrecall lead. A warehouse hold does not account for shipped products.\nCoordinate any unresolved customer or downstream follow-up alongside the stock\naction. Use the latest dated customer records.",
+   "state": "",
    "questions": [
     {
      "id": "response_updated",
@@ -360,22 +447,22 @@
      "type": "choice",
      "options": [
       {
-       "id": "warehouse",
+       "id": "coordinate_warehouse_holds_only",
        "label": "Coordinate warehouse holds only",
        "p": 0
       },
       {
-       "id": "customers",
+       "id": "coordinate_warehouse_holds_and_missing_customer_responses",
        "label": "Coordinate warehouse holds and missing customer responses",
        "p": 0.01
       },
       {
-       "id": "downstream",
+       "id": "coordinate_warehouse_holds_and_escalation_of_sales_to_end_custom",
        "label": "Coordinate warehouse holds and escalation of sales to end customers",
        "p": 0.99
       }
      ],
-     "selected": "downstream"
+     "selected": "coordinate_warehouse_holds_and_escalation_of_sales_to_end_custom"
     }
    ],
    "context": [
@@ -384,7 +471,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -392,7 +487,15 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     },
     {
@@ -400,12 +503,24 @@
      "representation": "full"
     },
     {
+     "turn": null,
+     "representation": "full"
+    },
+    {
      "turn": 7,
+     "representation": "full"
+    },
+    {
+     "turn": null,
+     "representation": "full"
+    },
+    {
+     "turn": null,
      "representation": "full"
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli --from stock-plan --from outreach-updated --name response-updated -s … -q …"
+   "command": "nouli new response-updated --from stock-plan --from outreach-updated '…' -q '…'"
   }
  ]
 }
