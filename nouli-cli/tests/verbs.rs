@@ -341,3 +341,63 @@ fn facts_and_questions_list_inherited_and_replaced_facts_and_standing_questions(
     let none = home.run(["questions", "Empty", "--format", "text"]);
     assert!(none.status.success() && none.stdout.is_empty());
 }
+
+#[test]
+fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement_settles_it() {
+    let server = provider();
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    report(
+        home.run(
+            [
+                &["new", "Trip", "Fact one", "Fact two", "--json"][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
+    );
+    for (name, text) in [("Cheap", "Cheap fact"), ("Dear", "Dear fact")] {
+        assert!(home.run(["new", name, "--from", "Trip"]).status.success());
+        report(home.run(["add", name, "--replace", "1", text, "--json"]));
+    }
+    assert!(
+        home.run(["new", "Both", "--from", "Cheap", "--from", "Dear"])
+            .status
+            .success()
+    );
+    let facts = |format: &str| {
+        let output = home.run(["facts", "Both", "--format", format]);
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let text = facts("text");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert!(
+        lines[0].contains("\"Cheap fact\" | \"Dear fact\"")
+            || lines[0].contains("\"Dear fact\" | \"Cheap fact\""),
+        "{text}"
+    );
+    assert!(lines[0].contains("--replace 1"), "{text}");
+    let json: Value = serde_json::from_str(&facts("json")).unwrap();
+    let listed = json["facts"].as_array().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0]["records"].as_array().unwrap().len(), 2);
+    assert_eq!(listed[0]["alternatives"].as_array().unwrap().len(), 2);
+    assert_eq!(listed[1]["records"].as_array().unwrap().len(), 1);
+    // Both alternatives reach the model, and a plain add still works.
+    report(home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTIONS].concat()));
+    let state = server.calls.lock().unwrap().last().unwrap().to_string();
+    assert!(
+        state.contains("Cheap fact") && state.contains("Dear fact"),
+        "{state}"
+    );
+    // A replacement supersedes every alternative.
+    report(home.run(["add", "Both", "--replace", "1", "Settled", "--json"]));
+    let json: Value = serde_json::from_str(&facts("json")).unwrap();
+    let listed = json["facts"].as_array().unwrap();
+    assert_eq!(listed.len(), 3);
+    assert_eq!(listed[0]["text"], "Settled");
+    assert_eq!(listed[0]["records"].as_array().unwrap().len(), 1);
+    assert!(listed[0].get("alternatives").is_none());
+}

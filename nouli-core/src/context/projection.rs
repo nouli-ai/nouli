@@ -88,8 +88,12 @@ impl Projector {
             .filter(|g| g.revisions.len() > 1)
             .collect()
     }
+    /// Fails on unresolved independent revisions, except for facts: a fact's
+    /// alternatives stay active together, the model sees each one, and the
+    /// caller settles them with a replacement that targets all of them.
     fn ensure_resolved(&self, heads: &[usize]) -> Result<(), ProjectionError> {
-        let conflicts = self.conflicts(heads);
+        let mut conflicts = self.conflicts(heads);
+        conflicts.retain(|conflict| !conflict.key.starts_with(super::facts::KEY_PREFIX));
         if conflicts.is_empty() {
             Ok(())
         } else {

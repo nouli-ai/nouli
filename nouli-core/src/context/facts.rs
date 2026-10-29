@@ -30,12 +30,19 @@ pub enum FactError {
 pub struct Fact {
     /// 1-based position in context order.
     pub number: usize,
-    /// The record holding the current text. Replacing the fact changes it.
-    pub record: Id,
+    /// The records holding the current text. Replacing the fact changes them.
+    /// There is more than one only when branches that replaced the same fact
+    /// were blended: each record is then an alternative text.
+    pub records: Vec<Id>,
     /// The stable `fact:<id>` key shared by every version of this fact.
     pub key: String,
+    /// The current text. Conflicting alternatives are joined with ` | `.
     pub text: String,
-    /// The turn that saved the current text.
+    /// The text of each record, in `records` order, when the fact has more
+    /// than one; empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<String>,
+    /// The turn that saved the current text (the first alternative's).
     pub turn: Id,
     /// The session that saved the current text, when it is not the listed
     /// session itself: the fact came from a branch or blend source.
@@ -73,7 +80,8 @@ pub fn append_with(id: Id, text: &str) -> Result<ContextUpdate, FactError> {
 }
 
 /// Replaces a fact's text, keeping its key and number. The earlier version
-/// stays in the ledger.
+/// stays in the ledger. A fact with conflicting alternatives has them all
+/// superseded.
 pub fn replace(fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     replace_with(Id::generate(), fact, text)
 }
@@ -81,7 +89,7 @@ pub fn replace(fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
 /// Replaces a fact with a record of a chosen ID; see [`append_with`].
 pub fn replace_with(id: Id, fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     Ok(ContextUpdate::Supersede {
-        targets: vec![fact.record],
+        targets: fact.records.clone(),
         replacement: record(id, fact.key.clone(), text)?,
         pinned: None,
     })
@@ -111,29 +119,53 @@ impl Ledger {
             }
         }
         let active = projection::project(&history, &sources, &[], session.id, session.id)?;
-        let mut facts: Vec<_> = active
+        // Group the active versions by key; blended branches that replaced the
+        // same fact leave several, which stay together as one numbered fact.
+        let mut groups: Vec<(&str, Vec<&projection::ActiveRecord>)> = Vec::new();
+        for record in active.iter().filter(|active| {
+            active.record.kind == ContextKind::Evidence
+                && active.record.key.starts_with(KEY_PREFIX)
+                && active.record.value.value().is_string()
+        }) {
+            match groups
+                .iter_mut()
+                .find(|(key, _)| *key == record.record.key.as_str())
+            {
+                Some((_, members)) => members.push(record),
+                None => groups.push((record.record.key.as_str(), vec![record])),
+            }
+        }
+        let mut facts: Vec<_> = groups
             .into_iter()
-            .filter(|active| {
-                active.record.kind == ContextKind::Evidence
-                    && active.record.key.starts_with(KEY_PREFIX)
-            })
-            .filter_map(|active| {
-                let text = active.record.value.value().as_str()?.to_owned();
-                let (origin_session, turn) = match active.origin {
-                    projection::RevisionOrigin::Turn { session, turn } => (session, turn),
-                    _ => return None,
+            .filter_map(|(key, members)| {
+                let texts: Vec<String> = members
+                    .iter()
+                    .filter_map(|active| active.record.value.value().as_str().map(str::to_owned))
+                    .collect();
+                let projection::RevisionOrigin::Turn {
+                    session: origin_session,
+                    turn,
+                } = &members[0].origin
+                else {
+                    return None;
                 };
-                let previous = versions
-                    .get(active.record.key.as_str())
-                    .and_then(|texts| texts.iter().rev().nth(1))
-                    .map(|text| (*text).to_owned());
+                let (origin_session, turn) = (*origin_session, *turn);
+                let previous = if members.len() == 1 {
+                    versions
+                        .get(key)
+                        .and_then(|texts| texts.iter().rev().nth(1))
+                        .map(|text| (*text).to_owned())
+                } else {
+                    None
+                };
                 Some((
-                    rank.get(active.record.key.as_str()).copied()?,
+                    rank.get(key).copied()?,
                     Fact {
                         number: 0,
-                        record: active.record.id,
-                        key: active.record.key,
-                        text,
+                        records: members.iter().map(|active| active.record.id).collect(),
+                        key: key.to_owned(),
+                        text: texts.join(" | "),
+                        alternatives: if texts.len() > 1 { texts } else { Vec::new() },
                         turn,
                         source_session: (origin_session != session.id).then_some(origin_session),
                         previous,
@@ -226,9 +258,10 @@ mod tests {
         assert_eq!(append(" \n\t"), Err(FactError::Empty));
         let fact = Fact {
             number: 1,
-            record: record.id,
+            records: vec![record.id],
             key: record.key.clone(),
             text: "budget is 40 USD".into(),
+            alternatives: Vec::new(),
             turn: Id::generate(),
             source_session: None,
             previous: None,
@@ -267,7 +300,7 @@ mod tests {
         let after = list(&ledger, id);
         assert_eq!(texts(&after), [(1, "one"), (2, "TWO"), (3, "three")]);
         assert_eq!(after[1].key, facts[1].key);
-        assert_ne!(after[1].record, facts[1].record);
+        assert_ne!(after[1].records, facts[1].records);
         assert_eq!(after[1].turn, replaced.id);
         assert_eq!(after[1].previous.as_deref(), Some("two"));
         assert_eq!(after[0].previous, None);
@@ -344,6 +377,68 @@ mod tests {
         assert_eq!(facts[2].text, "RIGHT");
         assert_eq!(facts[2].source_session, None);
         assert_eq!(texts(&list(&ledger, right)), [(1, "right one")]);
+    }
+
+    #[test]
+    fn blended_branches_that_replaced_one_fact_list_it_once_and_one_replacement_settles_it() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let root = session(&mut ledger);
+        commit(
+            &mut ledger,
+            root,
+            vec![append("one").unwrap(), append("two").unwrap()],
+        );
+        let select = |session: Id| SourceSelection {
+            session: SessionSelector::Id(session),
+            frontier: None,
+        };
+        let base = list(&ledger, root);
+        let mut branches = Vec::new();
+        for text in ["cheap", "dear"] {
+            let branch = ledger
+                .create_session_from(None, ModelSelection::default(), &[select(root)])
+                .unwrap();
+            commit(
+                &mut ledger,
+                branch.id,
+                vec![replace(&base[0], text).unwrap()],
+            );
+            branches.push(branch.id);
+        }
+        let blend = ledger
+            .create_session_from(
+                None,
+                ModelSelection::default(),
+                &[select(branches[0]), select(branches[1])],
+            )
+            .unwrap();
+        // Listing does not fail: the fact appears once with both alternatives.
+        let facts = list(&ledger, blend.id);
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0].number, 1);
+        assert_eq!(facts[0].records.len(), 2);
+        assert_eq!(facts[0].alternatives, ["cheap", "dear"]);
+        assert_eq!(facts[0].text, "cheap | dear");
+        assert_eq!(facts[0].previous, None);
+        assert_eq!(facts[1].records.len(), 1);
+        assert!(facts[1].alternatives.is_empty());
+        // A plain append is allowed and keeps both alternatives.
+        commit(&mut ledger, blend.id, vec![append("three").unwrap()]);
+        let facts = list(&ledger, blend.id);
+        assert_eq!(facts.len(), 3);
+        assert_eq!(facts[0].alternatives, ["cheap", "dear"]);
+        // One replacement supersedes every alternative.
+        let update = replace(&facts[0], "settled").unwrap();
+        let ContextUpdate::Supersede { targets, .. } = &update else {
+            panic!("replace must supersede");
+        };
+        assert_eq!(targets, &facts[0].records);
+        commit(&mut ledger, blend.id, vec![update]);
+        let facts = list(&ledger, blend.id);
+        assert_eq!(texts(&facts), [(1, "settled"), (2, "two"), (3, "three")]);
+        assert_eq!(facts[0].records.len(), 1);
+        assert!(facts[0].alternatives.is_empty());
     }
 
     #[test]

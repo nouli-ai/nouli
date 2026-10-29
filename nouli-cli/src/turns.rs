@@ -569,9 +569,10 @@ mod tests {
                 };
                 facts::Fact {
                     number: 0,
-                    record: record.id,
+                    records: vec![record.id],
                     key: record.key,
                     text: (*text).into(),
+                    alternatives: Vec::new(),
                     turn: Id::generate(),
                     source_session: None,
                     previous: None,
@@ -584,7 +585,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             &resolved.request.updates[0],
-            ContextUpdate::Supersede { targets, .. } if targets == &[current[1].record]
+            ContextUpdate::Supersede { targets, .. } if targets == &current[1].records
         ));
         assert!(matches!(
             &resolved.request.updates[1],

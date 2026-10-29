@@ -57,8 +57,10 @@ so the change is breaking.
   `fact:<record id>`, shown numbered in context order. `--replace N`
   supersedes fact N with a record that keeps the same key, so the ledger keeps
   the earlier version, as described in the
-  [context revision contract](../contracts/context-revisions.md). Unique keys
-  mean blends never produce duplicate-key conflicts.
+  [context revision contract](../contracts/context-revisions.md). Distinct
+  facts never share a key. Blended branches that replaced the same fact leave
+  alternatives under one key; they are listed as one numbered fact, and
+  `--replace N` supersedes all of them.
 - **REPL.** Plain lines queue facts, `?id: prompt …` queues a standing
   question, and an empty line sends the queue as one turn. Slash commands map
   to the verbs: `/whatif`, `/branch`, `/blend`, `/use`, `/facts`,
