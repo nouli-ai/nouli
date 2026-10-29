@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/src/style.css">
 </head>
-<body data-graph="recall">
+<body data-graph="recall" data-view="repl">
 <header class="top"><a class="mark" href="../../">NOULI</a><nav><a href="../../guide/#interactive">interactive</a><a href="../../guide/">guide</a><a href="../" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 <main class="walk">
 <article class="story prose">
@@ -22,11 +22,26 @@
 <h2>Before you start</h2>
 <p><a href="../../guide/#provider">Configure a provider and model</a>, then run the commands in order in the same shell. Nouli reads credentials from your shell or the <code>.env</code> in your current directory. Each decision calls your configured provider and may incur charges.</p>
 <p>The outputs below were captured with <code>typesafe/jev-1.14.0</code>. They are a recorded run, not guaranteed results. Probabilities, session IDs, and model answers may differ when you run the commands.</p>
+<div class="cmd-only">
 <p>Set a session prefix for this walkthrough. Change it before repeating the example so the new sessions have unique names:</p>
 <pre><code>example=recall</code></pre>
+</div>
+<div class="views" role="group" aria-label="Show the steps as">
+<span>show the steps as</span><button type="button" data-view="repl" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
+<p class="repl-only">Open the first session with <code>nouli open scope</code>, then type each step's lines at the prompt. A question sends the turn.</p>
+</div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record the recall scope</h2>
 <p>Save the historical recall scope as an independent source. The lot-code rule has two conditions: the seven-digit range and the 425 suffix.</p>
+<pre class="repl"><code>$ nouli open scope
+new session "scope" · /help for commands
+
+scope › The FDA May 2022 recall includes Jif 16 ounce creamy peanut butter, identifier 5150025516 as printed in the notice. A jar is in scope when the first seven digits of its lot code are between 1274425 and 2140425 and end in 425. The range alone is insufficient. This is the published scope for this historical example.
+scope › ?scope: How should a jar be matched to this recall? [Match the product and both lot-code conditions, Use the product name alone, Request a clearer recall notice]
+  turn 1 · 1 fact · 1 question
+  scope       ▶ Match the product and both lot-… ████████████████████ 1.00
+                Use the product name alone                            0.00
+                Request a clearer recall notice                       0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-scope&quot; \
   &#x27;The FDA May 2022 recall includes Jif 16 ounce creamy peanut butter, identifier
 5150025516 as printed in the notice. A jar is in scope when the first seven
@@ -47,6 +62,12 @@ example.&#x27; \
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review warehouse traceability</h2>
 <p>Record warehouse traceability in a new history. This question asks whether every jar has an identifiable lot, before applying recall scope.</p>
+<pre class="repl"><code>scope › /new stock
+  new session "stock"
+stock › Illustrative warehouse inventory: 40 sealed jars have lot code 1352425, 10 have lot code 1352426, and 6 have unreadable lot codes. All are Jif 16 ounce creamy peanut butter, identifier 5150025516. No other jars are on hand.
+stock › ?stock: Can every jar in this inventory be matched to an identifiable lot?
+  turn 1 · 1 fact · 1 question
+  stock         yes                              █▍                   0.07</code></pre>
 <pre><code>nouli --format text new &quot;$example-stock&quot; \
   &#x27;Illustrative warehouse inventory: 40 sealed jars have lot code 1352425, 10
 have lot code 1352426, and 6 have unreadable lot codes. All are Jif 16 ounce
@@ -61,6 +82,14 @@ creamy peanut butter, identifier 5150025516. No other jars are on hand.&#x27; \
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Review distribution and customer responses</h2>
 <p>Record shipments and customer responses separately. The 60 snack boxes were made from an earlier ingredient delivery, not from the jars still in the warehouse.</p>
+<pre class="repl"><code>stock › /new customers
+  new session "customers"
+customers › Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used in 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30. Harbor acknowledges the recall notice and confirms all 30 are isolated. Summit has not responded. There were no other shipments of this batch.
+customers › ?customers: Which customer needs a response follow-up first? [Contact Harbor, Contact Summit, Contact both customers again]
+  turn 1 · 1 fact · 1 question
+  customers     Contact Harbor                                        0.00
+              ▶ Contact Summit                   ████████████████████ 1.00
+                Contact both customers again                          0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-customers&quot; \
   &#x27;Illustrative records at 09:30 on May 23, 2022: ingredient lot 1352425 was used
 in 60 snack boxes, batch SNACK-A. Harbor received 30 and Summit received 30.
@@ -80,6 +109,14 @@ has not responded. There were no other shipments of this batch.&#x27; \
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Choose a warehouse action</h2>
 <p>Blend published scope and warehouse records to choose a stock action under the sample hold policy.</p>
+<pre class="repl"><code>customers › /blend scope stock as stock-plan
+  new session "stock-plan" from scope + stock · no standing questions
+stock-plan › Our example stock policy is to quarantine confirmed recalled jars and hold unreadable codes for identification. Apply the scope only to products and lots it actually covers.
+stock-plan › ?stock_plan: What should the warehouse do with its stock? [Quarantine matching jars and hold unreadable codes for identification, Hold every jar pending further review, Identify unreadable codes before choosing any stock action]
+  turn 1 · 1 fact · 1 question
+  stock_plan  ▶ Quarantine matching jars and ho… ████████████████████ 1.00
+                Hold every jar pending further …                      0.00
+                Identify unreadable codes befor…                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-stock-plan&quot; --from &quot;$example-scope&quot; --from &quot;$example-stock&quot; \
   &#x27;Our example stock policy is to quarantine confirmed recalled jars and hold
 unreadable codes for identification. Apply the scope only to products and lots
@@ -98,6 +135,14 @@ it actually covers.&#x27; \
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Choose a customer follow-up</h2>
 <p>Blend the same recall scope with the independent customer history to decide what outreach is needed.</p>
+<pre class="repl"><code>stock-plan › /blend scope customers as outreach
+  new session "outreach" from scope + customers · no standing questions
+outreach › Apply the recall scope to ingredient lot 1352425 and the snack boxes made from it. Following recall communication guidance, establish that affected customers received and followed the notice. Under our example response policy, missing acknowledgment requires direct follow-up; reported sales require escalation and verification of downstream notification. Use the latest dated response for each customer.
+outreach › ?outreach: What customer follow-up is needed now? [Ask Summit to acknowledge the notice and account for its boxes, Verify that both customers have isolated all affected boxes, Escalate reported sales to the recall lead and verify downstream notification]
+  turn 1 · 1 fact · 1 question
+  outreach    ▶ Ask Summit to acknowledge the n… ████████████████████ 1.00
+                Verify that both customers have…                      0.00
+                Escalate reported sales to the …                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-outreach&quot; --from &quot;$example-scope&quot; --from &quot;$example-customers&quot; \
   &#x27;Apply the recall scope to ingredient lot 1352425 and the snack boxes made from
 it. Following recall communication guidance, establish that affected customers
@@ -119,6 +164,14 @@ each customer.&#x27; \
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine stock and customer decisions</h2>
 <p>Combine the stock and outreach decisions. Both sources are blends, so this response includes the independent warehouse and customer branches.</p>
+<pre class="repl"><code>outreach › /blend stock-plan outreach as response
+  new session "response" from stock-plan + outreach · no standing questions
+response › Combine the warehouse and customer decisions into a recommendation for the recall lead. A warehouse hold does not account for shipped products. Coordinate any unresolved customer or downstream follow-up alongside the stock action. Use the latest dated customer records.
+response › ?response: Which response should the recall lead coordinate? [Coordinate warehouse holds only, Coordinate warehouse holds and missing customer responses, Coordinate warehouse holds and escalation of sales to end customers]
+  turn 1 · 1 fact · 1 question
+  response      Coordinate warehouse holds only                       0.00
+              ▶ Coordinate warehouse holds and … ████████████████████ 1.00
+                Coordinate warehouse holds and …                      0.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-response&quot; --from &quot;$example-stock-plan&quot; --from &quot;$example-outreach&quot; \
   &#x27;Combine the warehouse and customer decisions into a recommendation for the
 recall lead. A warehouse hold does not account for shipped products.
@@ -138,6 +191,14 @@ action. Use the latest dated customer records.&#x27; \
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Add the next customer response</h2>
 <p>Continue the customer history with the later reply. Summit has isolated 18 boxes and reports 12 sold; downstream notification is still unknown. The session already has a <code>customers</code> question, so the new <code>-q</code> with the same ID replaces it.</p>
+<pre class="repl"><code>response › /use customers
+  customers · 1 standing question
+customers › Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to end customers. Whether those buyers have been notified is unknown. This replaces the earlier Summit nonresponse. Harbor still has all 30 boxes isolated.
+customers › ?customers: What is the next action for Summit? [Confirm acknowledgment only, Escalate the 12 sold boxes and verify downstream notification, Treat the customer response as complete]
+  turn 2 · 1 fact · 1 question · re-asked 1
+  customers     Confirm acknowledgment only      ▎                    0.01
+              ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
+                Treat the customer response as … ▎                    0.01</code></pre>
 <pre><code>nouli --format text add &quot;$example-customers&quot; \
   &#x27;Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
 notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to
@@ -158,6 +219,14 @@ isolated.&#x27; \
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Reassess outreach using the updated source</h2>
 <p>Create a new outreach blend from scope and the updated customer history. Updating the customer session did not rewrite the earlier outreach decision.</p>
+<pre class="repl"><code>customers › /blend scope customers as outreach-updated
+  new session "outreach-updated" from scope + customers · no standing questions
+outreach-updated › Apply the recall scope to ingredient lot 1352425 and the snack boxes made from it. Following recall communication guidance, establish that affected customers received and followed the notice. Under our example response policy, missing acknowledgment requires direct follow-up; reported sales require escalation and verification of downstream notification. Use the latest dated response for each customer.
+outreach-updated › ?outreach_updated: What customer follow-up is needed now? [Ask Summit to acknowledge the notice and account for its boxes, Verify that both customers have isolated all affected boxes, Escalate reported sales to the recall lead and verify downstream notification]
+  turn 1 · 1 fact · 1 question
+  outreach_u…   Ask Summit to acknowledge the n…                      0.00
+                Verify that both customers have…                      0.00
+              ▶ Escalate reported sales to the … ████████████████████ 1.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-outreach-updated&quot; --from &quot;$example-scope&quot; --from &quot;$example-customers&quot; \
   &#x27;Apply the recall scope to ingredient lot 1352425 and the snack boxes made from
 it. Following recall communication guidance, establish that affected customers
@@ -179,6 +248,14 @@ each customer.&#x27; \
 <section class="step" id="step-9" data-node="8">
 <h2><span class="num">09</span>Combine the revised decisions</h2>
 <p>Reuse the unchanged stock plan and combine it with revised outreach to form a new coordinated response.</p>
+<pre class="repl"><code>outreach-updated › /blend stock-plan outreach-updated as response-updated
+  new session "response-updated" from stock-plan + outreach-updated · no standing questions
+response-updated › Combine the warehouse and customer decisions into a recommendation for the recall lead. A warehouse hold does not account for shipped products. Coordinate any unresolved customer or downstream follow-up alongside the stock action. Use the latest dated customer records.
+response-updated › ?response_updated: Which response should the recall lead coordinate? [Coordinate warehouse holds only, Coordinate warehouse holds and missing customer responses, Coordinate warehouse holds and escalation of sales to end customers]
+  turn 1 · 1 fact · 1 question
+  response_u…   Coordinate warehouse holds only                       0.00
+                Coordinate warehouse holds and …                      0.00
+              ▶ Coordinate warehouse holds and … ████████████████████ 1.00</code></pre>
 <pre><code>nouli --format text new &quot;$example-response-updated&quot; --from &quot;$example-stock-plan&quot; --from &quot;$example-outreach-updated&quot; \
   &#x27;Combine the warehouse and customer decisions into a recommendation for the
 recall lead. A warehouse hold does not account for shipped products.

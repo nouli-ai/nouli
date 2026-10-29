@@ -1,5 +1,26 @@
 // Walkthrough pages: the figure follows the step being read, and nodes jump to their step.
 import { Figure } from "./figure.js";
+import { paint } from "./repl.js";
+
+// Steps show as interactive lines or as commands; the choice is remembered on this device.
+const VIEW = "nouli-walkthrough-view";
+const show = (view) => {
+  document.body.dataset.view = view;
+  document.querySelectorAll(".views button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === view)));
+};
+try {
+  const saved = localStorage.getItem(VIEW);
+  if (saved === "repl" || saved === "commands") show(saved);
+} catch {}
+document.querySelectorAll(".views button").forEach((b) =>
+  b.addEventListener("click", () => {
+    show(b.dataset.view);
+    try {
+      localStorage.setItem(VIEW, b.dataset.view);
+    } catch {}
+  }),
+);
+document.querySelectorAll("pre.repl code").forEach(paint);
 
 const graphs = import.meta.glob("./data/examples/*.json", { eager: true, import: "default" });
 const graph = graphs[`./data/examples/${document.body.dataset.graph}.json`];
