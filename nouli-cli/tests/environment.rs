@@ -285,7 +285,7 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=ORIGINAL_SENTINEL\n").unwrap();
     let file = home.0.join("workflow.json");
     fs::write(&file, serde_json::to_vec(&harness::workflow()).unwrap()).unwrap();
-    let partial = run_report(home.run(["workflows", "run", file.to_str().unwrap()]), 4);
+    let partial = run_report(home.run(["workflow", "run", file.to_str().unwrap()]), 4);
     let run = partial.run.unwrap().to_string();
     fs::write(home.0.join("config.toml"), "output='json'\n").unwrap();
     fs::write(
@@ -293,10 +293,10 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
         "TYPESAFE_TOKEN='BROKEN_PRIVATE_VALUE\n",
     )
     .unwrap();
-    assert!(home.run(["workflows", "show", &run]).status.success());
+    assert!(home.run(["workflow", "show", &run]).status.success());
     fs::write(home.0.join("keys.env"), "TYPESAFE_TOKEN=ROTATED_SENTINEL\n").unwrap();
     let output = home.run([
-        "workflows",
+        "workflow",
         "resume",
         &run,
         "--env-file",
@@ -334,7 +334,7 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
     let count = server.count();
     fs::write(home.0.join("keys.env"), "OTHER=unrelated\n").unwrap();
     let replay = run_report(
-        home.run(["workflows", "resume", &run, "--env-file", "keys.env"]),
+        home.run(["workflow", "resume", &run, "--env-file", "keys.env"]),
         0,
     );
     assert!(replay.replayed);

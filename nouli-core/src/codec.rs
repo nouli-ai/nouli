@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    decision::{CONTRACT_VERSION, ContractError, TurnRequest},
+    decision::{CONTRACT_VERSION, ContractError, TurnRequest, grammar},
     workflow::{WorkflowError, WorkflowSpec},
 };
 
@@ -54,6 +54,14 @@ pub enum CodecError {
     Decision(#[from] ContractError),
     #[error(transparent)]
     Workflow(#[from] WorkflowError),
+    /// A compact question in a workflow file. The node ID and index are safe to
+    /// show; the question text is not repeated.
+    #[error("node {node}, question {index}: {source}")]
+    Question {
+        node: String,
+        index: usize,
+        source: grammar::GrammarError,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -98,12 +106,19 @@ pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
         request.validate()?;
         Ok(Request::Turn(request))
     } else {
-        // Embedded turns use the same omitted-version default.
+        // Embedded turns use the same omitted-version default, and may write a
+        // question as a compact-grammar string.
         if let Some(nodes) = object.get_mut("nodes").and_then(Value::as_array_mut) {
             for node in nodes {
+                let id = node
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?")
+                    .to_owned();
                 if let Some(turn) = node.get_mut("turn").and_then(Value::as_object_mut) {
                     turn.entry("version")
                         .or_insert(Value::from(CONTRACT_VERSION));
+                    expand_questions(&id, turn)?;
                 }
             }
         }
@@ -111,6 +126,28 @@ pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
         request.validate()?;
         Ok(Request::Workflow(request))
     }
+}
+
+/// Replaces each compact-grammar string in a turn's `questions` with the full
+/// question it parses to; objects pass through for the contract to check.
+fn expand_questions(
+    node: &str,
+    turn: &mut serde_json::Map<String, Value>,
+) -> Result<(), CodecError> {
+    let Some(questions) = turn.get_mut("questions").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    for (index, question) in questions.iter_mut().enumerate() {
+        if let Value::String(line) = question {
+            let parsed = grammar::parse(line).map_err(|source| CodecError::Question {
+                node: node.to_owned(),
+                index,
+                source,
+            })?;
+            *question = to_value(&parsed)?;
+        }
+    }
+    Ok(())
 }
 
 /// Convert serializable input without allowing non-finite values to become null.
@@ -187,6 +224,48 @@ mod tests {
                 decode_request(&serde_json::to_vec(&value).unwrap(), InputFormat::Json).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn workflow_questions_may_be_compact_strings_or_objects() {
+        let full = include_bytes!("../../fixtures/contracts/workflow.json");
+        let expected = decode_request(full, InputFormat::Json).unwrap();
+        let mut value: Value = serde_json::from_slice(full).unwrap();
+        // Write the first node's questions in the grammar instead.
+        let questions = value["nodes"][0]["turn"]["questions"].clone();
+        let lines: Vec<Value> = questions
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|question| {
+                let parsed: crate::decision::Question =
+                    serde_json::from_value(question.clone()).unwrap();
+                Value::String(grammar::format(&parsed))
+            })
+            .collect();
+        value["nodes"][0]["turn"]["questions"] = Value::Array(lines);
+        let Request::Workflow(mixed) = request_from_value(value.clone()).unwrap() else {
+            panic!("workflow")
+        };
+        // Formatting and parsing keep a question's meaning, so the compact node
+        // matches the full one wherever the grammar can write the question.
+        let Request::Workflow(expected) = expected else {
+            panic!("workflow")
+        };
+        assert_eq!(mixed.nodes[1], expected.nodes[1]);
+        assert_eq!(
+            mixed.nodes[0].turn.questions.len(),
+            expected.nodes[0].turn.questions.len()
+        );
+        // A bad string names its node and position, and not its text.
+        value["nodes"][1]["id"] = Value::String("second".into());
+        value["nodes"][1]["turn"]["questions"][1] = Value::String("SECRET no id".into());
+        let error = request_from_value(value).unwrap_err();
+        let CodecError::Question { node, index, .. } = &error else {
+            panic!("{error:?}")
+        };
+        assert_eq!((node.as_str(), *index), ("second", 1));
+        assert!(!error.to_string().contains("SECRET"));
     }
 
     #[test]

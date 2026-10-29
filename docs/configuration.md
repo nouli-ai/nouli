@@ -73,7 +73,7 @@ credential validation. File values do not change configuration/store paths or
 ```sh
 nouli add Trip --input request.json
 nouli add Trip --env-file .env.test --input request.json
-nouli workflows resume RUN_ID --env-file /path/to/keys.env
+nouli workflow resume RUN_ID --env-file /path/to/keys.env
 ```
 
 A missing automatic `.env` is fine. An explicitly selected missing file reports

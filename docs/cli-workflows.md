@@ -1,14 +1,16 @@
 # Workflow CLI
 
+The command is `nouli workflow` (singular), with `run`, `show`, and `resume`.
+
 ```sh
-nouli workflows run workflow.json --name Travel --parallel 2
-nouli workflows run workflow.toon --from Research --from Alternatives --jsonl
-nouli workflows run - --input-format json < workflow.json
-nouli workflows show 019a0000-0000-7000-8000-000000000400 --json
-nouli workflows resume 019a0000-0000-7000-8000-000000000400 --jsonl
+nouli workflow run workflow.json --name Travel --parallel 2
+nouli workflow run workflow.toon --from Research --from Alternatives --jsonl
+nouli workflow run - --input-format json < workflow.json
+nouli workflow show 019a0000-0000-7000-8000-000000000400 --json
+nouli workflow resume 019a0000-0000-7000-8000-000000000400 --jsonl
 ```
 
-Run accepts a portable `WorkflowSpec` or a complete `WorkflowRequest` containing `workflow`, optional `session`, `updates`, `required_records`, and `request_id`. JSON and TOON use the same strict boundary. Omitted workflow/embedded-turn versions default to v1. Stdin requires an explicit format; file/stdin input is bounded to 16 MiB. Graph validation rejects cycles, hidden references, invalid typed conditions, and unsupported node shapes before execution. Bare workflow commands print actionable usage without reading credentials.
+Run accepts a portable `WorkflowSpec` or a complete `WorkflowRequest` containing `workflow`, optional `session`, `updates`, `required_records`, and `request_id`. JSON and TOON use the same strict boundary. Omitted workflow/embedded-turn versions default to v1. Each entry of a node's `turn.questions` may be a full question object or a one-line string in the [question grammar](cli.md#questions), such as `"on_time: Will the train arrive on time?"`; the two can be mixed in one array. A string that does not parse fails the run before any dispatch with the node ID and the question's index, for example `node high, question 1: ...`, and never repeats the question text. Stdin requires an explicit format; file/stdin input is bounded to 16 MiB. Graph validation rejects cycles, hidden references, invalid typed conditions, and unsupported node shapes before execution. Bare workflow commands print actionable usage without reading credentials.
 
 `--from`, `--session`, and `--name` use the same selection rules as [the command line guide](cli.md). One source branches and several blend into a new session. `SELECTOR@TURN_ID` selects an explicit finalized source head. `--parallel` bounds ready-node concurrency in addition to the graph's limit. `--provider`, `--model`, and `--context-budget` set run defaults/overrides; explicit node provider/model selections take precedence. Actual served identities appear on completed node summaries and selected outputs, separately from frozen requested settings.
 

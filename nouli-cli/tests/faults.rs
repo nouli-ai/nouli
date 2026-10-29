@@ -331,13 +331,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         }];
         let file = home.0.join("workflow.json");
         std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
-        let output = home.run([
-            "workflows",
-            "run",
-            file.to_str().unwrap(),
-            "--parallel",
-            "1",
-        ]);
+        let output = home.run(["workflow", "run", file.to_str().unwrap(), "--parallel", "1"]);
         let (run, preserved) = if mode == "running" {
             assert_eq!(output.status.code(), Some(6));
             let failure: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
@@ -384,7 +378,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         drop(ledger);
         sql(&home, "DROP TRIGGER inject_fault;");
         let calls = server.count();
-        let done = run_report(home.run(["workflows", "resume", &run.to_string()]), 0);
+        let done = run_report(home.run(["workflow", "resume", &run.to_string()]), 0);
         assert_eq!(done.status, RunStatus::Completed);
         assert_eq!(done.nodes[0].turn, initial);
         if let Some(preserved) = preserved {
@@ -396,7 +390,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         );
         assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 5);
         assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 2);
-        let shown = home.run(["workflows", "show", &run.to_string()]);
+        let shown = home.run(["workflow", "show", &run.to_string()]);
         assert!(shown.status.success());
         let inspection: WorkflowInspection = serde_json::from_slice(&shown.stdout).unwrap();
         assert_eq!(inspection.rounds.len(), 2);

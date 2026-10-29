@@ -40,6 +40,9 @@ pub struct Fact {
     /// The session that saved the current text, when it is not the listed
     /// session itself: the fact came from a branch or blend source.
     pub source_session: Option<Id>,
+    /// The text before the latest replacement, when the fact was replaced.
+    #[serde(default)]
+    pub previous: Option<String>,
 }
 
 fn record(id: Id, key: String, text: &str) -> Result<ContextRecord, FactError> {
@@ -93,6 +96,7 @@ impl Ledger {
         let sources = self.context_sources(session.id)?;
         let history = self.ancestry(&sources)?;
         let mut rank: HashMap<&str, usize> = HashMap::new();
+        let mut versions: HashMap<&str, Vec<&str>> = HashMap::new();
         for turn in &history {
             for update in &turn.updates {
                 if let Some(record) = update.new_record()
@@ -100,6 +104,9 @@ impl Ledger {
                 {
                     let next = rank.len();
                     rank.entry(record.key.as_str()).or_insert(next);
+                    if let Some(text) = record.value.value().as_str() {
+                        versions.entry(record.key.as_str()).or_default().push(text);
+                    }
                 }
             }
         }
@@ -116,6 +123,10 @@ impl Ledger {
                     projection::RevisionOrigin::Turn { session, turn } => (session, turn),
                     _ => return None,
                 };
+                let previous = versions
+                    .get(active.record.key.as_str())
+                    .and_then(|texts| texts.iter().rev().nth(1))
+                    .map(|text| (*text).to_owned());
                 Some((
                     rank.get(active.record.key.as_str()).copied()?,
                     Fact {
@@ -125,6 +136,7 @@ impl Ledger {
                         text,
                         turn,
                         source_session: (origin_session != session.id).then_some(origin_session),
+                        previous,
                     },
                 ))
             })
@@ -219,6 +231,7 @@ mod tests {
             text: "budget is 40 USD".into(),
             turn: Id::generate(),
             source_session: None,
+            previous: None,
         };
         assert_eq!(replace(&fact, "  "), Err(FactError::Empty));
         let ContextUpdate::Supersede {
@@ -256,6 +269,8 @@ mod tests {
         assert_eq!(after[1].key, facts[1].key);
         assert_ne!(after[1].record, facts[1].record);
         assert_eq!(after[1].turn, replaced.id);
+        assert_eq!(after[1].previous.as_deref(), Some("two"));
+        assert_eq!(after[0].previous, None);
         // The original text is still in the first turn's history.
         let history = ledger
             .ancestry(&ledger.context_sources(id).unwrap())

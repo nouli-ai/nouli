@@ -105,9 +105,9 @@ fn main() -> ExitCode {
                 commands::Command::Whatif(verb) => {
                     return evaluate::command(&args, turns::Verb::Whatif(verb));
                 }
-                commands::Command::Workflows { .. } | commands::Command::Inspect(_) => {}
+                commands::Command::Workflow { .. } | commands::Command::Inspect(_) => {}
             }
-            let full = matches!(command,commands::Command::Workflows {command} if workflows::needs_config(command));
+            let full = matches!(command,commands::Command::Workflow {command} if workflows::needs_config(command));
             let settings = match if full {
                 settings::load(&args)
             } else {
@@ -156,7 +156,7 @@ fn main() -> ExitCode {
                 }
                 Err(_) => return ExitCode::from(2),
             };
-            if let commands::Command::Workflows { command } = command {
+            if let commands::Command::Workflow { command } = command {
                 return ExitCode::from(workflows::run(command, &settings, format));
             }
             let commands::Command::Inspect(command) = command else {

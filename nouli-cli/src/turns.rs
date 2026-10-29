@@ -568,6 +568,7 @@ mod tests {
                     text: (*text).into(),
                     turn: Id::generate(),
                     source_session: None,
+                    previous: None,
                 }
             })
             .collect();

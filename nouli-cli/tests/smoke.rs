@@ -124,10 +124,10 @@ fn closed_help_and_version_outputs_return_the_io_exit_code() {
 #[test]
 fn bare_workflow_commands_provide_actionable_usage_without_configuration() {
     for arguments in [
-        vec!["workflows"],
-        vec!["workflows", "run"],
-        vec!["workflows", "show"],
-        vec!["workflows", "resume"],
+        vec!["workflow"],
+        vec!["workflow", "run"],
+        vec!["workflow", "show"],
+        vec!["workflow", "resume"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
             .args(arguments)
@@ -148,7 +148,7 @@ fn missing_workflow_resume_never_creates_a_store() {
         .env("HOME", &root)
         .arg("--store")
         .arg(root.join("store"))
-        .args(["workflows", "resume", &run.to_string(), "--json"])
+        .args(["workflow", "resume", &run.to_string(), "--json"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(6));

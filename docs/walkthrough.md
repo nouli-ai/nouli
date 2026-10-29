@@ -23,9 +23,9 @@ nouli sessions export Blend --format toon
 nouli sessions list
 nouli sessions show Branch --format text
 nouli --input fixtures/tutorial/meal.json --from Blend --no-session
-nouli workflows run fixtures/tutorial/workflow.json --name Travel
-nouli workflows show "$RUN_ID"
-nouli workflows resume "$RUN_ID" --jsonl
+nouli workflow run fixtures/tutorial/workflow.json --name Travel
+nouli workflow show "$RUN_ID"
+nouli workflow resume "$RUN_ID" --jsonl
 ```
 
 The simulated provider responses used in tests select lentils with probability 0.7. Its score is 1.43 on Poor/Adequate/Excellent, while the most probable level is index 1. The budget request's score is 0.6 on Over budget/Affordable/Comfortable. These deterministic fixtures demonstrate different scale meanings, not model predictions. Noul stays a numeric probability of yes. Native confidence is separate from P(selected); see [conformance](testing/conformance.md) for differing native fields and per-question refusal behavior.

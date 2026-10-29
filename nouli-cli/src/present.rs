@@ -7,8 +7,9 @@ use crate::{
     turns::fact_counts,
 };
 use nouli_core::{
-    context::ContextUpdate,
+    context::{ContextUpdate, facts::Fact},
     history::{FinalizedTurn, SourcePoint},
+    identity::SessionSelector,
     protocol::{ErrorReport, TurnReport},
     storage::{Ledger, OpenMode},
 };
@@ -115,5 +116,33 @@ pub(crate) fn turn_text(
     }
     writeln!(sink, "{}", Paint(color).apply(DIM, &line)).map_err(RenderError::from)?;
     sink.flush().map_err(RenderError::from)?;
+    Ok(())
+}
+
+/// Writes numbered facts, noting inherited and replaced ones.
+pub(crate) fn facts_text(
+    ledger: &Ledger,
+    facts: &[Fact],
+    sink: &mut impl Write,
+) -> Result<(), crate::inspect::InspectError> {
+    if facts.is_empty() {
+        writeln!(sink, "  no facts yet")?;
+    }
+    for fact in facts {
+        let mut line = format!("  {:>2}  {}", fact.number, clean(&fact.text));
+        if let Some(source) = fact.source_session {
+            let name = ledger
+                .session(&SessionSelector::Id(source))
+                .ok()
+                .and_then(|session| session.name)
+                .map_or_else(|| source.to_string(), |name| name.as_str().to_owned());
+            line.push_str(&format!("   (from {})", clean(&name)));
+        }
+        if let Some(previous) = &fact.previous {
+            line.push_str(&format!("   (replaced; was: {})", clean(previous)));
+        }
+        writeln!(sink, "{line}")?;
+    }
+    sink.flush()?;
     Ok(())
 }

@@ -622,7 +622,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
     let result = run_report(
         home.run([
-            "workflows",
+            "workflow",
             "run",
             file.to_str().unwrap(),
             "--name",
@@ -646,7 +646,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     assert_eq!(server.count(), 4);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
     let output = home.run([
-        "workflows",
+        "workflow",
         "show",
         &result.run.unwrap().to_string(),
         "--format",
@@ -668,7 +668,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     assert_eq!(shown.inspection.run.nodes[2].status, NodeStatus::Skipped);
     assert_eq!(before_count(&home), 1);
     let replay = home.run([
-        "workflows",
+        "workflow",
         "resume",
         &result.run.unwrap().to_string(),
         "--jsonl",
@@ -686,7 +686,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     );
     assert_eq!(server.count(), 4);
     let ephemeral = home.run([
-        "workflows",
+        "workflow",
         "run",
         file.to_str().unwrap(),
         "--from",
@@ -718,7 +718,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     let fresh = home.0.join("fresh-workflow-store");
     let result = run_report(
         home.command_at(&fresh)
-            .args(["workflows", "run", file.to_str().unwrap(), "--no-session"])
+            .args(["workflow", "run", file.to_str().unwrap(), "--no-session"])
             .output()
             .unwrap(),
         0,
@@ -784,7 +784,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
     let partial = run_report(
         home.run([
-            "workflows",
+            "workflow",
             "run",
             file.to_str().unwrap(),
             "--from",
@@ -830,7 +830,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
         .replace("offline", "changed-model");
     std::fs::write(home.0.join("config.toml"), config).unwrap();
     let before = server.count();
-    let resumed = home.run(["workflows", "resume", &run.to_string(), "--jsonl"]);
+    let resumed = home.run(["workflow", "resume", &run.to_string(), "--jsonl"]);
     assert!(
         resumed.status.success(),
         "{}",
@@ -867,7 +867,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     assert!(!context.contains(&replacement.id.to_string()));
     assert!(!context.contains("SOURCE_AFTER"));
     drop(calls);
-    let show = home.run(["workflows", "show", &run.to_string(), "--json"]);
+    let show = home.run(["workflow", "show", &run.to_string(), "--json"]);
     assert!(show.status.success());
     let inspection: nouli_core::storage::workflows::recovery::WorkflowInspection =
         serde_json::from_slice(&show.stdout).unwrap();
@@ -893,7 +893,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
-    let partial = run_report(home.run(["workflows", "run", file.to_str().unwrap()]), 4);
+    let partial = run_report(home.run(["workflow", "run", file.to_str().unwrap()]), 4);
     assert_eq!(partial.nodes[1].status, NodeStatus::Failed);
     let run = partial.run.unwrap();
     report(
@@ -907,7 +907,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     );
     let count = server.count();
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let conflict = home.run(["workflows", "resume", &run.to_string()]);
+    let conflict = home.run(["workflow", "resume", &run.to_string()]);
     assert_eq!(conflict.status.code(), Some(5));
     let error: ResultEnvelope = serde_json::from_slice(&conflict.stdout).unwrap();
     assert!(matches!(error.result,Report::Error(error) if error.code=="advanced_session_head"));
@@ -916,7 +916,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     assert!(bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
     for args in [
         vec![
-            "workflows",
+            "workflow",
             "run",
             file.to_str().unwrap(),
             "--no-session",
@@ -924,20 +924,14 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
             "Invalid",
         ],
         vec![
-            "workflows",
+            "workflow",
             "run",
             file.to_str().unwrap(),
             "--no-session",
             "--request-id",
             "invalid",
         ],
-        vec![
-            "workflows",
-            "run",
-            file.to_str().unwrap(),
-            "--parallel",
-            "0",
-        ],
+        vec!["workflow", "run", file.to_str().unwrap(), "--parallel", "0"],
     ] {
         let output = home.run(&args);
         assert_eq!(output.status.code(), Some(2));
@@ -946,7 +940,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     let mut definition = workflow();
     definition.nodes[0].dependencies = vec!["final".into()];
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
-    let output = home.run(["workflows", "run", file.to_str().unwrap(), "--jsonl"]);
+    let output = home.run(["workflow", "run", file.to_str().unwrap(), "--jsonl"]);
     assert_eq!(output.status.code(), Some(2));
     let events = String::from_utf8(output.stdout)
         .unwrap()
@@ -954,6 +948,60 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
         .map(|line| serde_json::from_str::<nouli_core::protocol::EngineEvent>(line).unwrap())
         .collect::<Vec<_>>();
     nouli_core::protocol::validate_events(&events).unwrap();
+    assert_eq!(server.count(), count);
+}
+#[test]
+fn workflow_files_may_mix_compact_and_object_questions_and_name_the_node_on_errors() {
+    use nouli_core::workflow::RunStatus;
+    let server = Server::new(harness::TYPESAFE);
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    let mut graph = serde_json::to_value(workflow()).unwrap();
+    // The first node is written in the grammar; the rest stay full objects.
+    graph["nodes"][0]["turn"]["questions"] = serde_json::json!([
+        "travel: Which route? [train, flight]",
+        "on_time: Will the train arrive on time?",
+        {
+            "id": "quality",
+            "prompt": "Rate the route quality",
+            "answer_space": {"type": "score", "levels": ["Poor", "Adequate", "Excellent"]}
+        }
+    ]);
+    let file = home.0.join("mixed.json");
+    std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
+    let done = run_report(
+        home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
+        0,
+    );
+    assert_eq!(done.status, RunStatus::Completed);
+    let calls = server.calls.lock().unwrap();
+    assert_eq!(
+        calls[0]["questions"]["travel"]["instructions"],
+        "Which route?"
+    );
+    drop(calls);
+    // The same file in TOON works the same way.
+    let toon = home.0.join("mixed.toon");
+    std::fs::write(&toon, codec::encode_toon(&graph).unwrap()).unwrap();
+    run_report(
+        home.run(["workflow", "run", toon.to_str().unwrap(), "--no-session"]),
+        0,
+    );
+    let count = server.count();
+    graph["nodes"][1]["turn"]["questions"][1] = serde_json::json!("SECRET without an id");
+    std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
+    let output = home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]);
+    assert_eq!(output.status.code(), Some(2));
+    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
+    let Report::Error(error) = envelope.result else {
+        panic!("input error")
+    };
+    let id = graph["nodes"][1]["id"].as_str().unwrap();
+    assert!(
+        error.message.contains(&format!("node {id}, question 1")),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("SECRET"));
     assert_eq!(server.count(), count);
 }
 #[test]
@@ -969,7 +1017,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
     let file = home.0.join("workflow.toon");
     std::fs::write(&file, codec::encode_toon(&spec).unwrap()).unwrap();
     let report = run_report(
-        home.run(["workflows", "run", file.to_str().unwrap(), "--no-session"]),
+        home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert!(report.run.is_none());
@@ -983,7 +1031,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
     let mut command = home.command();
     command
         .args([
-            "workflows",
+            "workflow",
             "run",
             "-",
             "--input-format",
@@ -1041,7 +1089,7 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
     let mut command = home.command();
     command
-        .args(["workflows", "run", file.to_str().unwrap(), "--jsonl"])
+        .args(["workflow", "run", file.to_str().unwrap(), "--jsonl"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let child = process::OwnedChild::new(command.spawn().unwrap());
@@ -1109,7 +1157,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let mut command = home.command();
     command
-        .args(["workflows", "run", file.to_str().unwrap(), "--jsonl"])
+        .args(["workflow", "run", file.to_str().unwrap(), "--jsonl"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = process::OwnedChild::new(command.spawn().unwrap());
@@ -1174,7 +1222,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     let file = home.0.join("large.json");
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let output = home.run([
-        "workflows",
+        "workflow",
         "run",
         file.to_str().unwrap(),
         "--no-session",
@@ -1193,7 +1241,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     let output = home
         .command()
         .args([
-            "workflows",
+            "workflow",
             "run",
             file.to_str().unwrap(),
             "--no-session",
@@ -1214,7 +1262,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     let output = home
         .command()
         .args([
-            "workflows",
+            "workflow",
             "run",
             file.to_str().unwrap(),
             "--no-session",
