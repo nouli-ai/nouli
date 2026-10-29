@@ -73,28 +73,35 @@ A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` m
 
 ## Use it from scripts and agents
 
-Everything you can do at the prompt is also a command. This is the same session:
-
-```sh
-nouli new trip 'The train costs 40 USD and arrives 30 minutes before the meeting.' \
-  'A taxi costs 70 USD and also arrives in time.' \
-  -q 'transport: How should I get to the meeting? [Take the train, Take a taxi]'
-nouli add trip 'The train has been cancelled.' \
-  -q 'rebook: How should I get to the meeting now? [Take the train, Take a taxi]'
-nouli add trip --replace 3 'The train is running 10 minutes late but still arrives 20 minutes before the meeting.' \
-  -q 'on_time: Will I get to the meeting on time?'
-nouli whatif trip 'My budget for the trip is 50 USD.' \
-  -q 'budget: Which option fits my budget? [Take the train, Take a taxi]'
-nouli facts trip
-```
+Everything you can do at the prompt is also a command. Each command below adds what is new and asks a follow-up question, and the model answers it with every earlier fact and answer in view:
 
 ```text
-   1  The train costs 40 USD and arrives 30 minutes before the meeting.
-   2  A taxi costs 70 USD and also arrives in time.
-   3  The train is running 10 minutes late but still arrives 20 minutes before the meeting.   (replaced; was: The train has been cancelled.)
+$ nouli new trip 'The train costs 40 USD and arrives 30 minutes before the meeting.' \
+    'A taxi costs 70 USD and also arrives in time.' \
+    -q 'transport: How should I get to the meeting? [Take the train, Take a taxi]'
+  turn 1 · 2 facts · 1 question
+  transport   ▶ Take the train                   ███████████████████▊ 0.99
+                Take a taxi                      ▎                    0.01
+$ nouli add trip 'The train has been cancelled.' \
+    -q 'rebook: How should I get to the meeting now? [Take the train, Take a taxi]'
+  turn 2 · 1 fact · 1 question
+  rebook        Take the train                   ▍                    0.02
+              ▶ Take a taxi                      ███████████████████▋ 0.98
+$ nouli add trip "Trips over 50 USD need my manager's approval before booking." \
+    -q 'approval: Do I need approval before I book?'
+  turn 3 · 1 fact · 1 question
+  approval      yes                              █████████████████▋   0.88
+$ nouli add trip 'My manager approved up to 80 USD.' \
+    -q 'book: What should I book now? [The train, The taxi, Nothing yet]'
+  turn 4 · 1 fact · 1 question
+  book          The train                                             0.00
+              ▶ The taxi                         █████████████████▊   0.89
+                Nothing yet                      ██▎                  0.11
 ```
 
-Every turn asks one `-q` question, in its own call. `nouli ask trip -q …` asks without new facts, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
+Each follow-up depends on the turns before it. Turn 3's fact doesn't say how you're getting there or what it costs: the taxi comes from turn 2's answer and its 70 USD fare from turn 1's facts. Turn 4 needs all three earlier turns: the cancelled train, the fare, and the approval rule. `nouli context trip` shows exactly what reached the model for a turn, and every saved answer stays as it was decided.
+
+Every turn asks one `-q` question, in its own call. `nouli ask trip -q …` asks without new facts, `--replace N TEXT` corrects fact N, `nouli whatif trip … -q …` asks without saving, `nouli facts trip` lists the numbered facts, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
 ## A longer example
 
