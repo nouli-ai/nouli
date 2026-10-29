@@ -23,7 +23,10 @@ use nouli_core::{
     history::{ModelSelection, SessionSelection, SourcePoint, SourceSelection},
     identity::{Id, SessionName, SessionSelector},
     protocol::{ErrorReport, Report},
-    storage::{Ledger, OpenMode, sessions::Session},
+    storage::{
+        Ledger, OpenMode, StorageError,
+        sessions::{Session, SessionError},
+    },
 };
 use std::{
     io::{self, BufRead, IsTerminal, Write},
@@ -793,27 +796,45 @@ fn history_path(store: &Path) -> std::path::PathBuf {
     store.join("repl_history")
 }
 
+/// The ledger, or `None` when the store has no ledger yet. Every other failure
+/// to open it is an error, not an empty store.
+fn open_existing(settings: &Settings) -> Result<Option<Ledger>, ErrorReport> {
+    match Ledger::open(&settings.store, OpenMode::ReadOnlyExisting) {
+        Ok(ledger) => Ok(Some(ledger)),
+        Err(StorageError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            Ok(None)
+        }
+        Err(error) => Err(error.report()),
+    }
+}
+
+/// The saved sessions with their own turn counts, oldest first.
+fn saved_sessions(settings: &Settings) -> Result<Vec<(Session, usize)>, ErrorReport> {
+    let Some(ledger) = open_existing(settings)? else {
+        return Ok(vec![]);
+    };
+    ledger
+        .list_sessions()
+        .map_err(|error| error.report())?
+        .into_iter()
+        .map(|session| {
+            let turns = own_turns(&ledger, &session)?;
+            Ok((session, turns))
+        })
+        .collect()
+}
+
 /// Lists saved sessions and asks for a number or a new name.
 fn pick<L: Lines, W: Write>(
     settings: &Settings,
     paint: Paint,
     lines: &mut L,
     out: &mut W,
-) -> io::Result<Option<SessionSelector>> {
-    let sessions = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
-        .ok()
-        .and_then(|ledger| {
-            let listed = ledger.list_sessions().ok()?;
-            let counted = listed
-                .into_iter()
-                .map(|session| {
-                    let turns = own_turns(&ledger, &session).unwrap_or(0);
-                    (session, turns)
-                })
-                .collect::<Vec<_>>();
-            Some(counted)
-        })
-        .unwrap_or_default();
+) -> io::Result<Result<Option<SessionSelector>, ErrorReport>> {
+    let sessions = match saved_sessions(settings) {
+        Ok(sessions) => sessions,
+        Err(error) => return Ok(Err(error)),
+    };
     if sessions.is_empty() {
         writeln!(
             out,
@@ -847,7 +868,7 @@ fn pick<L: Lines, W: Write>(
                 if let Ok(number) = answer.parse::<usize>() {
                     match sessions.get(number.wrapping_sub(1)) {
                         Some((session, _)) => {
-                            return Ok(Some(SessionSelector::Id(session.id)));
+                            return Ok(Ok(Some(SessionSelector::Id(session.id))));
                         }
                         None => {
                             writeln!(out, "  no session number {number}")?;
@@ -856,7 +877,7 @@ fn pick<L: Lines, W: Write>(
                     }
                 }
                 match selection::selector(answer) {
-                    Ok(selector) => return Ok(Some(selector)),
+                    Ok(selector) => return Ok(Ok(Some(selector))),
                     Err(_) => writeln!(
                         out,
                         "  a session name starts with a letter and uses letters, digits, `.`, `_` or `-`"
@@ -864,7 +885,7 @@ fn pick<L: Lines, W: Write>(
                 }
             }
             Event::Interrupt => continue,
-            Event::Eof => return Ok(None),
+            Event::Eof => return Ok(Ok(None)),
         }
     }
 }
@@ -878,9 +899,15 @@ fn resolve<L: Lines, W: Write>(
     lines: &mut L,
     out: &mut W,
 ) -> io::Result<Result<(Session, bool), ErrorReport>> {
-    let existing = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
-        .ok()
-        .and_then(|ledger| ledger.session(&selector).ok());
+    let existing = match open_existing(settings) {
+        Ok(Some(ledger)) => match ledger.session(&selector) {
+            Ok(session) => Some(session),
+            Err(SessionError::UnknownSession) => None,
+            Err(error) => return Ok(Err(error.report())),
+        },
+        Ok(None) => None,
+        Err(error) => return Ok(Err(error)),
+    };
     if let Some(session) = existing {
         return Ok(Ok((session, false)));
     }
@@ -949,8 +976,9 @@ fn session_loop<L: Lines, W: Write>(
     let selector = match target {
         Target::Named(selector) => selector,
         Target::Pick => match pick(settings, paint, &mut lines, &mut out)? {
-            Some(selector) => selector,
-            None => return Ok(Ok(())),
+            Ok(Some(selector)) => selector,
+            Ok(None) => return Ok(Ok(())),
+            Err(error) => return Ok(Err(error)),
         },
     };
     let (session, created) = match resolve(settings, selector, interactive, &mut lines, &mut out)? {
@@ -1050,6 +1078,7 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn a_reader_echoes_each_line_after_the_prompt_and_ends_at_the_end_of_input() {
@@ -1120,6 +1149,38 @@ mod tests {
         let mut whatif = repl(&settings, queue());
         whatif.finish(saved_turn(), &[], true).unwrap();
         assert_eq!(whatif.queue.len(), 2);
+    }
+
+    #[test]
+    fn an_unreadable_store_is_an_error_but_a_missing_one_is_empty() {
+        let root = std::env::temp_dir().join(format!("nouli-repl-store-{}", Id::generate()));
+        let settings = Settings::for_test(root.clone());
+        let pick = |settings: &Settings| {
+            let mut out = Vec::new();
+            let picked = pick(settings, Paint(false), &mut Reader(&b""[..]), &mut out).unwrap();
+            (picked, String::from_utf8(out).unwrap())
+        };
+        // No ledger yet: no sessions, and the name prompt follows.
+        let (picked, shown) = pick(&settings);
+        assert!(matches!(picked, Ok(None)), "{shown}");
+        assert!(shown.contains("no sessions yet"));
+        let selector = || SessionSelector::Name(SessionName::try_from("Trip".to_owned()).unwrap());
+        let mut out = Vec::new();
+        let mut lines = Reader(&b""[..]);
+        let found = resolve(&settings, selector(), false, &mut lines, &mut out).unwrap();
+        // The script creates the missing session.
+        assert!(matches!(found, Ok((_, true))));
+        // A ledger that cannot be read is reported, not taken for an empty one.
+        fs::write(root.join("ledger.sqlite3"), b"not a ledger at all").unwrap();
+        let (picked, shown) = pick(&settings);
+        let Err(error) = picked else {
+            panic!("an error report, got {shown}")
+        };
+        assert!(!shown.contains("no sessions yet"));
+        assert!(!error.message.is_empty());
+        let found = resolve(&settings, selector(), false, &mut lines, &mut out).unwrap();
+        assert!(found.is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
