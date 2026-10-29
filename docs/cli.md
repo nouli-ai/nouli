@@ -13,10 +13,10 @@ nouli whatif Trip "The taxi fare has doubled to 140 USD." -q "fare: Is the taxi 
 
 | Command | What it does |
 | --- | --- |
-| `nouli new NAME [--from SRC[@TURN]]... [FACT...] [-q Q...]` | Creates a session: new with no `--from`, a branch with one, a blend with several. With no facts and no questions it only creates the session and prints its ID, and `--request-id` and `--retry-interrupted` are rejected because no turn is saved. Otherwise it runs the first turn. |
-| `nouli add SESSION [FACT...] -q Q... [--replace N TEXT...]` | Runs a turn on an existing session. |
-| `nouli ask SESSION -q Q...` | Asks without new facts. It is `add` with no facts. |
-| `nouli whatif SESSION [FACT...] -q Q... [--replace N TEXT...]` | Runs one turn from the session's head and saves nothing. |
+| `nouli new NAME [--from SRC[@TURN]]... [FACT...] [-q Q]` | Creates a session: new with no `--from`, a branch with one, a blend with several. With no facts and no question it only creates the session and prints its ID, and `--request-id` and `--retry-interrupted` are rejected because no turn is saved. Otherwise it runs the first turn. |
+| `nouli add SESSION [FACT...] -q Q [--replace N TEXT...]` | Runs a turn on an existing session. |
+| `nouli ask SESSION -q Q` | Asks without new facts. It is `add` with no facts. |
+| `nouli whatif SESSION [FACT...] -q Q [--replace N TEXT...]` | Runs one turn from the session's head and saves nothing. |
 
 `SESSION` is an existing ID or unique case-sensitive name; an unknown selector never creates a session. `--from` names a source session, or `SESSION@TURN_ID` for a fixed finalized turn. Without `@`, acceptance captures the source's current frontier once, so later source changes do not flow into the saved branch or blend. A name belongs to one session.
 
@@ -26,7 +26,7 @@ Every positional `FACT` is saved as an evidence record in the session. The model
 
 ## Questions
 
-`-q` takes one question per option in a one-line grammar. The same grammar is used by workflow files and the REPL.
+`-q` takes one question in a one-line grammar. The same grammar is used by workflow files and the REPL.
 
 ```text
 transport: How should I get to the meeting? [train, taxi]   choice, 2 to 255 options
@@ -34,13 +34,13 @@ fit: How well does this plan fit my priorities? <poor, fair, good, excellent>   
 on_time: Will the train get me there on time?               yes/no
 ```
 
-An ID is lowercase letters, digits, `_` or `-`. Items are comma-separated, and an item that contains a comma, bracket, angle bracket, or quote is written in double quotes. A choice option's ID is derived from its label (`"Book the train"` becomes `book_the_train`). A grammar error is an input error (exit code 2) that names the question's position and the problem, never its text.
+An ID is lowercase letters, digits, `_` or `-`. Items are comma-separated, and an item that contains a comma, bracket, angle bracket, or quote is written in double quotes. A choice option's ID is derived from its label (`"Book the train"` becomes `book_the_train`). A grammar error is an input error (exit code 2) that names the problem, never the question's text.
 
-A turn asks exactly its `-q` questions, in one call, and nothing else. Sessions don't keep questions: a later turn, a branch, or a blend never asks an earlier question again, so every saved answer stays as it was decided, and later turns see earlier questions and answers as history. To ask about the same thing after new facts, ask again, with the same ID or a new one; the new answer is a separate decision in a new turn. A turn with no `-q` question fails with `questions_required` (exit code 2) and sends nothing.
+A turn asks exactly its `-q` question, in its own call, and nothing else. A command takes one `-q`; a second is a usage error (exit code 2), so to ask two things, run two turns. Sessions don't keep questions: a later turn, a branch, or a blend never asks an earlier question again, so every saved answer stays as it was decided, and later turns see earlier questions and answers as history. To ask about the same thing after new facts, ask again, with the same ID or a new one; the new answer is a separate decision in a new turn. A turn with no `-q` question fails with `questions_required` (exit code 2) and sends nothing.
 
 ## Request files
 
-`--input FILE` replaces facts and questions with a complete request, for agents and scripts: a portable `TurnRequest` (`version`, `state`, `questions`), or an `EvaluationRequest` with `turn`, `updates`, `required_records`, `model`, and `request_id`. The command supplies the session, so a request file that names one is rejected. `--input` cannot be combined with facts, `-q`, or `--replace`. A file's `turn.questions` are the questions the turn asks. A `standing` field, which Nouli 0.2.0 used for questions a session kept asking, fails with `invalid_standing_question`. Omitted turn versions default to v1. Unknown fields and duplicate keys fail. JSON and TOON share one model; files use `.json` or `.toon`, and stdin (`--input -`) requires `--input-format json|toon`. Input is bounded to 16 MiB.
+`--input FILE` replaces facts and questions with a complete request, for agents and scripts: a portable `TurnRequest` (`version`, `state`, `questions`), or an `EvaluationRequest` with `turn`, `updates`, `required_records`, `model`, and `request_id`. The command supplies the session, so a request file that names one is rejected. `--input` cannot be combined with facts, `-q`, or `--replace`. A file's `turn.questions` are the questions the turn asks, and may list several independent questions for one call. A `standing` field, which Nouli 0.2.0 used for questions a session kept asking, fails with `invalid_standing_question`. Omitted turn versions default to v1. Unknown fields and duplicate keys fail. JSON and TOON share one model; files use `.json` or `.toon`, and stdin (`--input -`) requires `--input-format json|toon`. Input is bounded to 16 MiB.
 
 ```sh
 nouli add Trip --input request.json

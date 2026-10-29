@@ -289,7 +289,7 @@
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli add customers '…'"
+   "command": "nouli add customers '…' -q '…'"
   },
   {
    "id": "01a1878e-1cc2-76b4-862f-f1daef12e7a8",

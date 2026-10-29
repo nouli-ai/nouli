@@ -306,7 +306,7 @@
     }
    ],
    "model": "typesafe/jev-1.14.0",
-   "command": "nouli add battery '…'"
+   "command": "nouli add battery '…' -q '…'"
   },
   {
    "id": "01a1878e-1b3c-71a1-90b6-b934076a2479",
