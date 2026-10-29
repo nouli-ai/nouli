@@ -124,8 +124,7 @@ fn pick<L: Lines, W: Write>(
                     )?,
                 }
             }
-            Event::Interrupt => continue,
-            Event::Eof => return Ok(Ok(None)),
+            Event::Interrupt | Event::Eof => return Ok(Ok(None)),
         }
     }
 }

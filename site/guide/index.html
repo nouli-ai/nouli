@@ -126,33 +126,27 @@ nouli sessions export plan --format json &gt; plan.json</code></pre>
 <p><code>nouli view</code> draws the session and every turn it captured as boxes in your terminal, with <code>▶</code> marking each selected answer. <code>--mermaid</code> prints the same graph as Mermaid source; paste it into a <code>```mermaid</code> block and GitHub draws it. <code>nouli facts</code> lists the numbered facts, marking those inherited from another session, and <code>nouli questions</code> prints the session's questions in the one-line form. None of these commands call a model or change the store.</p>
 
 <h2 id="interactive"><span class="num">07</span>Interactive mode</h2>
-<p><code>nouli open travel</code> opens a prompt on a session, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, define a question with <code>?</code>, and press return on an empty line to send everything as one turn. Questions stay with the session, so an empty line later asks them again:</p>
+<p><code>nouli open travel</code> opens a prompt on a session, and a bare <code>nouli</code> in a terminal lists your sessions first. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Questions stay with the session, so the next question asks them again, and so does return on an empty line:</p>
 <pre><code>$ nouli open travel
 new session "travel" · /help for commands
 
 travel › The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.
 travel › ?transport: How should I travel to the meeting? [Take the train, Take a taxi]
-  queued: choice question "transport" · options take_the_train, take_a_taxi
-travel › ↵
   turn 1 · 1 fact · 1 question
   transport   ▶ Take the train                   ████████████████████ 1.00
                 Take a taxi                                           0.00
 travel › The train has been cancelled. The taxi is still available at 70 USD.
 travel › ?on_time: Will the train get me to the meeting on time?
-  queued: yes/no question "on_time"
-travel › ?transport: How should I travel to the meeting now? [Take the train, Take a taxi]
-  queued: choice question "transport" · options take_the_train, take_a_taxi
-travel › ↵
   turn 2 · 1 fact · 2 questions · re-asked 1
-  transport     Take the train                   ▎                    0.01
-              ▶ Take a taxi                      ███████████████████▊ 0.99   → was Take the tr… 1.00
-  on_time       yes                              ██▋                  0.13
+  transport     Take the train                   █▎                   0.06
+              ▶ Take a taxi                      ██████████████████▊  0.94   → was Take the tr… 1.00
+  on_time       yes                              █▋                   0.08
 travel › /facts
    1  The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.
    2  The train has been cancelled. The taxi is still available at 70 USD.
 travel › /quit
   bye</code></pre>
-<p>Slash commands do the rest: <code>/whatif FACT</code> asks without saving, <code>/replace N TEXT</code> and <code>/drop ID</code> queue a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears what you have queued, and Ctrl-D quits.</p>
+<p>Slash commands do the rest: <code>/whatif FACT</code> asks without saving, <code>/replace N TEXT</code> and <code>/drop ID</code> queue a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The prompt only shows what the store holds. Ctrl-C clears the line or what you have queued, and on an empty prompt it quits, as Ctrl-D and <code>/exit</code> do.</p>
 
 <h2 id="workflows"><span class="num">08</span>Run a workflow</h2>
 <p>When later questions depend on earlier answers, describe the turns as a graph and let Nouli run it. Nodes with no dependency between them run in parallel:</p>

@@ -1,7 +1,8 @@
 //! The terminal line editor: history, editing, and a styled prompt.
 use super::{Event, Lines};
 use rustyline::{
-    ColorMode, Config, Editor, Helper, completion::Completer, error::ReadlineError,
+    Cmd, ColorMode, ConditionalEventHandler, Config, Editor, EventContext, EventHandler, Helper,
+    KeyEvent, Movement, RepeatCount, completion::Completer, error::ReadlineError,
     highlight::Highlighter, hint::Hinter, history::DefaultHistory, validate::Validator,
 };
 use std::{io, path::PathBuf};
@@ -17,6 +18,21 @@ impl Hinter for Style {
 impl Highlighter for Style {}
 impl Validator for Style {}
 impl Helper for Style {}
+
+/// Ctrl-C clears what was typed, pasted lines included; only on an empty
+/// prompt does it interrupt.
+struct ClearLine;
+impl ConditionalEventHandler for ClearLine {
+    fn handle(
+        &self,
+        _: &rustyline::Event,
+        _: RepeatCount,
+        _: bool,
+        context: &EventContext,
+    ) -> Option<Cmd> {
+        (!context.line().is_empty()).then_some(Cmd::Kill(Movement::WholeBuffer))
+    }
+}
 
 pub(super) struct Terminal {
     editor: Editor<Style, DefaultHistory>,
@@ -34,6 +50,10 @@ impl Terminal {
             .build();
         let mut editor = Editor::with_config(config).map_err(io::Error::other)?;
         editor.set_helper(Some(Style));
+        editor.bind_sequence(
+            KeyEvent::ctrl('C'),
+            EventHandler::Conditional(Box::new(ClearLine)),
+        );
         // A missing history file is the normal first run.
         let _ = editor.load_history(&history);
         Ok(Self { editor, history })
