@@ -106,6 +106,7 @@ fn write_request(
     key: Option<&str>,
 ) -> std::path::PathBuf {
     let request = EvaluationRequest {
+        standing: Default::default(),
         turn,
         session,
         updates,
@@ -262,6 +263,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
 
     drop(captured);
     let branch_request = EvaluationRequest {
+        standing: Default::default(),
         turn: fixture("food"),
         session: SessionSelection::New { name: None },
         updates: vec![ContextUpdate::Unpin { target: budget.id }],

@@ -49,6 +49,7 @@ enum ExampleError {
 }
 fn request(selection: SessionSelection) -> Result<EvaluationRequest, ExampleError> {
     Ok(EvaluationRequest {
+        standing: Default::default(),
         turn: codec::decode(
             include_bytes!("../../fixtures/contracts/decision-request.json"),
             InputFormat::Json,

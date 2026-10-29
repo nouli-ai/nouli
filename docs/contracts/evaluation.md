@@ -11,3 +11,26 @@ Only classified transient failures receive bounded retries. Each actual call has
 Results retain independent per-question refusals, distributions, fractional score values, native confidence, usage, and actual served metadata. A finalization failure retains the running audit attempt and cannot report saved success. `Ledger::list_attempts` exposes immutable intents and projected states in acceptance order.
 
 `LedgerWorker::open` opens the store on a blocking worker. Its jobs own their connection lock and all captured guard references until each finite operation finishes, including when an awaiting future is dropped. Provider waits never run inside a worker job. This keeps SQLite busy waits and filesystem operations off the async executor.
+
+## Standing questions
+
+`EvaluationRequest.standing` (`StandingChanges { set, drop }`, default empty)
+changes the session's standing questions, and `turn.questions` may be empty
+when the session supplies them. A turn asks the session's standing set, then
+applies `set` (insert or replace by ID) and `drop` (remove), then appends
+`turn.questions` as one-off questions. Dropping an unknown ID, setting and
+dropping the same ID, or a one-off question whose ID matches a standing
+question is an error, and an empty effective list fails with the usual empty
+`questions` contract error. The finalized turn's `request.questions` records the
+effective list, so history shows exactly what was asked, and
+`FinalizedTurn.standing` records the changes.
+
+The engine expands the request only after `accept_request`. The reservation
+freezes the caller's own `turn.questions` and `standing`, which keeps the
+request fingerprint stable. `Ledger::effective_turn` computes the expansion from
+the frozen request and its session, and the attempt is validated against that
+same expansion. This is deterministic because the session head cannot move while
+the request owns the session. Before acceptance, a new request is checked with
+`Ledger::preview_turn`, so a mistaken change fails without reserving the request
+or creating a session. A completed request replays its saved turn and never
+applies its changes again.

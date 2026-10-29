@@ -113,6 +113,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                 .call(move |ledger| ledger.retry_interrupted_request(&query))
                 .await??
         } else {
+            let replaying = saved.is_some();
             let settings = if let Some(saved) = saved {
                 saved.settings
             } else {
@@ -133,6 +134,15 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     input.home,
                 )?
             };
+            if !replaying {
+                // Fail a bad standing change before reserving the request or
+                // creating a session. A replayed request skips this: its
+                // changes are already part of the session's history.
+                let query = request.clone();
+                ledger
+                    .call(move |ledger| ledger.preview_turn(&query))
+                    .await??;
+            }
             let query = request.clone();
             ledger
                 .call(move |ledger| ledger.accept_request(&query, settings))
@@ -157,6 +167,12 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         let owner: Arc<RequestOwner> = Arc::from(owner);
         let frozen = owner.frozen();
         let sources = frozen.sources.clone();
+        // Expand only after acceptance: the frozen request keeps the caller's
+        // own questions so replay fingerprints stay stable.
+        let expanding = frozen.clone();
+        let turn = ledger
+            .call(move |ledger| ledger.effective_turn(&expanding))
+            .await??;
         let history = ledger
             .call(move |ledger| ledger.ancestry(&sources))
             .await??;
@@ -166,6 +182,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     context_base: None,
                     runtime_only: false,
                     request: &frozen.request,
+                    turn: &turn,
                     sources: &frozen.sources,
                     history: &history,
                     settings: frozen.settings.clone(),
@@ -198,7 +215,7 @@ mod tests {
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
         data::{Data, Input},
         decision::TurnRequest,
-        history::SourceSelection,
+        history::{SourceSelection, StandingChanges},
         identity::SessionSelector,
         limits::count::ByteCounter,
         outcome::{QuestionOutcome, TurnOutcome},
@@ -265,6 +282,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
+            standing: Default::default(),
             turn: serde_json::from_str(include_str!(
                 "../../fixtures/contracts/decision-request.json"
             ))
@@ -492,6 +510,203 @@ mod tests {
                 .frontier,
             vec![continued.turn.id]
         );
+    }
+    /// Fixture questions as standing changes with no one-off questions.
+    fn standing_request(
+        session: SessionSelection,
+        set: std::ops::Range<usize>,
+        drop: &[&str],
+        one_off: std::ops::Range<usize>,
+    ) -> EvaluationRequest {
+        let all = request().turn.questions;
+        let mut next = request();
+        next.session = session;
+        next.request_id = Some(Id::generate().to_string());
+        next.turn.questions = all[one_off].to_vec();
+        next.standing = StandingChanges {
+            set: all[set].to_vec(),
+            drop: drop.iter().map(|id| (*id).to_owned()).collect(),
+        };
+        next
+    }
+    /// Queues an outcome answering only the first `count` fixture questions.
+    fn queue_outcome(engine: &Engine<Fake, ByteCounter, FastClock>, count: usize) {
+        let mut shorter = outcome();
+        shorter.outcomes.truncate(count);
+        shorter.provider.provider = "fixture".into();
+        shorter.provider.model = "offline".into();
+        engine
+            .provider
+            .results
+            .lock()
+            .unwrap()
+            .push_back(Ok(shorter));
+    }
+    fn continue_session(session: Id) -> SessionSelection {
+        SessionSelection::Continue {
+            session: SessionSelector::Id(session),
+        }
+    }
+    fn standing_ids(ledger: &TestLedger, session: Id) -> Vec<String> {
+        ledger
+            .worker
+            .inspect(|ledger| ledger.standing_questions(&SessionSelector::Id(session)))
+            .unwrap()
+            .into_iter()
+            .map(|question| question.id)
+            .collect()
+    }
+    #[tokio::test]
+    async fn standing_questions_are_saved_with_the_turn_and_reasked_without_new_questions() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let engine = make_engine(Fake::default());
+        let config = config();
+        let cancel = CancellationToken::new();
+        let all = request().turn.questions;
+        let first = standing_request(SessionSelection::New { name: None }, 0..3, &[], 3..4);
+        let first = run(&engine, &mut ledger, &config, &first, false, &cancel)
+            .await
+            .unwrap();
+        let session = first.turn.session;
+        // The finalized turn records the effective list; the one-off question
+        // is asked once and not remembered.
+        assert_eq!(first.turn.request.questions, all);
+        assert_eq!(first.turn.standing.set, all[..3]);
+        assert_eq!(
+            standing_ids(&ledger, session),
+            ["travel", "on_time", "quality"]
+        );
+        // Turn 2 sends no questions at all and asks the three again.
+        queue_outcome(&engine, 3);
+        let mut second = standing_request(continue_session(session), 0..0, &[], 0..0);
+        second.turn.state = vec![];
+        let second = run(&engine, &mut ledger, &config, &second, false, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(second.turn.request.questions, all[..3]);
+        assert!(second.turn.standing.is_empty());
+        assert_eq!(
+            engine.provider.calls.lock().unwrap()[1].request.questions,
+            all[..3]
+        );
+        // Replace by ID: the new prompt is asked and the position is kept.
+        let mut replacement = all[1].clone();
+        replacement.prompt = "Will it be late?".into();
+        queue_outcome(&engine, 3);
+        let mut third = standing_request(continue_session(session), 0..0, &[], 0..0);
+        third.standing.set = vec![replacement.clone()];
+        let third = run(&engine, &mut ledger, &config, &third, false, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(third.turn.request.questions[1], replacement);
+        assert_eq!(
+            standing_ids(&ledger, session),
+            ["travel", "on_time", "quality"]
+        );
+        // Dropping removes it from this and later turns.
+        queue_outcome(&engine, 2);
+        let fourth = standing_request(continue_session(session), 0..0, &["quality"], 0..0);
+        let fourth = run(&engine, &mut ledger, &config, &fourth, false, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(fourth.turn.request.questions.len(), 2);
+        assert_eq!(standing_ids(&ledger, session), ["travel", "on_time"]);
+    }
+    #[tokio::test]
+    async fn bad_standing_changes_fail_before_reserving_the_request_or_creating_a_session() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let engine = make_engine(Fake::default());
+        let config = config();
+        let cancel = CancellationToken::new();
+        let first = standing_request(SessionSelection::New { name: None }, 0..4, &[], 0..0);
+        let session = run(&engine, &mut ledger, &config, &first, false, &cancel)
+            .await
+            .unwrap()
+            .turn
+            .session;
+        let unknown = standing_request(continue_session(session), 0..0, &["nope"], 0..0);
+        assert!(matches!(
+            run(&engine, &mut ledger, &config, &unknown, false, &cancel).await,
+            Err(EngineError::Turn(crate::storage::turns::TurnError::History(
+                HistoryError::UnknownStanding(id)
+            ))) if id == "nope"
+        ));
+        let clash = standing_request(continue_session(session), 0..0, &[], 0..1);
+        assert!(matches!(
+            run(&engine, &mut ledger, &config, &clash, false, &cancel).await,
+            Err(EngineError::Turn(crate::storage::turns::TurnError::History(
+                HistoryError::StandingCollision(id)
+            ))) if id == "travel"
+        ));
+        let mut empty = standing_request(SessionSelection::New { name: None }, 0..0, &[], 0..0);
+        empty.turn.questions.clear();
+        assert!(matches!(
+            run(&engine, &mut ledger, &config, &empty, false, &cancel).await,
+            Err(EngineError::Turn(
+                crate::storage::turns::TurnError::History(HistoryError::Decision(
+                    crate::decision::ContractError::Empty("questions")
+                ))
+            ))
+        ));
+        // No attempt, reservation, or extra session was created, and nothing
+        // reached the provider.
+        assert_eq!(ledger.list_sessions().unwrap().len(), 1);
+        assert_eq!(ledger.list_attempts(session).unwrap().len(), 1);
+        assert!(ledger.saved_request(&unknown).unwrap().is_none());
+        assert_eq!(engine.provider.calls.lock().unwrap().len(), 1);
+        assert_eq!(standing_ids(&ledger, session).len(), 4);
+    }
+    #[tokio::test]
+    async fn failed_calls_leave_standing_unchanged_and_replay_never_applies_changes_twice() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let config = config();
+        let cancel = CancellationToken::new();
+        let failing = make_engine(Fake::errors(vec![ProviderError::Transport(
+            TransportError::Authentication { status: 401 },
+        )]));
+        let doomed = standing_request(SessionSelection::New { name: None }, 0..4, &[], 0..0);
+        assert!(
+            run(&failing, &mut ledger, &config, &doomed, false, &cancel)
+                .await
+                .is_err()
+        );
+        let sessions = ledger.list_sessions().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert!(standing_ids(&ledger, sessions[0].id).is_empty());
+        // A successful turn that changes the set, then replayed with the same ID.
+        let engine = make_engine(Fake::default());
+        let first = standing_request(SessionSelection::New { name: None }, 0..4, &[], 0..0);
+        let saved = run(&engine, &mut ledger, &config, &first, false, &cancel)
+            .await
+            .unwrap();
+        let session = saved.turn.session;
+        queue_outcome(&engine, 3);
+        let dropping = standing_request(continue_session(session), 0..0, &["private"], 0..0);
+        let dropped = run(&engine, &mut ledger, &config, &dropping, false, &cancel)
+            .await
+            .unwrap();
+        // Replaying would fail if the drop were applied again ("private" is
+        // already gone), and the head must not move.
+        let replay = run(&engine, &mut ledger, &config, &dropping, false, &cancel)
+            .await
+            .unwrap();
+        assert!(replay.replayed);
+        assert_eq!(replay.turn, dropped.turn);
+        assert_eq!(
+            standing_ids(&ledger, session),
+            ["travel", "on_time", "quality"]
+        );
+        assert_eq!(
+            ledger
+                .session(&SessionSelector::Id(session))
+                .unwrap()
+                .frontier,
+            vec![dropped.turn.id]
+        );
+        assert_eq!(engine.provider.calls.lock().unwrap().len(), 2);
     }
     #[tokio::test]
     async fn retries_record_each_actual_attempt_without_provider_model_fallback() {

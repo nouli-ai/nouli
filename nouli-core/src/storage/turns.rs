@@ -12,7 +12,7 @@ use crate::{
     decision::TurnRequest,
     history::{
         EvaluationManifest, FinalizedTurn, HistoryError, HistoryEvent, SourcePoint,
-        order::canonical_history,
+        StandingChanges, order::canonical_history,
     },
     identity::{Id, SessionSelector},
     outcome::TurnOutcome,
@@ -24,6 +24,9 @@ use crate::{
 pub struct AttemptInput {
     pub request: TurnRequest,
     pub updates: Vec<ContextUpdate>,
+    /// Standing-question changes saved with the turn, in the same transaction.
+    #[serde(default, skip_serializing_if = "StandingChanges::is_empty")]
+    pub standing: StandingChanges,
     pub manifest: EvaluationManifest,
     pub request_id: Option<String>,
 }
@@ -135,6 +138,7 @@ impl Ledger {
         let session = guard.session();
         guard.validate(self, session).map_err(write_error)?;
         input.request.validate().map_err(HistoryError::from)?;
+        input.standing.validate()?;
         input.manifest.validate()?;
         for update in &input.updates {
             update.validate().map_err(HistoryError::from)?;
@@ -337,6 +341,7 @@ impl Ledger {
             request: prepared.input.request,
             outcome,
             updates: prepared.input.updates,
+            standing: prepared.input.standing,
             manifest,
         };
         turn.validate()?;
@@ -461,6 +466,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
         let turn: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
         AttemptInput {
+            standing: Default::default(),
             request: turn.request,
             updates: vec![ContextUpdate::Append {
                 record: ContextRecord {

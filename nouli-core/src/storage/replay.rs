@@ -17,7 +17,7 @@ use crate::{
     history::FinalizedTurn,
     history::{
         EvaluationManifest, EvaluationRequest, HistoryError, ModelSelection, SessionSelection,
-        SourcePoint,
+        SourcePoint, StandingChanges,
     },
     identity::{Id, SessionSelector},
     protocol::{ErrorCategory, ErrorReport},
@@ -84,8 +84,9 @@ impl RequestOwner {
         Ok(ledger.prepare_attempt(
             &self.session_guard,
             AttemptInput {
-                request: self.frozen.request.turn.clone(),
+                request: ledger.effective_turn(&self.frozen)?,
                 updates: self.frozen.request.updates.clone(),
+                standing: self.frozen.request.standing.clone(),
                 manifest,
                 request_id: Some(self.key.clone()),
             },
@@ -124,6 +125,8 @@ pub fn fingerprint(request: &EvaluationRequest) -> Result<String, ReplayError> {
     #[derive(Serialize)]
     struct Intent<'a> {
         turn: &'a crate::decision::TurnRequest,
+        #[serde(skip_serializing_if = "StandingChanges::is_empty")]
+        standing: &'a StandingChanges,
         session: &'a SessionSelection,
         updates: &'a [crate::context::ContextUpdate],
         required_records: &'a [Id],
@@ -131,6 +134,7 @@ pub fn fingerprint(request: &EvaluationRequest) -> Result<String, ReplayError> {
     }
     codec::fingerprint(&Intent {
         turn: &request.turn,
+        standing: &request.standing,
         session: &request.session,
         updates: &request.updates,
         required_records: &request.required_records,
@@ -303,9 +307,15 @@ pub(super) fn validate_reserved_input(
     let row:Option<(String,String,String)>=ledger.connection.query_row("SELECT owner_id,state,frozen_toon FROM request_reservations WHERE request_id=?1 AND session_id=?2",params![key,guard.session.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error|sql_error("validate request owner",error))?;
     let (owner, state, frozen) = row.ok_or(StorageError::Conflict)?;
     let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
+    // The caller's questions stay unexpanded in the frozen request; the attempt
+    // must carry the same expansion the engine executes.
+    let effective = ledger
+        .effective_turn(&frozen)
+        .map_err(|_| StorageError::Conflict)?;
     if owner != guard.owner.to_string()
         || state != "pending"
-        || input.request != frozen.request.turn
+        || input.request != effective
+        || input.standing != frozen.request.standing
         || input.updates != frozen.request.updates
         || input.manifest.sources != frozen.sources
         || input.manifest.provider.provider != frozen.settings.profile_name
@@ -501,6 +511,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
+            standing: Default::default(),
             turn: fixture().request,
             session: SessionSelection::New { name: None },
             updates: vec![],
@@ -742,6 +753,7 @@ mod tests {
             .unwrap();
         let guard = ledger.session_guard(source.id).unwrap();
         let input = || AttemptInput {
+            standing: Default::default(),
             request: fixture().request,
             updates: vec![],
             manifest: fixture().manifest,

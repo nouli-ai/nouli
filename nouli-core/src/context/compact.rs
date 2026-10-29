@@ -412,6 +412,7 @@ mod tests {
             .prepare_attempt(
                 &guard,
                 AttemptInput {
+                    standing: Default::default(),
                     request: turn.request,
                     updates: turn.updates,
                     manifest: turn.manifest,

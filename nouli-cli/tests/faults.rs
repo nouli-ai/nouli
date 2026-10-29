@@ -49,6 +49,7 @@ fn key_request(
     let mut turn = turn();
     turn.state.push(Input::Text { text: name.into() });
     let request = EvaluationRequest {
+        standing: Default::default(),
         turn,
         session,
         updates,

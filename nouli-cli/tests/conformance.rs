@@ -217,6 +217,7 @@ fn every_adapter_receives_compact_selected_outputs_and_preserves_full_original_l
             text: "ORIGINAL_EVIDENCE_".repeat(1500),
         });
         let request = EvaluationRequest {
+            standing: Default::default(),
             turn: turn.clone(),
             session: SessionSelection::New { name: None },
             updates: vec![],
