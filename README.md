@@ -1,5 +1,6 @@
 # Nouli
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-orange.svg)](rust-toolchain.toml)
 
 **Nouli is a multi-turn decision harness: it runs decision models over many turns.**
@@ -145,3 +146,7 @@ cargo test --workspace --locked
 ```
 
 Tests use local fixture providers and don't need API keys. The website lives in [`site/`](site/README.md). See [AGENTS.md](AGENTS.md) for conventions and [docs/adr/](docs/adr/) for design decisions.
+
+## License
+
+[MIT](LICENSE)

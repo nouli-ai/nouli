@@ -34,7 +34,7 @@ def third_party(stage, metadata, workspace):
         selected.add(package)
         pending.extend(dependency['pkg'] for dependency in nodes[package]['deps'])
     lines = ['# Third-party metadata and available notices', '',
-             'Inventory from the locked native dependency graph. SPDX expressions are package metadata, not a legal determination. Available license/notice texts are preserved below `licenses/`. Nouli itself has no declared license; see DISTRIBUTION_STATUS.md.', '']
+             'Inventory from the locked native dependency graph. SPDX expressions are package metadata, not a legal determination. Available license/notice texts are preserved below `licenses/`. Nouli uses the MIT license in LICENSE.', '']
     for identifier in sorted(selected, key=lambda item: (packages[item]['name'], packages[item]['version'])):
         if identifier in workspace:
             continue
@@ -80,7 +80,7 @@ def main():
     (stage / 'bin').mkdir(parents=True)
     shutil.copyfile(binary, stage / 'bin/nouli')
     (stage / 'bin/nouli').chmod(0o755)
-    for filename in ('README.md', 'Cargo.lock', 'rust-toolchain.toml'):
+    for filename in ('README.md', 'LICENSE', 'Cargo.lock', 'rust-toolchain.toml'):
         shutil.copyfile(ROOT / filename, stage / filename)
     shutil.copyfile(ROOT / 'docs/release.md', stage / 'INSTALL.md')
     shutil.copyfile(ROOT / 'fixtures/config/providers.toml', stage / 'config.example.toml')
@@ -94,7 +94,7 @@ def main():
         shutil.copyfile(ROOT / filename, destination)
     (stage / 'DISTRIBUTION_STATUS.md').write_text(
         '# Owner review required before distribution\n\n'
-        'The repository and workspace packages do not declare a Nouli license. No license has been selected or granted by this packaging step. Public distribution requires owner approval, license/metadata decisions, and review of the available dependency notices. This archive is a local validation artifact. It is unsigned and unnotarized. No registry upload, Git tag, GitHub release, push, API credential, or model is included.\n'
+        'Nouli and its workspace packages use the MIT license in LICENSE. Public distribution requires owner approval, license/metadata decisions, and review of the available dependency notices. This archive is a local validation artifact. It is unsigned and unnotarized. No registry upload, Git tag, GitHub release, push, API credential, or model is included.\n'
     )
     third_party(stage, metadata, workspace)
     source = run('git', 'rev-parse', 'HEAD').strip()
