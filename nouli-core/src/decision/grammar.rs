@@ -117,22 +117,28 @@ pub fn format(question: &Question) -> String {
     format!("{}: {}{answers}", question.id, question.prompt)
 }
 
-/// Derive a choice option ID from its label.
+/// Derive a choice option ID from its label: letters and digits of any script
+/// are lowercased, and every other run of characters becomes one `_`. The ID is
+/// at most `MAX_ID` bytes.
 pub fn option_id(label: &str) -> String {
     let mut id = String::new();
     let mut gap = false;
     for c in label.chars() {
-        if c.is_ascii_alphanumeric() {
+        if c.is_alphanumeric() {
             if gap && !id.is_empty() {
                 id.push('_');
             }
-            id.push(c.to_ascii_lowercase());
+            id.extend(c.to_lowercase());
             gap = false;
         } else {
             gap = true;
         }
     }
-    id.truncate(MAX_ID);
+    let mut end = id.len().min(MAX_ID);
+    while !id.is_char_boundary(end) {
+        end -= 1;
+    }
+    id.truncate(end);
     id.trim_end_matches('_').to_owned()
 }
 
@@ -391,6 +397,10 @@ mod tests {
         assert_eq!(option_id("Book the 40 USD train"), "book_the_40_usd_train");
         assert_eq!(option_id("  --Hello, World!-- "), "hello_world");
         assert_eq!(option_id(&"x".repeat(80)).len(), 64);
+        // A cut never splits a multi-byte letter.
+        let long = option_id(&"東".repeat(40));
+        assert_eq!(long.chars().count(), 21);
+        assert!(long.len() <= 64);
         assert_eq!(
             parse("q: P? [Book train, book-train]"),
             Err(GrammarError::DuplicateOption(1, 2))
@@ -398,6 +408,37 @@ mod tests {
         assert_eq!(
             parse("q: P? [\"!!\", b]"),
             Err(GrammarError::EmptyOptionId(1))
+        );
+    }
+
+    #[test]
+    fn option_ids_keep_letters_of_any_script_and_stay_distinct() {
+        assert_eq!(option_id("東京"), "東京");
+        assert_eq!(option_id("Café au lait"), "café_au_lait");
+        assert_eq!(option_id("ÉCOLE"), "école");
+        assert_eq!(
+            option_id("Москва, Санкт-Петербург"),
+            "москва_санкт_петербург"
+        );
+        for line in ["trip: Where? [東京, 大阪]", "shop: Which? [Café, Cafe]"] {
+            let question = parse(line).unwrap();
+            question.validate().unwrap();
+            let AnswerSpace::Choice { options } = &question.answer_space else {
+                panic!("a choice")
+            };
+            assert_ne!(options[0].id, options[1].id, "{line}");
+            assert!(options.iter().all(|option| !option.id.is_empty()));
+            // The labels survive a round trip through the one-line form.
+            assert_eq!(parse(&format(&question)).unwrap(), question);
+        }
+        let AnswerSpace::Choice { options } =
+            parse("trip: Where? [東京, 大阪]").unwrap().answer_space
+        else {
+            panic!("a choice")
+        };
+        assert_eq!(
+            options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            ["東京", "大阪"]
         );
     }
 

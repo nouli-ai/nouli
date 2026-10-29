@@ -70,8 +70,9 @@ prompt.
 
 Items are separated by commas. A bare item can't contain `,`, brackets, angle
 brackets, or `"`; quote it instead, escaping `"` and `\` with a backslash.
-Choice option IDs come from the labels: letters and digits are lowercased, every
-other run of characters becomes one `_`, and leading and trailing `_` are
+Choice option IDs come from the labels: letters and digits of any script are
+lowercased (`東京` stays `東京`, `Café` becomes `café`, which differs from `cafe`),
+every other run of characters becomes one `_`, and leading and trailing `_` are
 removed, so `"Book the 40 USD train"` becomes `book_the_40_usd_train`. Two
 labels that derive the same ID are an error. Errors report byte offsets and
 never repeat the line.
