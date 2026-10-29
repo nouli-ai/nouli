@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add Homebrew installation through `standing-desks/tap/nouli` and notify the tap when stable releases are published.
+- Add a checksum-verified download installer for Apple silicon macOS and ARM64 or x86_64 GNU/Linux.
+- Build Linux x86_64 release archives alongside the existing ARM64 downloads.
+
 ## [0.1.0] - 2026-10-29
 
 ### Added

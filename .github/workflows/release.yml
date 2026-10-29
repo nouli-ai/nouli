@@ -50,6 +50,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
           - os: macos-15
@@ -64,7 +66,7 @@ jobs:
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Test release commit on Linux
-        if: runner.os == 'Linux'
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: cargo test --workspace --locked
       - name: Build release binary
         run: cargo build --package nouli-cli --release --locked
@@ -85,7 +87,7 @@ jobs:
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.target }}
+          name: binary-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
   publish:
@@ -98,7 +100,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: aarch64-*
+          pattern: binary-*
           merge-multiple: true
           path: dist
       - uses: actions/download-artifact@v8

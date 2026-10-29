@@ -9,6 +9,7 @@ Requires Node.js 24 or later. From this directory:
 ```sh
 npm ci
 npm run dev      # local server with live reload
+npm test         # installer checks with local release fixtures
 npm run build    # writes dist/
 npm run preview  # serves dist/
 ```
@@ -41,3 +42,7 @@ Recording makes 19 model calls on your provider account. Answers can differ betw
 ## Walkthroughs
 
 Each walkthrough page links its steps to graph nodes with `data-node`, the node's index in that page's JSON. When you change a walkthrough's sessions, export its graph again and update the step links to match.
+
+## Download installer
+
+`public/install.sh` is published as `/install.sh` under the site base path. It installs existing release archives; it does not build Nouli or call a decision provider. Run `npm test` after changing it. The tests use local archive fixtures and simulated platforms without network calls or changes to your installed executable.

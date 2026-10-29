@@ -20,9 +20,21 @@ Nouli ships as a CLI and a Rust library.
 
 ## Install
 
-> Installation instructions are coming soon.
+On **macOS (Apple silicon)**, use Homebrew:
 
-<!-- TODO: add install instructions (release downloads, cargo install) and provider setup. -->
+```sh
+brew install standing-desks/tap/nouli
+```
+
+On **Linux**, use the download installer:
+
+```sh
+curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
+```
+
+The script installs into `~/.local/bin` and also works on Apple silicon macOS. Linux needs glibc 2.38 or newer. The `0.1.0` downloads are ARM64-only; Linux x86_64 requires a newer release.
+
+Run `nouli --version`, then [configure a provider](https://standing-desks.github.io/nouli/guide/#provider). See [installation and upgrades](docs/release.md) for changing the install directory, selecting a version, release downloads, and switching from a Cargo installation.
 
 ## Example: a decision that changes when new facts arrive
 
