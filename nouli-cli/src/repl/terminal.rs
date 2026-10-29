@@ -34,6 +34,10 @@ impl ConditionalEventHandler for ClearLine {
     }
 }
 
+fn clear_line() -> EventHandler {
+    EventHandler::Conditional(Box::new(ClearLine))
+}
+
 pub(super) struct Terminal {
     editor: Editor<Style, DefaultHistory>,
     history: PathBuf,
@@ -50,30 +54,42 @@ impl Terminal {
             .build();
         let mut editor = Editor::with_config(config).map_err(io::Error::other)?;
         editor.set_helper(Some(Style));
-        editor.bind_sequence(
-            KeyEvent::ctrl('C'),
-            EventHandler::Conditional(Box::new(ClearLine)),
-        );
+        editor.bind_sequence(KeyEvent::ctrl('C'), clear_line());
         // A missing history file is the normal first run.
         let _ = editor.load_history(&history);
         Ok(Self { editor, history })
     }
 }
 
+/// Ctrl-C and Ctrl-D become events; other editor failures are I/O errors.
+fn event(result: Result<String, ReadlineError>) -> io::Result<Event> {
+    match result {
+        Ok(line) => Ok(Event::Line(line)),
+        Err(ReadlineError::Interrupted) => Ok(Event::Interrupt),
+        Err(ReadlineError::Eof) => Ok(Event::Eof),
+        Err(ReadlineError::Io(error)) => Err(error),
+        Err(error) => Err(io::Error::other(error)),
+    }
+}
+
 impl Lines for Terminal {
     fn read(&mut self, raw: &str, styled: &str, _out: &mut dyn io::Write) -> io::Result<Event> {
-        match self.editor.readline(&(raw, styled)) {
-            Ok(line) => {
-                if !line.trim().is_empty() {
-                    let _ = self.editor.add_history_entry(line.as_str());
-                }
-                Ok(Event::Line(line))
-            }
-            Err(ReadlineError::Interrupted) => Ok(Event::Interrupt),
-            Err(ReadlineError::Eof) => Ok(Event::Eof),
-            Err(ReadlineError::Io(error)) => Err(error),
-            Err(error) => Err(io::Error::other(error)),
+        let event = event(self.editor.readline(&(raw, styled)))?;
+        if let Event::Line(line) = &event
+            && !line.trim().is_empty()
+        {
+            let _ = self.editor.add_history_entry(line.as_str());
         }
+        Ok(event)
+    }
+
+    /// Without the clearing binding, Ctrl-C interrupts even after typing, and
+    /// the answer stays out of the history.
+    fn confirm(&mut self, prompt: &str, _out: &mut dyn io::Write) -> io::Result<Event> {
+        self.editor.unbind_sequence(KeyEvent::ctrl('C'));
+        let answer = self.editor.readline(prompt);
+        self.editor.bind_sequence(KeyEvent::ctrl('C'), clear_line());
+        event(answer)
     }
 
     fn finish(&mut self) {

@@ -57,6 +57,10 @@ pub(crate) enum Event {
 /// script or pipe echoes them, so the output reads as a transcript.
 pub(crate) trait Lines {
     fn read(&mut self, raw: &str, styled: &str, out: &mut dyn Write) -> io::Result<Event>;
+    /// Reads a yes/no answer, where Ctrl-C always interrupts, even after typing.
+    fn confirm(&mut self, prompt: &str, out: &mut dyn Write) -> io::Result<Event> {
+        self.read(prompt, prompt, out)
+    }
     fn finish(&mut self) {}
 }
 
