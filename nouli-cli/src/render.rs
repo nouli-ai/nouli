@@ -1,5 +1,8 @@
 //! Application output policy over explicit sinks, with no logging subscriber.
 mod text;
+// The verbs (HAND-178) and the REPL (HAND-180) are the callers.
+#[allow(dead_code)]
+pub(crate) mod turn;
 use clap::{Args, ValueEnum};
 use nouli_core::{
     codec,
@@ -72,6 +75,23 @@ pub(crate) fn resolve(
     } else {
         selected
     })
+}
+/// Color only on a terminal, with `NO_COLOR` unset or empty and `TERM` not `dumb`.
+pub(crate) fn color_enabled(terminal: bool) -> bool {
+    color_for(
+        terminal,
+        std::env::var_os("NO_COLOR").as_deref(),
+        std::env::var_os("TERM").as_deref(),
+    )
+}
+fn color_for(
+    terminal: bool,
+    no_color: Option<&std::ffi::OsStr>,
+    term: Option<&std::ffi::OsStr>,
+) -> bool {
+    terminal
+        && no_color.is_none_or(|value| value.is_empty())
+        && term.is_none_or(|value| value != "dumb")
 }
 pub(crate) fn exit_code(result: &ResultEnvelope) -> u8 {
     match &result.result {
@@ -216,6 +236,18 @@ mod tests {
         outcome::{Answer, QuestionOutcome, TurnOutcome},
         protocol::{TurnReport, validate_events},
     };
+    #[test]
+    fn color_needs_a_terminal_a_clear_no_color_and_a_capable_term() {
+        use std::ffi::OsStr;
+        let on = |terminal, no_color: Option<&str>, term: Option<&str>| {
+            color_for(terminal, no_color.map(OsStr::new), term.map(OsStr::new))
+        };
+        assert!(on(true, None, None));
+        assert!(on(true, Some(""), Some("xterm-256color")));
+        assert!(!on(false, None, Some("xterm")));
+        assert!(!on(true, Some("1"), Some("xterm")));
+        assert!(!on(true, None, Some("dumb")));
+    }
     fn turn() -> ResultEnvelope {
         let history: serde_json::Value =
             serde_json::from_str(include_str!("../../fixtures/contracts/history.json")).unwrap();
