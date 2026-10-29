@@ -134,7 +134,21 @@ pub(crate) fn facts_text(
         writeln!(sink, "  no facts yet")?;
     }
     for fact in facts {
-        let mut line = format!("  {:>2}  {}", fact.number, clean(&fact.text));
+        let mut line = if fact.alternatives.is_empty() {
+            format!("  {:>2}  {}", fact.number, clean(&fact.text))
+        } else {
+            let alternatives: Vec<_> = fact
+                .alternatives
+                .iter()
+                .map(|text| format!("\"{}\"", clean(text)))
+                .collect();
+            format!(
+                "  {:>2}  {}   (conflict: replaced differently in blended sessions; --replace {} settles it)",
+                fact.number,
+                alternatives.join(" | "),
+                fact.number
+            )
+        };
         if let Some(source) = fact.source_session {
             let name = ledger
                 .session(&SessionSelector::Id(source))
