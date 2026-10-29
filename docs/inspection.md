@@ -2,16 +2,20 @@
 
 ```sh
 nouli sessions list
-nouli view --session Research
-nouli view --session Research | less -S
-nouli view --session Research --mermaid > research.mmd
+nouli facts Research
+nouli questions Research
+nouli view Research
+nouli view Research | less -S
+nouli view Research --mermaid > research.mmd
 nouli sessions show Research --format text
 nouli context Research --turn 019a0000-0000-7000-8000-000000000001 --json
 nouli sessions export Research --format json > research.json
 nouli sessions export Research --format toon > research.toon
 ```
 
-`view --session NAME_OR_ID` prints a decision graph and exits. Each turn is a
+`nouli facts SESSION` lists the session's numbered facts, as `nouli add` and `--replace N` number them. A fact that came from a branch or blend source is marked `(from SESSION)`, and a replaced fact shows the text it replaced (`(replaced; was: ...)`). `nouli questions SESSION` prints the standing questions in the one-line grammar, one per line, in the order they were first set. Both support `--json` (and `--format toon`); the JSON lists each fact's number, record, key, text, turn, source session, and previous text, and each question's ID, grammar line, and full definition.
+
+`view SESSION` prints a decision graph and exits. Each turn is a
 box containing its session name, unambiguous short turn ID, questions, and result
 summaries. Earlier decisions appear at the top, with arrows leading to later
 decisions. Independent histories appear side by side, with blends below their
@@ -41,7 +45,7 @@ regardless of your configured output format. For JSON or TOON, use
 require provider credentials, or change saved history. For graphs wider than your
 terminal, pipe the output to `less -S` and scroll horizontally.
 
-`view --session NAME_OR_ID --mermaid` prints the same graph as Mermaid flowchart
+`view SESSION --mermaid` prints the same graph as Mermaid flowchart
 source instead. Nouli does not draw the diagram; paste the output into a
 ```` ```mermaid ```` block in Markdown, where GitHub, GitLab, and other Mermaid
 renderers display it as boxes and arrows. Each turn becomes a node with its

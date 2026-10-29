@@ -630,7 +630,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     std::fs::write(&path, serde_json::to_vec(&graph).unwrap()).unwrap();
     let partial = run_report(
         home.run([
-            "workflows",
+            "workflow",
             "run",
             path.to_str().unwrap(),
             "--parallel",
@@ -654,7 +654,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
         panic!("whole refusal")
     };
     assert_eq!(value.value()["status"], "refused");
-    let output = home.run(["workflows", "resume", &run.to_string(), "--jsonl"]);
+    let output = home.run(["workflow", "resume", &run.to_string(), "--jsonl"]);
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let events = String::from_utf8(output.stdout)
@@ -740,7 +740,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     drop(calls);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
     let output = home.run([
-        "workflows",
+        "workflow",
         "run",
         path.to_str().unwrap(),
         "--from",

@@ -258,3 +258,80 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
     let replay = report(home.run(args));
     assert!(replay.replayed && replay.turn == saved.turn);
 }
+
+#[test]
+fn facts_and_questions_list_inherited_and_replaced_facts_and_standing_questions() {
+    let server = provider();
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    report(
+        home.run(
+            [
+                &["new", "Trip", "Fact one", "Fact two", "--json"][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
+    );
+    report(home.run([
+        "add",
+        "Trip",
+        "--replace",
+        "2",
+        "Fact two, corrected",
+        "--json",
+    ]));
+    report(home.run([
+        "new",
+        "Child",
+        "A fact of its own",
+        "--from",
+        "Trip",
+        "--json",
+    ]));
+    let facts = |session: &str, format: &str| {
+        let output = home.run(["facts", session, "--format", format]);
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stderr.is_empty());
+        String::from_utf8(output.stdout).unwrap()
+    };
+    assert_eq!(
+        facts("Trip", "text"),
+        "   1  Fact one\n   2  Fact two, corrected   (replaced; was: Fact two)\n"
+    );
+    let child = facts("Child", "text");
+    let lines: Vec<_> = child.lines().collect();
+    assert_eq!(lines.len(), 3, "{child}");
+    assert_eq!(lines[0], "   1  Fact one   (from Trip)");
+    assert!(lines[1].starts_with("   2  Fact two, corrected   (from Trip)"));
+    assert_eq!(lines[2], "   3  A fact of its own");
+    let json: Value = serde_json::from_str(&facts("Child", "json")).unwrap();
+    let listed = json["facts"].as_array().unwrap();
+    assert_eq!(listed.len(), 3);
+    assert_eq!(listed[1]["number"], 2);
+    assert_eq!(listed[1]["previous"], "Fact two");
+    assert!(listed[0]["source_session"].is_string() && listed[2]["source_session"].is_null());
+    // A session without facts says so; an unknown one is an input error.
+    home.run(["new", "Empty"]);
+    assert_eq!(facts("Empty", "text"), "  no facts yet\n");
+    assert_eq!(home.run(["facts", "Missing"]).status.code(), Some(2));
+    // Standing questions print in the grammar, one per line.
+    let questions = home.run(["questions", "Child", "--format", "text"]);
+    assert_eq!(
+        String::from_utf8(questions.stdout).unwrap(),
+        "travel: Which route? [train, flight]\non_time: Will the train arrive on time?\nquality: Rate the route quality <Poor, Adequate, Excellent>\n"
+    );
+    let json = home.run(["questions", "Trip", "--json"]);
+    let json: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(json["questions"][0]["id"], "travel");
+    assert_eq!(
+        json["questions"][2]["line"],
+        "quality: Rate the route quality <Poor, Adequate, Excellent>"
+    );
+    assert_eq!(
+        json["questions"][1]["question"]["answer_space"]["type"],
+        "noul"
+    );
+    let none = home.run(["questions", "Empty", "--format", "text"]);
+    assert!(none.status.success() && none.stdout.is_empty());
+}

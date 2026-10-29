@@ -12,7 +12,8 @@ pub(crate) enum Command {
     /// Run one turn from a session's head and save nothing.
     Whatif(crate::turns::Whatif),
     /// Execute, inspect, or explicitly resume a frozen decision workflow.
-    Workflows {
+    #[command(name = "workflow")]
+    Workflow {
         #[command(subcommand)]
         command: crate::workflows::Command,
     },

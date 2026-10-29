@@ -47,7 +47,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
             .concat(),
         ),
     );
-    let initial = text(home.run(["view", "--session", "Combined"]));
+    let initial = text(home.run(["view", "Combined"]));
     assert!(initial.starts_with("Session: Combined ("));
     assert!(initial.contains("┌─ Travel"));
     assert!(initial.contains("┌─ Appointments"));
@@ -75,18 +75,12 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     let before = std::fs::read(&database).unwrap();
     for selector in ["Combined".to_owned(), combined.session.unwrap().to_string()] {
         for format in [vec![], vec!["--format", "auto"], vec!["--format", "text"]] {
-            let mut args = vec![
-                "view",
-                "--session",
-                &selector,
-                "--env-file",
-                "does-not-exist.env",
-            ];
+            let mut args = vec!["view", &selector, "--env-file", "does-not-exist.env"];
             args.extend(format);
             assert_eq!(text(home.run(&args)), initial);
         }
     }
-    let mermaid = text(home.run(["view", "--session", "Combined", "--mermaid"]));
+    let mermaid = text(home.run(["view", "Combined", "--mermaid"]));
     assert!(mermaid.starts_with("%% Nouli session: Combined ("));
     assert!(mermaid.contains("\nflowchart TD\n"));
     assert_eq!(mermaid.matches("[\"<b>Travel").count(), 2);
@@ -115,7 +109,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
         )
         .unwrap();
     drop(ledger);
-    let inherited = text(home.run(["view", "--session", "Inherited"]));
+    let inherited = text(home.run(["view", "Inherited"]));
     assert_eq!(inherited.matches("▶ ").count(), 15);
     assert!(!inherited.contains("[latest]"));
     assert!(!inherited.contains("No finalized turns"));
@@ -126,7 +120,7 @@ fn empty_view_and_help_do_not_initialize_config_or_load_env() {
     let home = Home::create();
     std::fs::write(home.0.join(".env"), "BAD='\n").unwrap();
     let help = text(command(&home).args(["view", "--help"]).output().unwrap());
-    assert!(help.contains("--session <NAME_OR_ID>"));
+    assert!(help.contains("<SESSION>") && !help.contains("--session"));
     assert!(!home.store().exists());
     let mut ledger = Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap();
     ledger
@@ -138,12 +132,7 @@ fn empty_view_and_help_do_not_initialize_config_or_load_env() {
     drop(ledger);
     let database = home.store().join("ledger.sqlite3");
     let before = std::fs::read(&database).unwrap();
-    let output = text(
-        command(&home)
-            .args(["view", "--session", "Empty"])
-            .output()
-            .unwrap(),
-    );
+    let output = text(command(&home).args(["view", "Empty"]).output().unwrap());
     assert!(output.contains("Session: Empty"));
     assert!(output.contains("No finalized turns"));
     assert!(!home.0.join(".nouli").exists());
@@ -165,7 +154,7 @@ fn view_rejects_structured_formats_and_missing_or_competing_inputs() {
             if before {
                 cmd.args(&format);
             }
-            cmd.args(["view", "--session", "Empty"]);
+            cmd.args(["view", "Empty"]);
             if !before {
                 cmd.args(&format);
             }
@@ -178,23 +167,9 @@ fn view_rejects_structured_formats_and_missing_or_competing_inputs() {
         }
     }
     for args in [
-        vec![
-            "view",
-            "--session",
-            "Empty",
-            "--mermaid",
-            "--format",
-            "text",
-        ],
-        vec![
-            "--format",
-            "auto",
-            "view",
-            "--session",
-            "Empty",
-            "--mermaid",
-        ],
-        vec!["--json", "view", "--session", "Empty", "--mermaid"],
+        vec!["view", "Empty", "--mermaid", "--format", "text"],
+        vec!["--format", "auto", "view", "Empty", "--mermaid"],
+        vec!["--json", "view", "Empty", "--mermaid"],
     ] {
         let output = command(&home).args(args).output().unwrap();
         assert_eq!(output.status.code(), Some(2), "{output:?}");
@@ -204,8 +179,8 @@ fn view_rejects_structured_formats_and_missing_or_competing_inputs() {
     }
     for args in [
         vec!["view"],
-        vec!["view", "--session"],
-        vec!["-s", "competing state", "view", "--session", "Empty"],
+        vec!["view", "--json"],
+        vec!["-s", "competing state", "view", "Empty"],
         vec!["--session", "Empty", "view"],
     ] {
         assert_eq!(
@@ -229,7 +204,7 @@ fn unknown_session_and_missing_store_match_existing_inspection_errors() {
             .output()
             .unwrap();
         let viewed = command(&home)
-            .args(["view", "--session", "Missing", "--format", "text"])
+            .args(["view", "Missing", "--format", "text"])
             .output()
             .unwrap();
         assert!(!viewed.status.success());

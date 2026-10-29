@@ -92,8 +92,8 @@ fn help_invalid_input_inspection_and_resume_do_not_initialize_configuration() {
         vec!["--json"],
         vec!["new", "Invalid", "-q", "invalid json"],
         vec!["sessions", "list"],
-        vec!["workflows", "resume", &run],
-        vec!["workflows", "show", &run],
+        vec!["workflow", "resume", &run],
+        vec!["workflow", "show", &run],
     ] {
         command(&home).args(arguments).output().unwrap();
         assert!(!home.0.join(".nouli").exists());
@@ -251,7 +251,7 @@ reserved_output_tokens = 256
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     error(
-        home.run(["workflows", "run", file.to_str().unwrap()]),
+        home.run(["workflow", "run", file.to_str().unwrap()]),
         2,
         "model_required",
     );
@@ -261,12 +261,12 @@ reserved_output_tokens = 256
     }
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let ephemeral = harness::run_report(
-        home.run(["workflows", "run", file.to_str().unwrap(), "--no-session"]),
+        home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert_eq!(ephemeral.status, nouli_core::workflow::RunStatus::Completed);
     assert!(!home.store().exists());
-    let result = harness::run_report(home.run(["workflows", "run", file.to_str().unwrap()]), 0);
+    let result = harness::run_report(home.run(["workflow", "run", file.to_str().unwrap()]), 0);
     assert_eq!(result.status, nouli_core::workflow::RunStatus::Completed);
     let calls = server.calls.lock().unwrap();
     assert_eq!(calls[0]["model"], "a");
@@ -293,7 +293,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let failure = error(
         command(&home)
-            .args(["workflows", "run", file.to_str().unwrap()])
+            .args(["workflow", "run", file.to_str().unwrap()])
             .output()
             .unwrap(),
         2,
@@ -308,7 +308,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     error(
         command(&home)
-            .args(["workflows", "run", file.to_str().unwrap()])
+            .args(["workflow", "run", file.to_str().unwrap()])
             .output()
             .unwrap(),
         2,
@@ -320,7 +320,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let partial = harness::run_report(
         command(&home)
-            .args(["workflows", "run", file.to_str().unwrap()])
+            .args(["workflow", "run", file.to_str().unwrap()])
             .output()
             .unwrap(),
         4,
@@ -328,7 +328,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     std::fs::remove_file(&path).unwrap();
     let done = harness::run_report(
         command(&home)
-            .args(["workflows", "resume", &partial.run.unwrap().to_string()])
+            .args(["workflow", "resume", &partial.run.unwrap().to_string()])
             .output()
             .unwrap(),
         0,
@@ -445,7 +445,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&harness::workflow()).unwrap()).unwrap();
     let args = [
-        "workflows",
+        "workflow",
         "run",
         file.to_str().unwrap(),
         "--request-id",
@@ -467,7 +467,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
     .unwrap();
     for jsonl in [false, true] {
         let mut call = command(&home);
-        call.args(["workflows", "resume", &run]);
+        call.args(["workflow", "resume", &run]);
         if jsonl {
             call.arg("--jsonl");
         }
@@ -501,7 +501,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
     }
     let done = harness::run_report(
         command(&home)
-            .args(["workflows", "resume", &run])
+            .args(["workflow", "resume", &run])
             .env("ORIGINAL_FROZEN_KEY", "PRIVATE_SENTINEL_VALUE")
             .output()
             .unwrap(),

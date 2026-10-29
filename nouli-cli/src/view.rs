@@ -21,7 +21,7 @@ use std::{collections::HashMap, io::Write};
 #[derive(Debug, clap::Args)]
 pub(crate) struct Args {
     /// Saved session name or ID whose ancestry should be shown.
-    #[arg(long, value_name = "NAME_OR_ID", value_parser = selector)]
+    #[arg(value_name = "SESSION", value_parser = selector)]
     pub session: SessionSelector,
     /// Print a Mermaid flowchart for Markdown instead of the terminal graph.
     #[arg(long)]
