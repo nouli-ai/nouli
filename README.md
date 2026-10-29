@@ -33,6 +33,21 @@ nouli --input fixtures/tutorial/commitment.json --session Dinner
 
 Sessions persist by default in `~/.nouli`; names are optional. One `--from` branches, several blend fixed source points into a new session, and `--session` continues an existing session. `--no-session` performs fresh or sourced read-only evaluation. Complete immutable ledger history survives automatic compaction and eviction from the model's limited context. Attached caller commitments and explicit revisions remain separate from model judgments.
 
+Print a saved session's decision graph, including the source history it inherited:
+
+```sh
+nouli view --session Dinner
+```
+
+Each turn is a box containing its session name, turn ID, questions, choices, and
+results. Choice and score questions list all options or rubric levels with their
+probabilities. The selected choice or returned numeric result is marked with `▶`
+and highlighted in green and bold in a terminal. Earlier decisions appear at the
+top, with arrows leading to later turns.
+Long questions wrap inside their boxes. Branches and blends connect; shared ancestors
+appear once. The command exits after printing, and pipes receive plain text, so you can use
+`less -S`. It does not require provider credentials or change saved history.
+
 - [Walkthrough and checked-in payloads](docs/walkthrough.md)
 - [User guide](docs/index.html)
 - [Configuration and credentials](docs/configuration.md), [numerical defaults](docs/defaults.md)

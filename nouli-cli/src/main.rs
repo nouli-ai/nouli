@@ -10,6 +10,7 @@ mod inspect;
 mod render;
 mod selection;
 mod settings;
+mod view;
 mod workflows;
 
 /// A decision harness for structured callers.
@@ -83,12 +84,38 @@ fn main() -> ExitCode {
                         );
                     }
                 };
-                let format = match render::resolve(
-                    &args.output,
-                    settings.config.output,
-                    io::stdout().is_terminal(),
-                ) {
+                let graph = match command {
+                    commands::Command::Inspect(inspect::Command::View(view)) => Some(view),
+                    _ => None,
+                };
+                let format = match if let Some(view) = graph {
+                    view::format(&args.output, view.mermaid)
+                } else {
+                    render::resolve(
+                        &args.output,
+                        settings.config.output,
+                        io::stdout().is_terminal(),
+                    )
+                } {
                     Ok(format) => format,
+                    Err(_) if graph.is_some_and(|view| view.mermaid) => {
+                        return render_error(
+                            &args,
+                            settings.config.output,
+                            inspect::input_error(
+                                "--mermaid cannot be combined with output format options",
+                            ),
+                        );
+                    }
+                    Err(_) if graph.is_some() => {
+                        return render_error(
+                            &args,
+                            settings.config.output,
+                            inspect::input_error(
+                                "Session graphs support text only. Use --mermaid for a Mermaid diagram, or nouli sessions export for JSON or TOON",
+                            ),
+                        );
+                    }
                     Err(_) => return ExitCode::from(2),
                 };
                 match command {
@@ -108,6 +135,10 @@ fn main() -> ExitCode {
                             &settings.store,
                             &mut io::stdout().lock(),
                             format,
+                            io::stdout().is_terminal()
+                                && std::env::var_os("NO_COLOR")
+                                    .is_none_or(|value| value.is_empty())
+                                && std::env::var_os("TERM").is_none_or(|value| value != "dumb"),
                         ) {
                             Ok(()) => ExitCode::SUCCESS,
                             Err(error) if error.output_failed() => ExitCode::from(6),

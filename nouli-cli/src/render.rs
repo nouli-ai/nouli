@@ -13,6 +13,7 @@ use nouli_core::{
     workflow::RunStatus,
 };
 use std::io::Write;
+pub(crate) use text::clean;
 use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Format {

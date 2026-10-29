@@ -217,6 +217,13 @@ nouli sessions list
 nouli sessions show Planning
 nouli context Planning
 nouli sessions export Planning --format json &gt; planning.json</code></pre></div>
+        <p>To see how a session's decisions connect, print its decision graph:</p>
+        <div class="codebox"><div class="codehead"><span>Decision graph</span><button class="copy" type="button" data-copy="view-commands">Copy</button></div><pre><code id="view-commands">nouli view --session Combined
+nouli view --session Combined | less -S
+nouli view --session Combined --mermaid &gt; combined.mmd</code></pre></div>
+        <p>Each turn is a box containing its session, questions, available choices or rubric levels, and their probabilities. The selected choice or returned numeric result is marked with <code>▶</code> and highlighted in green and bold in a terminal. Earlier decisions appear at the top, with arrows leading to later decisions. Independent histories appear side by side, and blends appear below their sources. Shared ancestors appear once. It includes the source history captured by the selected session; later source changes and other branches stay outside the graph. Use a saved session's name or ID with <code>--session</code>.</p>
+        <p><code>[latest]</code> marks the selected session's latest saved turns, and <code>╳</code> marks lines crossing without joining. Long questions and option descriptions wrap inside their boxes, with each turn's questions kept together. Noul results keep <code>P(yes)</code>, and score results keep the expected value. Set <code>NO_COLOR=1</code> to disable color; piped output stays plain text with the result marker. For wide graphs, pipe the output to <code>less -S</code> and scroll horizontally; use <code>nouli sessions show NAME</code> or <code>nouli context NAME</code> for complete details. The graph is plain text, prints once, and does not require API credentials or change saved history.</p>
+        <p>Add <code>--mermaid</code> to print the graph as Mermaid flowchart source instead. Paste it into a <code>```mermaid</code> block in a Markdown file, and GitHub, GitLab, or another Mermaid renderer draws the boxes and arrows. Selected results are bold and marked with <code>▶</code>.</p>
         <p>Saved data lives in <code>~/.nouli</code> by default. Choose another location with <code>--store /path/to/store</code>. If context becomes too large, older optional material may be shortened or left out of a later request. Your saved history remains available through inspection and export.</p>
       </section>
       <section id="workflows" aria-labelledby="workflows-title">
