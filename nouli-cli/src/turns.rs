@@ -48,7 +48,7 @@ pub(crate) struct Replay {
     pub retry_interrupted: bool,
 }
 
-/// Create a session, and run its first turn when facts or questions are given.
+/// Create a session, and run its first turn when facts or a question are given.
 #[derive(Debug, Args)]
 pub(crate) struct New {
     /// Unique, case-sensitive name for the new session.
@@ -60,9 +60,9 @@ pub(crate) struct New {
     /// Facts to record on the first turn.
     #[arg(value_name = "FACT")]
     pub facts: Vec<String>,
-    /// A question to ask, like "id: prompt [a, b]" (repeatable).
+    /// The question to ask, like "id: prompt [a, b]".
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
-    pub questions: Vec<String>,
+    pub question: Option<String>,
     #[command(flatten)]
     pub common: Common,
     #[command(flatten)]
@@ -78,9 +78,9 @@ pub(crate) struct Add {
     /// Facts to record on this turn.
     #[arg(value_name = "FACT")]
     pub facts: Vec<String>,
-    /// A question to ask, like "id: prompt [a, b]" (repeatable).
+    /// The question to ask, like "id: prompt [a, b]".
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
-    pub questions: Vec<String>,
+    pub question: Option<String>,
     /// Replace fact N with new text (repeatable).
     #[arg(long, num_args = 2, value_names = ["N", "TEXT"], action = ArgAction::Append)]
     pub replace: Vec<String>,
@@ -96,9 +96,9 @@ pub(crate) struct Ask {
     /// The session, by ID or unique name.
     #[arg(value_name = "SESSION", value_parser = selector)]
     pub session: SessionSelector,
-    /// A question to ask, like "id: prompt [a, b]" (repeatable).
+    /// The question to ask, like "id: prompt [a, b]".
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
-    pub questions: Vec<String>,
+    pub question: Option<String>,
     #[command(flatten)]
     pub common: Common,
     #[command(flatten)]
@@ -114,9 +114,9 @@ pub(crate) struct Whatif {
     /// Facts to add for this turn only.
     #[arg(value_name = "FACT")]
     pub facts: Vec<String>,
-    /// A question to ask, like "id: prompt [a, b]" (repeatable).
+    /// The question to ask, like "id: prompt [a, b]".
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
-    pub questions: Vec<String>,
+    pub question: Option<String>,
     /// Replace fact N with new text for this turn only (repeatable).
     #[arg(long, num_args = 2, value_names = ["N", "TEXT"], action = ArgAction::Append)]
     pub replace: Vec<String>,
@@ -161,7 +161,7 @@ pub(crate) struct Parts<'a> {
     pub selection: SessionSelection,
     pub numbering: Option<SessionSelector>,
     pub facts: &'a [String],
-    pub questions: &'a [String],
+    pub question: Option<&'a str>,
     /// `--replace` values in pairs: a fact number, then its new text.
     pub replace: &'a [String],
     pub common: &'a Common,
@@ -174,16 +174,15 @@ impl Verb<'_> {
     /// True when the verb only creates a session, so it needs no provider setup.
     pub(crate) fn creates_only(&self) -> bool {
         matches!(self, Verb::New(args)
-            if args.facts.is_empty() && args.questions.is_empty() && args.common.input.is_none())
+            if args.facts.is_empty() && args.question.is_none() && args.common.input.is_none())
     }
 
     pub(crate) fn draft(&self, stdin: &mut impl Read) -> Result<Draft, InputError> {
         let parts = match self {
             Verb::New(args) => {
                 let name = Some(args.name.clone());
-                let create = args.facts.is_empty()
-                    && args.questions.is_empty()
-                    && args.common.input.is_none();
+                let create =
+                    args.facts.is_empty() && args.question.is_none() && args.common.input.is_none();
                 if create && (args.replay.request_id.is_some() || args.replay.retry_interrupted) {
                     return Err(InputError::CreateOnly);
                 }
@@ -198,7 +197,7 @@ impl Verb<'_> {
                     },
                     numbering: None,
                     facts: &args.facts,
-                    questions: &args.questions,
+                    question: args.question.as_deref(),
                     replace: &[],
                     common: &args.common,
                     replay: Some(&args.replay),
@@ -219,7 +218,7 @@ impl Verb<'_> {
                 },
                 numbering: Some(args.session.clone()),
                 facts: &args.facts,
-                questions: &args.questions,
+                question: args.question.as_deref(),
                 replace: &args.replace,
                 common: &args.common,
                 replay: Some(&args.replay),
@@ -232,7 +231,7 @@ impl Verb<'_> {
                 },
                 numbering: None,
                 facts: &[],
-                questions: &args.questions,
+                question: args.question.as_deref(),
                 replace: &[],
                 common: &args.common,
                 replay: Some(&args.replay),
@@ -249,7 +248,7 @@ impl Verb<'_> {
                 },
                 numbering: Some(args.session.clone()),
                 facts: &args.facts,
-                questions: &args.questions,
+                question: args.question.as_deref(),
                 replace: &args.replace,
                 common: &args.common,
                 replay: None,
@@ -293,7 +292,7 @@ impl Parts<'_> {
     pub(crate) fn draft(self, stdin: &mut impl Read) -> Result<Draft, InputError> {
         let replaces = pairs(self.replace)?;
         let mut request = if let Some(path) = &self.common.input {
-            if !(self.facts.is_empty() && self.questions.is_empty() && self.replace.is_empty()) {
+            if !(self.facts.is_empty() && self.question.is_none() && self.replace.is_empty()) {
                 return Err(InputError::InputConflict);
             }
             let (bytes, format) = input::file(path, self.common.input_format, stdin)?;
@@ -324,13 +323,13 @@ impl Parts<'_> {
                 }
             }
         } else {
-            let mut questions = Vec::with_capacity(self.questions.len());
-            for (index, line) in self.questions.iter().enumerate() {
-                questions.push(grammar::parse(line).map_err(|source| InputError::Question {
-                    position: index + 1,
-                    source,
-                })?);
-            }
+            let questions = self
+                .question
+                .map(grammar::parse)
+                .transpose()
+                .map_err(InputError::Question)?
+                .into_iter()
+                .collect();
             let mut updates = Vec::with_capacity(self.facts.len());
             for (index, text) in self.facts.iter().enumerate() {
                 updates.push(facts::append_with(
@@ -547,10 +546,23 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_asks_exactly_the_questions_it_is_given() {
-        let asked = draft(&["add", "Trip", "-q", "a: A?", "-q", "b: B?"]).unwrap();
-        assert_eq!(asked.request.turn.questions.len(), 2);
+    fn a_turn_asks_exactly_the_one_question_it_is_given() {
+        let asked = draft(&["add", "Trip", "-q", "a: A?"]).unwrap();
+        assert_eq!(asked.request.turn.questions.len(), 1);
         assert!(asked.request.standing.is_empty());
+        // Each question is its own call.
+        for verb in [
+            &["new", "Trip"][..],
+            &["add", "Trip"],
+            &["ask", "Trip"],
+            &["whatif", "Trip"],
+        ] {
+            let twice = [verb, &["-q", "a: A?", "-q", "b: B?"]].concat();
+            let Err(error) = Cli::try_parse_from([&["nouli"][..], &twice].concat()) else {
+                panic!("a second -q is rejected")
+            };
+            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
         for verb in ["add", "ask", "whatif"] {
             assert!(matches!(
                 draft(&[verb, "Trip"]),
@@ -649,11 +661,11 @@ mod tests {
 
     #[test]
     fn input_mistakes_are_named_without_echoing_the_text() {
-        let wrong = draft(&["add", "Trip", "-q", "fine: ok?", "-q", "SECRET with no id"]);
-        let Err(InputError::Question { position, .. }) = wrong else {
+        let wrong = draft(&["add", "Trip", "-q", "SECRET with no id"]);
+        let Err(error @ InputError::Question(_)) = wrong else {
             panic!("a grammar error")
         };
-        assert_eq!(position, 2);
+        assert!(!error.to_string().contains("SECRET"));
         assert!(matches!(
             draft(&["add", "Trip", "--input", "x.json", "A fact"]),
             Err(InputError::InputConflict)

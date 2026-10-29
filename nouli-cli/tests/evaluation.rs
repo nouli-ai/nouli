@@ -2,7 +2,7 @@
 pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
-use harness::{Home, QUESTIONS, report, run_report, turn, workflow};
+use harness::{Home, QUESTION, report, run_report, turn, workflow};
 use loopback::Server;
 use nouli_core::{
     codec,
@@ -19,14 +19,14 @@ use std::{
 };
 #[test]
 fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engine() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let seed = report(
         home.run(
             [
                 &["new", "Origin", "ORIGINAL"][..],
-                &QUESTIONS,
+                &QUESTION,
                 &["--request-id", "seed"],
             ]
             .concat(),
@@ -34,8 +34,8 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     );
     let first = seed.turn.unwrap();
     let original = seed.session.unwrap();
-    // A later turn asks the questions it lists, here the same ones again.
-    let next = report(home.run([&["add", "Origin", "LATER"][..], &QUESTIONS].concat()));
+    // A later turn asks the question it is given, here the same one again.
+    let next = report(home.run([&["add", "Origin", "LATER"][..], &QUESTION].concat()));
     assert_eq!(next.session, Some(original));
     assert_eq!(next.questions, seed.questions);
     let source = format!("Origin@{first}");
@@ -43,7 +43,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
         home.run(
             [
                 &["new", "Branch", "BRANCH", "--from", &source][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
@@ -57,14 +57,14 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
                 &[
                     "new", "Blend", "BLEND", "--from", "Branch", "--from", "Origin",
                 ][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
     );
     assert_eq!(blend.manifest.sources.len(), 2);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let ephemeral = report(home.run([&["whatif", "Blend", "TEMPORARY"][..], &QUESTIONS].concat()));
+    let ephemeral = report(home.run([&["whatif", "Blend", "TEMPORARY"][..], &QUESTION].concat()));
     assert!(ephemeral.session.is_none());
     assert!(ephemeral.turn.is_none());
     assert!(
@@ -75,7 +75,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     let fresh_store = home.0.join("never-created");
     let fresh = home
         .command_at(&fresh_store)
-        .args([&["whatif", "Blend", "FRESH"][..], &QUESTIONS].concat())
+        .args([&["whatif", "Blend", "FRESH"][..], &QUESTION].concat())
         .output()
         .unwrap();
     assert_eq!(fresh.status.code(), Some(6));
@@ -86,7 +86,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
         .arg(home.0.join("config.toml"))
         .arg("--store")
         .arg(&fresh_store)
-        .args([&["whatif", "Blend", "FRESH"][..], &QUESTIONS].concat())
+        .args([&["whatif", "Blend", "FRESH"][..], &QUESTION].concat())
         .output()
         .unwrap();
     assert_eq!(no_home.status.code(), Some(6));
@@ -100,7 +100,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
 }
 #[test]
 fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_input() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let record = ContextRecord {
@@ -201,12 +201,12 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
 }
 #[test]
 fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not_dispatch() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", true);
     let named = [
         &["new", "Named"][..],
-        &QUESTIONS,
+        &QUESTION,
         &["--request-id", "credentials"],
     ]
     .concat();
@@ -224,12 +224,12 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
     assert!(recovered.turn.is_some());
     assert_eq!(server.count(), 1);
     for (args, code) in [
-        ([&["add", "Unknown"][..], &QUESTIONS].concat(), 2),
-        ([&["new", "Named"][..], &QUESTIONS].concat(), 5),
+        ([&["add", "Unknown"][..], &QUESTION].concat(), 2),
+        ([&["new", "Named"][..], &QUESTION].concat(), 5),
         (
             [
                 &["new", "Named", "changed"][..],
-                &QUESTIONS,
+                &QUESTION,
                 &["--request-id", "credentials"],
             ]
             .concat(),
@@ -240,7 +240,7 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
         (vec!["add", "Named", "--retry-interrupted"], 2),
         // A request file cannot be combined with facts or questions.
         (
-            [&["add", "Named", "--input", "unused.json"][..], &QUESTIONS].concat(),
+            [&["add", "Named", "--input", "unused.json"][..], &QUESTION].concat(),
             2,
         ),
     ] {
@@ -277,8 +277,8 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
             "openai/gpt-6-luna-decisions-fixture",
         ),
     ] {
-        // The compact grammar writes plain score labels, so the router's legend
-        // must match them.
+        // `harness::turn()` writes plain score labels, as the compact grammar
+        // would, so the router's legend must match them.
         let mut body: serde_json::Value = serde_json::from_str(response).unwrap();
         if !full_questions {
             body["answers"]["quality"]["legend"]["1"] = serde_json::json!("Adequate");
@@ -286,12 +286,24 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
         let server = Server::new(Box::leak(body.to_string().into_boxed_str()));
         let home = Home::create();
         home.configure(&server, protocol, false);
-        let mut args = [&["new", "Dispatch"][..], &QUESTIONS].concat();
+        // Several questions in one call come from a request file.
+        let mut turn = turn();
         if full_questions {
-            args.extend(["-q", "private: Is private information available?"]);
+            turn.questions.push(
+                nouli_core::decision::grammar::parse("private: Is private information available?")
+                    .unwrap(),
+            );
         }
-        args.extend(["--provider", "local"]);
-        let result = report(home.run(&args));
+        let path = home.0.join("request.json");
+        std::fs::write(&path, serde_json::to_vec(&turn).unwrap()).unwrap();
+        let result = report(home.run([
+            "new",
+            "Dispatch",
+            "--input",
+            path.to_str().unwrap(),
+            "--provider",
+            "local",
+        ]));
         assert_eq!(result.outcome.provider.model, expected);
         assert_eq!(server.count(), 1);
         assert!(result.session.is_some());
@@ -305,7 +317,7 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
 }
 #[test]
 fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let path = home.0.join("config.toml");
@@ -314,7 +326,7 @@ fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
         .replace("context_budget_tokens = 100000\n", "")
         .replace("context_window_tokens = 100000\n", "");
     std::fs::write(&path, config).unwrap();
-    let create = [&["new", "Budgeted"][..], &QUESTIONS].concat();
+    let create = [&["new", "Budgeted"][..], &QUESTION].concat();
     let missing = home.run(&create);
     assert_eq!(missing.status.code(), Some(2));
     assert_eq!(server.count(), 0);
@@ -343,7 +355,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         identity::SessionSelector,
         storage::inspection::{ContextView, SessionExport, TurnInspection},
     };
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", true);
     let keyed = |args: &[&str]| {
@@ -400,7 +412,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             &[
                 "new", "Diamond", "BLENDED", "--from", "Left", "--from", "Right",
             ][..],
-            &QUESTIONS,
+            &QUESTION,
             &["--context-budget", "2500"],
         ]
         .concat(),
@@ -414,12 +426,12 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
                 && record.representation != Representation::Full)
     );
     report(keyed(
-        &[&["add", "Root", "AFTER_CAPTURE"][..], &QUESTIONS].concat(),
+        &[&["add", "Root", "AFTER_CAPTURE"][..], &QUESTION].concat(),
     ));
     report(keyed(
         &[
             &["new", "Unrelated", "UNRELATED_PRIVATE_STATE"][..],
-            &QUESTIONS,
+            &QUESTION,
         ]
         .concat(),
     ));
@@ -618,7 +630,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
         protocol::{EngineEvent, EventKind, validate_events},
         workflow::{NodeStatus, RunStatus},
     };
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
@@ -752,7 +764,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
         {
             (503, "{}".into())
         } else {
-            (200, harness::TYPESAFE.into())
+            harness::typesafe(body)
         }
     });
     let home = Home::create();
@@ -889,7 +901,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
         {
             (503, "{}".into())
         } else {
-            (200, harness::TYPESAFE.into())
+            harness::typesafe(body)
         }
     });
     let home = Home::create();
@@ -903,7 +915,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
         home.run(
             [
                 &["add", &partial.session.unwrap().to_string()][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
@@ -956,7 +968,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
 #[test]
 fn workflow_files_may_mix_compact_and_object_questions_and_name_the_node_on_errors() {
     use nouli_core::workflow::RunStatus;
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = serde_json::to_value(workflow()).unwrap();
@@ -1013,7 +1025,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
         protocol::{EngineEvent, EventKind, validate_events},
         workflow::WorkflowRequest,
     };
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let spec = workflow();
@@ -1081,10 +1093,10 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
     use std::{sync::mpsc, time::Duration};
     let (started, waiting) = mpsc::sync_channel(1);
     let (release, held) = mpsc::sync_channel(1);
-    let server = Server::with_handler(move |_| {
+    let server = Server::with_handler(move |body| {
         started.send(()).unwrap();
         held.recv_timeout(Duration::from_secs(5)).unwrap();
-        (200, harness::TYPESAFE.into())
+        harness::typesafe(body)
     });
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -1149,7 +1161,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
         io::{BufRead, BufReader, Read},
         time::Duration,
     };
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = workflow();
@@ -1215,7 +1227,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
 #[test]
 fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files() {
     use nouli_core::protocol::{EngineEvent, validate_events};
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let mut graph = workflow();

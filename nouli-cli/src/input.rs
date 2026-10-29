@@ -42,11 +42,8 @@ pub(crate) enum InputError {
     InputConflict,
     #[error("the request file must not name a session; the command supplies it")]
     SessionInRequest,
-    #[error("question {position}: {source}")]
-    Question {
-        position: usize,
-        source: GrammarError,
-    },
+    #[error("grammar error: {0}")]
+    Question(GrammarError),
     #[error("No questions to ask: add one with -q, or in the request's turn.questions")]
     NoQuestion,
     #[error(transparent)]

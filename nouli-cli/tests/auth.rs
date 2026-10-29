@@ -2,7 +2,7 @@
 pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
-use harness::{Home, QUESTIONS, report};
+use harness::{Home, QUESTION, report};
 use loopback::Server;
 use nouli_core::protocol::{Report, ResultEnvelope};
 use std::{
@@ -70,7 +70,7 @@ fn everything_visible(output: &Output) -> String {
 
 #[test]
 fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     // The provider names no variable: the stored entry is its only source.
     home.configure(&server, "typesafe", false);
@@ -116,7 +116,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     );
     assert!(!everything_visible(&output).contains(KEY));
     // The key reaches the provider, and appears nowhere it should not.
-    let turn = report(home.run([&["new", "Trip", "A fact"][..], &QUESTIONS].concat()));
+    let turn = report(home.run([&["new", "Trip", "A fact"][..], &QUESTION].concat()));
     assert_eq!(
         server.authorizations.lock().unwrap()[0].as_deref(),
         Some(&*format!("Bearer {KEY}"))
@@ -137,7 +137,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     assert!(turn.turn.is_some());
     // Logging in again replaces the key.
     assert!(login(&home, "SECOND_KEY").status.success());
-    report(home.run([&["add", "Trip", "More"][..], &QUESTIONS].concat()));
+    report(home.run([&["add", "Trip", "More"][..], &QUESTION].concat()));
     assert_eq!(
         server.authorizations.lock().unwrap()[1].as_deref(),
         Some("Bearer SECOND_KEY")
@@ -148,7 +148,7 @@ use std::process::Command;
 
 #[test]
 fn a_store_others_can_read_is_refused_by_every_command_with_the_fix() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     assert!(login(&home, KEY).status.success());
@@ -173,7 +173,7 @@ fn a_store_others_can_read_is_refused_by_every_command_with_the_fix() {
 
 #[test]
 fn the_shell_beats_the_env_file_and_the_env_file_beats_the_store() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     // The provider names a variable, so all three sources can apply.
     home.configure(&server, "typesafe", true);
@@ -181,7 +181,7 @@ fn the_shell_beats_the_env_file_and_the_env_file_beats_the_store() {
     fs::write(home.0.join(".env"), "NOULI_FIXTURE_KEY=FILE_KEY\n").unwrap();
     let ask = |name: &str, shell: Option<&str>| {
         let mut command = home.command();
-        command.args([&["new", name, "A fact"][..], &QUESTIONS].concat());
+        command.args([&["new", name, "A fact"][..], &QUESTION].concat());
         if let Some(value) = shell {
             command.env("NOULI_FIXTURE_KEY", value);
         }
@@ -228,11 +228,11 @@ fn the_shell_beats_the_env_file_and_the_env_file_beats_the_store() {
 
 #[test]
 fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     fn create(name: &str) -> Vec<&str> {
-        [&["new", name, "A fact"][..], &QUESTIONS].concat()
+        [&["new", name, "A fact"][..], &QUESTION].concat()
     }
     // An env source names a variable, and the variable's value is the key.
     let stored = home.run(["auth", "login", "local", "--env", "CUSTOM_SOURCE_VARIABLE"]);
@@ -298,7 +298,7 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
 
 #[test]
 fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
-    let server = Server::new(harness::TYPESAFE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     assert!(login(&home, KEY).status.success());
@@ -307,7 +307,7 @@ fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
     assert!(!fs::read_to_string(auth_file(&home)).unwrap().contains(KEY));
     let again = home.run(["auth", "logout", "local", "--format", "text"]);
     assert!(String::from_utf8_lossy(&again.stdout).contains("No stored credential"));
-    let after = home.run([&["new", "Trip", "A fact"][..], &QUESTIONS].concat());
+    let after = home.run([&["new", "Trip", "A fact"][..], &QUESTION].concat());
     assert_eq!(
         after.status.code(),
         Some(0),
@@ -379,7 +379,7 @@ fn a_resumed_workflow_uses_the_stored_key_as_it_is_now() {
         {
             (503, "{}".into())
         } else {
-            (200, harness::TYPESAFE.into())
+            harness::typesafe(body)
         }
     });
     let home = Home::create();

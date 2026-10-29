@@ -5,7 +5,7 @@ pub mod harness;
 pub mod loopback;
 #[path = "support/process.rs"]
 pub mod process;
-use harness::{Home, QUESTIONS, report, run_report, turn, workflow};
+use harness::{Home, QUESTION, report, run_report, turn, workflow};
 use loopback::Server;
 use nouli_core::{
     context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
@@ -25,7 +25,6 @@ use std::{
     },
     time::Duration,
 };
-const RESPONSE: &str = harness::TYPESAFE;
 fn sql(home: &Home, statement: &str) {
     let connection = rusqlite::Connection::open(home.store().join("ledger.sqlite3")).unwrap();
     connection.busy_timeout(Duration::from_secs(5)).unwrap();
@@ -87,9 +86,9 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
                 Err(mpsc::RecvTimeoutError::Timeout) => panic!("test provider barrier timed out"),
             }
         }
-        (200, RESPONSE.into())
+        harness::typesafe(body)
     });
-    let other = Server::new(RESPONSE);
+    let other = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&primary, "typesafe", false);
     let config = home.0.join("config.toml");
@@ -102,10 +101,10 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         other.url
     );
     std::fs::write(config, text).unwrap();
-    let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
+    let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
     let arguments = [
         &["add", "Main", "CRASHING", "--request-id", "crash-request"][..],
-        &QUESTIONS,
+        &QUESTION,
     ]
     .concat();
     let child = OwnedChild::new(
@@ -128,7 +127,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
                     "--request-id",
                     "different-request",
                 ][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
@@ -138,7 +137,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         home.run(
             [
                 &["add", "Main", "CHANGED", "--request-id", "crash-request"][..],
-                &QUESTIONS,
+                &QUESTION,
             ]
             .concat(),
         ),
@@ -149,7 +148,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         home.run(
             [
                 &["new", "Other", "INDEPENDENT"][..],
-                &QUESTIONS,
+                &QUESTION,
                 &["--provider", "other"],
             ]
             .concat(),
@@ -212,10 +211,10 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
 #[test]
 fn before_dispatch_and_transactional_finalization_faults_never_publish_false_success() {
     for mode in ["before", "finalize", "commit"] {
-        let server = Server::new(RESPONSE);
+        let server = Server::with_handler(harness::typesafe);
         let home = Home::create();
         home.configure(&server, "typesafe", false);
-        let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
+        let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
         let record = ContextRecord {
             id: Id::generate(),
             key: "atomic".into(),
@@ -297,28 +296,12 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
     }
 }
 
-/// A provider that answers exactly the questions it is asked.
-fn adaptive() -> Server {
-    Server::with_handler(|body| {
-        let mut response: serde_json::Value = serde_json::from_str(RESPONSE).unwrap();
-        let asked = body["questions"].as_object().unwrap();
-        let answers = response["answers"].as_object_mut().unwrap();
-        answers.retain(|id, _| asked.contains_key(id));
-        for id in asked.keys() {
-            answers
-                .entry(id.clone())
-                .or_insert_with(|| serde_json::json!({"type": "noul", "noul": 0.5}));
-        }
-        (200, response.to_string())
-    })
-}
-
 #[test]
 fn retrying_an_interrupted_request_asks_its_own_question_once() {
-    let server = adaptive();
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
+    report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
     // The answer comes back, but saving the turn fails after the provider call.
     sql(
         &home,
@@ -387,7 +370,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
                 connection.busy_timeout(Duration::from_secs(5)).unwrap();
                 connection.execute_batch("CREATE TRIGGER inject_fault BEFORE UPDATE OF state ON workflow_nodes WHEN NEW.node_id='high' AND NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
             }
-            (200, RESPONSE.into())
+            harness::typesafe(body)
         });
         home.configure(&server, "typesafe", false);
         if mode == "running" {
@@ -482,7 +465,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
 }
 #[test]
 fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     std::fs::create_dir_all(home.store()).unwrap();
@@ -500,7 +483,7 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
     drop(connection);
     let before = std::fs::read(&database).unwrap();
     error(
-        home.run([&["new", "Migrate", "MIGRATE"][..], &QUESTIONS].concat()),
+        home.run([&["new", "Migrate", "MIGRATE"][..], &QUESTION].concat()),
         6,
     );
     assert_eq!(server.count(), 0);
@@ -519,7 +502,7 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
 }
 #[test]
 fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let original = record(8);

@@ -3,7 +3,7 @@ pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
 
-use harness::{Home, QUESTIONS, report};
+use harness::{Home, QUESTION, QUESTIONS, report};
 use nouli_core::{
     history::{ModelSelection, SourceSelection},
     identity::{SessionName, SessionSelector},
@@ -30,18 +30,18 @@ fn command(home: &Home) -> Command {
 
 #[test]
 fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
-    let server = loopback::Server::new(harness::TYPESAFE);
+    let server = loopback::Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     for name in ["Travel", "Appointments"] {
-        report(home.run([&["new", name, name][..], &QUESTIONS].concat()));
-        report(home.run([&["add", name, "More evidence"][..], &QUESTIONS].concat()));
+        report(home.run([&["new", name, name][..], &QUESTION].concat()));
+        report(home.run([&["add", name, "More evidence"][..], &QUESTIONS[1]].concat()));
     }
     let combined = report(
         home.run(
             [
                 &["new", "Combined", "Combine histories"][..],
-                &QUESTIONS,
+                &QUESTIONS[2],
                 &["--from", "Travel", "--from", "Appointments"],
             ]
             .concat(),
@@ -55,7 +55,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert_eq!(initial.matches("┌─ Travel").count(), 2);
     assert_eq!(initial.matches("┌─ Appointments").count(), 2);
     assert_eq!(initial.matches("┌─ Combined").count(), 1);
-    assert_eq!(initial.matches("▶ ").count(), 15);
+    assert_eq!(initial.matches("▶ ").count(), 5);
     let first_row = initial.lines().find(|line| line.contains("┌─ ")).unwrap();
     assert!(first_row.contains("Travel") && first_row.contains("Appointments"));
     assert!(initial.find("┌─ Travel").unwrap() < initial.find("┌─ Combined").unwrap());
@@ -64,8 +64,8 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert!(initial.contains("Expected score:"));
     assert!(!initial.contains('\u{1b}'));
 
-    report(home.run([&["add", "Travel", "Later source evidence"][..], &QUESTIONS].concat()));
-    report(home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTIONS].concat()));
+    report(home.run([&["add", "Travel", "Later source evidence"][..], &QUESTION].concat()));
+    report(home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTION].concat()));
     let calls = server.count();
     // Store-only discovery must tolerate removed/invalid provider definitions.
     let config = "output = 'json'\n[providers.local]\nprotocol = 'removed-protocol'\n";
@@ -86,7 +86,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert_eq!(mermaid.matches("[\"<b>Travel").count(), 2);
     assert_eq!(mermaid.matches("[\"<b>Appointments").count(), 2);
     assert_eq!(mermaid.matches("[\"<b>Combined").count(), 1);
-    assert_eq!(mermaid.matches("▶ ").count(), 15);
+    assert_eq!(mermaid.matches("▶ ").count(), 5);
     assert_eq!(mermaid.matches(" --> ").count(), 4);
     assert!(!mermaid.contains('\u{1b}') && !mermaid.contains('┌'));
     assert_eq!(server.count(), calls);
@@ -110,7 +110,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
         .unwrap();
     drop(ledger);
     let inherited = text(home.run(["view", "Inherited"]));
-    assert_eq!(inherited.matches("▶ ").count(), 15);
+    assert_eq!(inherited.matches("▶ ").count(), 5);
     assert!(!inherited.contains("[latest]"));
     assert!(!inherited.contains("No finalized turns"));
 }

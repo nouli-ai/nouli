@@ -2,7 +2,7 @@
 pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
-use harness::{Home, QUESTIONS, report};
+use harness::{Home, QUESTION, report};
 use nouli_core::{
     config::Config,
     identity::Id,
@@ -40,7 +40,7 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
             "First",
             "First run",
         ])
-        .args(QUESTIONS);
+        .args(QUESTION);
         let failure = error(call.output().unwrap(), 2, "providers_required");
         let path = home.0.join(".nouli/config.toml");
         assert!(failure.message.contains(path.to_str().unwrap()));
@@ -71,7 +71,7 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
         }
         error(
             command(&home)
-                .args([&["new", "First"][..], &QUESTIONS, &["--provider", "openai"]].concat())
+                .args([&["new", "First"][..], &QUESTION, &["--provider", "openai"]].concat())
                 .output()
                 .unwrap(),
             2,
@@ -103,7 +103,7 @@ fn help_invalid_input_inspection_and_resume_do_not_initialize_configuration() {
         command(&home)
             .arg("--config")
             .arg(&missing)
-            .args([&["new", "First"][..], &QUESTIONS].concat())
+            .args([&["new", "First"][..], &QUESTION].concat())
             .output()
             .unwrap(),
         2,
@@ -128,20 +128,20 @@ fn configure_default(home: &Home, server: &loopback::Server, suffix: &str) -> st
 }
 #[test]
 fn configured_first_run_persists_and_replays_without_requiring_current_profiles() {
-    let server = loopback::Server::new(harness::TYPESAFE);
+    let server = loopback::Server::with_handler(harness::typesafe);
     let home = Home::create();
     let path = configure_default(&home, &server, "");
     let original = std::fs::read(&path).unwrap();
     let args = [
         &["new", "First"][..],
-        &QUESTIONS,
+        &QUESTION,
         &["--request-id", "first-run"],
     ]
     .concat();
     let first = report(command(&home).args(&args).output().unwrap());
     let continued = report(
         command(&home)
-            .args([&["add", "First"][..], &QUESTIONS].concat())
+            .args([&["add", "First"][..], &QUESTION].concat())
             .output()
             .unwrap(),
     );
@@ -166,7 +166,7 @@ fn configured_first_run_persists_and_replays_without_requiring_current_profiles(
 }
 #[test]
 fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
-    let server = loopback::Server::new(harness::TYPESAFE);
+    let server = loopback::Server::with_handler(harness::typesafe);
     for (text, code, exit) in [
         ("output='json'\n", "providers_required", 2),
         ("invalid TOML !", "invalid_configuration_syntax", 2),
@@ -182,7 +182,7 @@ fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
         let output = command(&home)
             .arg("--config")
             .arg(&path)
-            .args([&["new", "First"][..], &QUESTIONS].concat())
+            .args([&["new", "First"][..], &QUESTION].concat())
             .output()
             .unwrap();
         let failure = error(output, exit, code);
@@ -197,7 +197,7 @@ fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
 
 #[test]
 fn model_selection_shares_one_provider_and_missing_models_fail_before_first_store() {
-    let server = loopback::Server::new(harness::TYPESAFE);
+    let server = loopback::Server::with_handler(harness::typesafe);
     let home = Home::create();
     let path = home.0.join("config.toml");
     let config = format!(
@@ -217,7 +217,7 @@ reserved_output_tokens = 256
         server.url
     );
     std::fs::write(&path, &config).unwrap();
-    let create = [&["new", "Models"][..], &QUESTIONS].concat();
+    let create = [&["new", "Models"][..], &QUESTION].concat();
     let failure = error(home.run(&create), 2, "model_required");
     assert!(failure.message.contains("default_model") && failure.message.contains("--model"));
     assert!(failure.message.contains(path.to_str().unwrap()));
@@ -229,7 +229,7 @@ reserved_output_tokens = 256
     for (model, budget, reserve) in [("a", 4096, 128), ("b", 8192, 256)] {
         let result = report(
             home.command_at(&sessions)
-                .args([&["new", model][..], &QUESTIONS, &["--model", model]].concat())
+                .args([&["new", model][..], &QUESTION, &["--model", model]].concat())
                 .output()
                 .unwrap(),
         );
@@ -241,7 +241,7 @@ reserved_output_tokens = 256
             .args(
                 [
                     &["new", "unlisted"][..],
-                    &QUESTIONS,
+                    &QUESTION,
                     &["--model", "unlisted", "--context-budget", "2048"],
                 ]
                 .concat(),
@@ -289,7 +289,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
         {
             (503, "{}".into())
         } else {
-            (200, harness::TYPESAFE.into())
+            harness::typesafe(body)
         }
     });
     let home = Home::create();
@@ -348,7 +348,7 @@ fn setup_write_failure_reports_path_and_never_creates_a_ledger() {
     std::fs::write(home.0.join(".nouli"), "existing file").unwrap();
     // Loading discovers that .nouli cannot be traversed, without changing it.
     let result = command(&home)
-        .args([&["new", "First"][..], &QUESTIONS].concat())
+        .args([&["new", "First"][..], &QUESTION].concat())
         .output()
         .unwrap();
     assert_eq!(result.status.code(), Some(2));
@@ -375,7 +375,7 @@ fn a_preexisting_empty_ledger_still_gets_configuration_path_guidance() {
     let before = std::fs::read(store.join("ledger.sqlite3")).unwrap();
     let failure = error(
         command(&home)
-            .args([&["new", "First"][..], &QUESTIONS].concat())
+            .args([&["new", "First"][..], &QUESTION].concat())
             .output()
             .unwrap(),
         2,
@@ -394,7 +394,7 @@ fn a_preexisting_empty_ledger_still_gets_configuration_path_guidance() {
 
 #[test]
 fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_key() {
-    let server = loopback::Server::new(harness::TYPESAFE);
+    let server = loopback::Server::with_handler(harness::typesafe);
     let home = Home::create();
     let path = configure_default(&home, &server, "api_key_env='FROZEN_TEST_KEY'\n");
     drop(
@@ -406,7 +406,7 @@ fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_ke
     );
     let args = [
         &["new", "Existing"][..],
-        &QUESTIONS,
+        &QUESTION,
         &["--request-id", "existing-credentials"],
     ]
     .concat();
@@ -442,7 +442,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
         {
             (503, "{}".into())
         } else {
-            (200, harness::TYPESAFE.into())
+            harness::typesafe(body)
         }
     });
     let home = Home::create();

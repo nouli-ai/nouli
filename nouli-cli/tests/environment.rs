@@ -3,15 +3,13 @@ pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
 
-use harness::{Home, QUESTIONS, report, run_report};
+use harness::{Home, QUESTION, report, run_report};
 use loopback::Server;
 use nouli_core::{
     identity::Id,
     protocol::{EngineEvent, EventKind, Report, ResultEnvelope, validate_events},
 };
 use std::{fs, process::Output};
-
-const RESPONSE: &str = harness::TYPESAFE;
 
 fn configure(home: &Home, server: &Server) {
     home.configure(server, "typesafe", true);
@@ -35,12 +33,12 @@ fn failure(output: Output, code: &str) {
 /// A fresh session in a store of its own, so `home.store()` can stay absent.
 fn throwaway(home: &Home) -> std::process::Command {
     let mut command = home.command_at(&home.0.join(format!("throwaway-{}", Id::generate())));
-    command.args([&["new", "Throwaway"][..], &QUESTIONS].concat());
+    command.args([&["new", "Throwaway"][..], &QUESTION].concat());
     command
 }
 
 fn create(name: &str) -> Vec<&str> {
-    [&["new", name][..], &QUESTIONS].concat()
+    [&["new", name][..], &QUESTION].concat()
 }
 
 fn missing_credential(output: Output) {
@@ -54,7 +52,7 @@ fn missing_credential(output: Output) {
 
 #[test]
 fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_decisions() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     configure(&home, &server);
     let env = home.0.join(".env");
@@ -69,7 +67,7 @@ fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_
     assert!(!home.store().exists());
     let args = [&create("Origin")[..], &["--request-id", "dotenv-initial"]].concat();
     let first = report(home.run(&args));
-    let next = report(home.run([&["add", "Origin", "New facts"][..], &QUESTIONS].concat()));
+    let next = report(home.run([&["add", "Origin", "New facts"][..], &QUESTION].concat()));
     assert_eq!(next.session, first.session);
     assert!(
         server
@@ -106,7 +104,7 @@ fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_
 
 #[test]
 fn exported_values_win_including_empty_values_but_malformed_files_still_fail() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     configure(&home, &server);
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=FILE_SENTINEL\n").unwrap();
@@ -153,7 +151,7 @@ fn exported_values_win_including_empty_values_but_malformed_files_still_fail() {
 
 #[test]
 fn discovery_stays_in_cwd_and_explicit_files_replace_the_automatic_file() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     configure(&home, &server);
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=PARENT_SENTINEL\n").unwrap();
@@ -211,7 +209,7 @@ fn discovery_stays_in_cwd_and_explicit_files_replace_the_automatic_file() {
 
 #[test]
 fn file_errors_are_safe_in_all_output_formats_and_never_create_a_store() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     configure(&home, &server);
     let path = home.0.join(".env");
@@ -238,7 +236,7 @@ fn file_errors_are_safe_in_all_output_formats_and_never_create_a_store() {
 
 #[test]
 fn help_invalid_input_and_read_only_inspection_do_not_load_env_files() {
-    let server = Server::new(RESPONSE);
+    let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     configure(&home, &server);
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=INSPECTION_SENTINEL\n").unwrap();
@@ -277,7 +275,7 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
         {
             (503, "{}".into())
         } else {
-            (200, RESPONSE.into())
+            harness::typesafe(body)
         }
     });
     let home = Home::create();

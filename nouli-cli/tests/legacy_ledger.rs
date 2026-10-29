@@ -47,7 +47,7 @@ fn second_request() -> Value {
 }
 
 fn answering() -> Server {
-    Server::new(harness::TYPESAFE)
+    Server::with_handler(harness::typesafe)
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn a_ledger_from_0_1_0_opens_lists_views_and_replays_its_completed_requests() {
         home.run(
             [
                 &["add", "Trip", "A fact from 0.2.0", "--json"][..],
-                &harness::QUESTIONS,
+                &harness::QUESTION,
             ]
             .concat(),
         ),
@@ -140,8 +140,7 @@ fn an_attempt_interrupted_under_0_1_0_is_reported_and_retried_with_its_saved_set
     let text = String::from_utf8(repeated.stdout).unwrap();
     assert!(text.contains("request_requires_explicit_retry"), "{text}");
     // An explicit retry uses the provider address 0.1.0 saved, if it can be had.
-    let Ok(saved) = Server::bind(INTERRUPTED_ADDRESS, |_| (200, harness::TYPESAFE.to_owned()))
-    else {
+    let Ok(saved) = Server::bind(INTERRUPTED_ADDRESS, harness::typesafe) else {
         return;
     };
     let retried =
@@ -167,7 +166,7 @@ fn a_ledger_from_0_2_0_reads_and_never_asks_its_standing_questions_again() {
         assert!(output.status.success(), "{args:?}: {output:?}");
     }
     assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
-    // Each call asks only the questions given, never the saved `transport`, and
+    // Each call asks only its own question, never the saved `transport`, and
     // `on_time` is a new question rather than a clash with the saved one.
     let asked = |server: &Server| {
         let calls = server.calls.lock().unwrap();
@@ -185,8 +184,9 @@ fn a_ledger_from_0_2_0_reads_and_never_asks_its_standing_questions_again() {
         &["add", "Branch", "The branch has its own fact."],
         &["whatif", "Trip", "The taxi is gone."],
     ] {
-        report(home.run([args, &harness::QUESTIONS[..], &["--json"]].concat()));
-        assert_eq!(asked(&server), ["on_time", "quality", "travel"], "{args:?}");
+        let question = ["-q", "on_time: Will the train arrive on time?", "--json"];
+        report(home.run([args, &question[..]].concat()));
+        assert_eq!(asked(&server), ["on_time"], "{args:?}");
     }
     assert_eq!(server.count(), 3);
     // A request ID that 0.2.0 used is taken: a new command under it conflicts.
