@@ -138,10 +138,22 @@ fn turn(error: &TurnError) -> ErrorReport {
 }
 fn config(error: &ConfigError) -> ErrorReport {
     match error {
-        ConfigError::CredentialSource { variable, .. } => ErrorReport {
+        ConfigError::CredentialSource {
+            variable, provider, ..
+        } => ErrorReport {
             category: Category::Authentication,
             code: "credential_unavailable".into(),
-            message: format!("Set a valid {variable} environment variable for the selected provider"),
+            message: format!(
+                "Set a valid {variable} environment variable for the selected provider, or run `nouli auth login {provider}`"
+            ),
+            retryable: false,
+        },
+        ConfigError::StoredCredential { provider, .. } => ErrorReport {
+            category: Category::Authentication,
+            code: "credential_unavailable".into(),
+            message: format!(
+                "The stored credential for {provider} is unavailable or invalid. Run `nouli auth login {provider}` to replace it"
+            ),
             retryable: false,
         },
         ConfigError::MissingCredential | ConfigError::InvalidCredential => {

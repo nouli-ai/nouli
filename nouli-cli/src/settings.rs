@@ -1,5 +1,6 @@
 //! CLI-owned filesystem/environment discovery. Loading has no ledger side effects.
 
+pub(crate) mod auth;
 mod bootstrap;
 mod environment;
 pub(crate) mod preflight;
@@ -14,7 +15,7 @@ pub(crate) struct Settings {
     pub home: PathBuf,
     pub store: PathBuf,
     pub config_path: PathBuf,
-    pub environment: Arc<environment::Environment>,
+    pub credentials: Arc<auth::Credentials>,
     env_file: Option<PathBuf>,
     initialize_default: bool,
     store_override: Option<PathBuf>,
@@ -54,7 +55,7 @@ fn discover(
         home,
         store,
         config_path: path,
-        environment: Arc::default(),
+        credentials: Arc::default(),
         env_file: args.env_file.clone(),
         initialize_default: args.config.is_none(),
         store_override: args.store.clone(),
@@ -63,10 +64,11 @@ fn discover(
 
 impl Settings {
     pub(crate) fn load_environment(&mut self) -> Result<(), nouli_core::protocol::ErrorReport> {
-        self.environment = Arc::new(
-            environment::Environment::load(self.env_file.as_deref())
-                .map_err(|error| error.report())?,
-        );
+        let environment = environment::Environment::load(self.env_file.as_deref())
+            .map_err(|error| error.report())?;
+        let store =
+            auth::read(&auth::path_for(&self.config_path)).map_err(|error| error.report())?;
+        self.credentials = Arc::new(auth::Credentials::new(environment, store));
         Ok(())
     }
     pub(crate) fn initialize(&mut self) -> Result<(), nouli_core::protocol::ErrorReport> {

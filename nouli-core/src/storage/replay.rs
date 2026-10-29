@@ -528,6 +528,7 @@ mod tests {
                 base_url: "http://127.0.0.1:8080".into(),
                 model: "offline".into(),
                 api_key_env: None,
+                stored_credential: false,
                 context_budget_tokens: Some(4096),
                 context_window_tokens: Some(8192),
                 reserved_output_tokens: Some(128),

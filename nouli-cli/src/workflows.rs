@@ -156,14 +156,14 @@ async fn execute(
             .map_err(|error| nouli_core::protocol::stream::StreamError::Sink { run: None, error })?
             .with_config(settings.config_path.clone()),
     );
-    let environment = settings.environment.clone();
+    let credentials = settings.credentials.clone();
     let lookup: nouli_core::engine::workflow::CredentialLookup =
-        Arc::new(move |name| environment.lookup(name));
+        Arc::new(move |source| credentials.lookup(source));
     let evaluation = async {
         match command {
             Command::Run(args) => {
                 let request = request.as_ref().ok_or(boundary::InputError::Shape)?;
-                let overrides = args.overrides(&settings.store);
+                let overrides = args.overrides(settings);
                 Ok::<ResultEnvelope, WorkflowCliError>(
                     engine
                         .evaluate_workflow_report(
@@ -243,12 +243,8 @@ pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 
             .map_err(WorkflowCliError::Setup)?;
         if let (Command::Run(args), Some(request)) = (command, request.as_ref()) {
             settings.initialize().map_err(WorkflowCliError::Setup)?;
-            crate::settings::preflight::workflow(
-                &settings,
-                &args.overrides(&settings.store),
-                request,
-            )
-            .map_err(|error| WorkflowCliError::Setup(error.report(&settings)))?;
+            crate::settings::preflight::workflow(&settings, &args.overrides(&settings), request)
+                .map_err(|error| WorkflowCliError::Setup(error.report(&settings)))?;
         }
         Ok(request)
     })();
