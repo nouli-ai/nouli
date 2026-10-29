@@ -37,7 +37,7 @@ NOULI=/path/to/nouli sh /path/to/site/scripts/record-hero.sh /tmp/nouli-hero
 NOULI=../target/debug/nouli node scripts/build-hero.mjs --store /tmp/nouli-hero/store > src/data/hero.json
 ```
 
-Recording makes 19 model calls on your provider account. Answers can differ between recordings, so check the new results before you commit them.
+Recording makes 22 model calls on your provider account, one question each. Answers can differ between recordings, so check the new results before you commit them.
 
 ## Replaying walkthroughs
 

@@ -16,7 +16,7 @@ done_() { python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])
 TRANSPORT='transport: How should I travel to the meeting? [Take the train, Take a taxi]'
 APPROVAL='approval: May I book travel costing more than 50 USD without approval?'
 ON_TIME='on_time: Will the train get me to the meeting on time?'
-TRANSPORT_NOW='transport: How should I travel to the meeting now? [Take the train, Take a taxi]'
+REBOOK='rebook: How should I travel to the meeting now? [Take the train, Take a taxi]'
 BOOKING2='booking: What should I do next? [Wait for more approval, Book the 40 USD train, Book the 70 USD taxi]'
 BOOKING='booking: What should I do next? [Request approval for the 70 USD taxi, Book the 40 USD train, Book the taxi without approval]'
 PLAN_FACTS='Attendance must be in person. Choose a next step that respects both the latest travel information and the spending rule.'
@@ -33,12 +33,14 @@ for time in cancelled late ontime; do
     ontime) facts='The train is running on time.' ;;
   esac
   if [ "$time" = cancelled ]; then
-    done_ "$OUT/travel-2-$time.json" || n add hero-travel "$facts" -q "$ON_TIME" -q "$TRANSPORT_NOW" > "$OUT/travel-2-$time.json"
+    done_ "$OUT/travel-2-$time.json" || n add hero-travel "$facts" -q "$ON_TIME" > "$OUT/travel-2-$time.json"
     travel=hero-travel
   else
-    done_ "$OUT/travel-2-$time.json" || n new "hero-travel-$time" --from "hero-travel@$T1" "$facts" -q "$ON_TIME" -q "$TRANSPORT_NOW" > "$OUT/travel-2-$time.json"
+    done_ "$OUT/travel-2-$time.json" || n new "hero-travel-$time" --from "hero-travel@$T1" "$facts" -q "$ON_TIME" > "$OUT/travel-2-$time.json"
     travel=hero-travel-$time
   fi
+  # One question per call: the next turn asks how to travel, with on_time in its history.
+  done_ "$OUT/travel-3-$time.json" || n ask "$travel" -q "$REBOOK" > "$OUT/travel-3-$time.json"
   for srcs in both travel; do
     plan="hero-plan-$time-$srcs"
     if [ "$srcs" = both ]; then

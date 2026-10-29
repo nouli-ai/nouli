@@ -3,19 +3,20 @@
 //   node scripts/build-hero.mjs --store DIR > src/data/hero.json
 //
 // Each combination of train status and plan sources is a separate recorded session;
-// this lays them out in five fixed slots so the page can switch between them.
+// this lays them out in six fixed slots so the page can switch between them.
 import { pathToFileURL } from "node:url";
 import { exportGraph } from "./export-graph.mjs";
 
 const TRAIN = ["cancelled", "late", "ontime"];
 const SOURCES = ["both", "travel", "budget"];
 const RENAME = [["^hero-plan-.*", "plan"], ["^hero-", ""]];
-const SLOTS = ["travel", "budget", "travel2", "plan", "plan2"];
+const SLOTS = ["travel", "budget", "travel2", "travel3", "plan", "plan2"];
 
 function slotOf(node) {
   if (node.session.startsWith("plan")) return node.turn === 1 ? "plan" : "plan2";
   if (node.session === "budget") return "budget";
-  return node.questions.some((q) => q.id === "on_time") ? "travel2" : "travel";
+  if (node.questions.some((q) => q.id === "on_time")) return "travel2";
+  return node.questions.some((q) => q.id === "rebook") ? "travel3" : "travel";
 }
 
 function place(nodes) {
