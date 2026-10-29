@@ -407,6 +407,11 @@ impl Parts<'_> {
 }
 
 impl Draft {
+    /// The request ID the command carries, when it has one.
+    pub(crate) fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+
     /// The session whose facts `--replace` numbers refer to, when any is replaced.
     pub(crate) fn replaced_session(&self) -> Option<&SessionSelector> {
         if self.replaces.is_empty() {
@@ -414,6 +419,31 @@ impl Draft {
         } else {
             self.numbering.as_ref()
         }
+    }
+
+    /// Rebuilds a replayed command's request from the updates its request ID
+    /// saved, when they are the ones this command makes: after the first run
+    /// the numbered facts are the replacements, so they cannot be resolved
+    /// again. `None` when the command differs from the saved one.
+    pub(crate) fn replay(mut self, saved: &[ContextUpdate]) -> Option<Self> {
+        let key = self.request_id.as_deref()?;
+        let (replaced, appended) = saved.split_at_checked(self.replaces.len())?;
+        for (index, ((_, text), update)) in self.replaces.iter().zip(replaced).enumerate() {
+            let ContextUpdate::Supersede { replacement, .. } = update else {
+                return None;
+            };
+            if replacement.id != Id::derived(&format!("{key}/replace/{index}"))
+                || replacement.value.value().as_str() != Some(text.trim())
+            {
+                return None;
+            }
+        }
+        if appended != self.request.updates {
+            return None;
+        }
+        self.request.updates = saved.to_vec();
+        self.replaces.clear();
+        Some(self)
     }
 
     /// Turns `--replace N TEXT` into supersessions of the session's current
@@ -529,6 +559,49 @@ mod tests {
             draft(&["ask", "Trip", "--retry-interrupted"]),
             Err(InputError::Retry)
         ));
+    }
+
+    #[test]
+    fn a_replayed_replace_command_reuses_its_saved_updates_and_others_do_not() {
+        let command = |text: &str, extra: &str| {
+            draft(&[
+                "add",
+                "Trip",
+                "--replace",
+                "1",
+                text,
+                extra,
+                "--request-id",
+                "key",
+            ])
+            .unwrap()
+        };
+        let fact = |text: &str| {
+            let ContextUpdate::Append { record } = facts::append(text).unwrap() else {
+                panic!("append")
+            };
+            facts::Fact {
+                number: 1,
+                records: vec![record.id],
+                key: record.key,
+                text: text.into(),
+                alternatives: Vec::new(),
+                turn: Id::generate(),
+                source_session: None,
+                previous: None,
+            }
+        };
+        let first = command("NEW", "Added")
+            .resolve(&[fact("old")])
+            .unwrap()
+            .request
+            .updates;
+        // The replacement is now fact 1; the command still repeats.
+        let replayed = command("NEW", "Added").replay(&first).unwrap();
+        assert_eq!(replayed.request.updates, first);
+        assert!(replayed.replaces.is_empty());
+        assert!(command("OTHER", "Added").replay(&first).is_none());
+        assert!(command("NEW", "Another").replay(&first).is_none());
     }
 
     #[test]

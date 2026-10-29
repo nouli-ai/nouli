@@ -17,7 +17,7 @@ use nouli_core::{
     history::{EvaluationRequest, ModelSelection, SessionSelection},
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
-    storage::{Ledger, OpenMode, worker::LedgerWorker},
+    storage::{Ledger, OpenMode, replay::ReplayError, worker::LedgerWorker},
 };
 use std::io::{self, IsTerminal};
 use std::process::ExitCode;
@@ -233,6 +233,17 @@ pub(crate) fn resolve(settings: &Settings, draft: Draft) -> Result<Draft, ErrorR
     };
     let ledger = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
         .map_err(|error| error.report())?;
+    // A repeated command repeats its saved replacements; after the first run
+    // the numbers no longer name the facts they named then.
+    if let Some(key) = draft.request_id()
+        && let Some(saved) = ledger
+            .saved_request_by_id(key)
+            .map_err(|error| EngineError::from(error).report())?
+    {
+        return draft
+            .replay(&saved.request.updates)
+            .ok_or_else(|| EngineError::from(ReplayError::IntentConflict).report());
+    }
     let current = ledger
         .facts(&session)
         .map_err(|error| EngineError::Turn(error).report())?;

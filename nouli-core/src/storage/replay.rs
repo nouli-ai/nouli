@@ -354,6 +354,12 @@ impl Ledger {
         }
         Ok(saved.map(|saved| saved.frozen))
     }
+    /// The frozen request saved under a request ID, whatever its intent. A
+    /// caller that builds a request from the ledger's current state uses it to
+    /// rebuild the same request when the ID was already used.
+    pub fn saved_request_by_id(&self, key: &str) -> Result<Option<FrozenRequest>, ReplayError> {
+        Ok(reservation(&self.connection, key)?.map(|saved| saved.frozen))
+    }
     pub fn accept_request(
         &mut self,
         request: &EvaluationRequest,
