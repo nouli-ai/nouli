@@ -146,3 +146,20 @@ pub(crate) fn annotate_envelope(
         Report::Turn(_) | Report::Session(_) => {}
     }
 }
+
+#[cfg(test)]
+impl Settings {
+    /// Settings over a store path, for tests that never load a file.
+    pub(crate) fn for_test(store: PathBuf) -> Self {
+        Self {
+            config: Config::default(),
+            home: PathBuf::new(),
+            store,
+            config_path: PathBuf::new(),
+            credentials: Arc::default(),
+            env_file: None,
+            initialize_default: false,
+            store_override: None,
+        }
+    }
+}

@@ -18,6 +18,7 @@ use crate::{
 use clap::Args as ClapArgs;
 use input::{Command, Line};
 use nouli_core::{
+    context::ContextUpdate,
     decision::grammar,
     history::{ModelSelection, SessionSelection, SourcePoint, SourceSelection},
     identity::{Id, SessionName, SessionSelector},
@@ -423,12 +424,27 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
             Err(error) => return self.fail(&error.message),
         };
         let result = self.runtime.block_on(evaluate::run(&draft, self.settings));
-        match result.result {
+        self.finish(result.result, &draft.request.updates, ephemeral)
+    }
+
+    /// Shows what a turn returned. A saved turn has taken the queue, even when
+    /// showing it fails: sending the queue again would repeat the turn.
+    fn finish(
+        &mut self,
+        result: Report,
+        updates: &[ContextUpdate],
+        ephemeral: bool,
+    ) -> io::Result<()> {
+        match result {
             Report::Turn(report) => {
+                // A what-if saves nothing, so what was queued is still pending.
+                if !ephemeral {
+                    self.queue = Queue::default();
+                }
                 if let Err(error) = present::turn_text(
                     &mut self.out,
                     &report,
-                    &draft.request.updates,
+                    updates,
                     &self.settings.store,
                     self.paint.0,
                     false,
@@ -439,10 +455,6 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                         }
                         present::PresentError::History(error) => self.fail(&error.message),
                     };
-                }
-                // A what-if saves nothing, so what was queued is still pending.
-                if !ephemeral {
-                    self.queue = Queue::default();
                 }
                 Ok(())
             }
@@ -1052,6 +1064,62 @@ mod tests {
             String::from_utf8(out).unwrap(),
             "s › A fact\ns › ↵\ns › ?q: Why?\n"
         );
+    }
+
+    fn repl<'a>(settings: &'a Settings, queue: Queue) -> Repl<'a, Reader<&'static [u8]>, Vec<u8>> {
+        Repl {
+            settings,
+            runtime: tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap(),
+            lines: Reader(&b""[..]),
+            out: Vec::new(),
+            paint: Paint(false),
+            model: ModelSelection::default(),
+            context_budget: None,
+            session: Current {
+                id: Id::generate(),
+                label: "s".into(),
+            },
+            queue,
+        }
+    }
+
+    fn saved_turn() -> nouli_core::protocol::Report {
+        let data: serde_json::Value =
+            serde_json::from_str(include_str!("../../fixtures/contracts/history.json")).unwrap();
+        let turn: nouli_core::history::FinalizedTurn =
+            serde_json::from_value(data["turns"][0].clone()).unwrap();
+        Report::Turn(Box::new(nouli_core::protocol::TurnReport {
+            questions: turn.request.questions,
+            session: Some(turn.session),
+            turn: Some(turn.id),
+            outcome: turn.outcome,
+            manifest: turn.manifest,
+            replayed: false,
+        }))
+    }
+
+    #[test]
+    fn a_saved_turn_empties_the_queue_even_when_it_cannot_be_shown() {
+        // The store does not exist, so showing the turn fails reading history.
+        let settings = Settings::for_test(
+            std::env::temp_dir().join(format!("nouli-repl-missing-{}", Id::generate())),
+        );
+        let queue = || Queue {
+            facts: vec!["a fact".into()],
+            drops: vec!["old".into()],
+            ..Queue::default()
+        };
+        let mut sent = repl(&settings, queue());
+        sent.finish(saved_turn(), &[], false).unwrap();
+        assert!(sent.queue.is_empty());
+        let shown = String::from_utf8(sent.out).unwrap();
+        assert!(shown.contains("error:"), "{shown}");
+        // A what-if saves nothing, so the queue stays.
+        let mut whatif = repl(&settings, queue());
+        whatif.finish(saved_turn(), &[], true).unwrap();
+        assert_eq!(whatif.queue.len(), 2);
     }
 
     #[test]
