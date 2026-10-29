@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 dotenvy = "0.15.7"
-nix = { version = "0.31.3", features = ["fs", "user"] }
+nix = { version = "0.31.3", features = ["fs", "signal", "user"] }
 nouli-core = { version = "0.2.0", path = "../nouli-core" }
 rpassword = "7.5.4"
 rustyline = "19.0.0"

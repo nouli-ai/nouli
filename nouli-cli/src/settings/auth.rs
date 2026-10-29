@@ -3,25 +3,31 @@
 //! never logged, printed, or put in an error.
 
 use super::environment::{Environment, Origin};
+use nix::{
+    sys::signal::{Signal, killpg},
+    unistd::Pid,
+};
 use nouli_core::{
     config::auth::{AuthError, AuthStore, CredentialSource, KeySource},
     identity::Id,
     protocol::{ErrorCategory, ErrorReport},
 };
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
+    sync::{Mutex, mpsc},
     thread,
     time::{Duration, Instant},
 };
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 
 pub(crate) const FILE_NAME: &str = "auth.toml";
 const MAX_STORE_BYTES: u64 = 1024 * 1024;
-const MAX_COMMAND_OUTPUT: u64 = 64 * 1024;
+const MAX_COMMAND_OUTPUT: usize = 64 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Error)]
@@ -140,11 +146,30 @@ pub(crate) fn write(path: &Path, store: &AuthStore) -> Result<(), AuthFileError>
 /// Runs a command source directly, without a shell, and returns its trimmed
 /// output. Its error output is discarded and its output is never reported.
 pub(crate) fn run_command(argv: &[String], timeout: Duration) -> Option<String> {
+    run_command_until(argv, timeout, &CancellationToken::new())
+}
+
+/// What the reader thread reports about the command's output.
+enum Output {
+    Complete(Vec<u8>),
+    TooLong,
+}
+
+/// Runs a command in its own process group, so a deadline, a cancellation, or
+/// an oversized output stops the command and everything it started. The whole
+/// run, including the wait for the output to close, ends by the deadline.
+pub(crate) fn run_command_until(
+    argv: &[String],
+    timeout: Duration,
+    cancel: &CancellationToken,
+) -> Option<String> {
+    use std::os::unix::process::CommandExt;
     let (program, arguments) = argv.split_first()?;
     let mut command = Command::new(program);
     command
         .args(arguments)
         .env_clear()
+        .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -154,32 +179,80 @@ pub(crate) fn run_command(argv: &[String], timeout: Duration) -> Option<String> 
         }
     }
     let mut child = command.spawn().ok()?;
-    let output = child.stdout.take()?;
-    let reader = thread::spawn(move || {
+    let group = Pid::from_raw(i32::try_from(child.id()).ok()?);
+    let Some(mut output) = child.stdout.take() else {
+        stop(&mut child, group);
+        return None;
+    };
+    let (sender, receiver) = mpsc::channel();
+    // The reader ends when every holder of the pipe closes it, which a
+    // grandchild can delay; it is only read from, never joined.
+    thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _ = output.take(MAX_COMMAND_OUTPUT).read_to_end(&mut bytes);
-        bytes
+        let mut chunk = [0_u8; 4096];
+        let result = loop {
+            match output.read(&mut chunk) {
+                Ok(0) => break Output::Complete(bytes),
+                Ok(count) => {
+                    bytes.extend_from_slice(&chunk[..count]);
+                    if bytes.len() > MAX_COMMAND_OUTPUT {
+                        break Output::TooLong;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => break Output::TooLong,
+            }
+        };
+        let _ = sender.send(result);
     });
     let deadline = Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                // A grandchild may still hold the pipe, so do not wait for the reader.
-                return None;
+    let mut status = None;
+    let mut bytes = None;
+    while status.is_none() || bytes.is_none() {
+        let now = Instant::now();
+        if now >= deadline || cancel.is_cancelled() {
+            tracing::warn!("credential command stopped before it finished");
+            stop(&mut child, group);
+            return None;
+        }
+        if status.is_none() {
+            match child.try_wait() {
+                Ok(Some(done)) if !done.success() => return None,
+                Ok(done) => status = done,
+                Err(_) => {
+                    stop(&mut child, group);
+                    return None;
+                }
             }
         }
-    };
-    let bytes = reader.join().ok()?;
-    if !status.success() {
+        let wait = (deadline - now).min(Duration::from_millis(10));
+        if bytes.is_some() {
+            thread::sleep(wait);
+            continue;
+        }
+        match receiver.recv_timeout(wait) {
+            Ok(Output::Complete(output)) => bytes = Some(output),
+            Ok(Output::TooLong) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                tracing::warn!("credential command output was unusable");
+                stop(&mut child, group);
+                return None;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+    }
+    if !status?.success() {
         return None;
     }
-    let text = String::from_utf8(bytes).ok()?;
+    let text = String::from_utf8(bytes?).ok()?;
     let key = text.trim();
     (!key.is_empty()).then(|| key.to_owned())
+}
+
+/// Kills the command's whole process group and reaps the command.
+fn stop(child: &mut Child, group: Pid) {
+    let _ = killpg(group, Signal::SIGKILL);
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Every place a credential can come from, in the order they are tried.
@@ -187,11 +260,58 @@ pub(crate) fn run_command(argv: &[String], timeout: Duration) -> Option<String> 
 pub(crate) struct Credentials {
     environment: Environment,
     store: AuthStore,
+    /// Command results fetched ahead of a turn, by provider, so the engine's
+    /// synchronous lookup does not have to wait on a command.
+    fetched: Mutex<BTreeMap<String, Option<String>>>,
 }
 
 impl Credentials {
     pub(crate) fn new(environment: Environment, store: AuthStore) -> Self {
-        Self { environment, store }
+        Self {
+            environment,
+            store,
+            fetched: Mutex::default(),
+        }
+    }
+
+    /// Runs the provider's command source, when it has one that a lookup would
+    /// reach, off the async runtime and until `cancel`. The result answers the
+    /// next lookups until [`Credentials::forget`].
+    pub(crate) async fn fetch(
+        &self,
+        provider: &str,
+        variable: Option<&str>,
+        cancel: &CancellationToken,
+    ) {
+        if variable.is_some_and(|name| self.environment.lookup(name).is_some())
+            || self
+                .fetched
+                .lock()
+                .is_ok_and(|fetched| fetched.contains_key(provider))
+        {
+            return;
+        }
+        let Some(KeySource::Command(argv)) = self.store.get(provider).map(|entry| entry.source())
+        else {
+            return;
+        };
+        let (argv, cancel) = (argv.clone(), cancel.clone());
+        let Ok(key) =
+            tokio::task::spawn_blocking(move || run_command_until(&argv, COMMAND_TIMEOUT, &cancel))
+                .await
+        else {
+            return;
+        };
+        if let Ok(mut fetched) = self.fetched.lock() {
+            fetched.insert(provider.to_owned(), key);
+        }
+    }
+
+    /// Drops fetched command results, so the next turn runs its command again.
+    pub(crate) fn forget(&self) {
+        if let Ok(mut fetched) = self.fetched.lock() {
+            fetched.clear();
+        }
     }
 
     pub(crate) fn store(&self) -> &AuthStore {
@@ -204,7 +324,14 @@ impl Credentials {
             CredentialSource::Auth(provider) => match self.store.get(provider)?.source() {
                 KeySource::Key(secret) => Some(secret.expose().to_owned()),
                 KeySource::Env(name) => self.environment.lookup(name),
-                KeySource::Command(argv) => run_command(argv, COMMAND_TIMEOUT),
+                KeySource::Command(argv) => {
+                    let fetched = self
+                        .fetched
+                        .lock()
+                        .ok()
+                        .and_then(|fetched| fetched.get(provider).cloned());
+                    fetched.unwrap_or_else(|| run_command(argv, COMMAND_TIMEOUT))
+                }
             },
         }
     }
@@ -331,6 +458,95 @@ mod tests {
         let started = Instant::now();
         assert_eq!(run(&["sleep", "30"], Duration::from_millis(200)), None);
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_grandchild_holding_the_output_open_cannot_outlast_the_timeout() {
+        let directory = Directory::new();
+        fs::create_dir_all(&directory.0).unwrap();
+        let pids = directory.0.join("pid");
+        let script = format!("sleep 30 & echo $! > {}; echo k", pids.display());
+        let started = Instant::now();
+        let argv = ["sh".to_owned(), "-c".into(), script];
+        assert_eq!(run_command(&argv, Duration::from_millis(500)), None);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let pid: i32 = fs::read_to_string(&pids).unwrap().trim().parse().unwrap();
+        // The timed-out command's descendants are gone, not orphaned.
+        let gone = (0..100).any(|_| {
+            thread::sleep(Duration::from_millis(50));
+            nix::sys::signal::kill(Pid::from_raw(pid), None).is_err()
+        });
+        assert!(gone, "the grandchild is still running");
+        // A background job that keeps the output open is not waited for either.
+        let argv = ["sh".to_owned(), "-c".into(), "echo k; sleep 30 &".into()];
+        let started = Instant::now();
+        assert_eq!(run_command(&argv, Duration::from_millis(200)), None);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn oversized_output_fails_closed_without_waiting_for_the_timeout() {
+        let argv = [
+            "sh".to_owned(),
+            "-c".into(),
+            "head -c 200000 /dev/zero | tr '\\0' a; sleep 30".into(),
+        ];
+        let started = Instant::now();
+        assert_eq!(run_command(&argv, Duration::from_secs(20)), None);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // Output just within the cap is accepted.
+        let argv = [
+            "sh".to_owned(),
+            "-c".into(),
+            "head -c 60000 /dev/zero | tr '\\0' a".into(),
+        ];
+        assert_eq!(
+            run_command(&argv, Duration::from_secs(5)).map(|key| key.len()),
+            Some(60000)
+        );
+    }
+
+    #[test]
+    fn a_canceled_command_stops_early() {
+        let cancel = CancellationToken::new();
+        let stopper = cancel.clone();
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            stopper.cancel();
+        });
+        let started = Instant::now();
+        let argv = ["sleep".to_owned(), "30".into()];
+        assert_eq!(
+            run_command_until(&argv, Duration::from_secs(20), &cancel),
+            None
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_fetched_command_result_answers_lookups_until_forgotten() {
+        let directory = Directory::new();
+        fs::create_dir_all(&directory.0).unwrap();
+        let runs = directory.0.join("runs");
+        let script = format!("echo x >> {}; echo key", runs.display());
+        let mut store = AuthStore::default();
+        store.insert(
+            "p".into(),
+            AuthEntry::ApiKey(KeySource::Command(vec!["sh".into(), "-c".into(), script])),
+        );
+        let credentials = Credentials::new(Environment::default(), store);
+        let source = CredentialSource::Auth("p".into());
+        let count = || fs::read_to_string(&runs).map_or(0, |text| text.lines().count());
+        credentials
+            .fetch("p", None, &CancellationToken::new())
+            .await;
+        assert_eq!(credentials.lookup(&source).as_deref(), Some("key"));
+        assert_eq!(credentials.lookup(&source).as_deref(), Some("key"));
+        assert_eq!(count(), 1);
+        credentials.forget();
+        assert_eq!(credentials.lookup(&source).as_deref(), Some("key"));
+        assert_eq!(count(), 2);
     }
 
     #[test]

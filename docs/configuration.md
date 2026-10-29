@@ -178,7 +178,9 @@ key = "…"
 `type` is required, and only `api_key` is accepted for now; unknown types and
 fields are errors that name the provider. A `command` runs without a shell, with
 only `PATH` and `HOME` in its environment and a 10-second limit, and its trimmed
-output is the key.
+output (at most 64 KiB) is the key. It runs in its own process group, so a
+timeout, Ctrl-C, or oversized output stops the command and anything it started,
+and a background job that keeps the output open counts as a timeout.
 
 A provider's key is the first of these that has a value:
 
