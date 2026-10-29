@@ -341,20 +341,13 @@ pub(crate) fn write<'a>(
     for question in questions {
         let outcome = outcomes
             .iter()
-            .find(|outcome| outcome_id(outcome) == question.id);
+            .find(|outcome| outcome.question_id() == question.id);
         question_rows(paint, question, outcome, previous(&question.id), &mut rows);
     }
     for row in rows {
         writeln!(sink, "{row}")?;
     }
     Ok(())
-}
-
-fn outcome_id(outcome: &QuestionOutcome) -> &str {
-    match outcome {
-        QuestionOutcome::Answered { question_id, .. }
-        | QuestionOutcome::Refused { question_id, .. } => question_id,
-    }
 }
 
 #[cfg(test)]
@@ -454,7 +447,7 @@ mod tests {
             header,
             questions,
             outcomes,
-            |id| previous.iter().find(|outcome| outcome_id(outcome) == id),
+            |id| previous.iter().find(|outcome| outcome.question_id() == id),
             color,
         )
         .unwrap();
@@ -688,7 +681,7 @@ mod tests {
             &header(Some(1)),
             &questions,
             &now,
-            |id| was.iter().find(|outcome| outcome_id(outcome) == id),
+            |id| was.iter().find(|outcome| outcome.question_id() == id),
             false,
         );
         assert!(matches!(result, Err(RenderError::Write(_))));

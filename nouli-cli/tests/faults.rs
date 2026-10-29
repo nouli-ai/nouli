@@ -5,13 +5,13 @@ pub mod harness;
 pub mod loopback;
 #[path = "support/process.rs"]
 pub mod process;
-use harness::{Home, questions, report, run_report, turn, workflow};
+use harness::{Home, QUESTIONS, report, run_report, turn, workflow};
 use loopback::Server;
 use nouli_core::{
     context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
     data::{Data, Input},
-    history::{EvaluationRequest, ModelSelection, SessionSelection, SourceSelection},
-    identity::{Id, SessionName, SessionSelector},
+    history::{EvaluationRequest, ModelSelection, SessionSelection},
+    identity::{Id, SessionSelector},
     protocol::{Report, ResultEnvelope},
     storage::{Ledger, OpenMode, inspection::ContextView, turns::AttemptStatus},
     workflow::RunStatus,
@@ -25,7 +25,7 @@ use std::{
     },
     time::Duration,
 };
-const RESPONSE: &str = include_str!("../../fixtures/providers/typesafe/response.json");
+const RESPONSE: &str = harness::TYPESAFE;
 fn sql(home: &Home, statement: &str) {
     let connection = rusqlite::Connection::open(home.store().join("ledger.sqlite3")).unwrap();
     connection.busy_timeout(Duration::from_secs(5)).unwrap();
@@ -43,22 +43,26 @@ fn key_request(
     home: &Home,
     name: &str,
     key: &str,
-    session: SessionSelection,
     updates: Vec<ContextUpdate>,
 ) -> std::path::PathBuf {
     let mut turn = turn();
     turn.state.push(Input::Text { text: name.into() });
+    // The session's standing questions supply the questions.
+    turn.questions.clear();
     let request = EvaluationRequest {
         standing: Default::default(),
         turn,
-        session,
+        session: SessionSelection::New { name: None },
         updates,
         required_records: vec![],
         model: ModelSelection::default(),
         request_id: Some(key.into()),
     };
+    // The verb supplies the session, so the request file names none.
+    let mut file = serde_json::to_value(&request).unwrap();
+    file.as_object_mut().unwrap().remove("session");
     let path = home.0.join(format!("{name}.json"));
-    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
     path
 }
 fn error(output: std::process::Output, code: i32) -> nouli_core::protocol::ErrorReport {
@@ -100,18 +104,8 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         other.url
     );
     std::fs::write(config, text).unwrap();
-    let questions = questions();
-    let base = report(home.run(&["-s", "BASE", "-q", &questions, "--name", "Main"]));
-    let arguments = [
-        "-s",
-        "CRASHING",
-        "-q",
-        questions.as_str(),
-        "--session",
-        "Main",
-        "--request-id",
-        "crash-request",
-    ];
+    let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
+    let arguments = ["add", "Main", "CRASHING", "--request-id", "crash-request"];
     let child = OwnedChild::new(
         home.command()
             .args(arguments)
@@ -121,44 +115,32 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
             .unwrap(),
     );
     waiting.recv_timeout(Duration::from_secs(5)).unwrap();
-    error(home.run(&arguments), 5);
+    error(home.run(arguments), 5);
     error(
-        home.run(&[
-            "-s",
-            "OTHER_INTENT",
-            "-q",
-            &questions,
-            "--session",
+        home.run([
+            "add",
             "Main",
+            "OTHER_INTENT",
             "--request-id",
             "different-request",
         ]),
         5,
     );
     error(
-        home.run(&[
-            "-s",
-            "CHANGED",
-            "-q",
-            &questions,
-            "--session",
-            "Main",
-            "--request-id",
-            "crash-request",
-        ]),
+        home.run(["add", "Main", "CHANGED", "--request-id", "crash-request"]),
         5,
     );
     assert_eq!(primary.count(), 2);
-    let independent = report(home.run(&[
-        "-s",
-        "INDEPENDENT",
-        "-q",
-        &questions,
-        "--provider",
-        "other",
-        "--name",
-        "Other",
-    ]));
+    let independent = report(
+        home.run(
+            [
+                &["new", "Other", "INDEPENDENT"][..],
+                &QUESTIONS,
+                &["--provider", "other"],
+            ]
+            .concat(),
+        ),
+    );
     assert_ne!(independent.session, base.session);
     assert_eq!(other.count(), 1);
     assert!(
@@ -183,7 +165,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[1].progress.state, AttemptStatus::Running);
     drop(ledger);
-    let interrupted = error(home.run(&arguments), 130);
+    let interrupted = error(home.run(arguments), 130);
     assert_eq!(
         interrupted.category,
         nouli_core::protocol::ErrorCategory::Interrupted
@@ -198,7 +180,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         vec![base.turn.unwrap()]
     );
     assert_eq!(primary.count(), 3);
-    let replay = report(home.run(&arguments));
+    let replay = report(home.run(arguments));
     assert!(replay.replayed);
     assert_eq!(replay.turn, recovered.turn);
     assert_eq!(primary.count(), 3);
@@ -219,7 +201,7 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
         let server = Server::new(RESPONSE);
         let home = Home::create();
         home.configure(&server, "typesafe", false);
-        let base = report(home.run(&["-s", "BASE", "-q", &questions(), "--name", "Main"]));
+        let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
         let record = ContextRecord {
             id: Id::generate(),
             key: "atomic".into(),
@@ -230,9 +212,6 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
             &home,
             "ATOMIC",
             "atomic-request",
-            SessionSelection::Continue {
-                session: SessionSelector::Name(SessionName::try_from("Main".to_owned()).unwrap()),
-            },
             vec![ContextUpdate::Append {
                 record: record.clone(),
             }],
@@ -255,11 +234,15 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
                 "CREATE TABLE deferred_fault(parent_id TEXT REFERENCES sessions(id) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER inject_fault AFTER UPDATE OF state ON request_reservations WHEN NEW.request_id='atomic-request' AND NEW.state='completed' BEGIN INSERT INTO deferred_fault(parent_id) VALUES('missing-session'); END;",
             );
         }
-        error(home.run(&["--input", path.to_str().unwrap()]), 6);
+        error(
+            home.run(["add", "Main", "--input", path.to_str().unwrap()]),
+            6,
+        );
         assert_eq!(server.count(), if mode == "before" { 1 } else { 2 });
         assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 1);
         assert_eq!(scalar(&home, "SELECT count(*) FROM manifests"), 1);
-        assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 0);
+        // Only the base turn's fact is saved; the failed turn's commitment is not.
+        assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 1);
         assert_eq!(
             scalar(&home, "SELECT count(*) FROM attempts"),
             if mode == "before" { 1 } else { 2 }
@@ -278,10 +261,16 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
         }
         assert!(ledger_guard_released(&home, base.session.unwrap()));
         sql(&home, "DROP TRIGGER inject_fault;");
-        let retry = report(home.run(&["--input", path.to_str().unwrap(), "--retry-interrupted"]));
+        let retry = report(home.run([
+            "add",
+            "Main",
+            "--input",
+            path.to_str().unwrap(),
+            "--retry-interrupted",
+        ]));
         assert_eq!(retry.session, base.session);
         assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 2);
-        assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 1);
+        assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 2);
         assert_eq!(scalar(&home, "SELECT count(*) FROM manifests"), 2);
         let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
         let attempts = ledger.list_attempts(base.session.unwrap()).unwrap();
@@ -342,7 +331,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         }];
         let file = home.0.join("workflow.json");
         std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
-        let output = home.run(&[
+        let output = home.run([
             "workflows",
             "run",
             file.to_str().unwrap(),
@@ -395,7 +384,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         drop(ledger);
         sql(&home, "DROP TRIGGER inject_fault;");
         let calls = server.count();
-        let done = run_report(home.run(&["workflows", "resume", &run.to_string()]), 0);
+        let done = run_report(home.run(["workflows", "resume", &run.to_string()]), 0);
         assert_eq!(done.status, RunStatus::Completed);
         assert_eq!(done.nodes[0].turn, initial);
         if let Some(preserved) = preserved {
@@ -407,7 +396,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         );
         assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 5);
         assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 2);
-        let shown = home.run(&["workflows", "show", &run.to_string()]);
+        let shown = home.run(["workflows", "show", &run.to_string()]);
         assert!(shown.status.success());
         let inspection: WorkflowInspection = serde_json::from_slice(&shown.stdout).unwrap();
         assert_eq!(inspection.rounds.len(), 2);
@@ -436,14 +425,17 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
     connection.execute_batch("PRAGMA application_id=1313822028; PRAGMA user_version=4; CREATE TABLE workflow_round_results(collision);").unwrap();
     drop(connection);
     let before = std::fs::read(&database).unwrap();
-    error(home.run(&["-s", "MIGRATE", "-q", &questions()]), 6);
+    error(
+        home.run([&["new", "Migrate", "MIGRATE"][..], &QUESTIONS].concat()),
+        6,
+    );
     assert_eq!(server.count(), 0);
     assert_eq!(scalar(&home, "PRAGMA user_version"), 4);
     assert!(
         before == std::fs::read(&database).unwrap(),
         "failed migration changed original database"
     );
-    let failure = error(home.run(&["sessions", "list"]), 6);
+    let failure = error(home.run(["sessions", "list"]), 6);
     assert_eq!(failure.code, "ledger_migration_required");
     assert!(
         before == std::fs::read(&database).unwrap(),
@@ -459,9 +451,6 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
     let original = record(8);
     let seed = home.request(
         "base.json",
-        SessionSelection::New {
-            name: Some(SessionName::try_from("Base".to_owned()).unwrap()),
-        },
         "BASE",
         vec![ContextUpdate::Pin {
             target: PinTarget::New {
@@ -469,20 +458,13 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
             },
         }],
     );
-    let base = report(home.run(&["--input", seed.to_str().unwrap()]));
+    let base = report(home.run(["new", "Base", "--input", seed.to_str().unwrap()]));
     let left = record(12);
     let right = record(16);
     let mut sources = vec![];
     for (name, replacement) in [("Left", &left), ("Right", &right)] {
         let path = home.request(
             &format!("{name}.json"),
-            SessionSelection::From {
-                sources: vec![SourceSelection {
-                    session: SessionSelector::Id(base.session.unwrap()),
-                    frontier: None,
-                }],
-                name: Some(SessionName::try_from(name.to_owned()).unwrap()),
-            },
             name,
             vec![ContextUpdate::Supersede {
                 targets: vec![original.id],
@@ -490,7 +472,14 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
                 pinned: None,
             }],
         );
-        sources.push(report(home.run(&["--input", path.to_str().unwrap()])));
+        sources.push(report(home.run([
+            "new",
+            name,
+            "--from",
+            &base.session.unwrap().to_string(),
+            "--input",
+            path.to_str().unwrap(),
+        ])));
     }
     let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
     let before = sources
@@ -502,23 +491,25 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
         })
         .collect::<Vec<_>>();
     drop(ledger);
-    let selection = SessionSelection::From {
-        sources: sources
-            .iter()
-            .map(|source| SourceSelection {
-                session: SessionSelector::Id(source.session.unwrap()),
-                frontier: None,
-            })
-            .collect(),
-        name: None,
-    };
-    let path = home.request("conflict.json", selection.clone(), "CONFLICT", vec![]);
-    error(home.run(&["--input", path.to_str().unwrap()]), 5);
+    let from: Vec<String> = sources
+        .iter()
+        .flat_map(|source| ["--from".to_owned(), source.session.unwrap().to_string()])
+        .collect();
+    let path = home.request("conflict.json", "CONFLICT", vec![]);
+    error(
+        home.run(
+            [
+                &["new", "Conflict", "--input", path.to_str().unwrap()][..],
+                &from.iter().map(String::as_str).collect::<Vec<_>>(),
+            ]
+            .concat(),
+        ),
+        5,
+    );
     assert_eq!(server.count(), 3);
     let resolved = record(11);
     let path = home.request(
         "resolved.json",
-        selection,
         "RESOLVE",
         vec![ContextUpdate::Supersede {
             targets: vec![left.id, right.id],
@@ -526,7 +517,15 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
             pinned: None,
         }],
     );
-    let blend = report(home.run(&["--input", path.to_str().unwrap()]));
+    let blend = report(
+        home.run(
+            [
+                &["new", "Resolved", "--input", path.to_str().unwrap()][..],
+                &from.iter().map(String::as_str).collect::<Vec<_>>(),
+            ]
+            .concat(),
+        ),
+    );
     assert_eq!(server.count(), 4);
     let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
     for (source, expected) in sources.iter().zip(before) {

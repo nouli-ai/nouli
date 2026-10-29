@@ -3,12 +3,15 @@ pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
 
-use harness::{Home, questions, report, run_report};
+use harness::{Home, QUESTIONS, report, run_report};
 use loopback::Server;
-use nouli_core::protocol::{EngineEvent, EventKind, Report, ResultEnvelope, validate_events};
+use nouli_core::{
+    identity::Id,
+    protocol::{EngineEvent, EventKind, Report, ResultEnvelope, validate_events},
+};
 use std::{fs, process::Output};
 
-const RESPONSE: &str = include_str!("../../fixtures/providers/typesafe/response.json");
+const RESPONSE: &str = harness::TYPESAFE;
 
 fn configure(home: &Home, server: &Server) {
     home.configure(server, "typesafe", true);
@@ -27,6 +30,17 @@ fn failure(output: Output, code: &str) {
         panic!("error report")
     };
     assert_eq!(error.code, code);
+}
+
+/// A fresh session in a store of its own, so `home.store()` can stay absent.
+fn throwaway(home: &Home) -> std::process::Command {
+    let mut command = home.command_at(&home.0.join(format!("throwaway-{}", Id::generate())));
+    command.args([&["new", "Throwaway"][..], &QUESTIONS].concat());
+    command
+}
+
+fn create(name: &str) -> Vec<&str> {
+    [&["new", name][..], &QUESTIONS].concat()
 }
 
 fn missing_credential(output: Output) {
@@ -49,20 +63,13 @@ fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_
     let mut contents = fs::read_to_string(&env).unwrap();
     contents.push_str("UNUSED_COMMAND='$(touch must-not-execute)'\n");
     fs::write(&env, contents).unwrap();
-    let ephemeral = report(home.run(&["-q", &questions(), "--no-session"]));
+    let stateless = report(throwaway(&home).output().unwrap());
     assert!(!home.0.join("must-not-execute").exists());
-    assert!(ephemeral.session.is_none() && ephemeral.turn.is_none());
+    assert!(stateless.session.is_some() && stateless.turn.is_some());
     assert!(!home.store().exists());
-    let args = [
-        "-q",
-        &questions(),
-        "--name",
-        "Origin",
-        "--request-id",
-        "dotenv-initial",
-    ];
+    let args = [&create("Origin")[..], &["--request-id", "dotenv-initial"]].concat();
     let first = report(home.run(&args));
-    let next = report(home.run(&["-q", &questions(), "--session", "Origin", "-s", "New facts"]));
+    let next = report(home.run(["add", "Origin", "New facts"]));
     assert_eq!(next.session, first.session);
     assert!(
         server
@@ -104,9 +111,8 @@ fn exported_values_win_including_empty_values_but_malformed_files_still_fail() {
     configure(&home, &server);
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=FILE_SENTINEL\n").unwrap();
     report(
-        home.command()
+        throwaway(&home)
             .env("TYPESAFE_TOKEN", "SHELL_SENTINEL")
-            .args(["-q", &questions(), "--no-session"])
             .output()
             .unwrap(),
     );
@@ -117,7 +123,7 @@ fn exported_values_win_including_empty_values_but_malformed_files_still_fail() {
     missing_credential(
         home.command()
             .env("TYPESAFE_TOKEN", "")
-            .args(["-q", &questions()])
+            .args(create("Empty"))
             .output()
             .unwrap(),
     );
@@ -129,7 +135,7 @@ fn exported_values_win_including_empty_values_but_malformed_files_still_fail() {
     failure(
         home.command()
             .env("TYPESAFE_TOKEN", "SHELL_SENTINEL")
-            .args(["-q", &questions()])
+            .args(create("Broken"))
             .output()
             .unwrap(),
         "invalid_env_file",
@@ -137,9 +143,8 @@ fn exported_values_win_including_empty_values_but_malformed_files_still_fail() {
     assert!(!home.store().exists());
     fs::remove_file(home.0.join(".env")).unwrap();
     report(
-        home.command()
+        throwaway(&home)
             .env("TYPESAFE_TOKEN", "SHELL_SENTINEL")
-            .args(["-q", &questions(), "--no-session"])
             .output()
             .unwrap(),
     );
@@ -157,7 +162,7 @@ fn discovery_stays_in_cwd_and_explicit_files_replace_the_automatic_file() {
     missing_credential(
         home.command()
             .current_dir(&nested)
-            .args(["-q", &questions()])
+            .args(create("Nested"))
             .output()
             .unwrap(),
     );
@@ -168,30 +173,19 @@ fn discovery_stays_in_cwd_and_explicit_files_replace_the_automatic_file() {
         "TYPESAFE_TOKEN=EXPLICIT_SENTINEL\n",
     )
     .unwrap();
+    report(throwaway(&home).current_dir(&nested).output().unwrap());
     report(
-        home.command()
+        throwaway(&home)
             .current_dir(&nested)
-            .args(["-q", &questions(), "--no-session"])
-            .output()
-            .unwrap(),
-    );
-    report(
-        home.command()
-            .current_dir(&nested)
-            .args([
-                "--env-file",
-                "../alternate.env",
-                "-q",
-                &questions(),
-                "--no-session",
-            ])
+            .args(["--env-file", "../alternate.env"])
             .output()
             .unwrap(),
     );
     failure(
         home.command()
             .current_dir(&nested)
-            .args(["--env-file", "missing.env", "-q", &questions()])
+            .args(["--env-file", "missing.env"])
+            .args(create("Missing"))
             .output()
             .unwrap(),
         "env_file_not_found",
@@ -200,7 +194,8 @@ fn discovery_stays_in_cwd_and_explicit_files_replace_the_automatic_file() {
     missing_credential(
         home.command()
             .current_dir(&nested)
-            .args(["--env-file", "../alternate.env", "-q", &questions()])
+            .args(["--env-file", "../alternate.env"])
+            .args(create("Alternate"))
             .output()
             .unwrap(),
     );
@@ -222,7 +217,7 @@ fn file_errors_are_safe_in_all_output_formats_and_never_create_a_store() {
     let path = home.0.join(".env");
     fs::write(&path, "TYPESAFE_TOKEN='BROKEN_PRIVATE_VALUE\n").unwrap();
     for format in ["json", "text", "jsonl"] {
-        let output = home.run(&["--format", format, "-q", &questions()]);
+        let output = home.run([&["--format", format][..], &create("Origin")].concat());
         assert_eq!(output.status.code(), Some(2));
         let visible = format!(
             "{}{}",
@@ -233,10 +228,10 @@ fn file_errors_are_safe_in_all_output_formats_and_never_create_a_store() {
         assert!(!visible.contains("BROKEN_PRIVATE_VALUE"));
     }
     fs::write(&path, [0xff, 0xfe]).unwrap();
-    failure(home.run(&["-q", &questions()]), "invalid_env_file");
+    failure(home.run(create("Origin")), "invalid_env_file");
     fs::remove_file(&path).unwrap();
     fs::create_dir(&path).unwrap();
-    failure(home.run(&["-q", &questions()]), "env_file_unreadable");
+    failure(home.run(create("Origin")), "env_file_unreadable");
     assert!(!home.store().exists());
     assert_eq!(server.count(), 0);
 }
@@ -247,7 +242,7 @@ fn help_invalid_input_and_read_only_inspection_do_not_load_env_files() {
     let home = Home::create();
     configure(&home, &server);
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=INSPECTION_SENTINEL\n").unwrap();
-    report(home.run(&["-q", &questions(), "--name", "Origin"]));
+    report(home.run(create("Origin")));
     fs::write(
         home.0.join(".env"),
         "TYPESAFE_TOKEN='BROKEN_PRIVATE_VALUE\n",
@@ -265,7 +260,10 @@ fn help_invalid_input_and_read_only_inspection_do_not_load_env_files() {
     ] {
         assert!(home.run(&args).status.success(), "{args:?}");
     }
-    failure(home.run(&["-q", "not JSON"]), "invalid_decision_input");
+    failure(
+        home.run(["new", "Other", "-q", "not grammar"]),
+        "invalid_decision_input",
+    );
     assert_eq!(server.count(), 1);
 }
 
@@ -287,7 +285,7 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
     fs::write(home.0.join(".env"), "TYPESAFE_TOKEN=ORIGINAL_SENTINEL\n").unwrap();
     let file = home.0.join("workflow.json");
     fs::write(&file, serde_json::to_vec(&harness::workflow()).unwrap()).unwrap();
-    let partial = run_report(home.run(&["workflows", "run", file.to_str().unwrap()]), 4);
+    let partial = run_report(home.run(["workflows", "run", file.to_str().unwrap()]), 4);
     let run = partial.run.unwrap().to_string();
     fs::write(home.0.join("config.toml"), "output='json'\n").unwrap();
     fs::write(
@@ -295,9 +293,9 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
         "TYPESAFE_TOKEN='BROKEN_PRIVATE_VALUE\n",
     )
     .unwrap();
-    assert!(home.run(&["workflows", "show", &run]).status.success());
+    assert!(home.run(["workflows", "show", &run]).status.success());
     fs::write(home.0.join("keys.env"), "TYPESAFE_TOKEN=ROTATED_SENTINEL\n").unwrap();
-    let output = home.run(&[
+    let output = home.run([
         "workflows",
         "resume",
         &run,
@@ -336,7 +334,7 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
     let count = server.count();
     fs::write(home.0.join("keys.env"), "OTHER=unrelated\n").unwrap();
     let replay = run_report(
-        home.run(&["workflows", "resume", &run, "--env-file", "keys.env"]),
+        home.run(["workflows", "resume", &run, "--env-file", "keys.env"]),
         0,
     );
     assert!(replay.replayed);

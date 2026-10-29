@@ -2,7 +2,7 @@
 pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
-use harness::{Home, questions, report};
+use harness::{Home, QUESTIONS, report};
 use nouli_core::{
     config::Config,
     identity::Id,
@@ -35,10 +35,12 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
     for ephemeral in [false, true] {
         let home = Home::create();
         let mut call = command(&home);
-        call.args(["-s", "First run", "-q", &questions()]);
-        if ephemeral {
-            call.arg("--no-session");
-        }
+        call.args([
+            if ephemeral { "whatif" } else { "new" },
+            "First",
+            "First run",
+        ])
+        .args(QUESTIONS);
         let failure = error(call.output().unwrap(), 2, "providers_required");
         let path = home.0.join(".nouli/config.toml");
         assert!(failure.message.contains(path.to_str().unwrap()));
@@ -69,7 +71,7 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
         }
         error(
             command(&home)
-                .args(["-q", &questions(), "--provider", "openai"])
+                .args([&["new", "First"][..], &QUESTIONS, &["--provider", "openai"]].concat())
                 .output()
                 .unwrap(),
             2,
@@ -88,7 +90,7 @@ fn help_invalid_input_inspection_and_resume_do_not_initialize_configuration() {
         vec!["--help"],
         vec!["--version"],
         vec!["--json"],
-        vec!["-q", "invalid json"],
+        vec!["new", "Invalid", "-q", "invalid json"],
         vec!["sessions", "list"],
         vec!["workflows", "resume", &run],
         vec!["workflows", "show", &run],
@@ -101,7 +103,7 @@ fn help_invalid_input_inspection_and_resume_do_not_initialize_configuration() {
         command(&home)
             .arg("--config")
             .arg(&missing)
-            .args(["-q", &questions()])
+            .args([&["new", "First"][..], &QUESTIONS].concat())
             .output()
             .unwrap(),
         2,
@@ -126,32 +128,23 @@ fn configure_default(home: &Home, server: &loopback::Server, suffix: &str) -> st
 }
 #[test]
 fn configured_first_run_persists_and_replays_without_requiring_current_profiles() {
-    let server = loopback::Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = loopback::Server::new(harness::TYPESAFE);
     let home = Home::create();
     let path = configure_default(&home, &server, "");
     let original = std::fs::read(&path).unwrap();
     let args = [
-        "-q",
-        &questions(),
-        "--name",
-        "First",
-        "--request-id",
-        "first-run",
-    ];
-    let first = report(command(&home).args(args).output().unwrap());
-    let continued = report(
-        command(&home)
-            .args(["-q", &questions(), "--session", "First"])
-            .output()
-            .unwrap(),
-    );
+        &["new", "First"][..],
+        &QUESTIONS,
+        &["--request-id", "first-run"],
+    ]
+    .concat();
+    let first = report(command(&home).args(&args).output().unwrap());
+    let continued = report(command(&home).args(["add", "First"]).output().unwrap());
     assert_eq!(first.session, continued.session);
     assert_eq!(std::fs::read(&path).unwrap(), original);
     let database = std::fs::read(path.parent().unwrap().join("ledger.sqlite3")).unwrap();
     std::fs::remove_file(&path).unwrap();
-    let replay = report(command(&home).args(args).output().unwrap());
+    let replay = report(command(&home).args(&args).output().unwrap());
     assert!(replay.replayed);
     assert_eq!(replay.turn, first.turn);
     assert_eq!(server.count(), 2);
@@ -168,9 +161,7 @@ fn configured_first_run_persists_and_replays_without_requiring_current_profiles(
 }
 #[test]
 fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
-    let server = loopback::Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = loopback::Server::new(harness::TYPESAFE);
     for (text, code, exit) in [
         ("output='json'\n", "providers_required", 2),
         ("invalid TOML !", "invalid_configuration_syntax", 2),
@@ -186,7 +177,7 @@ fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
         let output = command(&home)
             .arg("--config")
             .arg(&path)
-            .args(["-q", &questions()])
+            .args([&["new", "First"][..], &QUESTIONS].concat())
             .output()
             .unwrap();
         let failure = error(output, exit, code);
@@ -201,9 +192,7 @@ fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
 
 #[test]
 fn model_selection_shares_one_provider_and_missing_models_fail_before_first_store() {
-    let server = loopback::Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = loopback::Server::new(harness::TYPESAFE);
     let home = Home::create();
     let path = home.0.join("config.toml");
     let config = format!(
@@ -223,25 +212,38 @@ reserved_output_tokens = 256
         server.url
     );
     std::fs::write(&path, &config).unwrap();
-    let failure = error(home.run(&["-q", &questions()]), 2, "model_required");
+    let create = [&["new", "Models"][..], &QUESTIONS].concat();
+    let failure = error(home.run(&create), 2, "model_required");
     assert!(failure.message.contains("default_model") && failure.message.contains("--model"));
     assert!(failure.message.contains(path.to_str().unwrap()));
     assert!(!home.store().exists());
     assert_eq!(server.count(), 0);
+    // Sessions live in a separate store so the workflow checks below still
+    // see no ledger.
+    let sessions = home.0.join("sessions");
     for (model, budget, reserve) in [("a", 4096, 128), ("b", 8192, 256)] {
-        let result = report(home.run(&["-q", &questions(), "--model", model, "--no-session"]));
+        let result = report(
+            home.command_at(&sessions)
+                .args([&["new", model][..], &QUESTIONS, &["--model", model]].concat())
+                .output()
+                .unwrap(),
+        );
         assert_eq!(result.manifest.budget, budget);
         assert_eq!(result.manifest.reserved_output_tokens, reserve);
     }
-    let result = report(home.run(&[
-        "-q",
-        &questions(),
-        "--model",
-        "unlisted",
-        "--context-budget",
-        "2048",
-        "--no-session",
-    ]));
+    let result = report(
+        home.command_at(&sessions)
+            .args(
+                [
+                    &["new", "unlisted"][..],
+                    &QUESTIONS,
+                    &["--model", "unlisted", "--context-budget", "2048"],
+                ]
+                .concat(),
+            )
+            .output()
+            .unwrap(),
+    );
     assert_eq!(result.manifest.budget, 2048);
     assert_eq!(result.manifest.reserved_output_tokens, 0);
     assert!(!home.store().exists());
@@ -249,7 +251,7 @@ reserved_output_tokens = 256
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     error(
-        home.run(&["workflows", "run", file.to_str().unwrap()]),
+        home.run(["workflows", "run", file.to_str().unwrap()]),
         2,
         "model_required",
     );
@@ -259,17 +261,18 @@ reserved_output_tokens = 256
     }
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let ephemeral = harness::run_report(
-        home.run(&["workflows", "run", file.to_str().unwrap(), "--no-session"]),
+        home.run(["workflows", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert_eq!(ephemeral.status, nouli_core::workflow::RunStatus::Completed);
     assert!(!home.store().exists());
-    let result = harness::run_report(home.run(&["workflows", "run", file.to_str().unwrap()]), 0);
+    let result = harness::run_report(home.run(["workflows", "run", file.to_str().unwrap()]), 0);
     assert_eq!(result.status, nouli_core::workflow::RunStatus::Completed);
     let calls = server.calls.lock().unwrap();
     assert_eq!(calls[0]["model"], "a");
     assert_eq!(calls[1]["model"], "b");
     assert_eq!(calls[2]["model"], "unlisted");
+    assert_eq!(calls[3]["model"], "a");
     assert_eq!(std::fs::read_to_string(path).unwrap(), config);
 }
 #[test]
@@ -281,10 +284,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
         {
             (503, "{}".into())
         } else {
-            (
-                200,
-                include_str!("../../fixtures/providers/typesafe/response.json").into(),
-            )
+            (200, harness::TYPESAFE.into())
         }
     });
     let home = Home::create();
@@ -342,7 +342,10 @@ fn setup_write_failure_reports_path_and_never_creates_a_ledger() {
     let home = Home::create();
     std::fs::write(home.0.join(".nouli"), "existing file").unwrap();
     // Loading discovers that .nouli cannot be traversed, without changing it.
-    let result = command(&home).args(["-q", &questions()]).output().unwrap();
+    let result = command(&home)
+        .args([&["new", "First"][..], &QUESTIONS].concat())
+        .output()
+        .unwrap();
     assert_eq!(result.status.code(), Some(2));
     let envelope: ResultEnvelope = serde_json::from_slice(&result.stdout).unwrap();
     let Report::Error(failure) = envelope.result else {
@@ -366,7 +369,10 @@ fn a_preexisting_empty_ledger_still_gets_configuration_path_guidance() {
     );
     let before = std::fs::read(store.join("ledger.sqlite3")).unwrap();
     let failure = error(
-        command(&home).args(["-q", &questions()]).output().unwrap(),
+        command(&home)
+            .args([&["new", "First"][..], &QUESTIONS].concat())
+            .output()
+            .unwrap(),
         2,
         "providers_required",
     );
@@ -383,9 +389,7 @@ fn a_preexisting_empty_ledger_still_gets_configuration_path_guidance() {
 
 #[test]
 fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_key() {
-    let server = loopback::Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = loopback::Server::new(harness::TYPESAFE);
     let home = Home::create();
     let path = configure_default(&home, &server, "api_key_env='FROZEN_TEST_KEY'\n");
     drop(
@@ -395,9 +399,14 @@ fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_ke
         )
         .unwrap(),
     );
-    let args = ["-q", &questions(), "--request-id", "existing-credentials"];
+    let args = [
+        &["new", "Existing"][..],
+        &QUESTIONS,
+        &["--request-id", "existing-credentials"],
+    ]
+    .concat();
     let failure = error(
-        command(&home).args(args).output().unwrap(),
+        command(&home).args(&args).output().unwrap(),
         3,
         "credential_unavailable",
     );
@@ -408,13 +417,13 @@ fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_ke
     assert_eq!(server.count(), 0);
     let result = report(
         command(&home)
-            .args(args)
+            .args(&args)
             .arg("--retry-interrupted")
             .env("FROZEN_TEST_KEY", "PRIVATE_SENTINEL_VALUE")
             .output()
             .unwrap(),
     );
-    let replay = report(command(&home).args(args).output().unwrap());
+    let replay = report(command(&home).args(&args).output().unwrap());
     assert!(replay.replayed && replay.turn == result.turn);
     assert_eq!(server.count(), 1);
 }
@@ -428,10 +437,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
         {
             (503, "{}".into())
         } else {
-            (
-                200,
-                include_str!("../../fixtures/providers/typesafe/response.json").into(),
-            )
+            (200, harness::TYPESAFE.into())
         }
     });
     let home = Home::create();

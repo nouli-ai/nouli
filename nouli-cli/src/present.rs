@@ -1,0 +1,119 @@
+//! Human text for a finished turn, from the report plus the session's history.
+use crate::{
+    render::{
+        RenderError, clean,
+        turn::{self, DIM, Header, Paint},
+    },
+    turns::fact_counts,
+};
+use nouli_core::{
+    context::ContextUpdate,
+    history::{FinalizedTurn, SourcePoint},
+    protocol::{ErrorReport, TurnReport},
+    storage::{Ledger, OpenMode},
+};
+use std::{io::Write, path::Path};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub(crate) enum PresentError {
+    #[error(transparent)]
+    Render(#[from] RenderError),
+    #[error("cannot read the session history")]
+    History(ErrorReport),
+}
+
+/// The turns that came before this one, oldest first, and how many of them
+/// belong to the session itself.
+fn earlier(store: &Path, report: &TurnReport) -> Result<(Vec<FinalizedTurn>, usize), PresentError> {
+    let sources = match (report.session, report.turn) {
+        (Some(session), Some(turn)) => vec![SourcePoint {
+            session,
+            frontier: vec![turn],
+        }],
+        _ => report.manifest.sources.clone(),
+    };
+    if sources.is_empty() {
+        return Ok((vec![], 0));
+    }
+    let history = Ledger::open(store, OpenMode::ReadOnlyExisting)
+        .map_err(|error| PresentError::History(error.report()))
+        .and_then(|ledger| {
+            ledger.ancestry(&sources).map_err(|error| {
+                PresentError::History(nouli_core::engine::EngineError::Turn(error).report())
+            })
+        })?;
+    let own = report
+        .session
+        .map(|session| {
+            history
+                .iter()
+                .filter(|turn| turn.session == session)
+                .count()
+        })
+        .unwrap_or(0);
+    Ok((
+        history
+            .into_iter()
+            .filter(|turn| Some(turn.id) != report.turn)
+            .collect(),
+        own,
+    ))
+}
+
+/// Writes a turn as bars and changes. `updates` are the turn's caller updates,
+/// which tell how many facts it recorded or replaced.
+pub(crate) fn turn_text(
+    sink: &mut impl Write,
+    report: &TurnReport,
+    updates: &[ContextUpdate],
+    store: &Path,
+    color: bool,
+) -> Result<(), PresentError> {
+    let (history, own) = earlier(store, report)?;
+    let previous = |id: &str| {
+        history.iter().rev().find_map(|turn| {
+            turn.outcome
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.question_id() == id)
+        })
+    };
+    let (facts, replaced) = fact_counts(updates);
+    let header = Header {
+        turn: report.turn.map(|_| own),
+        facts,
+        replaced,
+        questions: report.questions.len(),
+        reasked: report
+            .questions
+            .iter()
+            .filter(|question| previous(&question.id).is_some())
+            .count(),
+    };
+    turn::write(
+        sink,
+        &header,
+        &report.questions,
+        &report.outcome.outcomes,
+        previous,
+        color,
+    )?;
+    let mut line = format!(
+        "  {}/{}",
+        clean(&report.outcome.provider.provider),
+        clean(&report.outcome.provider.model)
+    );
+    if let Some(session) = report.session {
+        line.push_str(&format!(" · session {session}"));
+    }
+    if let Some(turn) = report.turn {
+        line.push_str(&format!(
+            " · turn {turn}{}",
+            if report.replayed { " (replayed)" } else { "" }
+        ));
+    }
+    writeln!(sink, "{}", Paint(color).apply(DIM, &line)).map_err(RenderError::from)?;
+    sink.flush().map_err(RenderError::from)?;
+    Ok(())
+}

@@ -42,13 +42,13 @@ pub struct Fact {
     pub source_session: Option<Id>,
 }
 
-fn record(key: String, text: &str) -> Result<ContextRecord, FactError> {
+fn record(id: Id, key: String, text: &str) -> Result<ContextRecord, FactError> {
     let text = text.trim();
     if text.is_empty() {
         return Err(FactError::Empty);
     }
     Ok(ContextRecord {
-        id: Id::generate(),
+        id,
         key,
         value: Data::new(serde_json::Value::String(text.to_owned()))
             .map_err(|_| FactError::Empty)?,
@@ -58,18 +58,28 @@ fn record(key: String, text: &str) -> Result<ContextRecord, FactError> {
 
 /// Appends a new fact. The text is trimmed; empty text is rejected.
 pub fn append(text: &str) -> Result<ContextUpdate, FactError> {
-    let id = Id::generate();
-    let mut record = record(format!("{KEY_PREFIX}{id}"), text)?;
-    record.id = id;
-    Ok(ContextUpdate::Append { record })
+    append_with(Id::generate(), text)
+}
+
+/// Appends a fact under a chosen record ID. Callers that replay a request use
+/// IDs derived from the request, so the repeated request has the same intent.
+pub fn append_with(id: Id, text: &str) -> Result<ContextUpdate, FactError> {
+    Ok(ContextUpdate::Append {
+        record: record(id, format!("{KEY_PREFIX}{id}"), text)?,
+    })
 }
 
 /// Replaces a fact's text, keeping its key and number. The earlier version
 /// stays in the ledger.
 pub fn replace(fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
+    replace_with(Id::generate(), fact, text)
+}
+
+/// Replaces a fact with a record of a chosen ID; see [`append_with`].
+pub fn replace_with(id: Id, fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     Ok(ContextUpdate::Supersede {
         targets: vec![fact.record],
-        replacement: record(fact.key.clone(), text)?,
+        replacement: record(id, fact.key.clone(), text)?,
         pinned: None,
     })
 }

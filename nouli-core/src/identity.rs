@@ -22,6 +22,16 @@ impl Id {
     pub fn generate() -> Self {
         Self(Uuid::now_v7())
     }
+
+    /// A valid ID computed from `seed`, so a repeated request can repeat the
+    /// IDs it names. Distinct seeds give distinct IDs; the timestamp field is zero.
+    pub fn derived(seed: &str) -> Self {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(seed.as_bytes());
+        let mut random = [0u8; 10];
+        random.copy_from_slice(&digest[..10]);
+        Self(uuid::Builder::from_unix_timestamp_millis(0, &random).into_uuid())
+    }
 }
 
 impl TryFrom<String> for Id {
@@ -88,6 +98,14 @@ pub enum SessionSelector {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn derived_ids_repeat_for_a_seed_and_stay_valid() {
+        let first = Id::derived("request/fact/0");
+        assert_eq!(first, Id::derived("request/fact/0"));
+        assert_ne!(first, Id::derived("request/fact/1"));
+        assert_eq!(Id::try_from(first.to_string()), Ok(first));
+    }
+
     use super::*;
 
     #[test]

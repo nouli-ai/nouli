@@ -141,6 +141,6 @@ pub(crate) fn annotate_envelope(
                 }
             }
         }
-        Report::Turn(_) => {}
+        Report::Turn(_) | Report::Session(_) => {}
     }
 }

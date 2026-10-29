@@ -10,7 +10,7 @@ use crate::{
     data::Data,
     decision::{CONTRACT_VERSION, Question},
     history::{EvaluationManifest, SourcePoint},
-    identity::Id,
+    identity::{Id, SessionName},
     outcome::{Confidence, ProviderIdentity, TurnOutcome},
     workflow::{
         NodeStatus, RunStatus,
@@ -54,6 +54,16 @@ pub struct TurnReport {
     pub outcome: TurnOutcome,
     pub manifest: EvaluationManifest,
     pub replayed: bool,
+}
+
+/// A session created without running a turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionReport {
+    pub session: Id,
+    pub name: Option<SessionName>,
+    /// The captured source points of a branch or blend; empty for a new session.
+    pub sources: Vec<SourcePoint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +147,7 @@ pub struct RunReport {
 pub enum Report {
     Turn(Box<TurnReport>),
     Run(RunReport),
+    Session(SessionReport),
     Error(ErrorReport),
 }
 
@@ -207,7 +218,7 @@ fn terminal_matches(result: &ResultEnvelope, run: Option<Id>) -> bool {
             .is_none_or(|reference| reference.run == run)
         && match &result.result {
             Report::Run(report) => report.run == run,
-            Report::Turn(_) => run.is_none(),
+            Report::Turn(_) | Report::Session(_) => run.is_none(),
             Report::Error(_) => true,
         }
 }

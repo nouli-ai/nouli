@@ -3,7 +3,7 @@ pub mod harness;
 #[path = "support/loopback.rs"]
 pub mod loopback;
 
-use harness::{Home, questions, report};
+use harness::{Home, QUESTIONS, report};
 use nouli_core::{
     history::{ModelSelection, SourceSelection},
     identity::{SessionName, SessionSelector},
@@ -30,29 +30,24 @@ fn command(home: &Home) -> Command {
 
 #[test]
 fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
-    let server = loopback::Server::new(include_str!(
-        "../../fixtures/providers/typesafe/response.json"
-    ));
+    let server = loopback::Server::new(harness::TYPESAFE);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let questions = questions();
     for name in ["Travel", "Appointments"] {
-        report(home.run(&["-s", name, "-q", &questions, "--name", name]));
-        report(home.run(&["-s", "More evidence", "-q", &questions, "--session", name]));
+        report(home.run([&["new", name, name][..], &QUESTIONS].concat()));
+        report(home.run(["add", name, "More evidence"]));
     }
-    let combined = report(home.run(&[
-        "-s",
-        "Combine histories",
-        "-q",
-        &questions,
-        "--from",
-        "Travel",
-        "--from",
-        "Appointments",
-        "--name",
-        "Combined",
-    ]));
-    let initial = text(home.run(&["view", "--session", "Combined"]));
+    let combined = report(
+        home.run(
+            [
+                &["new", "Combined", "Combine histories"][..],
+                &QUESTIONS,
+                &["--from", "Travel", "--from", "Appointments"],
+            ]
+            .concat(),
+        ),
+    );
+    let initial = text(home.run(["view", "--session", "Combined"]));
     assert!(initial.starts_with("Session: Combined ("));
     assert!(initial.contains("┌─ Travel"));
     assert!(initial.contains("┌─ Appointments"));
@@ -69,15 +64,8 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert!(initial.contains("Expected score:"));
     assert!(!initial.contains('\u{1b}'));
 
-    report(home.run(&[
-        "-s",
-        "Later source evidence",
-        "-q",
-        &questions,
-        "--session",
-        "Travel",
-    ]));
-    report(home.run(&["-s", "Unrelated", "-q", &questions, "--name", "Unrelated"]));
+    report(home.run(["add", "Travel", "Later source evidence"]));
+    report(home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTIONS].concat()));
     let calls = server.count();
     // Store-only discovery must tolerate removed/invalid provider definitions.
     let config = "output = 'json'\n[providers.local]\nprotocol = 'removed-protocol'\n";
@@ -98,7 +86,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
             assert_eq!(text(home.run(&args)), initial);
         }
     }
-    let mermaid = text(home.run(&["view", "--session", "Combined", "--mermaid"]));
+    let mermaid = text(home.run(["view", "--session", "Combined", "--mermaid"]));
     assert!(mermaid.starts_with("%% Nouli session: Combined ("));
     assert!(mermaid.contains("\nflowchart TD\n"));
     assert_eq!(mermaid.matches("[\"<b>Travel").count(), 2);
@@ -127,7 +115,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
         )
         .unwrap();
     drop(ledger);
-    let inherited = text(home.run(&["view", "--session", "Inherited"]));
+    let inherited = text(home.run(["view", "--session", "Inherited"]));
     assert_eq!(inherited.matches("▶ ").count(), 15);
     assert!(!inherited.contains("[latest]"));
     assert!(!inherited.contains("No finalized turns"));

@@ -2,7 +2,7 @@ use super::loopback::Server;
 use nouli_core::{
     context::ContextUpdate,
     data::Input,
-    decision::TurnRequest,
+    decision::{AnswerSpace, Criterion, Question, TurnRequest},
     history::{EvaluationRequest, ModelSelection, SessionSelection},
     identity::Id,
     protocol::{Report, ResultEnvelope, TurnReport},
@@ -47,16 +47,15 @@ impl Home {
             .arg(store);
         cmd
     }
-    pub fn run(&self, args: &[&str]) -> Output {
+    pub fn run<I, S>(&self, args: I) -> Output
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
         self.command().args(args).output().unwrap()
     }
-    pub fn request(
-        &self,
-        path: &str,
-        selection: SessionSelection,
-        marker: &str,
-        updates: Vec<ContextUpdate>,
-    ) -> PathBuf {
+    /// Writes an `--input` request file. It names no session: the verb supplies it.
+    pub fn request(&self, path: &str, marker: &str, updates: Vec<ContextUpdate>) -> PathBuf {
         let mut turn = turn();
         turn.state.push(Input::Text {
             text: marker.into(),
@@ -64,14 +63,16 @@ impl Home {
         let request = EvaluationRequest {
             standing: Default::default(),
             turn,
-            session: selection,
+            session: SessionSelection::New { name: None },
             updates,
             required_records: vec![],
             model: ModelSelection::default(),
             request_id: None,
         };
+        let mut value = serde_json::to_value(&request).unwrap();
+        value.as_object_mut().unwrap().remove("session");
         let path = self.0.join(path);
-        std::fs::write(&path, serde_json::to_vec_pretty(&request).unwrap()).unwrap();
+        std::fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
         path
     }
 }
@@ -83,19 +84,38 @@ impl Drop for Home {
         }
     }
 }
+/// The TypeSafe response for [`turn`] and [`QUESTIONS`]: score levels are plain
+/// labels, which is all the compact question grammar can write.
+pub const TYPESAFE: &str =
+    include_str!("../../../fixtures/providers/typesafe/compact-response.json");
+
+/// Writes score levels as plain labels so the question matches the compact grammar.
+fn plain(questions: &mut [Question]) {
+    for question in questions {
+        if let AnswerSpace::Score { levels } = &mut question.answer_space {
+            for level in levels {
+                if let Criterion::Detailed { label, .. } = level {
+                    *level = Criterion::Text(std::mem::take(label));
+                }
+            }
+        }
+    }
+}
 pub fn turn() -> TurnRequest {
     let mut turn: TurnRequest = serde_json::from_str(include_str!(
         "../../../fixtures/contracts/decision-request.json"
     ))
     .unwrap();
     turn.questions.truncate(3);
+    plain(&mut turn.questions);
     turn
 }
 pub fn report(output: Output) -> TurnReport {
     assert!(
         output.status.success(),
-        "exit={:?},stderr={}",
+        "exit={:?},stdout={},stderr={}",
         output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output.stderr.is_empty());
@@ -105,14 +125,21 @@ pub fn report(output: Output) -> TurnReport {
     };
     *turn
 }
-pub fn questions() -> String {
-    serde_json::to_string(&turn().questions).unwrap()
-}
+/// The first three fixture questions in the compact grammar.
+pub const QUESTIONS: [&str; 6] = [
+    "-q",
+    "travel: Which route? [train, flight]",
+    "-q",
+    "on_time: Will the train arrive on time?",
+    "-q",
+    "quality: Rate the route quality <Poor, Adequate, Excellent>",
+];
 pub fn workflow() -> nouli_core::workflow::WorkflowSpec {
     let mut definition: nouli_core::workflow::WorkflowSpec =
         serde_json::from_str(include_str!("../../../fixtures/contracts/workflow.json")).unwrap();
     for node in &mut definition.nodes {
         node.turn.questions.truncate(3);
+        plain(&mut node.turn.questions);
         node.turn.state.push(Input::Text {
             text: format!("NODE:{}", node.id),
         });

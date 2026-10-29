@@ -60,7 +60,7 @@ fn invoke(protocol: &str, response: Value, status: u16) -> (std::process::Output
     home.configure(&server, protocol, false);
     let path = home.0.join("food.json");
     std::fs::write(&path, serde_json::to_vec(&food()).unwrap()).unwrap();
-    let output = home.run(&["--input", path.to_str().unwrap(), "--no-session"]);
+    let output = home.run(["new", "Food", "--input", path.to_str().unwrap()]);
     (output, server.count())
 }
 #[test]
@@ -227,20 +227,23 @@ fn every_adapter_receives_compact_selected_outputs_and_preserves_full_original_l
         };
         let json = home.0.join("first.json");
         let toon = home.0.join("first.toon");
-        std::fs::write(&json, serde_json::to_vec(&request).unwrap()).unwrap();
-        std::fs::write(&toon, codec::encode_toon(&request).unwrap()).unwrap();
-        let first = report(home.run(&["--input", json.to_str().unwrap()]));
-        let replay = report(home.run(&["--input", toon.to_str().unwrap()]));
+        // The verb supplies the session, so the request file names none.
+        let mut file = serde_json::to_value(&request).unwrap();
+        file.as_object_mut().unwrap().remove("session");
+        std::fs::write(&json, serde_json::to_vec(&file).unwrap()).unwrap();
+        std::fs::write(&toon, codec::encode_toon(&file).unwrap()).unwrap();
+        let first = report(home.run(["new", "Origin", "--input", json.to_str().unwrap()]));
+        let replay = report(home.run(["new", "Origin", "--input", toon.to_str().unwrap()]));
         assert!(replay.replayed);
         assert_eq!(replay.turn, first.turn);
         assert_eq!(server.count(), 1);
         let follow = home.0.join("follow.json");
         std::fs::write(&follow, serde_json::to_vec(&food()).unwrap()).unwrap();
-        let second = report(home.run(&[
+        let second = report(home.run([
+            "add",
+            &first.session.unwrap().to_string(),
             "--input",
             follow.to_str().unwrap(),
-            "--session",
-            &first.session.unwrap().to_string(),
             "--context-budget",
             "1800",
         ]));

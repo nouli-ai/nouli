@@ -33,7 +33,7 @@ pub(crate) fn selector(value: &str) -> Result<SessionSelector, IdentityError> {
         Err(_) => SessionName::try_from(value.to_owned()).map(SessionSelector::Name),
     }
 }
-fn name(value: &str) -> Result<SessionName, IdentityError> {
+pub(crate) fn name(value: &str) -> Result<SessionName, IdentityError> {
     SessionName::try_from(value.to_owned())
 }
 pub(crate) fn source(value: &str) -> Result<SourceSelection, IdentityError> {

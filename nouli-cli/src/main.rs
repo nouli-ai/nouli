@@ -7,9 +7,11 @@ mod commands;
 mod evaluate;
 mod input;
 mod inspect;
+mod present;
 mod render;
 mod selection;
 mod settings;
+mod turns;
 mod view;
 mod workflows;
 
@@ -21,8 +23,6 @@ struct Args {
     command: Option<commands::Command>,
     #[command(flatten)]
     output: render::OutputArgs,
-    #[command(flatten)]
-    decision: input::DecisionArgs,
     /// User configuration file (defaults to ~/.nouli/config.toml).
     #[arg(long, value_name = "FILE", global = true)]
     config: Option<std::path::PathBuf>,
@@ -34,7 +34,7 @@ struct Args {
     store: Option<std::path::PathBuf>,
 }
 
-fn render_error(
+pub(crate) fn render_error(
     args: &Args,
     configured: nouli_core::config::OutputFormat,
     error: nouli_core::protocol::ErrorReport,
@@ -59,106 +59,60 @@ fn render_error(
 fn main() -> ExitCode {
     match Args::try_parse() {
         Ok(args) => {
-            if let Some(command) = &args.command {
-                if args.decision.has_options() {
-                    return render_error(
-                        &args,
-                        nouli_core::config::OutputFormat::Auto,
-                        inspect::input_error(
-                            "Use command options instead of root decision inputs or model overrides",
-                        ),
-                    );
-                }
-                let full = matches!(command,commands::Command::Workflows {command} if workflows::needs_config(command));
-                let settings = match if full {
-                    settings::load(&args)
-                } else {
-                    settings::load_inspection(&args)
-                } {
-                    Ok(settings) => settings,
-                    Err(error) => {
-                        return render_error(
-                            &args,
-                            nouli_core::config::OutputFormat::Auto,
-                            settings::error(&args, error),
-                        );
-                    }
-                };
-                let graph = match command {
-                    commands::Command::Inspect(inspect::Command::View(view)) => Some(view),
-                    _ => None,
-                };
-                let format = match if let Some(view) = graph {
-                    view::format(&args.output, view.mermaid)
-                } else {
-                    render::resolve(
-                        &args.output,
-                        settings.config.output,
-                        io::stdout().is_terminal(),
-                    )
-                } {
-                    Ok(format) => format,
-                    Err(_) if graph.is_some_and(|view| view.mermaid) => {
-                        return render_error(
-                            &args,
-                            settings.config.output,
-                            inspect::input_error(
-                                "--mermaid cannot be combined with output format options",
-                            ),
-                        );
-                    }
-                    Err(_) if graph.is_some() => {
-                        return render_error(
-                            &args,
-                            settings.config.output,
-                            inspect::input_error(
-                                "Session graphs support text only. Use --mermaid for a Mermaid diagram, or nouli sessions export for JSON or TOON",
-                            ),
-                        );
-                    }
-                    Err(_) => return ExitCode::from(2),
-                };
-                match command {
-                    commands::Command::Workflows { command } => {
-                        return ExitCode::from(workflows::run(command, &settings, format));
-                    }
-                    commands::Command::Inspect(command) => {
-                        if format == render::Format::Jsonl {
+            let Some(command) = &args.command else {
+                // A bare invocation prints help. Settings flags are still
+                // validated, and output flags without a command are a usage error.
+                let outputs = args.output.json || args.output.jsonl || args.output.format.is_some();
+                if args.config.is_some() || args.store.is_some() || outputs {
+                    let settings = match settings::load(&args) {
+                        Ok(settings) => settings,
+                        Err(error) => {
                             return render_error(
                                 &args,
-                                settings.config.output,
-                                inspect::input_error("Inspection supports text, JSON, or TOON"),
+                                nouli_core::config::OutputFormat::Auto,
+                                settings::error(&args, error),
                             );
                         }
-                        return match inspect::run(
-                            command,
-                            &settings.store,
-                            &mut io::stdout().lock(),
-                            format,
-                            render::color_enabled(io::stdout().is_terminal()),
-                        ) {
-                            Ok(()) => ExitCode::SUCCESS,
-                            Err(error) if error.output_failed() => ExitCode::from(6),
-                            Err(error) => {
-                                render_error(&args, settings.config.output, error.report())
-                            }
-                        };
+                    };
+                    if outputs {
+                        return render_error(
+                            &args,
+                            settings.config.output,
+                            nouli_core::protocol::ErrorReport {
+                                category: nouli_core::protocol::ErrorCategory::Input,
+                                code: "command_required".into(),
+                                message: "Choose a command; see --help".into(),
+                                retryable: false,
+                            },
+                        );
                     }
                 }
-            }
-            if !args.decision.has_options()
-                && args.config.is_none()
-                && args.store.is_none()
-                && !args.output.json
-                && !args.output.jsonl
-                && args.output.format.is_none()
-            {
                 return match Args::command().write_long_help(&mut io::stdout().lock()) {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(_) => ExitCode::from(6),
                 };
+            };
+            match command {
+                commands::Command::New(verb) => {
+                    return evaluate::command(&args, turns::Verb::New(verb));
+                }
+                commands::Command::Add(verb) => {
+                    return evaluate::command(&args, turns::Verb::Add(verb));
+                }
+                commands::Command::Ask(verb) => {
+                    return evaluate::command(&args, turns::Verb::Ask(verb));
+                }
+                commands::Command::Whatif(verb) => {
+                    return evaluate::command(&args, turns::Verb::Whatif(verb));
+                }
+                commands::Command::Workflows { .. } | commands::Command::Inspect(_) => {}
             }
-            let mut settings = match settings::load(&args) {
+            let full = matches!(command,commands::Command::Workflows {command} if workflows::needs_config(command));
+            let settings = match if full {
+                settings::load(&args)
+            } else {
+                settings::load_inspection(&args)
+            } {
                 Ok(settings) => settings,
                 Err(error) => {
                     return render_error(
@@ -168,67 +122,63 @@ fn main() -> ExitCode {
                     );
                 }
             };
-            if !args.decision.has_input() {
-                if args.decision.has_options()
-                    || args.output.json
-                    || args.output.jsonl
-                    || args.output.format.is_some()
-                {
-                    return render_error(
-                        &args,
-                        settings.config.output,
-                        evaluate::input_error(&input::InputError::Missing),
-                    );
-                }
-                return match Args::command().write_long_help(&mut io::stdout().lock()) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(_) => ExitCode::from(6),
-                };
-            }
-            let request = match args.decision.request(&mut io::stdin().lock()) {
-                Ok(request) => request,
-                Err(error) => {
-                    return render_error(
-                        &args,
-                        settings.config.output,
-                        evaluate::input_error(&error),
-                    );
-                }
+            let graph = match command {
+                commands::Command::Inspect(inspect::Command::View(view)) => Some(view),
+                _ => None,
             };
-            if let Err(error) = settings
-                .load_environment()
-                .and_then(|()| settings.initialize())
-            {
-                return render_error(&args, settings.config.output, error);
-            }
-            let overrides = evaluate::overrides(&args.decision, &settings);
-            if let Err(error) = settings::preflight::turn(&settings, &overrides, &request) {
-                return render_error(&args, settings.config.output, error.report(&settings));
-            }
-            let format = match render::resolve(
-                &args.output,
-                settings.config.output,
-                io::stdout().is_terminal(),
-            ) {
+            let format = match if let Some(view) = graph {
+                view::format(&args.output, view.mermaid)
+            } else {
+                render::resolve(
+                    &args.output,
+                    settings.config.output,
+                    io::stdout().is_terminal(),
+                )
+            } {
                 Ok(format) => format,
+                Err(_) if graph.is_some_and(|view| view.mermaid) => {
+                    return render_error(
+                        &args,
+                        settings.config.output,
+                        inspect::input_error(
+                            "--mermaid cannot be combined with output format options",
+                        ),
+                    );
+                }
+                Err(_) if graph.is_some() => {
+                    return render_error(
+                        &args,
+                        settings.config.output,
+                        inspect::input_error(
+                            "Session graphs support text only. Use --mermaid for a Mermaid diagram, or nouli sessions export for JSON or TOON",
+                        ),
+                    );
+                }
                 Err(_) => return ExitCode::from(2),
             };
-            let runtime = match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(runtime) => runtime,
-                Err(_) => return ExitCode::from(6),
+            if let commands::Command::Workflows { command } = command {
+                return ExitCode::from(workflows::run(command, &settings, format));
+            }
+            let commands::Command::Inspect(command) = command else {
+                return ExitCode::from(6);
             };
-            let result = runtime.block_on(evaluate::run(&args.decision, &request, &settings));
-            match render::result(
+            if format == render::Format::Jsonl {
+                return render_error(
+                    &args,
+                    settings.config.output,
+                    inspect::input_error("Inspection supports text, JSON, or TOON"),
+                );
+            }
+            match inspect::run(
+                command,
+                &settings.store,
                 &mut io::stdout().lock(),
-                &mut io::stderr().lock(),
                 format,
-                &result,
+                render::color_enabled(io::stdout().is_terminal()),
             ) {
-                Ok(code) => ExitCode::from(code),
-                Err(_) => ExitCode::from(6),
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) if error.output_failed() => ExitCode::from(6),
+                Err(error) => render_error(&args, settings.config.output, error.report()),
             }
         }
         Err(error) => {

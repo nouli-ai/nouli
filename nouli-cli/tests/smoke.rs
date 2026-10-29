@@ -92,7 +92,7 @@ fn explicit_output_modes_never_emit_placeholder_prose_or_create_history() {
                 assert!(
                     String::from_utf8(output.stderr)
                         .unwrap()
-                        .contains("decision_input_required")
+                        .contains("command_required")
                 );
             }
         }
