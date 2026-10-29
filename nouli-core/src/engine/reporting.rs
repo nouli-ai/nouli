@@ -112,10 +112,43 @@ fn turn(error: &TurnError) -> ErrorReport {
 }
 fn config(error: &ConfigError) -> ErrorReport {
     match error {
+        ConfigError::CredentialSource { variable, .. } => ErrorReport {
+            category: Category::Authentication,
+            code: "credential_unavailable".into(),
+            message: format!("Set a valid {variable} environment variable for the selected provider"),
+            retryable: false,
+        },
         ConfigError::MissingCredential | ConfigError::InvalidCredential => {
             message(Category::Authentication, "credential_unavailable")
         }
-        _ => message(Category::Configuration, "invalid_configuration"),
+        ConfigError::NoProviders => ErrorReport {
+            category: Category::Configuration,
+            code: "providers_required".into(),
+            message: "No providers defined. Define a [providers.NAME] section in the configuration, then set default_provider or pass --provider NAME".into(),
+            retryable: false,
+        },
+        ConfigError::MissingProvider => ErrorReport {
+            category: Category::Configuration,
+            code: "provider_required".into(),
+            message: "No provider selected. Set default_provider in the configuration or pass --provider NAME".into(),
+            retryable: false,
+        },
+        ConfigError::MissingModel => ErrorReport {
+            category: Category::Configuration,
+            code: "model_required".into(),
+            message: "No model selected. Set default_model in the configuration, pass --model MODEL, or supply a model in the request".into(),
+            retryable: false,
+        },
+        ConfigError::UnknownProvider => ErrorReport {
+            category: Category::Configuration,
+            code: "unknown_provider".into(),
+            message: "Selected provider is not defined. Add a matching [providers.NAME] section to the configuration".into(),
+            retryable: false,
+        },
+        ConfigError::Read { source, .. } if source.kind() == std::io::ErrorKind::NotFound => message(Category::Configuration, "configuration_not_found"),
+        ConfigError::Read { .. } => message(Category::Configuration, "configuration_unreadable"),
+        ConfigError::Syntax => message(Category::Configuration, "invalid_configuration_syntax"),
+        ConfigError::Invalid(_) => message(Category::Configuration, "invalid_configuration"),
     }
 }
 fn limit(error: &crate::limits::LimitError) -> ErrorReport {
@@ -236,5 +269,50 @@ impl WorkflowEngineError {
             Self::Execution { error, .. } => schedule(error),
             Self::Schedule(error) => schedule(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn configuration_reports_identify_setup_errors_without_echoing_private_details() {
+        for (error, code) in [
+            (ConfigError::NoProviders, "providers_required"),
+            (ConfigError::MissingProvider, "provider_required"),
+            (ConfigError::UnknownProvider, "unknown_provider"),
+            (ConfigError::Syntax, "invalid_configuration_syntax"),
+            (
+                ConfigError::Invalid("PRIVATE_SENTINEL"),
+                "invalid_configuration",
+            ),
+            (
+                ConfigError::Read {
+                    path: "PRIVATE_SENTINEL".into(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "PRIVATE_SENTINEL",
+                    ),
+                },
+                "configuration_unreadable",
+            ),
+            (
+                ConfigError::Read {
+                    path: "PRIVATE_SENTINEL".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                },
+                "configuration_not_found",
+            ),
+        ] {
+            let report = EngineError::Config(error).report();
+            assert_eq!(report.category, Category::Configuration);
+            assert_eq!(report.code, code);
+            assert!(!report.message.contains("PRIVATE_SENTINEL"));
+            assert!(!report.retryable);
+        }
+        let missing = EngineError::Config(ConfigError::MissingProvider).report();
+        assert!(
+            missing.message.contains("default_provider") && missing.message.contains("--provider")
+        );
     }
 }

@@ -192,7 +192,8 @@ mod tests {
     use super::*;
     use crate::{
         config::{
-            ExecutionSettings, OutputFormat, Protocol, ProviderProfile, resolve::ResolvedSettings,
+            ExecutionSettings, ModelSettings, OutputFormat, Protocol, ProviderDefinition,
+            resolve::ResolvedSettings,
         },
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
         data::{Data, Input},
@@ -284,6 +285,7 @@ mod tests {
     fn config() -> Config {
         Config {
             default_provider: Some("fixture".into()),
+            default_model: Some("offline".into()),
             output: OutputFormat::Json,
             store: None,
             execution: ExecutionSettings {
@@ -292,14 +294,18 @@ mod tests {
             },
             providers: BTreeMap::from([(
                 "fixture".into(),
-                ProviderProfile {
+                ProviderDefinition {
                     protocol: Protocol::Typesafe,
                     base_url: "http://127.0.0.1:8080".into(),
-                    model: "offline".into(),
                     api_key_env: None,
-                    context_budget_tokens: Some(100_000),
-                    context_window_tokens: Some(100_000),
-                    reserved_output_tokens: Some(128),
+                    models: BTreeMap::from([(
+                        "offline".into(),
+                        ModelSettings {
+                            context_budget_tokens: Some(100_000),
+                            context_window_tokens: Some(100_000),
+                            reserved_output_tokens: Some(128),
+                        },
+                    )]),
                     max_attempts: None,
                     attempt_timeout_seconds: None,
                 },

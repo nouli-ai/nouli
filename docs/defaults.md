@@ -6,8 +6,8 @@ These values describe implementation defaults, distinct from provider capabiliti
 | --- | --- | --- |
 | Request/result/event contract | Version 1 | CLI request normalization fills omitted turn/workflow versions; other versions fail |
 | Durable selection | New unnamed session | Generated UUIDv7; continuation/names/sources require explicit selection |
-| Default provider/model | No provider selected | Profile/config selection required; chosen profile supplies its model when not overridden |
-| Config/store | `~/.nouli/config.toml`, `~/.nouli` | Explicit config/store overrides; no project discovery |
+| Default provider/model | Neither selected | Set top-level `default_provider` and `default_model`, or supply selection through CLI/request/session/workflow settings |
+| Config/store | `~/.nouli/config.toml`, `~/.nouli` | First evaluation creates a missing default config; explicit overrides, no project discovery |
 | Output | `auto` | Text for terminal, JSON when redirected; explicit format overrides config |
 | Execution parallelism | 4 | Workflow graph limit also defaults to 4; effective ready-node count respects both |
 | Workflow mode | `durable` | `ephemeral` and CLI `--no-session` explicitly select no recording |
@@ -16,7 +16,7 @@ These values describe implementation defaults, distinct from provider capabiliti
 | Backoff | 1 second, doubling | Default three-attempt delays are 1 then 2 seconds, with no jitter |
 | Retry-delay cap | 30 seconds | Recognized Retry-After can increase delay up to cap |
 | Response and CLI file/stdin bounds | 16 MiB each | Checked before accepting oversized content; response streaming remains bounded |
-| Output token reservation | 0 when omitted | Explicit profile reservation reduces total/per-question input capacity |
+| Output token reservation | 0 when omitted | Explicit model reservation reduces total/per-question input capacity |
 | Unknown-model budget | None | Explicit budget/window required; known registry caps otherwise apply |
 | Capacity replan | floor(3/4 of prior estimated input) plus reserve | Uses remaining attempt allowance only if rebuilt context actually becomes smaller; protected material remains intact |
 | Byte counter | ceil(UTF-8 bytes / 4) | Estimate only; adds envelope 32 (TypeSafe/OpenAI) or 48 (Router), plus 16 per question and serialized complete-question estimate |

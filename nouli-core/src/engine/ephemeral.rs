@@ -169,12 +169,17 @@ mod tests {
         let mut config =
             Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap();
         let mut profile = config.providers["local"].clone();
-        profile.model = "offline".into();
-        profile.context_budget_tokens = Some(100_000);
-        profile.context_window_tokens = Some(100_000);
-        profile.reserved_output_tokens = Some(128);
+        profile.models.insert(
+            "offline".into(),
+            crate::config::ModelSettings {
+                context_budget_tokens: Some(100_000),
+                context_window_tokens: Some(100_000),
+                reserved_output_tokens: Some(128),
+            },
+        );
         config.providers = BTreeMap::from([("fixture".into(), profile)]);
         config.default_provider = Some("fixture".into());
+        config.default_model = Some("offline".into());
         config.execution.max_attempts = 1;
         config
     }
@@ -372,6 +377,9 @@ mod tests {
         small
             .providers
             .get_mut("fixture")
+            .unwrap()
+            .models
+            .get_mut("offline")
             .unwrap()
             .context_budget_tokens = Some(2000);
         let ephemeral = engine(false);

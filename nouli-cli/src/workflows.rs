@@ -47,6 +47,8 @@ fn id(value: &str) -> Result<Id, nouli_core::identity::IdentityError> {
 pub(crate) enum WorkflowCliError {
     #[error(transparent)]
     Input(#[from] boundary::InputError),
+    #[error("configuration setup failed")]
+    Setup(ErrorReport),
     #[error(transparent)]
     Engine(#[from] WorkflowEngineError),
     #[error(transparent)]
@@ -62,6 +64,7 @@ impl WorkflowCliError {
     fn envelope(&self) -> ResultEnvelope {
         let report = match self {
             Self::Input(error) => crate::evaluate::input_error(error),
+            Self::Setup(error) => error.clone(),
             Self::Engine(error) => error.report(),
             Self::Worker(WorkerError::Storage(error)) => error.report(),
             Self::Worker(_) => ErrorReport {
@@ -112,12 +115,8 @@ async fn execute(
     command: &Command,
     settings: &Settings,
     format: Format,
+    request: Option<nouli_core::workflow::WorkflowRequest>,
 ) -> Result<ResultEnvelope, WorkflowCliError> {
-    let request = if let Command::Run(args) = command {
-        Some(args.request(&mut std::io::stdin().lock())?)
-    } else {
-        None
-    };
     if let Command::Resume { run } = command {
         let reader = LedgerWorker::open(settings.store.clone(), OpenMode::ReadOnlyExisting).await?;
         let run = *run;
@@ -153,9 +152,9 @@ async fn execute(
     });
     let cancel = CancellationToken::new();
     let sink = Arc::new(
-        events::Output::new(format == Format::Jsonl, cancel.clone()).map_err(|error| {
-            nouli_core::protocol::stream::StreamError::Sink { run: None, error }
-        })?,
+        events::Output::new(format == Format::Jsonl, cancel.clone())
+            .map_err(|error| nouli_core::protocol::stream::StreamError::Sink { run: None, error })?
+            .with_config(settings.config_path.clone()),
     );
     let evaluation = async {
         match command {
@@ -225,22 +224,47 @@ pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 
             Err(error) => output_error(error.report(), format),
         };
     }
-    let result = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(WorkflowCliError::Runtime)
-        .and_then(|runtime| runtime.block_on(execute(command, settings, format)));
+    let mut settings = settings.clone();
+    let prepared = (|| {
+        if let Command::Run(args) = command {
+            let request = args.request(&mut std::io::stdin().lock())?;
+            // Compile before first-run filesystem setup or opening a ledger.
+            nouli_core::workflow::compile::compile(&request.workflow)
+                .map_err(WorkflowEngineError::from)?;
+            settings.initialize().map_err(WorkflowCliError::Setup)?;
+            crate::settings::preflight::workflow(
+                &settings,
+                &args.overrides(&settings.store),
+                &request,
+            )
+            .map_err(|error| WorkflowCliError::Setup(error.report(&settings)))?;
+            Ok(Some(request))
+        } else {
+            Ok(None)
+        }
+    })();
+    let result = prepared.and_then(|request| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(WorkflowCliError::Runtime)
+            .and_then(|runtime| runtime.block_on(execute(command, &settings, format, request)))
+    });
     match result {
         Ok(envelope) if format == Format::Jsonl => render::exit_code(&envelope),
-        Ok(envelope) => render::result(
-            &mut std::io::stdout().lock(),
-            &mut std::io::stderr().lock(),
-            format,
-            &envelope,
-        )
-        .unwrap_or(6),
+        Ok(mut envelope) => {
+            crate::settings::annotate_envelope(&mut envelope, &settings.config_path);
+            render::result(
+                &mut std::io::stdout().lock(),
+                &mut std::io::stderr().lock(),
+                format,
+                &envelope,
+            )
+            .unwrap_or(6)
+        }
         Err(error) => {
-            let envelope = error.envelope();
+            let mut envelope = error.envelope();
+            crate::settings::annotate_envelope(&mut envelope, &settings.config_path);
             if format == Format::Jsonl && matches!(error, WorkflowCliError::Stream(_)) {
                 if let Report::Error(report) = &envelope.result
                     && render::diagnostic(&mut std::io::stderr().lock(), report).is_err()

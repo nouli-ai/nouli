@@ -39,7 +39,7 @@ pub(crate) struct DecisionArgs {
     pub input_format: Option<Format>,
     #[command(flatten)]
     pub selection: SelectionArgs,
-    /// Override the selected named provider profile.
+    /// Override the selected named provider.
     #[arg(long)]
     pub provider: Option<String>,
     /// Override the requested decision model.

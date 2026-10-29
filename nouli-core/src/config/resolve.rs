@@ -64,7 +64,7 @@ pub struct ResolvedSettings {
 }
 
 /// Layers are ordered highest first. Provider and model overrides are independent
-/// fields. An unspecified model falls back to the chosen profile's model.
+/// fields, including the final configuration defaults layer.
 pub fn select_model(layers: &[&ModelSelection]) -> ModelSelection {
     ModelSelection {
         provider: layers.iter().find_map(|layer| layer.provider.clone()),
@@ -85,8 +85,13 @@ impl SettingsSnapshot {
             .api_key_env
             .as_ref()
             .map(|name| {
-                let value = lookup(name).ok_or(ConfigError::MissingCredential)?;
-                Credential::new(value)
+                lookup(name)
+                    .ok_or(ConfigError::MissingCredential)
+                    .and_then(Credential::new)
+                    .map_err(|source| ConfigError::CredentialSource {
+                        variable: name.clone(),
+                        source: Box::new(source),
+                    })
             })
             .transpose()?;
         Ok(ResolvedSettings {
@@ -129,20 +134,32 @@ impl Config {
         home: &Path,
     ) -> Result<SettingsSnapshot, ConfigError> {
         self.validate()?;
+        if self.providers.is_empty() {
+            return Err(ConfigError::NoProviders);
+        }
         let default = ModelSelection {
             provider: self.default_provider.clone(),
-            model: None,
+            model: self.default_model.clone(),
         };
         let selection = select_model(&[&overrides.selection, request, session, &default]);
         let name = selection.provider.ok_or(ConfigError::MissingProvider)?;
-        let mut profile = self
+        let provider = self
             .providers
             .get(&name)
-            .ok_or(ConfigError::UnknownProvider)?
-            .clone();
-        if let Some(model) = selection.model {
-            profile.model = model;
-        }
+            .ok_or(ConfigError::UnknownProvider)?;
+        let model = selection.model.ok_or(ConfigError::MissingModel)?;
+        let settings = provider.models.get(&model).cloned().unwrap_or_default();
+        let mut profile = ProviderProfile {
+            protocol: provider.protocol,
+            base_url: provider.base_url.clone(),
+            model,
+            api_key_env: provider.api_key_env.clone(),
+            context_budget_tokens: settings.context_budget_tokens,
+            context_window_tokens: settings.context_window_tokens,
+            reserved_output_tokens: settings.reserved_output_tokens,
+            max_attempts: provider.max_attempts,
+            attempt_timeout_seconds: provider.attempt_timeout_seconds,
+        };
         if let Some(budget) = overrides.context_budget_tokens {
             profile.context_budget_tokens = Some(budget);
         }
@@ -217,11 +234,13 @@ mod tests {
                 |_| None,
             )
             .unwrap_err();
-        assert!(matches!(error, ConfigError::MissingCredential));
+        assert!(
+            matches!(error, ConfigError::CredentialSource { variable, source } if variable=="TYPESAFE_API_KEY" && matches!(*source,ConfigError::MissingCredential))
+        );
         let local = RuntimeOverrides {
             selection: ModelSelection {
                 provider: Some("local".into()),
-                model: None,
+                model: Some("english".into()),
             },
             ..Default::default()
         };
@@ -271,7 +290,10 @@ mod tests {
         assert_eq!(resolved.snapshot.store, PathBuf::from("/alternate-store"));
         assert_eq!(resolved.snapshot.execution.max_parallel, 2);
         assert_eq!(resolved.snapshot.profile.context_budget_tokens, Some(4096));
-        assert_eq!(config.providers["custom"].context_budget_tokens, Some(8192));
+        assert_eq!(
+            config.providers["custom"].models["custom-decision-model"].context_budget_tokens,
+            Some(8192)
+        );
         assert_eq!(resolved.snapshot.execution.max_attempts, 5);
         assert_eq!(resolved.snapshot.execution.attempt_timeout_seconds, 7);
         assert_eq!(session.model.as_deref(), Some("session-model"));
@@ -312,5 +334,151 @@ mod tests {
         assert_eq!(restored.credential.unwrap().expose(), "second-key");
         assert!(Credential::new("secret\nheader".into()).is_err());
         assert!(Credential::new(" ".into()).is_err());
+    }
+
+    #[test]
+    fn models_share_connections_but_never_inherit_each_others_limits() {
+        use crate::limits::{LimitError, ResolvedLimits};
+        let config = Config::parse(
+            r#"
+default_provider = "gateway"
+default_model = "a"
+[providers.gateway]
+protocol = "typesafe"
+base_url = "https://gateway.example.com"
+max_attempts = 5
+attempt_timeout_seconds = 10
+[providers.gateway.models.a]
+context_window_tokens = 8192
+context_budget_tokens = 4096
+reserved_output_tokens = 128
+[providers.gateway.models.b]
+context_window_tokens = 32768
+context_budget_tokens = 16384
+reserved_output_tokens = 256
+"#,
+        )
+        .unwrap();
+        let resolve = |model: Option<&str>, budget| {
+            config.resolve_snapshot(
+                &RuntimeOverrides {
+                    selection: ModelSelection {
+                        provider: None,
+                        model: model.map(str::to_owned),
+                    },
+                    context_budget_tokens: budget,
+                    ..Default::default()
+                },
+                &Default::default(),
+                &Default::default(),
+                Path::new("/home"),
+            )
+        };
+        let a = resolve(None, None).unwrap();
+        let b = resolve(Some("b"), None).unwrap();
+        assert_eq!(a.profile.model, "a");
+        assert_eq!(a.profile.base_url, b.profile.base_url);
+        assert_eq!(a.profile_name, b.profile_name);
+        assert_eq!(
+            ResolvedLimits::for_profile(&a.profile).unwrap().budget,
+            4096
+        );
+        let limits = ResolvedLimits::for_profile(&b.profile).unwrap();
+        assert_eq!(limits.budget, 16384);
+        assert_eq!(limits.reserved_output_tokens, 256);
+        assert_eq!(b.execution.max_attempts, 5);
+        assert_eq!(b.execution.attempt_timeout_seconds, 10);
+        let unlisted = resolve(Some("unlisted"), None).unwrap();
+        assert!(unlisted.profile.context_window_tokens.is_none());
+        assert!(unlisted.profile.reserved_output_tokens.is_none());
+        assert_eq!(
+            ResolvedLimits::for_profile(&unlisted.profile),
+            Err(LimitError::MissingBudget)
+        );
+        assert_eq!(
+            ResolvedLimits::for_profile(&resolve(Some("unlisted"), Some(2048)).unwrap().profile)
+                .unwrap()
+                .budget,
+            2048
+        );
+        assert_eq!(
+            ResolvedLimits::for_profile(&resolve(Some("a"), Some(8193)).unwrap().profile),
+            Err(LimitError::InvalidBudget)
+        );
+    }
+
+    #[test]
+    fn missing_models_require_selection_and_known_unlisted_models_use_registry_limits() {
+        let mut config = config();
+        config.default_model = None;
+        let snapshot = |config: &Config, selection: ModelSelection| {
+            config.resolve_snapshot(
+                &RuntimeOverrides {
+                    selection,
+                    ..Default::default()
+                },
+                &Default::default(),
+                &Default::default(),
+                Path::new("/home"),
+            )
+        };
+        assert!(matches!(
+            snapshot(&config, ModelSelection::default()),
+            Err(ConfigError::MissingModel)
+        ));
+        assert_eq!(
+            snapshot(
+                &config,
+                ModelSelection {
+                    provider: None,
+                    model: Some("jev-latest".into())
+                }
+            )
+            .unwrap()
+            .profile
+            .model,
+            "jev-latest"
+        );
+        config.default_model = Some("gpt-6-luna".into());
+        config.providers.get_mut("openai").unwrap().models.clear();
+        let selected = snapshot(
+            &config,
+            ModelSelection {
+                provider: Some("openai".into()),
+                model: None,
+            },
+        )
+        .unwrap();
+        assert!(
+            crate::limits::ResolvedLimits::for_profile(&selected.profile)
+                .unwrap()
+                .capabilities
+                .is_some()
+        );
+        for (request, session, expected) in [
+            (None, None, "gpt-6-luna"),
+            (None, Some("session-model"), "session-model"),
+            (
+                Some("request-model"),
+                Some("session-model"),
+                "request-model",
+            ),
+        ] {
+            let selected = config
+                .resolve_snapshot(
+                    &Default::default(),
+                    &ModelSelection {
+                        provider: None,
+                        model: request.map(str::to_owned),
+                    },
+                    &ModelSelection {
+                        provider: None,
+                        model: session.map(str::to_owned),
+                    },
+                    Path::new("/home"),
+                )
+                .unwrap();
+            assert_eq!(selected.profile.model, expected);
+        }
     }
 }

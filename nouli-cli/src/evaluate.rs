@@ -20,9 +20,13 @@ enum EvaluationError {
     Signal(#[source] std::io::Error),
 }
 impl EvaluationError {
-    fn report(&self) -> ErrorReport {
+    fn report(&self, settings: &Settings) -> ErrorReport {
         match self {
-            Self::Engine(error) => error.report(),
+            Self::Engine(error) => {
+                let mut report = error.report();
+                settings.annotate(&mut report);
+                report
+            }
             Self::Signal(_) => ErrorReport {
                 category: ErrorCategory::Internal,
                 code: "signal_handler_failed".into(),
@@ -40,7 +44,7 @@ pub(crate) async fn run(
     let result = execute(args, request, settings).await;
     ResultEnvelope::new(match result {
         Ok(report) => Report::Turn(Box::new(report)),
-        Err(error) => Report::Error(error.report()),
+        Err(error) => Report::Error(error.report(settings)),
     })
 }
 async fn execute(
@@ -53,15 +57,7 @@ async fn execute(
         counter: ByteCounter,
         clock: TokioClock,
     };
-    let overrides = RuntimeOverrides {
-        selection: ModelSelection {
-            provider: args.provider.clone(),
-            model: args.model.clone(),
-        },
-        store: Some(settings.store.clone()),
-        context_budget_tokens: args.context_budget,
-        ..Default::default()
-    };
+    let overrides = overrides(args, settings);
     let ephemeral = args.selection.no_session;
     let worker = if ephemeral && matches!(request.session, SessionSelection::New { .. }) {
         None
@@ -145,5 +141,17 @@ pub(crate) fn input_error(error: &crate::input::InputError) -> ErrorReport {
         },
         message: error.to_string(),
         retryable: false,
+    }
+}
+
+pub(crate) fn overrides(args: &DecisionArgs, settings: &Settings) -> RuntimeOverrides {
+    RuntimeOverrides {
+        selection: ModelSelection {
+            provider: args.provider.clone(),
+            model: args.model.clone(),
+        },
+        store: Some(settings.store.clone()),
+        context_budget_tokens: args.context_budget,
+        ..Default::default()
     }
 }

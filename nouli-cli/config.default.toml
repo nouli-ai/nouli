@@ -1,0 +1,2 @@
+# Set default_provider and default_model, then define [providers.NAME] below.
+output = "auto"

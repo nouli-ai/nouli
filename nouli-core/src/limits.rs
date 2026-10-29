@@ -195,11 +195,23 @@ mod tests {
     use count::ByteCounter;
 
     fn profile(name: &str) -> ProviderProfile {
-        Config::parse(include_str!("../../fixtures/config/providers.toml"))
+        let config = Config::parse(include_str!("../../fixtures/config/providers.toml")).unwrap();
+        let model = config.providers[name].models.keys().next().unwrap().clone();
+        config
+            .resolve_snapshot(
+                &crate::config::resolve::RuntimeOverrides {
+                    selection: crate::history::ModelSelection {
+                        provider: Some(name.into()),
+                        model: Some(model),
+                    },
+                    ..Default::default()
+                },
+                &Default::default(),
+                &Default::default(),
+                std::path::Path::new("/home"),
+            )
             .unwrap()
-            .providers
-            .remove(name)
-            .unwrap()
+            .profile
     }
     fn request() -> TurnRequest {
         serde_json::from_str(include_str!(

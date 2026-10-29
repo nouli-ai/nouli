@@ -446,8 +446,22 @@ mod tests {
         };
         let config =
             Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap();
-        let mut profile = config.providers["local"].clone();
-        profile.model = "offline".into();
+        let profile = config
+            .resolve_snapshot(
+                &crate::config::resolve::RuntimeOverrides {
+                    selection: ModelSelection {
+                        provider: Some("local".into()),
+                        model: Some("offline".into()),
+                    },
+                    context_budget_tokens: Some(4096),
+                    ..Default::default()
+                },
+                &Default::default(),
+                &Default::default(),
+                std::path::Path::new("/unused"),
+            )
+            .unwrap()
+            .profile;
         let settings = SettingsSnapshot {
             profile_name: "fixture".into(),
             profile,

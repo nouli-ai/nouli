@@ -1,4 +1,5 @@
 default_provider = "jev"
+default_model = "jev-latest"
 output = "auto"
 
 [execution]
@@ -9,30 +10,35 @@ attempt_timeout_seconds = 120
 [providers.jev]
 protocol = "typesafe"
 base_url = "https://api.typesafe.ai"
-model = "jev-latest"
 api_key_env = "TYPESAFE_API_KEY"
+
+[providers.jev.models."jev-latest"]
 
 [providers.openai]
 protocol = "openai-decisions"
 base_url = "https://api.openai.com"
-model = "gpt-6-luna"
 api_key_env = "OPENAI_API_KEY"
+
+[providers.openai.models."gpt-6-luna"]
 
 [providers.router]
 protocol = "openrouter-decisions"
 base_url = "https://openrouter.ai/api"
-model = "openai/gpt-6-luna-decisions"
 api_key_env = "OPENROUTER_API_KEY"
+
+[providers.router.models."openai/gpt-6-luna-decisions"]
 
 [providers.local]
 protocol = "typesafe"
 base_url = "http://localhost:8000"
-model = "english"
+
+[providers.local.models."english"]
 context_budget_tokens = 512
 
 [providers.custom]
 protocol = "openai-decisions"
 base_url = "https://decisions.example.net/prefix"
-model = "custom-decision-model"
 api_key_env = "CUSTOM_KEY"
+
+[providers.custom.models."custom-decision-model"]
 context_budget_tokens = 8192

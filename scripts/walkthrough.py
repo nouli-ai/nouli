@@ -46,10 +46,10 @@ def exercise(binary, home, server):
     store = home / 'store'
     config = home / 'config.toml'
     config.write_text(
-        'default_provider="local"\noutput="json"\n[execution]\n'
+        'default_provider="local"\ndefault_model="fixture-requested-alias"\noutput="json"\n[execution]\n'
         'max_attempts=1\nattempt_timeout_seconds=5\n[providers.local]\n'
         f'protocol="typesafe"\nbase_url="http://127.0.0.1:{server.server_port}"\n'
-        'model="fixture-requested-alias"\ncontext_budget_tokens=100000\n'
+        '[providers.local.models."fixture-requested-alias"]\ncontext_budget_tokens=100000\n'
         'reserved_output_tokens=128\n'
     )
     environment = {'HOME': str(home)}

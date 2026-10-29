@@ -305,21 +305,16 @@ fn resolve_settings(
     request: &WorkflowRequest,
     session: &ModelSelection,
 ) -> Result<(Vec<SettingsSnapshot>, ModelSelection), ConfigError> {
-    let defaults = match input.config.resolve_snapshot(
-        input.overrides,
+    let configured = ModelSelection {
+        provider: input.config.default_provider.clone(),
+        model: input.config.default_model.clone(),
+    };
+    let defaults = select_model(&[
+        &input.overrides.selection,
         &request.workflow.model,
         session,
-        input.home,
-    ) {
-        Ok(root) => ModelSelection {
-            provider: Some(root.profile_name),
-            model: Some(root.profile.model),
-        },
-        Err(ConfigError::MissingProvider) => {
-            select_model(&[&input.overrides.selection, &request.workflow.model, session])
-        }
-        Err(error) => return Err(error),
-    };
+        &configured,
+    ]);
     let settings = request
         .workflow
         .nodes
@@ -637,7 +632,7 @@ impl<
 mod tests {
     use super::*;
     use crate::{
-        config::{ExecutionSettings, OutputFormat, Protocol, ProviderProfile},
+        config::{ExecutionSettings, ModelSettings, OutputFormat, Protocol, ProviderDefinition},
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
         data::Input,
         decision::TurnRequest,
@@ -782,6 +777,7 @@ mod tests {
     fn config() -> Config {
         Config {
             default_provider: Some("fixture".into()),
+            default_model: Some("offline".into()),
             output: OutputFormat::Json,
             store: None,
             execution: ExecutionSettings {
@@ -790,14 +786,41 @@ mod tests {
             },
             providers: BTreeMap::from([(
                 "fixture".into(),
-                ProviderProfile {
+                ProviderDefinition {
                     protocol: Protocol::Typesafe,
                     base_url: "http://127.0.0.1:8080".into(),
-                    model: "offline".into(),
                     api_key_env: None,
-                    context_budget_tokens: Some(100_000),
-                    context_window_tokens: Some(100_000),
-                    reserved_output_tokens: Some(128),
+                    models: BTreeMap::from([
+                        (
+                            "offline".into(),
+                            ModelSettings {
+                                context_budget_tokens: Some(100_000),
+                                context_window_tokens: Some(100_000),
+                                reserved_output_tokens: Some(128),
+                            },
+                        ),
+                        (
+                            "high-model".into(),
+                            ModelSettings {
+                                context_budget_tokens: Some(100_000),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "low-model".into(),
+                            ModelSettings {
+                                context_budget_tokens: Some(100_000),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "frozen-alias".into(),
+                            ModelSettings {
+                                context_budget_tokens: Some(100_000),
+                                ..Default::default()
+                            },
+                        ),
+                    ]),
                     max_attempts: None,
                     attempt_timeout_seconds: None,
                 },
@@ -1117,8 +1140,11 @@ mod tests {
         let (engine, _events) = engine(&[], &[]);
         let mut config = config();
         config.default_provider = None;
+        config.default_model = None;
         let mut other = config.providers["fixture"].clone();
-        other.model = "other-model".into();
+        other
+            .models
+            .insert("other-model".into(), other.models["offline"].clone());
         config.providers.insert("other".into(), other);
         let mut request = request();
         let mut left = request.workflow.nodes[0].clone();
@@ -1127,9 +1153,11 @@ mod tests {
             text: "left-root".into(),
         });
         left.model.provider = Some("fixture".into());
+        left.model.model = Some("offline".into());
         let mut right = left.clone();
         right.id = "right".into();
         right.model.provider = Some("other".into());
+        right.model.model = Some("other-model".into());
         let mut join = left.clone();
         join.id = "joined".into();
         join.dependencies = vec!["left".into(), "right".into()];

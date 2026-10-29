@@ -17,6 +17,11 @@ python3 scripts/validate_docs.py
 
 The walkthrough runs the real CLI against a temporary loopback fixture and isolated home/store. Its answers are deterministic fixtures, with no claim about real-model quality. Local checks cover aarch64 macOS and Linux. Hosted CI has not been run from this local implementation branch. [Provider conformance](docs/testing/conformance.md), [CLI journeys](docs/testing/journeys.md), and [fault scenarios](docs/testing/faults.md) describe the offline gates.
 
+The first valid evaluation creates `~/.nouli/config.toml` if it is missing. Define
+a `[providers.NAME]` section in that barebones file, then set `default_provider`
+and `default_model`, or pass `--provider NAME --model MODEL`. Supply the selected credential environment variable. Setup errors show the file
+path and stop before creating a new ledger. Help and inspection do not create config.
+
 For a provider you have separately configured and authorized, evaluation is the default action:
 
 ```sh
@@ -29,6 +34,7 @@ nouli --input fixtures/tutorial/commitment.json --session Dinner
 Sessions persist by default in `~/.nouli`; names are optional. One `--from` branches, several blend fixed source points into a new session, and `--session` continues an existing session. `--no-session` performs fresh or sourced read-only evaluation. Complete immutable ledger history survives automatic compaction and eviction from the model's limited context. Attached caller commitments and explicit revisions remain separate from model judgments.
 
 - [Walkthrough and checked-in payloads](docs/walkthrough.md)
+- [User guide](docs/index.html)
 - [Configuration and credentials](docs/configuration.md), [numerical defaults](docs/defaults.md)
 - [Evaluation and source selection](docs/cli-evaluation.md)
 - [Workflows, events, and recovery](docs/cli-workflows.md)

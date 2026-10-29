@@ -102,11 +102,23 @@ mod tests {
         .unwrap()
     }
     fn settings(base_url: String) -> ResolvedSettings {
-        let mut profile = Config::parse(include_str!("../../../fixtures/config/providers.toml"))
+        let config =
+            Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap();
+        let mut profile = config
+            .resolve_snapshot(
+                &crate::config::resolve::RuntimeOverrides {
+                    selection: crate::history::ModelSelection {
+                        provider: Some("router".into()),
+                        model: Some("openai/gpt-6-luna-decisions".into()),
+                    },
+                    ..Default::default()
+                },
+                &Default::default(),
+                &Default::default(),
+                std::path::Path::new("/unused"),
+            )
             .unwrap()
-            .providers
-            .remove("router")
-            .unwrap();
+            .profile;
         profile.base_url = base_url;
         profile.context_budget_tokens = Some(4096);
         SettingsSnapshot {

@@ -198,6 +198,7 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
     ]);
     assert_eq!(missing.status.code(), Some(3));
     assert_eq!(server.count(), 0);
+    assert!(!home.store().exists());
     let recovered = report(
         home.command()
             .args([
@@ -205,7 +206,6 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
                 &questions,
                 "--request-id",
                 "credentials",
-                "--retry-interrupted",
                 "--name",
                 "Named",
             ])
@@ -795,6 +795,12 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     definition.nodes[1].when = None;
     definition.nodes[2].when = None;
     definition.nodes[1].model.model = Some("high-frozen-alias".into());
+    let config_path = home.0.join("config.toml");
+    let mut config = std::fs::read_to_string(&config_path).unwrap();
+    for model in ["high-frozen-alias", "run-frozen-alias"] {
+        config.push_str(&format!("\n[providers.local.models.'{model}']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n"));
+    }
+    std::fs::write(config_path, config).unwrap();
     let file = home.0.join("parallel.json");
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
     let partial = run_report(

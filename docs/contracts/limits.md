@@ -35,8 +35,9 @@ unknown support rather than fabricating refusal answers. Confidence and complete
 distributions are capability metadata, not automatic acceptance gates.
 
 Configured budgets can reduce verified limits; larger overrides fail explicitly.
-An unknown/custom profile must supply `context_budget_tokens` or
-`context_window_tokens`. Optional output reservation counts against total and
+An unknown/custom model must supply `context_budget_tokens` or
+`context_window_tokens` in `[providers.NAME.models."MODEL_ID"]`, or use
+`--context-budget`. Optional output reservation counts against total and
 per-question budgets. Transport `Capacity` errors permit evaluator replanning;
 estimates cannot guarantee that a server will accept the request.
 

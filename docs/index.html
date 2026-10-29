@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Configure Nouli, ask typed decision questions, and work with sessions from the command line.">
+  <meta name="color-scheme" content="light dark">
+  <title>Nouli - User guide</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%231e4938'/%3E%3Cpath d='M14 34V14h5l10 13V14h5v20h-5L19 21v13z' fill='%23e5f3a7'/%3E%3C/svg%3E">
+  <style>
+    :root { color-scheme: light; --bg:#f7f8f4; --paper:#fff; --ink:#172b25; --muted:#58665f; --line:#dce3db; --accent:#245a43; --soft:#eaf0e5; --code:#142b23; --code-ink:#e7efe4; --chip:#edf3c9; --radius:14px; }
+    :root[data-theme="dark"] { color-scheme: dark; --bg:#111b17; --paper:#19271f; --ink:#edf2e9; --muted:#b3c1b5; --line:#34483a; --accent:#b4d99b; --soft:#273a2b; --code:#0b1510; --code-ink:#e7efe4; --chip:#34482a; }
+    @media(prefers-color-scheme:dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg:#111b17; --paper:#19271f; --ink:#edf2e9; --muted:#b3c1b5; --line:#34483a; --accent:#b4d99b; --soft:#273a2b; --code:#0b1510; --code-ink:#e7efe4; --chip:#34482a; } }
+    * { box-sizing:border-box; }
+    html { scroll-padding-top:30px; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:var(--accent); text-underline-offset:3px; }
+    button { font:inherit; cursor:pointer; }
+    button:focus-visible,a:focus-visible { outline:3px solid var(--accent); outline-offset:4px; }
+    .skip { position:fixed; left:16px; top:-100px; z-index:10; padding:10px 16px; background:var(--paper); border:1px solid var(--line); border-radius:8px; }
+    .skip:focus { top:12px; }
+    .layout { display:grid; grid-template-columns:230px minmax(0,820px); gap:72px; max-width:1240px; padding:0 36px; margin:auto; }
+    aside { position:sticky; top:0; height:100vh; padding:42px 0; display:flex; flex-direction:column; }
+    .brand { display:flex; align-items:center; gap:11px; color:var(--ink); font-size:25px; font-weight:730; text-decoration:none; letter-spacing:-1px; }
+    .mark { display:grid; place-items:center; background:#1e4938; color:#e5f3a7; width:35px; height:35px; border-radius:10px; font-size:23px; letter-spacing:-2px; }
+    .subtle { font-size:13px; color:var(--muted); }
+    nav { display:grid; gap:5px; margin-top:43px; }
+    nav a { color:var(--muted); padding:9px 13px; text-decoration:none; border-radius:8px; font-size:14px; }
+    nav a:hover,nav a[aria-current="location"] { background:var(--soft); color:var(--ink); }
+    .aside-foot { margin-top:auto; padding-top:25px; }
+    .theme { display:flex; align-items:center; gap:8px; padding:8px 12px; min-height:42px; border:1px solid var(--line); background:var(--paper); color:var(--ink); border-radius:8px; font-size:13px; }
+    main { min-width:0; padding:64px 0 40px; }
+    .eyebrow { display:inline-flex; align-items:center; gap:8px; color:var(--accent); font-size:12px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; }
+    .eyebrow::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+    h1 { font-size:clamp(36px,5vw,53px); line-height:1.12; font-weight:700; letter-spacing:-2px; margin:18px 0; }
+    .intro { font-size:19px; color:var(--muted); max-width:620px; }
+    .hero { padding-bottom:34px; border-bottom:1px solid var(--line); }
+    .tags { display:flex; flex-wrap:wrap; gap:9px; margin-top:24px; }
+    .tag { border:1px solid var(--line); padding:4px 10px; border-radius:6px; font-size:12px; color:var(--muted); }
+    section { padding-top:48px; scroll-margin-top:20px; }
+    h2 { font-size:28px; line-height:1.3; font-weight:650; letter-spacing:-.7px; margin:0 0 14px; }
+    h3 { font-size:18px; margin:25px 0 9px; }
+    p { margin:0 0 17px; }
+    .muted { color:var(--muted); }
+    code { font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    :not(pre)>code { background:var(--soft); padding:2px 5px; border-radius:4px; overflow-wrap:anywhere; }
+    .codebox { position:relative; background:var(--code); color:var(--code-ink); border:1px solid var(--line); border-radius:var(--radius); margin:16px 0; overflow:hidden; }
+    .codehead { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid #ffffff16; color:#bdcdbf; font-size:12px; }
+    pre { margin:0; padding:20px; overflow:auto; max-height:520px; tab-size:2; }
+    pre code { display:block; min-width:0; }
+    .copy { border:1px solid #ffffff30; border-radius:6px; padding:5px 10px; min-height:32px; background:transparent; color:#e7efe4; font-size:12px; }
+    .copy:hover { background:#ffffff12; }
+    .note { border-left:3px solid var(--accent); padding:12px 17px; background:var(--soft); border-radius:0 8px 8px 0; font-size:14px; margin:18px 0; }
+    .step { display:flex; gap:14px; margin:25px 0 8px; align-items:baseline; }
+    .number { flex:none; width:26px; height:26px; display:grid; place-items:center; border-radius:50%; font-size:12px; font-weight:650; background:var(--chip); }
+    .step h3 { margin:0; }
+    .tabs { display:flex; flex-wrap:wrap; gap:7px; margin:20px 0 12px; }
+    .tabs button { border:1px solid var(--line); border-radius:7px; min-height:40px; padding:7px 14px; font-size:13px; color:var(--muted); background:var(--paper); }
+    .tabs button[aria-pressed="true"] { color:var(--ink); background:var(--chip); border-color:var(--accent); }
+    .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:20px 0; }
+    .card { padding:18px; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); }
+    .card strong { display:block; font-size:16px; margin-bottom:7px; }
+    .card p { margin:0; color:var(--muted); font-size:14px; }
+    .table-wrap { overflow:auto; margin:18px 0; border:1px solid var(--line); border-radius:var(--radius); }
+    table { border-collapse:collapse; width:100%; font-size:14px; background:var(--paper); }
+    th,td { text-align:left; vertical-align:top; padding:13px 16px; border-bottom:1px solid var(--line); }
+    th { color:var(--muted); font-size:12px; font-weight:600; }
+    tr:last-child td { border-bottom:0; }
+    td:first-child { width:35%; }
+    ul,ol { padding-left:23px; }
+    li { margin:8px 0; }
+    .download { display:inline-flex; align-items:center; gap:7px; min-height:42px; border:1px solid var(--line); background:var(--paper); color:var(--accent); padding:8px 13px; border-radius:8px; text-decoration:none; font-size:13px; }
+    footer { border-top:1px solid var(--line); margin-top:50px; padding-top:22px; font-size:13px; color:var(--muted); }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media(max-width:950px) { .layout { grid-template-columns:190px minmax(0,1fr); gap:35px; padding:0 24px; } .cards { grid-template-columns:1fr; } }
+    @media(max-width:680px) { .layout { display:block; padding:0 20px; } aside { position:relative; height:auto; padding:24px 0 16px; border-bottom:1px solid var(--line); } .aside-foot { position:absolute; right:0; top:21px; padding:0; } .subtle { margin:5px 0 0; } nav { display:flex; overflow:auto; margin-top:20px; gap:3px; padding:4px 0; } nav a { white-space:nowrap; padding:7px 10px; } main { padding-top:35px; } h1 { letter-spacing:-1.3px; } .intro { font-size:17px; } section { padding-top:38px; } h2 { font-size:25px; } pre { padding:16px; } th,td { padding:11px; } }
+    @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to guide</a>
+  <div class="layout">
+    <aside>
+      <a class="brand" href="#start" aria-label="Nouli guide home"><span class="mark" aria-hidden="true">n</span>nouli</a>
+      <p class="subtle">Command-line user guide</p>
+      <nav aria-label="On this page">
+        <a href="#start" aria-current="location">Get started</a>
+        <a href="#providers">Configure a provider</a>
+        <a href="#questions">Ask questions</a>
+        <a href="#sessions">Use sessions</a>
+        <a href="#workflows">Run workflows</a>
+        <a href="#help">Troubleshooting</a>
+      </nav>
+      <div class="aside-foot"><button class="theme" type="button" id="theme" aria-label="Switch color theme">◐ <span>Theme</span></button></div>
+    </aside>
+    <main id="main">
+      <header class="hero" id="start">
+        <span class="eyebrow">Get started with Nouli</span>
+        <h1>A decision, from<br>your command line.</h1>
+        <p class="intro">Give Nouli the facts and a typed question. Choose between options, ask for a probability, or score a decision against your own scale.</p>
+        <div class="tags"><span class="tag">Choice</span><span class="tag">Probability of yes</span><span class="tag">Expected score</span></div>
+      </header>
+      <div class="step"><span class="number">1</span><h3>Create your configuration</h3></div>
+      <p>Nouli reads <code>~/.nouli/config.toml</code>. Your first evaluation creates a barebones file if it is missing, then asks you to define a provider. Add a provider using the examples below.</p>
+      <p>To scaffold the file, run this example once. Until you add a provider, it returns <code>providers_required</code> with the configuration path.</p>
+        <div class="codebox"><div class="codehead"><span>Your shell</span><button class="copy" type="button" data-copy="first-command">Copy</button></div><pre><code id="first-command">nouli \
+  --state "Repair costs 120; replacement costs 300." \
+  --questions '[{"id":"repair","prompt":"Should I repair it?","answer_space":{"type":"noul"}}]'</code></pre></div>
+      <p class="muted">Use <code>--config /path/to/config.toml</code> for another file. An explicitly selected file must already exist.</p>
+      <section id="providers" aria-labelledby="providers-title">
+        <h2 id="providers-title">Configure a provider</h2>
+        <p>For a new config, replace the scaffold with one complete example below. Set <code>default_provider</code> to the provider name and <code>default_model</code> to a compatible model. Each provider is defined once, even when you use several models.</p>
+        <div class="tabs" role="group" aria-label="Provider example">
+          <button type="button" data-provider="jev" aria-pressed="true">TypeSafe / Jev</button>
+          <button type="button" data-provider="openai" aria-pressed="false">OpenAI</button>
+          <button type="button" data-provider="router" aria-pressed="false">OpenRouter</button>
+          <button type="button" data-provider="local" aria-pressed="false">Local Laya</button>
+        </div>
+        <div class="codebox"><div class="codehead"><span>~/.nouli/config.toml</span><button class="copy" type="button" data-copy="provider-config">Copy</button></div><pre><code id="provider-config">default_provider = "jev"
+default_model = "jev-latest"
+output = "auto"
+
+[providers.jev]
+protocol = "typesafe"
+base_url = "https://api.typesafe.ai"
+api_key_env = "TYPESAFE_API_KEY"</code></pre></div>
+        <p id="provider-note" class="muted">Use a Jev model available to your TypeSafe account.</p>
+        <div class="codebox" id="credential-box"><div class="codehead"><span>Your shell</span><button class="copy" type="button" data-copy="credential-command">Copy</button></div><pre><code id="credential-command">export TYPESAFE_API_KEY="your-api-key"</code></pre></div>
+        <div class="note">Put the environment-variable <strong>name</strong> in <code>api_key_env</code>. Set its value in your shell or secret manager. Keep API keys out of configuration files and request files.</div>
+        <p>Place <code>default_provider</code>, <code>default_model</code>, and <code>output</code> before the first <code>[providers.NAME]</code> section. When adding another provider, add its section without repeating those top-level settings.</p>
+        <h3>Choose a model</h3>
+        <p>Use <code>--model MODEL_ID</code> to select another model for a call. To switch services too, pass <code>--provider NAME --model MODEL_ID</code>. The provider and model are selected independently; changing the provider does not choose a different model for you.</p>
+        <p>Explicit CLI choices take precedence over request settings, session defaults, and configuration defaults. Workflow nodes can select their own provider and model. A one-call override does not change your session defaults.</p>
+        <h3>Choose a context budget</h3>
+        <p>For a custom endpoint, local service, or unrecognized model, add limits under <code>[providers.NAME.models."MODEL_ID"]</code>. Set <code>context_budget_tokens</code> or <code>context_window_tokens</code> to a capacity that service supports. Each model has its own settings. A known model can use its recognized limit; you can also supply a budget with <code>--context-budget TOKENS</code>.</p>
+        <p><code>reserved_output_tokens</code> reserves part of that budget for the response. Token counts shown as estimates are approximate; the provider may reject an input that is too large.</p>
+        <p>For example, after defining a local provider, you can give two served models different limits. Replace the model names and capacities with values supported by your service:</p>
+        <div class="codebox"><div class="codehead"><span>Per-model settings</span><button class="copy" type="button" data-copy="model-config">Copy</button></div><pre><code id="model-config">[providers.local.models."model-a"]
+context_window_tokens = 8192
+context_budget_tokens = 4096
+reserved_output_tokens = 128
+
+[providers.local.models."model-b"]
+context_window_tokens = 32768
+context_budget_tokens = 16384
+reserved_output_tokens = 256</code></pre></div>
+        <p>Then select either model with <code>--provider local --model model-a</code> or <code>--provider local --model model-b</code>. Model entries are optional settings, not a list of allowed models. You can select another supported model without an entry; an unrecognized model still needs an explicit budget.</p>
+      </section>
+      <section id="questions" aria-labelledby="questions-title">
+        <h2 id="questions-title">Ask your first question</h2>
+        <div class="step"><span class="number">2</span><h3>Supply the facts and the question</h3></div>
+        <p><code>--state</code> accepts plain text. <code>--questions</code> accepts a JSON question list. The short forms are <code>-s</code> and <code>-q</code>; use one hyphen for <code>-q</code>.</p>
+        <p>After configuring a provider, run the example above again with your own facts and question.</p>
+        <p>You can repeat <code>--state</code> to supply more facts. A question needs an ID, a prompt, and an <code>answer_space</code>.</p>
+        <div class="cards">
+          <div class="card"><strong>Choice</strong><p>Provide options with IDs and descriptions. The answer identifies a selected option and its probability.</p></div>
+          <div class="card"><strong>Noul</strong><p>Ask a yes/no question. The answer is the probability of yes, between 0 and 1.</p></div>
+          <div class="card"><strong>Score</strong><p>Provide ordered levels. The answer is an expected level index and can be fractional.</p></div>
+        </div>
+        <h3>Use a request file</h3>
+        <p>Save this example as <code>request.json</code>. Edit its state, questions, and answer spaces for your decision. Choice supports 2-255 options; score supports 2-10 levels.</p>
+        <div class="codebox"><div class="codehead"><span>request.json</span><button class="copy" type="button" data-copy="request-example">Copy</button></div><pre><code id="request-example">{
+  "state": [{"type": "text", "text": "The train takes 4 hours; the flight takes 2 hours."}],
+  "questions": [
+    {
+      "id": "route",
+      "prompt": "Which route should I take?",
+      "answer_space": {
+        "type": "choice",
+        "options": [
+          {"id": "train", "description": "Take the train"},
+          {"id": "flight", "description": "Take the flight"}
+        ]
+      }
+    },
+    {
+      "id": "on_time",
+      "prompt": "Will I arrive on time?",
+      "answer_space": {"type": "noul"}
+    },
+    {
+      "id": "quality",
+      "prompt": "How suitable is the route?",
+      "answer_space": {"type": "score", "levels": ["Poor", "Adequate", "Excellent"]}
+    }
+  ]
+}</code></pre></div>
+        <button class="download" type="button" id="download">↓ Download request.json</button>
+        <div class="codebox"><div class="codehead"><span>Files and stdin</span><button class="copy" type="button" data-copy="file-commands">Copy</button></div><pre><code id="file-commands">nouli --input request.json
+nouli --input request.toon
+nouli --input - --input-format json &lt; request.json</code></pre></div>
+        <p>JSON and TOON accept the same question fields. Save a TOON-formatted request as <code>request.toon</code>; renaming a JSON file does not convert it. Stdin requires an explicit <code>--input-format json</code> or <code>toon</code>. Use a request file for structured state. Do not combine <code>--input</code> with inline state/questions.</p>
+        <div class="note">A score is an expectation over indices starting at 0. On a three-level scale, <code>1.43</code> is a valid score. It is different from choosing the most likely level. Provider confidence is separate from answer probability.</div>
+        <h3>Choose your output</h3>
+        <p><code>auto</code> shows readable text in a terminal and JSON when redirected. Set <code>output = "text"</code> or <code>output = "json"</code> in your config, or override it for a call.</p>
+        <div class="codebox"><div class="codehead"><span>Output options</span><button class="copy" type="button" data-copy="output-commands">Copy</button></div><pre><code id="output-commands">nouli --input request.json --json
+nouli --input request.json --format text
+nouli --input request.json --format toon</code></pre></div>
+      </section>
+      <section id="sessions" aria-labelledby="sessions-title">
+        <h2 id="sessions-title">Keep context across decisions</h2>
+        <p>Decisions are saved by default. Name a new session, continue it, or start a separate session from earlier decisions.</p>
+        <div class="codebox"><div class="codehead"><span>Sessions</span><button class="copy" type="button" data-copy="session-commands">Copy</button></div><pre><code id="session-commands">nouli --input request.json --name Planning
+nouli --input request.json --session Planning
+nouli --input request.json --from Planning --name Alternative
+nouli --input request.json --from Planning --from Alternative --name Combined</code></pre></div>
+        <p>Update the request's facts or questions before continuing. One <code>--from</code> starts a branch; several combine histories in a new session. The sources stay at the points you selected, so later source changes do not appear automatically. Different score scales remain distinct.</p>
+        <p>For a decision you do not want to save, use <code>--no-session</code>. It can also read saved context with <code>--from</code>, but cannot be combined with <code>--session</code> or <code>--name</code>.</p>
+        <div class="codebox"><div class="codehead"><span>Temporary decisions and inspection</span><button class="copy" type="button" data-copy="inspect-commands">Copy</button></div><pre><code id="inspect-commands">nouli --input request.json --no-session
+nouli --input request.json --from Planning --no-session
+nouli sessions list
+nouli sessions show Planning
+nouli context Planning
+nouli sessions export Planning --format json &gt; planning.json</code></pre></div>
+        <p>Saved data lives in <code>~/.nouli</code> by default. Choose another location with <code>--store /path/to/store</code>. If context becomes too large, older optional material may be shortened or left out of a later request. Your saved history remains available through inspection and export.</p>
+      </section>
+      <section id="workflows" aria-labelledby="workflows-title">
+        <h2 id="workflows-title">Run and resume workflows</h2>
+        <p>Use a workflow file when later questions depend on earlier answers. To run your workflow, inspect its progress, or resume an unfinished run:</p>
+        <div class="codebox"><div class="codehead"><span>Workflow commands</span><button class="copy" type="button" data-copy="workflow-commands">Copy</button></div><pre><code id="workflow-commands">nouli workflows run workflow.json --name Review --parallel 2
+nouli workflows show RUN_ID
+nouli workflows resume RUN_ID --jsonl</code></pre></div>
+        <p><button class="download" type="button" id="download-workflow">↓ Download workflow.json</button></p>
+        <p>The example chooses a route, then asks whether to book it. Edit the facts and questions before running it.</p>
+        <p>Replace <code>RUN_ID</code> with the ID returned by your run. Resume reuses completed results and uses the original provider/model settings. Make the original credential environment variable available when resuming. <code>--jsonl</code> streams progress followed by a final result.</p>
+        <p>For individual decisions, supply a stable <code>--request-id NAME</code> to retrieve a completed result on a repeated call. If an interrupted request needs another attempt, repeat that same call with <code>--retry-interrupted</code>. An interrupted provider call may have run without a saved result, so retrying can repeat it.</p>
+      </section>
+      <section id="help" aria-labelledby="help-title">
+        <h2 id="help-title">Troubleshooting</h2>
+        <div class="table-wrap"><table><thead><tr><th scope="col">Message</th><th scope="col">What to do</th></tr></thead><tbody>
+          <tr><td><code>providers_required</code></td><td>Open the configuration path shown in the error. Define a <code>[providers.NAME]</code> section using a provider example above.</td></tr>
+          <tr><td><code>provider_required</code></td><td>Set <code>default_provider</code> to an existing provider name or pass <code>--provider NAME</code>.</td></tr>
+          <tr><td><code>model_required</code></td><td>Set top-level <code>default_model</code>, pass <code>--model MODEL_ID</code>, or select a model in your request.</td></tr>
+          <tr><td><code>unknown_provider</code></td><td>Check that the selected name matches a provider defined in your config.</td></tr>
+          <tr><td><code>credential_unavailable</code></td><td>Set the environment variable named in the error. Ensure it is available in the shell running Nouli and contains a valid key.</td></tr>
+          <tr><td><code>invalid_model_budget</code></td><td>For an unrecognized model or custom/local endpoint, add a supported budget under <code>[providers.NAME.models."MODEL_ID"]</code> or pass <code>--context-budget TOKENS</code>. Keep it within the model's capacity.</td></tr>
+          <tr><td><code>configuration_not_found</code></td><td>Check the path supplied to <code>--config</code>. Nouli only scaffolds its default configuration file.</td></tr>
+          <tr><td><code>invalid_configuration_syntax</code></td><td>Check TOML syntax and setting names. Keep top-level settings before provider sections.</td></tr>
+        </tbody></table></div>
+        <p>Use <code>nouli --help</code> for all options and <code>nouli workflows --help</code> for workflow commands. A provider may refuse an individual question; a refusal is different from a connection or authentication error.</p>
+      </section>
+      <footer>Nouli user guide · Configuration, questions, and sessions.</footer>
+    </main>
+  </div>
+  <p class="sr-only" id="status" role="status" aria-live="polite"></p>
+  <script type="application/json" id="workflow-example">{
+  "state": [],
+  "nodes": [
+    {
+      "id": "choose",
+      "turn": {
+        "state": [
+          {
+            "type": "text",
+            "text": "The train takes 4 hours; the flight takes 2 hours."
+          }
+        ],
+        "questions": [
+          {
+            "id": "route",
+            "prompt": "Which route should I take?",
+            "answer_space": {
+              "type": "choice",
+              "options": [
+                {
+                  "id": "train",
+                  "description": "Take the train"
+                },
+                {
+                  "id": "flight",
+                  "description": "Take the flight"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "book",
+      "dependencies": [
+        "choose"
+      ],
+      "turn": {
+        "state": [],
+        "questions": [
+          {
+            "id": "book_now",
+            "prompt": "Given the preferred route, should I book it now?",
+            "answer_space": {
+              "type": "noul"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}</script>
+  <script>
+    const examples = {
+      jev: { config:'default_provider = "jev"\ndefault_model = "jev-latest"\noutput = "auto"\n\n[providers.jev]\nprotocol = "typesafe"\nbase_url = "https://api.typesafe.ai"\napi_key_env = "TYPESAFE_API_KEY"', key:'TYPESAFE_API_KEY', note:'Use a Jev model available to your TypeSafe account.' },
+      openai: { config:'default_provider = "openai"\ndefault_model = "gpt-6-luna"\noutput = "auto"\n\n[providers.openai]\nprotocol = "openai-decisions"\nbase_url = "https://api.openai.com"\napi_key_env = "OPENAI_API_KEY"', key:'OPENAI_API_KEY', note:'Choose an OpenAI model that supports Decisions and is available to your account.' },
+      router: { config:'default_provider = "router"\ndefault_model = "openai/gpt-6-luna-decisions"\noutput = "auto"\n\n[providers.router]\nprotocol = "openrouter-decisions"\nbase_url = "https://openrouter.ai/api"\napi_key_env = "OPENROUTER_API_KEY"', key:'OPENROUTER_API_KEY', note:'Use an OpenRouter decision-model ID available to your account.' },
+      local: { config:'default_provider = "local"\ndefault_model = "english"\noutput = "auto"\n\n[providers.local]\nprotocol = "typesafe"\nbase_url = "http://localhost:8000"\n\n[providers.local.models."english"]\ncontext_budget_tokens = 8192\nreserved_output_tokens = 128', key:null, note:'Start your Laya service separately. Replace the endpoint, model name, and budget with values supported by that service. Nouli does not install or start it.' }
+    };
+    document.querySelectorAll('[data-provider]').forEach(button => button.addEventListener('click', () => {
+      const example=examples[button.dataset.provider];
+      document.querySelectorAll('[data-provider]').forEach(item=>item.setAttribute('aria-pressed', String(item===button)));
+      document.getElementById('provider-config').textContent=example.config;
+      document.getElementById('provider-note').textContent=example.note;
+      document.getElementById('credential-box').hidden=!example.key;
+      document.getElementById('credential-command').textContent=example.key ? `export ${example.key}="your-api-key"` : '';
+    }));
+    document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);
+        button.textContent='Copied';
+        document.getElementById('status').textContent='Copied to clipboard.';
+        setTimeout(()=>button.textContent='Copy',1500);
+      } catch { document.getElementById('status').textContent='Select the example text and copy it with your keyboard.'; }
+    }));
+    document.getElementById('theme').addEventListener('click', () => {
+      const current=getComputedStyle(document.documentElement).colorScheme;
+      document.documentElement.dataset.theme=current==='dark'?'light':'dark';
+    });
+    document.getElementById('download').addEventListener('click', () => {
+      const url=URL.createObjectURL(new Blob([document.getElementById('request-example').textContent+'\n'],{type:'application/json'}));
+      const anchor=document.createElement('a');anchor.href=url;anchor.download='request.json';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+    document.getElementById('download-workflow').addEventListener('click', () => {
+      const url=URL.createObjectURL(new Blob([document.getElementById('workflow-example').textContent+'\n'],{type:'application/json'}));
+      const anchor=document.createElement('a');anchor.href=url;anchor.download='workflow.json';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+    const observer=new IntersectionObserver(entries => {
+      for (const entry of entries) if (entry.isIntersecting) {
+        document.querySelectorAll('nav a').forEach(link=>{
+          if(link.hash==='#'+entry.target.id) link.setAttribute('aria-current','location'); else link.removeAttribute('aria-current');
+        });
+      }
+    },{rootMargin:'-10% 0px -65% 0px'});
+    document.querySelectorAll('main > section, .hero').forEach(section=>observer.observe(section));
+  </script>
+</body>
+</html>

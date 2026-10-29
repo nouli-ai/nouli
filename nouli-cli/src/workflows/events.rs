@@ -116,6 +116,7 @@ struct Writer {
 pub(super) struct Output {
     writer: Option<Writer>,
     cancel: CancellationToken,
+    config_path: Option<std::path::PathBuf>,
 }
 impl Output {
     pub(super) fn new(stream: bool, cancel: CancellationToken) -> Result<Self, ErrorReport> {
@@ -129,7 +130,12 @@ impl Output {
                 None
             },
             cancel,
+            config_path: None,
         })
+    }
+    pub(super) fn with_config(mut self, path: std::path::PathBuf) -> Self {
+        self.config_path = Some(path);
+        self
     }
 }
 fn failure() -> ErrorReport {
@@ -149,13 +155,18 @@ fn interrupted() -> ErrorReport {
     }
 }
 impl EventSink for Output {
-    async fn send(&self, event: EngineEvent) -> Result<(), ErrorReport> {
+    async fn send(&self, mut event: EngineEvent) -> Result<(), ErrorReport> {
         let Some(writer) = &self.writer else {
             return Ok(());
         };
         let mut failure_state = writer.failure.lock().await;
         if let Some(error) = &*failure_state {
             return Err(error.clone());
+        }
+        if let Some(path) = &self.config_path
+            && let nouli_core::protocol::EventKind::Terminal { result } = &mut event.event
+        {
+            crate::settings::annotate_envelope(result, path);
         }
         let encoded = codec::to_value(&event)
             .map_err(|_| failure())
