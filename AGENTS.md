@@ -18,7 +18,7 @@
 
 ## Build, Test, and Development Commands
 
-No build or development commands are runnable in the current checkout. Once `Cargo.toml` and crate sources exist, run these from the workspace root:
+Run these commands from the workspace root:
 
 - `cargo build --workspace`: compile the workspace.
 - `cargo fmt --all`: apply formatting before committing; use `cargo fmt --all --check` for a read-only check.
@@ -52,3 +52,9 @@ After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claud
   - **Reasoning:** States the repository mutation directly, so the commit history reads as a
     sequence of concrete operations that transformed the project.
 
+## Changelog and Releases
+
+- Record notable user-facing changes in `CHANGELOG.md` under `## [Unreleased]`, using the applicable `Added`, `Changed`, `Fixed`, or `Removed` subsection. Describe the resulting behavior for users.
+- When preparing a release, move its finished entries into one dated section, `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD`, and leave `[Unreleased]` above it. Preserve earlier release entries.
+- Match the release section and `vMAJOR.MINOR.PATCH` tag to the workspace version and lockfile. Release notes are extracted from that section; missing, empty, or duplicate sections fail the release.
+- Follow [the release workflow](.github/workflows/release.yml) for version-tag builds and draft verification. Correct a published release with a new patch version; preserve published assets and existing release tags.

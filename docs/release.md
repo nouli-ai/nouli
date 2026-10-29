@@ -1,34 +1,57 @@
-# Local installation and release validation
+# Install Nouli
 
-This is an unsigned local validation build. Public publication and distribution are separate owner decisions. Nouli and its workspace packages use the MIT license in LICENSE. Review available dependency licenses/notices, final package metadata, repository/support URLs, versioning policy, and release authority before public distribution. No signing/notarization, registry upload, Git tag, GitHub release, or push is performed.
+## Install a release archive
 
-Verified native targets are `aarch64-apple-darwin` and `aarch64-unknown-linux-gnu`. The Linux artifact is built/tested on Debian Bookworm (glibc 2.36); compatible newer GNU/Linux environments still need their own deployment validation. macOS validation uses the local Apple silicon host/SDK; it does not establish a minimum supported macOS version. Windows, x86_64, musl/static Linux, and other targets have no release support claim here.
+Choose an archive matching your operating system and processor from [GitHub Releases](https://github.com/standing-desks/nouli/releases):
 
-## Reproduce a local artifact
+- `nouli-VERSION-aarch64-apple-darwin.tar.gz` for Apple silicon Macs.
+- `nouli-VERSION-aarch64-unknown-linux-gnu.tar.gz` for ARM64 GNU/Linux.
 
-Use a clean tracked checkout, Rust 1.99.1 with Cargo/rustfmt/Clippy, the native C toolchain/SDK, Git, system TLS roots, and Python 3.11 or later. The first build downloads only locked dependencies; subsequent offline Cargo checks can use the populated cache. Use native builds rather than cross-compiling and claiming runtime validation. From the repository root:
+Download its matching `.sha256` file. Verify the checksum from the download directory:
 
 ```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-python3 scripts/validate_docs.py
-# OUTPUT must be a new directory; it may live under ignored target/:
-python3 scripts/package_release.py --output target/local-release/native
-# Replace ARCHIVE with the exact .tar.gz path printed above:
-python3 scripts/verify_install.py ARCHIVE.tar.gz
+# macOS:
+shasum -a 256 --check nouli-VERSION-aarch64-apple-darwin.tar.gz.sha256
+# Linux:
+sha256sum --check nouli-VERSION-aarch64-unknown-linux-gnu.tar.gz.sha256
 ```
 
-The archive includes `bin/nouli`, installation/project/configuration/output/contract documentation, `config.example.toml`, the exact lockfile/toolchain file, `MANIFEST.json`, `THIRD_PARTY_NOTICES.md`, available dependency license/notice files under `licenses/`, and `DISTRIBUTION_STATUS.md`. It includes no model, credential value, home directory, or saved ledger. Development commands in project/API documentation require a separate source checkout; the archive is a native binary distribution, not a buildable source bundle.
+Replace `VERSION` with the downloaded version. Extract the archive and place `nouli` in a directory on your PATH. For example, on macOS:
 
-The manifest identifies the actual native target, verbose toolchain identity, source commit, any tracked worktree changes, binary SHA-256, and SHA-256 for every staged file except the manifest itself. Release verification should use a clean tracked checkout so `tracked_changes` is empty; unrelated untracked local designs are never packaged. The adjacent `.sha256` file authenticates archive contents only when obtained from a trusted source; it is not a signature.
+```sh
+tar -xzf nouli-VERSION-aarch64-apple-darwin.tar.gz
+mkdir -p "$HOME/.local/bin"
+cp nouli "$HOME/.local/bin/nouli"
+nouli --version
+```
 
-Archive entries are sorted, have fixed owner/group IDs, normalized permissions, and the source commit's timestamp; gzip embeds that same timestamp and no local filename. Repeating with identical source/documentation, metadata, binary, and timestamp gives identical archive bytes. Locked dependencies do not by themselves guarantee identical binary bytes across different compiler/linker/SDK versions, build paths, environment flags, or targets. Reproduce those inputs, compare the manifest and binary hash first, then compare the archive. Local checksums can also be recomputed with `shasum -a 256 ARCHIVE.tar.gz` on macOS or `sha256sum ARCHIVE.tar.gz` on Linux.
+If your shell cannot find `nouli`, add `$HOME/.local/bin` to your PATH or choose a directory already on it.
 
-`verify_install.py` requires the matching native host before executing a staged binary. It checks the archive/filename hash, rejects links/traversal/duplicate entries, checks every manifested file and the binary, copies it into a fresh temporary installation, and runs the real CLI walkthrough with an isolated home/config/store and owned loopback service. This includes help/version with no home, configuration loading, durable new/continued turns, completed replay, sourced ephemeral evaluation with unchanged store bytes, and workflow partial/resume. It reports the exact archive/binary checksums and removes its temporary installation. Provider answers are deterministic fixtures.
+Archives contain the executable, the [MIT license](../LICENSE), and a README. They are unsigned and unnotarized. The Linux download targets Ubuntu 24.04 or a compatible GNU/Linux environment; compatibility with older glibc versions is not established.
 
-## Install and remove manually
+## Build from source
 
-Obtain and verify an archive for the matching tested native target. Inspect its manifest/status/notices first. Extract into a directory you own, then copy `bin/nouli` into a chosen directory on your PATH, for example a user-owned `~/.local/bin`. The binary has no Python or Rust runtime dependency. SQLite is bundled into the build, and TOON codec/runtime dependencies are linked Rust code; no separate SQLite server or codec installation is required. Native OS libraries and trusted TLS roots remain platform prerequisites. Configure a provider separately using `config.example.toml` and the configuration guide. Local Laya must already be running; no service/model is installed by Nouli.
+With the repository checked out and Rustup installed, run from its root:
 
-Uninstall by removing the binary you installed and any extracted artifact directory. Saved data in `~/.nouli` or an explicit store is independent of the executable; retain it unless you explicitly intend to delete history. This procedure never deletes a real user store.
+```sh
+cargo install --path nouli-cli --locked
+nouli --version
+```
+
+The repository selects its Rust toolchain automatically. Building requires the native C toolchain and platform SDK. The installed executable does not need a Rust or Python runtime.
+
+## Configure and update
+
+Follow the [configuration guide](configuration.md) to select a provider, model, and credential variable. Nouli does not include a model or provider account.
+
+To update, replace the installed executable with the new version. Configuration and saved histories remain in their configured locations.
+
+## Remove Nouli
+
+Remove the executable you installed. If you installed with Cargo, run:
+
+```sh
+cargo uninstall nouli-cli
+```
+
+Saved data in `~/.nouli` or a custom store is separate from the executable. Keep it to preserve your configuration and decision histories.

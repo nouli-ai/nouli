@@ -17,3 +17,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add provider configuration and `.env` credential loading.
 - Add a website with a user guide and interactive walkthroughs for robotics, banking, venture investing, food recalls, cybersecurity, and energy planning. Each walkthrough shows its commands, recorded model outputs, and a decision graph that follows along as you read.
 - License Nouli and its Rust packages under MIT, including the license in native archives.
+- Add Linux and macOS ARM64 downloads, with draft releases prepared when a version tag is pushed.

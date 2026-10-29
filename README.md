@@ -1,5 +1,7 @@
 # Nouli
 
+[![CI](https://github.com/standing-desks/nouli/actions/workflows/ci.yml/badge.svg)](https://github.com/standing-desks/nouli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/standing-desks/nouli?include_prereleases&sort=semver)](https://github.com/standing-desks/nouli/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-orange.svg)](rust-toolchain.toml)
 

@@ -1,0 +1,116 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    name: Check version and changelog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check tag matches version and belongs to main
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$version" = "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          git merge-base --is-ancestor HEAD origin/main
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Extract release notes from changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test "$(awk -v version="$VERSION" '$1=="##" {gsub(/\[|\]/,"",$2); if($2==version) n++} END {print n+0}' CHANGELOG.md)" = 1
+          awk -v version="$VERSION" '
+            $1=="##" {gsub(/\[|\]/,"",$2); if($2==version) {capture=1; next} if(capture) exit}
+            capture && /^\[[^][]+\]:/ {exit}
+            capture {print}
+          ' CHANGELOG.md > release-notes.md
+          grep -q '^[[:space:]]*[-*] ' release-notes.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+  build:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Test release commit on Linux
+        if: runner.os == 'Linux'
+        run: cargo test --workspace --locked
+      - name: Build release binary
+        run: cargo build --package nouli-cli --release --locked
+      - name: Smoke test release binary
+        shell: bash
+        run: |
+          env -i HOME="$RUNNER_TEMP/nouli-smoke" target/release/nouli --help
+          env -i HOME="$RUNNER_TEMP/nouli-smoke" target/release/nouli --version
+      - name: Create archive and checksum
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          archive="nouli-$VERSION-$TARGET.tar.gz"
+          mkdir -p dist
+          tar -czf "dist/$archive" -C target/release nouli -C "$GITHUB_WORKSPACE" LICENSE README.md
+          (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+  publish:
+    name: Create draft GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: aarch64-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: notes
+      - name: Verify archive checksums
+        run: cd dist && cat ./*.sha256 | sha256sum --check
+      - name: Create draft with binaries and changelog notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --draft \
+            --title "$GITHUB_REF_NAME" --notes-file notes/release-notes.md
