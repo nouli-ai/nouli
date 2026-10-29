@@ -39,6 +39,24 @@ NOULI=../target/debug/nouli node scripts/build-hero.mjs --store /tmp/nouli-hero/
 
 Recording makes 19 model calls on your provider account. Answers can differ between recordings, so check the new results before you commit them.
 
+## Replaying walkthroughs
+
+When the CLI changes, a walkthrough's commands and outputs have to be regenerated. `scripts/replay.mjs` runs a page's commands in an isolated `HOME` and writes their output back into the page, then exports the graph data again from the store it built.
+
+```sh
+node scripts/replay.mjs --example recall --nouli ../target/debug/nouli          # one walkthrough
+node scripts/replay.mjs --example all --nouli ../target/debug/nouli             # all of them
+node scripts/replay.mjs --example recall --nouli ../target/debug/nouli --check  # compare, write nothing
+```
+
+**Offline (the default)** needs no key and costs nothing. A local stub speaks the TypeSafe protocol and answers each model call with the result recorded for the matching step, so a run is deterministic. A call matches a step by its question prompts and option labels, taking the first unused step in order, and the run fails if a call has no match or a recorded step is never asked. Saved steps hold every probability in `src/data/examples/*.json`. A step that saved nothing (a `--no-session` run) holds only the answer its output printed: the selected option's probability, the probability of yes, or the expected score. The stub shares the remaining probability evenly across the other options, and for a score it spreads the mass over the two levels around the expected value, so the printed output matches. The stub also repeats the native confidence that the page printed. Questions are matched on their IDs only for such a step.
+
+**Live (`--live`)** runs the same commands against the provider in the current directory's `.env` (`TYPESAFE_TOKEN`, and `TYPESAFE_BASE_URL` if the endpoint is not `https://api.typesafe.ai`). Every step calls your provider account and costs money, the script says so, and the answers can differ from the recorded ones. Check them before you commit.
+
+`--check` compares what the commands print with the page, and the exported graph with `src/data`, ignoring session and turn IDs, and exits nonzero on a difference. Without it, each run replaces the IDs in the page and the graph data, so a clean run changes only IDs. It writes a page only when every step ran.
+
+The page's commands run through `sh`. A few older pages print apostrophes inside single-quoted text without escaping them; the script escapes those before running so the command still works. The commands call `nouli`, so `--nouli` names the binary they use.
+
 ## Walkthroughs
 
 Each walkthrough page links its steps to graph nodes with `data-node`, the node's index in that page's JSON. When you change a walkthrough's sessions, export its graph again and update the step links to match.
