@@ -13,7 +13,7 @@
 <article class="story prose">
 <p class="crumb"><a href="../">Examples</a></p>
 <h1 class="display small">Personal loan approval</h1>
-<p class="lede">In this recorded run, the model did not correctly apply the income correction. The graph preserves that result. Steps 7-9 explain the mismatch and the calculation a reviewer should check.</p>
+<p class="lede">In this recorded run, the model records the corrected income correctly but does not carry it into the affordability review. The graph preserves that result. Steps 8 and 9 explain the mismatch and the calculation a reviewer should check.</p>
 <h2>The problem</h2>
 <p>A loan officer is reviewing a request for a 6000 USD personal loan. The bank also offers a smaller 3000 USD alternative. A good repayment record is only one part of the review: either offer must leave enough money after living expenses, existing debts, and the new installment. During the review, corrected income verification arrives.</p>
 <p>The <a href="https://www.occ.gov/publications-and-resources/publications/comptrollers-handbook/files/installment-lending/pub-ch-installment-lending.pdf">OCC Installment Lending handbook</a> describes reviewing repayment capacity after obligations and living expenses. The applicant, loan quotes, and thresholds here are fictional. They demonstrate selected review steps, not a complete underwriting or compliance process.</p>
@@ -41,7 +41,7 @@ sample.&#x27; \
   cashflow    ▶ 1400 USD                         ████████████████████ 1.00
                 2000 USD                                              0.00
                 Request missing cash-flow recor…                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6c40-77bb-be80-49e138070c4c · turn 01a1875f-6c44-76a2-88c0-00ee5786782f</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1bfa-74c1-a042-ac9efeade77f · turn 01a1878e-1bfc-73ad-a6c6-10f9ab64157a</code></pre>
 <p>The initial monthly remainder is 5000 - 3000 - 600 = 1400 USD. This is a cash-flow fact for the later affordability review, not approval of a loan.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
@@ -58,7 +58,7 @@ delinquent balances, and the record is complete for this review.&#x27; \
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
   history       expected 2.00 of 2   ▁▁█
                 Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently timely pay…
-  typesafe/jev-1.14.0 · session 01a1875f-6c4f-71c6-9c34-2ab261bb48a3 · turn 01a1875f-6c53-72d4-88e8-9c8a514c732e</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1c03-7318-94b0-5aa4573c002b · turn 01a1878e-1c05-7735-9cef-4958b1adb77f</code></pre>
 <p>The returned score is 2, the highest level on this rubric. A score can be fractional; it is an expected position on the supplied scale, not necessarily a selected category.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
@@ -82,7 +82,7 @@ for it; otherwise refer for manual review. No funds have been advanced.&#x27; \
   policy      ▶ Both affordability and document… ████████████████████ 1.00
                 Repayment history alone                               0.00
                 Income alone                                          0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6c5d-733b-9b8c-c57392a16ae2 · turn 01a1875f-6c62-711b-9162-fddc19f20bdf</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1c0c-74fb-89c7-db72e28ef4d4 · turn 01a1878e-1c0d-7672-9324-08c8572c4152</code></pre>
 <p>The answer identifies the two required checks. The 1000 USD monthly remainder and quoted installments are sample bank rules, not regulatory formulas.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
@@ -99,11 +99,11 @@ threshold.&#x27; \
     Required affordability evidence is missing]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  affordabil… ▶ Both quoted loans meet the affo… ████████████████▎    0.81
+  affordabil… ▶ Both quoted loans meet the affo… █████████████████▊   0.89
                 Only the 3000 USD loan meets th… █▎                   0.06
-                Neither quoted loan meets the a… █▎                   0.06
-                Required affordability evidence… █▎                   0.06
-  typesafe/jev-1.14.0 · session 01a1875f-6c6c-7631-a3a0-0b483089045a · turn 01a1875f-6c75-728a-9b66-e08490d1699c</code></pre>
+                Neither quoted loan meets the a… ▊                    0.04
+                Required affordability evidence… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1c15-77a4-8e4a-38a4ba7c2414 · turn 01a1878e-1c17-7088-af09-87a69b1d7152</code></pre>
 <p>At the initial income, the remainders are 1150 USD for the requested loan and 1250 USD for the smaller alternative. Both exceed the sample 1000 USD threshold.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
@@ -117,10 +117,10 @@ affordability from this review.&#x27; \
     Required history evidence is missing]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  credit_rev… ▶ The complete record meets the h… ████████████████████ 1.00
+  credit_rev… ▶ The complete record meets the h… ███████████████████▊ 0.99
                 The record fails the history re…                      0.00
-                Required history evidence is mi…                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6c81-71a9-a80b-8214970c5471 · turn 01a1875f-6c8a-73c1-903d-fb20fe68a518</code></pre>
+                Required history evidence is mi… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1c1f-73f2-96d0-15c5be4dbb38 · turn 01a1878e-1c21-72b3-8b25-af337fa95044</code></pre>
 <p>The record meets the sample history gate: it is complete, includes 48 timely payments, and has no defaults or current delinquency.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
@@ -137,10 +137,10 @@ for a loan officer, not an executed lending decision.&#x27; \
     Refer for manual review without recommending either loan]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  recommenda… ▶ Recommend the requested 6000 US… ████████████████▎    0.81
-                Recommend review of the 3000 US… █▉                   0.09
-                Refer for manual review without… █▉                   0.09
-  typesafe/jev-1.14.0 · session 01a1875f-6c96-713f-81be-38983a238fa9 · turn 01a1875f-6ca5-74fc-a464-186d6b535597</code></pre>
+  recommenda… ▶ Recommend the requested 6000 US… ██████████████████▋  0.93
+                Recommend review of the 3000 US… ▍                    0.02
+                Refer for manual review without… █                    0.05
+  typesafe/jev-1.14.0 · session 01a1878e-1c29-74a0-9e11-c2ed0edaa1d0 · turn 01a1878e-1c2c-73bf-b813-a7581646b347</code></pre>
 <p>The model recommends the requested loan using the initial evidence. This remains a recommendation for review; the command does not approve or disburse funds.</p>
 </section>
 <section class="step" id="step-7" data-node="6">
@@ -156,11 +156,11 @@ no other obligations. The proposed loan has not been approved or disbursed.&#x27
     Request missing cash-flow records]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
-  cashflow      1200 USD                         ██████▎              0.31
-              ▶ 1400 USD                         █████████████▊       0.69   → was 1400 USD 1.00
-                Request missing cash-flow recor…                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6c40-77bb-be80-49e138070c4c · turn 01a1875f-6cbc-71bf-ab9b-2d0cef313b6a</code></pre>
-<p class="finding"><strong>Review finding:</strong> the model returned 1400 USD, but the corrected remainder is 4800 - 3000 - 600 = 1200 USD. This captured answer is incorrect; its probability does not establish that the arithmetic is right.</p>
+  cashflow    ▶ 1200 USD                         ██████████████████▋  0.93   → was 1400 USD 1.00
+                1400 USD                         █▎                   0.06
+                Request missing cash-flow recor… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1bfa-74c1-a042-ac9efeade77f · turn 01a1878e-1c37-74f9-913a-68206c37d8d1</code></pre>
+<p>The model returns 1200 USD, which matches the corrected remainder: 4800 - 3000 - 600 = 1200 USD. The earlier 1400 USD answer is shown as the previous turn.</p>
 </section>
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Create an updated affordability review</h2>
@@ -176,11 +176,11 @@ threshold.&#x27; \
     Required affordability evidence is missing]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  affordabil… ▶ Both quoted loans meet the affo… ███████████████▍     0.77
-                Only the 3000 USD loan meets th… █                    0.05
-                Neither quoted loan meets the a… █▎                   0.06
-                Required affordability evidence… ██▍                  0.12
-  typesafe/jev-1.14.0 · session 01a1875f-6cc7-760b-b988-2360cf91c37f · turn 01a1875f-6cd2-70ff-8806-233d2cb7d1ec</code></pre>
+  affordabil… ▶ Both quoted loans meet the affo… ██████████████▋      0.73
+                Only the 3000 USD loan meets th… ███                  0.15
+                Neither quoted loan meets the a… ██▎                  0.11
+                Required affordability evidence… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1c3e-7128-9cc4-9f49f8c3cde8 · turn 01a1878e-1c41-7496-a1b8-0d8505cd3e3a</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model still says both loans qualify. With corrected income, the requested installment leaves 950 USD and the smaller installment leaves 1050 USD. Only the smaller loan meets the sample threshold.</p>
 </section>
 <section class="step" id="step-9" data-node="8">
@@ -197,10 +197,10 @@ for a loan officer, not an executed lending decision.&#x27; \
     Refer for manual review without recommending either loan]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  recommenda… ▶ Recommend the requested 6000 US… ██████████████▋      0.73
-                Recommend review of the 3000 US… ███▍                 0.17
-                Refer for manual review without… ██                   0.10
-  typesafe/jev-1.14.0 · session 01a1875f-6cdf-7788-871a-2144f8788f6c · turn 01a1875f-6cf0-775e-bf18-8e5bafc42f6a</code></pre>
+  recommenda… ▶ Recommend the requested 6000 US… ████████████████▍    0.82
+                Recommend review of the 3000 US… █▍                   0.07
+                Refer for manual review without… ██▎                  0.11
+  typesafe/jev-1.14.0 · session 01a1878e-1c49-74d5-ad40-071d6563ed87 · turn 01a1878e-1c4c-73fe-b861-b59cdea5f935</code></pre>
 <p class="finding"><strong>Review finding:</strong> the model continues to recommend the requested loan. Under the supplied sample policy, the smaller alternative is the eligible recommendation. This run shows why a saved graph supports inspection and why model recommendations need independent checks of numerical conditions.</p>
 </section>
 </article>

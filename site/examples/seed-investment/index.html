@@ -35,11 +35,11 @@
     Missing skills the company needs to build the product]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  team        ▶ Strong product and technology f… ███████████████████▎ 0.96
-                Complete team, including proven… ▊                    0.04
-                Missing skills the company need…                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6f8e-7549-85b5-547221e9d857 · turn 01a1875f-6f92-7156-834d-ea5c101fda5d</code></pre>
-<p>The model sees strong product and technology coverage with a gap in sales leadership (0.96). That gap matters later: every customer so far came through the CEO's network.</p>
+  team        ▶ Strong product and technology f… ███████████████████▊ 0.99
+                Complete team, including proven…                      0.00
+                Missing skills the company need… ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1d64-705c-bf8c-d55600a85348 · turn 01a1878e-1d66-723e-a5de-3595ff4cd054</code></pre>
+<p>The model sees strong product and technology coverage with a gap in sales leadership (0.99). That gap matters later: every customer so far came through the CEO's network.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review traction</h2>
@@ -54,7 +54,7 @@
   traction    ▶ An early product-market signal … ████████████████████ 1.00
                 Repeatable sales across unrelat…                      0.00
                 Too little evidence of demand                         0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6f9d-7321-b974-3559befa918d · turn 01a1875f-6fa2-72eb-b4f0-7dd66aa1c9ff</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1d6d-72ab-bd17-c56eda6ca143 · turn 01a1878e-1d6f-7711-a6c2-7d6178334b0c</code></pre>
 <p>Nine paid practices and no cancellations read as an early signal, not repeatable sales (P=1), because no customer came from outside the founders' network.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
@@ -67,11 +67,11 @@
     The round falls outside the fund policy]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  check       ▶ Request $1.2M for 8% ownership   ███████████████████  0.95
+  check       ▶ Request $1.2M for 8% ownership   ████████████████████ 1.00
                 Request $1M for 6.7% ownership                        0.00
-                The round falls outside the fun… █                    0.05
-  typesafe/jev-1.14.0 · session 01a1875f-6fac-71fa-a14a-b3eab68e7d40 · turn 01a1875f-6fb0-7738-b597-85bbbbc9283e</code></pre>
-<p>The model picks the $1.2M check, the one that meets the 8% ownership target (0.95). A $1M check would fall short.</p>
+                The round falls outside the fun…                      0.00
+  typesafe/jev-1.14.0 · session 01a1878e-1d76-72c6-afe4-5dba66dda816 · turn 01a1878e-1d78-71c3-9540-a4f114096d26</code></pre>
+<p>The model picks the $1.2M check, the one that meets the 8% ownership target (1.00). A $1M check would fall short.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Plan diligence from team and traction</h2>
@@ -83,11 +83,11 @@
     Assess the founders&#x27; plan to hire a first sales lead]&quot;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  diligence   ▶ Call practices outside the foun… ███████████████▋     0.78
-                Review the claim-preparation mo… ▎                    0.01
-                Assess the founders' plan to hi… ████▎                0.21
-  typesafe/jev-1.14.0 · session 01a1875f-6fbc-76e6-afe4-dca8f73cd849 · turn 01a1875f-6fc5-7688-9d4d-bb9d141276f8</code></pre>
-<p>Reference calls come first (0.78), with sales hiring second (0.21). Both point at the same gap: nobody has sold Tidewell to a stranger yet.</p>
+  diligence   ▶ Call practices outside the foun… ███████████████▎     0.76
+                Review the claim-preparation mo…                      0.00
+                Assess the founders' plan to hi… ████▊                0.24
+  typesafe/jev-1.14.0 · session 01a1878e-1d7f-73a6-9a59-6b7574aaab3d · turn 01a1878e-1d82-7747-b517-75222e4ab197</code></pre>
+<p>Reference calls come first (0.76), with sales hiring second (0.24). Both point at the same gap: nobody has sold Tidewell to a stranger yet.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Draft the investment committee recommendation</h2>
@@ -99,11 +99,11 @@
     Pass on the round]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  recommenda… ▶ Invest $1.2M, conditional on co… ██████████████████▎  0.91
+  recommenda… ▶ Invest $1.2M, conditional on co… ███████████████████▋ 0.98
                 Invest $1.2M now without furthe…                      0.00
-                Pass on the round                █▊                   0.09
-  typesafe/jev-1.14.0 · session 01a1875f-6fd2-75c3-be31-8b3065179f68 · turn 01a1875f-6fde-714e-ad14-a48441c4ae54</code></pre>
-<p>The model recommends investing $1.2M once the planned reference calls are done (0.91). It names the open diligence instead of skipping it, as the fund policy asks.</p>
+                Pass on the round                ▍                    0.02
+  typesafe/jev-1.14.0 · session 01a1878e-1d8a-727e-b8e5-9b5b179b5a00 · turn 01a1878e-1d8d-7315-bc8b-e58da685bf27</code></pre>
+<p>The model recommends investing $1.2M once the planned reference calls are done (0.98). It names the open diligence instead of skipping it, as the fund policy asks.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Add the reference calls</h2>
@@ -119,7 +119,7 @@
   risk        ▶ A practice-management vendor bu… ███████████████████▊ 0.99
                 Weak demand for faster claims c… ▎                    0.01
                 The founders' ability to build …                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6f9d-7321-b974-3559befa918d · turn 01a1875f-6ff4-7468-aa3d-d0b3d4814700</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1d6d-72ab-bd17-c56eda6ca143 · turn 01a1878e-1d97-72b3-ae96-966863f255e7</code></pre>
 <p>Two of the four outside practices bought. The other two declined because their software vendor plans a built-in assistant. The model now names platform bundling as the biggest risk (0.99), something the first traction turn couldn't show.</p>
 </section>
 <section class="step" id="step-7" data-node="6">
@@ -132,11 +132,11 @@
     Assess the founders&#x27; plan to hire a first sales lead]&quot;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  diligence   ▶ Test whether practices would ke… ███████████████████▊ 0.99
+  diligence   ▶ Test whether practices would ke… ████████████████████ 1.00
                 Review the claim-preparation mo…                      0.00
-                Assess the founders' plan to hi… ▎                    0.01
-  typesafe/jev-1.14.0 · session 01a1875f-7000-7471-988f-e46aa0843608 · turn 01a1875f-700b-7752-b742-b1b467fdbe50</code></pre>
-<p>Diligence moves from reference calls, which are done, to the bundling risk (0.99).</p>
+                Assess the founders' plan to hi…                      0.00
+  typesafe/jev-1.14.0 · session 01a1878e-1d9f-77b0-9882-4e1901c6ffa6 · turn 01a1878e-1da2-7420-bddc-60bd42f1282a</code></pre>
+<p>Diligence moves from reference calls, which are done, to the bundling risk (1.00).</p>
 </section>
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Reconsider the recommendation</h2>
@@ -149,12 +149,12 @@
     Pass until Tidewell shows it can win against the bundled feature]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  recommenda… ▶ Invest $1.2M with a milestone: … ████████████▎        0.61
-                Invest $1.2M now on the current… ▍                    0.02
-                Invest $500,000 to hold a small… ▊                    0.04
-                Pass until Tidewell shows it ca… ██████▋              0.33
-  typesafe/jev-1.14.0 · session 01a1875f-7018-77df-a8fd-72960fd7d921 · turn 01a1875f-7027-71aa-aa4c-0f65261551b4</code></pre>
-<p>The model recommends $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant (0.61). Passing is a real second choice (0.33), so the committee sees a close call, not a confident yes. The smaller $500,000 check gets 0.04; it would miss the fund's 8% ownership target.</p>
+  recommenda… ▶ Invest $1.2M with a milestone: … █████████████████▊   0.89
+                Invest $1.2M now on the current… ▋                    0.03
+                Invest $500,000 to hold a small…                      0.00
+                Pass until Tidewell shows it ca… █▋                   0.08
+  typesafe/jev-1.14.0 · session 01a1878e-1daa-749d-999f-bc1bc5c7f0cf · turn 01a1878e-1dad-74a1-9432-791bc71aea7a</code></pre>
+<p>The model recommends $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant (0.89). Passing is a distant second (0.08). The smaller $500,000 check gets 0.00; it would miss the fund's 8% ownership target.</p>
 </section>
 <section class="step" id="step-9">
 <h2><span class="num">09</span>Try new terms without saving</h2>
@@ -167,11 +167,11 @@
   --drop recommendation</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  (not saved) · 1 fact · 1 question
-  terms         Keep the $1.2M recommendation    ▉                    0.04
-                Ask for a smaller allocation at… ▉                    0.04
-              ▶ Decline, because the new price … ██████████████████▎  0.91
+  terms         Keep the $1.2M recommendation    █▋                   0.08
+                Ask for a smaller allocation at… ▊                    0.04
+              ▶ Decline, because the new price … █████████████████▋   0.88
   typesafe/jev-1.14.0</code></pre>
-<p>At a $25M post-money valuation the round is above the fund's $20M limit, and the model declines (0.91). Because nothing was saved, this answer isn't in the graph and the recommendation stands.</p>
+<p>At a $25M post-money valuation the round is above the fund's $20M limit, and the model declines (0.88). Because nothing was saved, this answer isn't in the graph and the recommendation stands.</p>
 </section>
 <h2>What the graph keeps</h2>
 <p>The saved graph holds both recommendations side by side. The first is conditional on reference calls; the second is conditional on the bundling milestone. Each one traces back to the facts the model saw, and the fund policy feeds both without being copied. These commands make recommendations only; they don't commit capital.</p>

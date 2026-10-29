@@ -41,7 +41,7 @@ example.&#x27; \
   scope       ▶ Match the product and both lot-… ████████████████████ 1.00
                 Use the product name alone                            0.00
                 Request a clearer recall notice                       0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6d65-7603-b07b-9b477acb7915 · turn 01a1875f-6d6a-7092-a120-14f771a79e72</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1c7a-7508-ad4f-fdb7af45176f · turn 01a1878e-1c7c-722e-a61d-599f6b5c7101</code></pre>
 <p>The model selects matching both product and lot conditions. Product identity alone, or the numeric range without the suffix condition, would overstate the scope.</p>
 </section>
 <section class="step" id="step-2" data-node="1">
@@ -54,9 +54,9 @@ creamy peanut butter, identifier 5150025516. No other jars are on hand.&#x27; \
   -q &#x27;stock: Can every jar in this inventory be matched to an identifiable lot?&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  stock         yes                              █▎                   0.06
-  typesafe/jev-1.14.0 · session 01a1875f-6d74-74cc-a523-c732dd335215 · turn 01a1875f-6d78-74ef-9f3c-db41abd6f78f</code></pre>
-<p>P(yes)=0.06 reflects the model answer to whether every jar can be identified. Six codes are unreadable; this result is not itself a recall-scope decision.</p>
+  stock         yes                              █▍                   0.07
+  typesafe/jev-1.14.0 · session 01a1878e-1c83-7601-a75b-ca568ad11ea9 · turn 01a1878e-1c85-75ee-a441-1a2f8db9238b</code></pre>
+<p>P(yes)=0.07 reflects the model answer to whether every jar can be identified. Six codes are unreadable; this result is not itself a recall-scope decision.</p>
 </section>
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Review distribution and customer responses</h2>
@@ -74,7 +74,7 @@ has not responded. There were no other shipments of this batch.&#x27; \
   customers     Contact Harbor                                        0.00
               ▶ Contact Summit                   ████████████████████ 1.00
                 Contact both customers again                          0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6d86-769b-9683-3acd7b62d06c</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1c8c-7365-90c1-001d50a5441c · turn 01a1878e-1c8e-7729-bc83-a55a5c438b98</code></pre>
 <p>Harbor has acknowledged the notice and isolated its boxes. Summit has not replied, so the model selects Summit for follow-up.</p>
 </section>
 <section class="step" id="step-4" data-node="3">
@@ -89,10 +89,10 @@ it actually covers.&#x27; \
     Identify unreadable codes before choosing any stock action]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  stock_plan  ▶ Quarantine matching jars and ho… ███████████████████▊ 0.99
+  stock_plan  ▶ Quarantine matching jars and ho… ████████████████████ 1.00
                 Hold every jar pending further …                      0.00
-                Identify unreadable codes befor… ▎                    0.01
-  typesafe/jev-1.14.0 · session 01a1875f-6d91-74df-98fa-02b78b44784f · turn 01a1875f-6d99-74f3-8fd8-0698ef7fd353</code></pre>
+                Identify unreadable codes befor…                      0.00
+  typesafe/jev-1.14.0 · session 01a1878e-1c95-75d9-ac95-1b04cb845ca4 · turn 01a1878e-1c98-7682-8718-7eea0fe0db26</code></pre>
 <p>The matching lot is held, unreadable codes are held for identification, and the identified nonmatching lot is distinguished from them. The chosen label summarizes the action; the source records retain the counts and lot codes.</p>
 </section>
 <section class="step" id="step-5" data-node="4">
@@ -113,7 +113,7 @@ each customer.&#x27; \
   outreach    ▶ Ask Summit to acknowledge the n… ████████████████████ 1.00
                 Verify that both customers have…                      0.00
                 Escalate reported sales to the …                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6da5-77ff-9257-2757c83f4824 · turn 01a1875f-6dad-71a7-b81b-00ad1ee1d6f9</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1ca0-7674-9bd1-24f7046accde · turn 01a1878e-1ca3-779f-bdeb-b70fb207c50c</code></pre>
 <p>The model asks Summit to acknowledge the notice and account for its boxes. This addresses products already distributed, which the warehouse action cannot resolve.</p>
 </section>
 <section class="step" id="step-6" data-node="5">
@@ -129,10 +129,10 @@ action. Use the latest dated customer records.&#x27; \
     Coordinate warehouse holds and escalation of sales to end customers]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
-  response      Coordinate warehouse holds only  ▏                    0.01
-              ▶ Coordinate warehouse holds and … ███████████████████▊ 0.99
-                Coordinate warehouse holds and … ▏                    0.01
-  typesafe/jev-1.14.0 · session 01a1875f-6dba-7370-835a-708d1072fd01 · turn 01a1875f-6dc8-7651-ad76-d889ed202637</code></pre>
+  response      Coordinate warehouse holds only                       0.00
+              ▶ Coordinate warehouse holds and … ████████████████████ 1.00
+                Coordinate warehouse holds and …                      0.00
+  typesafe/jev-1.14.0 · session 01a1878e-1caa-7315-b3e1-ebbe51a0d5b5 · turn 01a1878e-1cae-742a-ac59-0cbda5899e8e</code></pre>
 <p>The coordinated response includes stock holds and follow-up for the missing customer response. The recommendation does not send notices or move inventory.</p>
 </section>
 <section class="step" id="step-7" data-node="6">
@@ -149,10 +149,10 @@ isolated.&#x27; \
     Treat the customer response as complete]&#x27;</code></pre>
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 2 · 1 fact · 1 question · re-asked 1
-  customers     Confirm acknowledgment only                           0.00
-              ▶ Escalate the 12 sold boxes and … ████████████████████ 1.00
-                Treat the customer response as …                      0.00
-  typesafe/jev-1.14.0 · session 01a1875f-6d82-76fa-bdeb-b8e667f6323f · turn 01a1875f-6ddf-7142-b42f-006a3796a594</code></pre>
+  customers     Confirm acknowledgment only      ▎                    0.01
+              ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
+                Treat the customer response as … ▎                    0.01
+  typesafe/jev-1.14.0 · session 01a1878e-1c8c-7365-90c1-001d50a5441c · turn 01a1878e-1cb8-7535-b38e-94a0e8358f64</code></pre>
 <p>The model selects escalation of the 12 sold boxes and verification of downstream notification. The earlier nonresponse stays in history but is no longer the latest customer status.</p>
 </section>
 <section class="step" id="step-8" data-node="7">
@@ -173,7 +173,7 @@ each customer.&#x27; \
   outreach_u…   Ask Summit to acknowledge the n…                      0.00
                 Verify that both customers have…                      0.00
               ▶ Escalate reported sales to the … ████████████████████ 1.00
-  typesafe/jev-1.14.0 · session 01a1875f-6dea-7050-9877-f15f8efa818b · turn 01a1875f-6df5-7677-b741-2d8746c6ac76</code></pre>
+  typesafe/jev-1.14.0 · session 01a1878e-1cbf-71cd-b6bc-da1df9d5100a · turn 01a1878e-1cc2-76b4-862f-f1daef12e7a8</code></pre>
 <p>The model now selects escalation of reported sales. Acknowledgment alone is insufficient because some affected products reached end customers.</p>
 </section>
 <section class="step" id="step-9" data-node="8">
@@ -190,9 +190,9 @@ action. Use the latest dated customer records.&#x27; \
 <p class="caption">Output</p>
 <pre class="out"><code>  turn 1 · 1 fact · 1 question
   response_u…   Coordinate warehouse holds only                       0.00
-                Coordinate warehouse holds and … ▎                    0.01
-              ▶ Coordinate warehouse holds and … ███████████████████▊ 0.99
-  typesafe/jev-1.14.0 · session 01a1875f-6e02-72d3-81a6-66cb59a63d5b · turn 01a1875f-6e13-7546-b05c-bb02209d3695</code></pre>
+                Coordinate warehouse holds and …                      0.00
+              ▶ Coordinate warehouse holds and … ████████████████████ 1.00
+  typesafe/jev-1.14.0 · session 01a1878e-1cc9-723d-b2bb-df1ea7f49627 · turn 01a1878e-1ccd-7795-8314-ed035c87cfed</code></pre>
 <p>The response now includes downstream follow-up alongside warehouse holds. The customer update changed the response without requiring a new warehouse assessment.</p>
 </section>
 </article>
