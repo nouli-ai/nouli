@@ -69,7 +69,7 @@ fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_
     assert!(!home.store().exists());
     let args = [&create("Origin")[..], &["--request-id", "dotenv-initial"]].concat();
     let first = report(home.run(&args));
-    let next = report(home.run(["add", "Origin", "New facts"]));
+    let next = report(home.run([&["add", "Origin", "New facts"][..], &QUESTIONS].concat()));
     assert_eq!(next.session, first.session);
     assert!(
         server

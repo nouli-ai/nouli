@@ -5,7 +5,6 @@ pub mod loopback;
 use harness::Home;
 use loopback::Server;
 use nouli_core::{
-    decision::Question,
     identity::SessionSelector,
     storage::{Ledger, OpenMode},
 };
@@ -18,7 +17,11 @@ use std::{
 /// A provider that answers whatever it is asked: the first choice leads, unless
 /// the evidence says CANCELLED, when the last one does.
 fn provider() -> Server {
-    Server::with_handler(|body| {
+    Server::with_handler(answer)
+}
+
+fn answer(body: &Value) -> (u16, String) {
+    {
         let cancelled = body["state"].as_str().unwrap().contains("CANCELLED");
         let mut answers = serde_json::Map::new();
         for (id, question) in body["questions"].as_object().unwrap() {
@@ -56,7 +59,7 @@ fn provider() -> Server {
             json!({"model":"repl-fixture","answers":answers,"usage":{"input_tokens":10,"output_tokens":2}})
                 .to_string(),
         )
-    })
+    }
 }
 
 fn open(home: &Home, arguments: &[&str], script: &str) -> Output {
@@ -95,10 +98,21 @@ fn ledger(home: &Home) -> Ledger {
     Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap()
 }
 
-fn ids(questions: &[Question]) -> Vec<&str> {
-    questions
+/// The question IDs each provider call asked, in order.
+fn asked(server: &Server) -> Vec<Vec<String>> {
+    server
+        .calls
+        .lock()
+        .unwrap()
         .iter()
-        .map(|question| question.id.as_str())
+        .map(|call| {
+            call["questions"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect()
+        })
         .collect()
 }
 
@@ -116,126 +130,149 @@ fn turns(ledger: &Ledger, name: &str) -> usize {
 }
 
 #[test]
-fn a_question_sends_the_queued_facts_and_an_empty_line_asks_again() {
+fn each_question_is_one_call_that_asks_only_that_question() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let script = "The train costs 40 USD.\nA taxi costs 70 USD.\n\
         ?transport: How should I get there? [train, taxi]\n?on_time: Will the train arrive on time?\n\
-        ?broken question\nThe train is CANCELLED\n\n/quit\n";
+        ?broken question\nThe train is CANCELLED\n\n\
+        ?transport: How should I get there now? [train, taxi]\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     let expected = [
         "new session \"travel\" · /help for commands",
         "travel › ?transport: How should I get there? [train, taxi]",
         "  turn 1 · 2 facts · 1 question",
-        "  turn 2 · 0 facts · 2 questions · re-asked 1",
+        "  turn 2 · 0 facts · 1 question",
         "  grammar error: a question starts with an ID and a colon",
-        "  turn 3 · 1 fact · 2 questions · re-asked 2",
+        "  1 queued; ask a question with ?id: prompt to send them",
+        "  turn 3 · 1 fact · 1 question",
+        // Asked again by name, the new answer is shown against the earlier one.
         "→ was taxi 0.90",
-        "→ was 0.98",
         "  bye",
     ];
     for line in expected {
         assert!(transcript.contains(line), "{line}\n{transcript}");
     }
+    assert!(!transcript.contains("re-asked"), "{transcript}");
     assert!(!transcript.contains('\x1b'));
-    // The grammar error queued nothing, and the ledger holds what was shown.
+    // Each call asked only the question typed for it.
+    assert_eq!(asked(&server), [["transport"], ["on_time"], ["transport"]]);
     let ledger = ledger(&home);
     assert_eq!(turns(&ledger, "travel"), 3);
-    assert_eq!(
-        ids(&ledger.standing_questions(&session("travel")).unwrap()),
-        ["transport", "on_time"]
-    );
     let facts = ledger.facts(&session("travel")).unwrap();
     assert_eq!(facts.len(), 3);
     assert_eq!(facts[2].text, "The train is CANCELLED");
-    assert_eq!(server.count(), 3);
-    // An empty line with nothing queued and nothing standing does nothing.
-    let quiet = text(&open(&home, &["open", "Quiet"], "\n\n/ask\n/quit\n"));
-    assert!(quiet.contains("nothing to ask: define a question with ?id: prompt"));
+    // An empty line with nothing queued does nothing, and nothing re-asks.
+    let quiet = text(&open(
+        &home,
+        &["open", "Quiet"],
+        "\n\n/ask\n/questions\n/quit\n",
+    ));
+    assert!(quiet.contains("unknown command /ask"), "{quiet}");
+    assert!(quiet.contains("unknown command /questions"), "{quiet}");
     assert_eq!(server.count(), 3);
 }
 
 #[test]
-fn whatif_saves_nothing_and_keeps_what_was_queued() {
-    let server = provider();
+fn a_failed_turn_keeps_its_question_and_an_empty_line_sends_it_again() {
+    // The second call fails; every other call is answered.
+    let calls = std::sync::atomic::AtomicUsize::new(0);
+    let server = Server::with_handler(move |body| {
+        if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+            (400, json!({"error": "rejected"}).to_string())
+        } else {
+            answer(body)
+        }
+    });
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\n\
-        /whatif The train is CANCELLED\nA queued fact\n/whatif Another what-if\n/facts\n/quit\n";
+    // A what-if in between neither sends nor replaces the waiting question.
+    let script =
+        "?first: Is it first?\nA fact\n?q: Is it?\n/whatif ?other: Is it other?\n\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
+    assert!(transcript.contains("  error: "), "{transcript}");
     assert!(
         transcript.contains("  (not saved) · 1 fact · 1 question"),
         "{transcript}"
     );
-    assert!(transcript.contains("(queued)"), "{transcript}");
     assert!(
-        transcript.contains("   +  A queued fact   (queued)"),
+        transcript.contains("  turn 2 · 1 fact · 1 question"),
         "{transcript}"
     );
+    assert_eq!(asked(&server), [["first"], ["q"], ["other"], ["q"]]);
+    assert_eq!(turns(&ledger(&home), "travel"), 2);
+}
+
+#[test]
+fn whatif_asks_its_own_question_saves_nothing_and_keeps_what_was_queued() {
+    let server = provider();
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\nThe train is CANCELLED\n\
+        /whatif ?late: Will I be late?\n/whatif The fare doubled.\nA queued fact\n/facts\n/quit\n";
+    let transcript = text(&open(&home, &["open", "travel"], script));
+    for line in [
+        "  (not saved) · 1 fact · 1 question",
+        "usage: /whatif ?id: prompt [a, b]",
+        "   +  The train is CANCELLED   (queued)",
+        "   +  A queued fact   (queued)",
+    ] {
+        assert!(transcript.contains(line), "{line}\n{transcript}");
+    }
     let ledger = ledger(&home);
     assert_eq!(turns(&ledger, "travel"), 1);
     assert_eq!(ledger.facts(&session("travel")).unwrap().len(), 1);
     let id = ledger.session(&session("travel")).unwrap().id;
     assert_eq!(ledger.list_attempts(id).unwrap().len(), 1);
-    // The what-if reached the provider but not the ledger.
-    assert_eq!(server.count(), 3);
+    // The what-if reached the provider with the queued fact, but not the ledger.
+    assert_eq!(asked(&server), [["transport"], ["late"]]);
+    let state = server.calls.lock().unwrap()[1]["state"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(state.contains("CANCELLED"), "{state}");
     // Before any turn there is nothing to start from.
     let early = text(&open(
         &home,
         &["open", "Fresh"],
-        "/whatif A fact\n/branch Nope\n/quit\n",
+        "/whatif ?q: Is it?\n/branch Nope\n/quit\n",
     ));
     assert!(early.contains("send a turn first: a what-if starts from the last one"));
     assert!(early.contains("send a turn first: a branch starts from the last one"));
 }
 
 #[test]
-fn replace_drop_and_clear_change_the_next_turn_only() {
+fn replace_and_clear_change_the_next_turn_only() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let script = "The taxi costs 70 USD.\n?transport: How? [train, taxi]\n?on_time: On time?\n\
-        /replace 1 The taxi costs 140 USD.\n/drop on_time\n/questions\n\n\
-        A stray fact\n/drop missing\n/clear\n/facts\n/quit\n";
+    let script = "The taxi costs 70 USD.\n?transport: How? [train, taxi]\n\
+        /replace 1 The taxi costs 140 USD.\n?fare: Is the taxi affordable?\n\
+        A stray fact\n/clear\n/facts\n/drop fare\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     for line in [
         "  queued: replace fact 1",
-        "  queued: drop on_time",
-        "  turn 3 · 1 fact (1 replaced, kept in history) · 1 question · re-asked 1",
+        "  turn 2 · 1 fact (1 replaced, kept in history) · 1 question",
         "  queue cleared",
         "   1  The taxi costs 140 USD.   (replaced; was: The taxi costs 70 USD.)",
+        "unknown command /drop",
     ] {
         assert!(transcript.contains(line), "{line}\n{transcript}");
     }
-    // The queued drop is shown in /questions only after it is sent.
     let ledger = ledger(&home);
-    assert_eq!(
-        ids(&ledger.standing_questions(&session("travel")).unwrap()),
-        ["transport"]
-    );
     let facts = ledger.facts(&session("travel")).unwrap();
     assert_eq!(facts.len(), 1);
     assert_eq!(facts[0].previous.as_deref(), Some("The taxi costs 70 USD."));
-    // The model saw the replacement and not the original.
-    let state = server.calls.lock().unwrap()[2]["state"]
+    // The model saw the replacement and not the original, with only the new question.
+    assert_eq!(asked(&server), [["transport"], ["fare"]]);
+    let state = server.calls.lock().unwrap()[1]["state"]
         .as_str()
         .unwrap()
         .to_owned();
     assert!(state.contains("140 USD") && !state.contains("70 USD"));
     assert!(!state.contains("A stray fact"));
-    assert_eq!(turns(&ledger, "travel"), 3);
-    // A drop of an unknown question is an error that keeps the REPL running.
-    let failed = text(&open(
-        &home,
-        &["open", "travel"],
-        "/drop missing\n\n/quit\n",
-    ));
-    assert!(
-        failed.contains("error: invalid_standing_question"),
-        "{failed}"
-    );
-    assert!(failed.contains("  bye"));
+    assert_eq!(turns(&ledger, "travel"), 2);
 }
 
 #[test]
@@ -244,16 +281,15 @@ fn branch_blend_use_new_and_view_create_and_show_the_expected_sessions() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\n\
-        /branch Alt\nThe taxi is cheaper.\n\n\
+        /branch Alt\nThe taxi is cheaper.\n?cheaper: Is the taxi cheaper?\n\
         /use travel\n/new Budget\nThe budget is 50 USD.\n?approval: Is approval needed?\n\
-        /blend travel Budget as Plan\n/questions\n/view\n/use nowhere\n/new bad name\n/quit\n";
+        /blend travel Budget as Plan\n/view\n/use nowhere\n/new bad name\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     for line in [
-        "  new session \"Alt\" from travel @ turn 1 · 1 standing question",
-        "  travel · 1 standing question",
+        "  new session \"Alt\" from travel @ turn 1\n",
+        "  travel\n",
         "  new session \"Budget\"",
-        "  new session \"Plan\" from travel + Budget · no standing questions",
-        "  no standing questions",
+        "  new session \"Plan\" from travel + Budget\n",
         "  ○ travel  1 turn",
         "  ○ Alt  1 turn  ← travel",
         "  ○ Budget  1 turn",
@@ -263,21 +299,13 @@ fn branch_blend_use_new_and_view_create_and_show_the_expected_sessions() {
     ] {
         assert!(transcript.contains(line), "{line}\n{transcript}");
     }
+    // A branch asks only its own question, not its source's.
+    assert_eq!(asked(&server), [["transport"], ["cheaper"], ["approval"]]);
     let ledger = ledger(&home);
     let alt = ledger.session(&session("Alt")).unwrap();
     assert_eq!(ledger.session_sources(alt.id).unwrap().len(), 1);
-    assert_eq!(
-        ids(&ledger.standing_questions(&session("Alt")).unwrap()),
-        ["transport"]
-    );
     let plan = ledger.session(&session("Plan")).unwrap();
     assert_eq!(ledger.session_sources(plan.id).unwrap().len(), 2);
-    assert!(
-        ledger
-            .standing_questions(&session("Plan"))
-            .unwrap()
-            .is_empty()
-    );
     assert_eq!(ledger.list_sessions().unwrap().len(), 4);
     // The blend lists both sources' facts, and not the branch's.
     assert_eq!(ledger.facts(&session("Plan")).unwrap().len(), 2);
@@ -299,6 +327,7 @@ fn help_context_quit_and_end_of_input_with_a_queue_behave_as_documented() {
         "fact      A fact",
         "answer    q",
         "/blend A B as NAME",
+        "/whatif ?id: prompt",
         "unknown command /nonsense · /help lists them",
         "usage: /replace N TEXT, where N is a number from /facts",
         "1 queued; press Ctrl-D again to quit and discard them",

@@ -80,24 +80,21 @@ impl<R: BufRead> Lines for Reader<R> {
     }
 }
 
-/// Queued input that the next turn will carry.
+/// Queued input that the next turn will carry. The question is there only
+/// while a failed turn left it to send again.
 #[derive(Default)]
 struct Queue {
     facts: Vec<String>,
-    questions: Vec<String>,
-    drops: Vec<String>,
+    question: Option<String>,
     replaces: Vec<(usize, String)>,
 }
 
 impl Queue {
     fn is_empty(&self) -> bool {
-        self.facts.is_empty()
-            && self.questions.is_empty()
-            && self.drops.is_empty()
-            && self.replaces.is_empty()
+        self.len() == 0
     }
     fn len(&self) -> usize {
-        self.facts.len() + self.questions.len() + self.drops.len() + self.replaces.len()
+        self.facts.len() + usize::from(self.question.is_some()) + self.replaces.len()
     }
 }
 
@@ -106,22 +103,17 @@ struct Current {
     label: String,
 }
 
-const HELP: [(&str, &str); 16] = [
-    ("plain text", "queue a fact for the next turn"),
+const HELP: [(&str, &str); 14] = [
+    ("plain text", "queue a fact for the next question"),
     (
         "?id: prompt [a, b]",
-        "ask now with the queue; the question stays (<a, b> for a score; no list for yes/no)",
+        "ask it now with the queue (<a, b> for a score; no list for yes/no)",
     ),
-    (
-        "(empty line)",
-        "send the queue as one turn, or re-ask the standing questions",
-    ),
-    ("/ask", "send now"),
-    ("/whatif FACT", "an unsaved turn with the queue plus FACT"),
+    ("(empty line)", "send the queue again after a failed turn"),
+    ("/whatif ?id: prompt", "ask with the queue and save nothing"),
     ("/replace N TEXT", "replace fact N (queued)"),
-    ("/drop ID", "drop a standing question (queued)"),
     ("/clear", "empty the queue"),
-    ("/facts, /questions", "show the session"),
+    ("/facts", "show the session's facts"),
     ("/new NAME", "start a session"),
     ("/use NAME", "switch session"),
     ("/branch NAME", "a new session from here"),
@@ -197,13 +189,6 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         SessionSelector::Id(self.session.id)
     }
 
-    fn standing_count(&self, id: Id) -> Result<usize, ErrorReport> {
-        self.ledger()?
-            .standing_questions(&SessionSelector::Id(id))
-            .map(|questions| questions.len())
-            .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())
-    }
-
     fn switch(&mut self, session: &Session) {
         self.session = Current {
             id: session.id,
@@ -212,18 +197,11 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
     }
 
     fn banner(&mut self, created: bool) -> io::Result<()> {
+        let label = render::clean(&self.session.label);
         let text = if created {
-            format!(
-                "new session \"{}\" · /help for commands",
-                render::clean(&self.session.label)
-            )
+            format!("new session \"{label}\" · /help for commands")
         } else {
-            let standing = self.standing_count(self.session.id).unwrap_or(0);
-            format!(
-                "{} · {} · /help for commands",
-                render::clean(&self.session.label),
-                plural(standing, "standing question")
-            )
+            format!("{label} · /help for commands")
         };
         self.dim(&text)?;
         self.say("")
@@ -271,11 +249,23 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
     /// Returns false when the session should end.
     fn handle(&mut self, line: &str) -> io::Result<bool> {
         match input::parse(line) {
-            Line::Send => self.send(None, true)?,
+            Line::Send => match self.queue.question.clone() {
+                Some(question) => self.send(&question, false)?,
+                None if self.queue.is_empty() => {}
+                None => {
+                    let text = format!(
+                        "  {} queued; ask a question with ?id: prompt to send them",
+                        self.queue.len()
+                    );
+                    self.dim(&text)?;
+                }
+            },
             Line::Fact(text) => self.queue.facts.push(text),
             Line::Question(text) => {
-                if self.queue_question(&text)? {
-                    self.send(None, false)?;
+                if self.valid(&text)? {
+                    // A question left by a failed turn gives way to the new one.
+                    self.queue.question = Some(text.clone());
+                    self.send(&text, false)?;
                 }
             }
             Line::Command(command) => return self.command(command),
@@ -283,17 +273,10 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         Ok(true)
     }
 
-    /// Queues a valid question for the turn it starts, or reports why it isn't one.
-    /// A question left queued by a failed turn is replaced, not repeated.
-    fn queue_question(&mut self, text: &str) -> io::Result<bool> {
+    /// True for a line in the question grammar; otherwise reports why it isn't one.
+    fn valid(&mut self, text: &str) -> io::Result<bool> {
         match grammar::parse(text) {
-            Ok(question) => {
-                self.queue.questions.retain(|queued| {
-                    grammar::parse(queued).map_or(true, |old| old.id != question.id)
-                });
-                self.queue.questions.push(text.to_owned());
-                Ok(true)
-            }
+            Ok(_) => Ok(true),
             Err(error) => {
                 writeln!(self.out, "  grammar error: {error}")?;
                 Ok(false)
@@ -313,8 +296,11 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                     self.dim(&text)?;
                 }
             }
-            Command::Ask => self.send(None, false)?,
-            Command::Whatif(fact) => self.send(Some(fact), false)?,
+            Command::Whatif(question) => {
+                if self.valid(&question)? {
+                    self.send(&question, true)?;
+                }
+            }
             Command::Clear => {
                 self.queue = Queue::default();
                 self.dim("  queue cleared")?;
@@ -323,12 +309,7 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                 self.queue.replaces.push((number, text));
                 self.dim(&format!("  queued: replace fact {number}"))?;
             }
-            Command::Drop(id) => {
-                self.dim(&format!("  queued: drop {}", render::clean(&id)))?;
-                self.queue.drops.push(id);
-            }
             Command::Facts => self.facts()?,
-            Command::Questions => self.questions()?,
             Command::View => self.view()?,
             Command::Context => self.context()?,
             Command::Use(name) => self.use_session(&name)?,
@@ -344,17 +325,9 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         Ok(true)
     }
 
-    /// Sends the queue as a turn, or as a what-if when `whatif` carries a fact.
-    /// `quiet` makes an empty line with nothing to ask do nothing at all.
-    fn send(&mut self, whatif: Option<String>, quiet: bool) -> io::Result<()> {
-        let ephemeral = whatif.is_some();
-        if quiet && self.queue.is_empty() {
-            match self.standing_count(self.session.id) {
-                Ok(0) => return Ok(()),
-                Ok(_) => {}
-                Err(error) => return self.fail(&error.message),
-            }
-        }
+    /// Sends the queued facts with `question` as one turn, or as a what-if
+    /// that saves nothing.
+    fn send(&mut self, question: &str, ephemeral: bool) -> io::Result<()> {
         if ephemeral {
             match self.ledger().and_then(|ledger| {
                 ledger
@@ -368,8 +341,6 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                 Err(error) => return self.fail(&error.message),
             }
         }
-        let mut facts = self.queue.facts.clone();
-        facts.extend(whatif);
         let replace: Vec<String> = self
             .queue
             .replaces
@@ -399,9 +370,8 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         let draft = Parts {
             selection,
             numbering: Some(self.selector()),
-            facts: &facts,
-            questions: &self.queue.questions,
-            drop: &self.queue.drops,
+            facts: &self.queue.facts,
+            questions: &[question.to_owned()],
             replace: &replace,
             common: &common,
             replay: None,
@@ -452,9 +422,6 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                 }
                 Ok(())
             }
-            Report::Error(error) if error.code == "questions_required" => {
-                self.say("  nothing to ask: define a question with ?id: prompt …")
-            }
             Report::Error(error) => self.fail(&format!("{}: {}", error.code, error.message)),
             _ => self.fail("unexpected result"),
         }
@@ -465,16 +432,6 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
             Ok(ledger) => {
                 let session = self.selector();
                 show::facts(&ledger, &session, &self.queue, self.paint, &mut self.out)
-            }
-            Err(error) => self.fail(&error.message),
-        }
-    }
-
-    fn questions(&mut self) -> io::Result<()> {
-        match self.ledger() {
-            Ok(ledger) => {
-                let session = self.selector();
-                show::questions(&ledger, &session, &self.queue, self.paint, &mut self.out)
             }
             Err(error) => self.fail(&error.message),
         }
@@ -508,12 +465,7 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         match found {
             Ok(session) => {
                 self.switch(&session);
-                let standing = self.standing_count(session.id).unwrap_or(0);
-                self.dim(&format!(
-                    "  {} · {}",
-                    render::clean(&label(&session)),
-                    plural(standing, "standing question")
-                ))
+                self.dim(&format!("  {}", render::clean(&label(&session))))
             }
             Err(_) => self.fail(&format!("no session \"{}\"", render::clean(name))),
         }
@@ -580,12 +532,10 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         }];
         if let Some(session) = self.create(name, sources) {
             self.switch(&session);
-            let standing = self.standing_count(session.id).unwrap_or(0);
             self.dim(&format!(
-                "  new session \"{}\" from {} @ turn {turns} · {}",
+                "  new session \"{}\" from {} @ turn {turns}",
                 render::clean(name),
-                render::clean(&label(&source)),
-                plural(standing, "standing question")
+                render::clean(&label(&source))
             ))?;
         }
         Ok(())
@@ -618,7 +568,7 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         if let Some(session) = self.create(name, sources) {
             self.switch(&session);
             self.dim(&format!(
-                "  new session \"{}\" from {} · no standing questions",
+                "  new session \"{}\" from {}",
                 render::clean(name),
                 render::clean(&names.join(" + "))
             ))?;
@@ -697,7 +647,7 @@ mod tests {
         );
         let queue = || Queue {
             facts: vec!["a fact".into()],
-            drops: vec!["old".into()],
+            question: Some("q: Is it?".into()),
             ..Queue::default()
         };
         let mut sent = repl(&settings, queue(), Reader(&b""[..]));
@@ -738,17 +688,15 @@ mod tests {
     }
 
     #[test]
-    fn a_question_asked_again_replaces_the_queued_one() {
+    fn a_question_that_breaks_the_grammar_is_reported_and_not_sent() {
         let settings = Settings::for_test(std::env::temp_dir());
         let mut session = repl(&settings, Queue::default(), Reader(&b""[..]));
-        assert!(session.queue_question("q: Is it?").unwrap());
-        assert!(session.queue_question("other: And this?").unwrap());
-        assert!(session.queue_question("q: Is it now?").unwrap());
-        assert!(!session.queue_question("broken").unwrap());
-        assert_eq!(
-            session.queue.questions,
-            ["other: And this?", "q: Is it now?"]
-        );
+        assert!(session.valid("q: Is it?").unwrap());
+        assert!(!session.valid("broken").unwrap());
+        assert!(session.handle("?broken").unwrap());
+        assert!(session.queue.is_empty());
+        let shown = String::from_utf8(session.out).unwrap();
+        assert_eq!(shown.matches("grammar error").count(), 2, "{shown}");
     }
 
     #[test]
@@ -756,7 +704,7 @@ mod tests {
         let mut queue = Queue::default();
         assert!(queue.is_empty());
         queue.facts.push("a".into());
-        queue.drops.push("b".into());
+        queue.question = Some("b: Is it?".into());
         queue.replaces.push((1, "c".into()));
         assert_eq!(queue.len(), 3);
         assert!(!queue.is_empty());

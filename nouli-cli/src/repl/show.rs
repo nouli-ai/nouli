@@ -1,4 +1,4 @@
-//! What the REPL prints about the ledger: facts, questions, the sessions, and
+//! What the REPL prints about the ledger: facts, the sessions, and
 //! the last turn's context. Each function reads a ledger and writes to a
 //! writer, and holds no loop state of its own.
 use super::{Queue, label, own_turns, plural, short};
@@ -10,7 +10,6 @@ use crate::{
     },
 };
 use nouli_core::{
-    decision::grammar,
     history::SourcePoint,
     identity::{Id, SessionSelector},
     protocol::{ErrorCategory, ErrorReport},
@@ -74,36 +73,6 @@ pub(super) fn facts(
             .collect();
     for line in pending {
         dim(out, paint, &line)?;
-    }
-    Ok(())
-}
-
-/// The session's standing questions, then the ones the queue would add.
-pub(super) fn questions(
-    ledger: &Ledger,
-    session: &SessionSelector,
-    queue: &Queue,
-    paint: Paint,
-    out: &mut impl Write,
-) -> io::Result<()> {
-    let standing = match ledger
-        .standing_questions(session)
-        .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())
-    {
-        Ok(standing) => standing,
-        Err(error) => return fail(out, &error.message),
-    };
-    if standing.is_empty() && queue.questions.is_empty() {
-        return dim(out, paint, "  no standing questions");
-    }
-    for question in &standing {
-        say(
-            out,
-            &format!("  {}", render::clean(&grammar::format(question))),
-        )?;
-    }
-    for line in &queue.questions {
-        dim(out, paint, &format!("  {}   (queued)", render::clean(line)))?;
     }
     Ok(())
 }

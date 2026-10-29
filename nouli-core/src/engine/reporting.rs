@@ -101,24 +101,21 @@ fn projection(error: &ProjectionError) -> ErrorReport {
         message(Category::Input, "invalid_context")
     }
 }
-/// Standing-question mistakes name the question ID, which is caller input.
+/// Request mistakes the caller can fix by changing what the turn asks.
 fn history(error: &crate::history::HistoryError) -> Option<ErrorReport> {
     use crate::{decision::ContractError, history::HistoryError};
     match error {
-        HistoryError::UnknownStanding(_) | HistoryError::StandingCollision(_) => {
-            Some(ErrorReport {
-                category: Category::Input,
-                code: "invalid_standing_question".into(),
-                message: error.to_string(),
-                retryable: false,
-            })
-        }
+        HistoryError::Standing => Some(ErrorReport {
+            category: Category::Input,
+            code: "invalid_standing_question".into(),
+            message: error.to_string(),
+            retryable: false,
+        }),
         HistoryError::Decision(ContractError::Empty("questions")) => Some(ErrorReport {
             category: Category::Input,
             code: "questions_required".into(),
-            message:
-                "No questions to ask: add one with -q, or the session has no standing questions"
-                    .into(),
+            message: "No questions to ask: add one with -q, or in the request's turn.questions"
+                .into(),
             retryable: false,
         }),
         _ => None,

@@ -6,7 +6,6 @@ use crate::{
 use clap::Subcommand;
 use nouli_core::{
     codec,
-    decision::grammar,
     identity::{Id, SessionSelector},
     protocol::{ErrorCategory, ErrorReport},
     storage::{Ledger, OpenMode, inspection::InspectionError},
@@ -24,11 +23,6 @@ pub(crate) enum Command {
     },
     /// List a session's numbered facts, marking those inherited from a source session.
     Facts {
-        #[arg(value_parser=selector)]
-        session: SessionSelector,
-    },
-    /// List a session's standing questions in the one-line grammar.
-    Questions {
         #[arg(value_parser=selector)]
         session: SessionSelector,
     },
@@ -161,32 +155,6 @@ pub(crate) fn run(
             (
                 "Facts",
                 serde_json::json!({"version":1,"facts":codec::to_value(&facts)?}),
-            )
-        }
-        Command::Questions { session } => {
-            let questions = ledger
-                .standing_questions(session)
-                .map_err(nouli_core::storage::inspection::InspectionError::from)?;
-            if format == Format::Text {
-                for question in &questions {
-                    writeln!(sink, "{}", render::clean(&grammar::format(question)))?;
-                }
-                sink.flush()?;
-                return Ok(());
-            }
-            (
-                "Standing questions",
-                serde_json::json!({
-                    "version":1,
-                    "questions":questions
-                        .iter()
-                        .map(|question| Ok(serde_json::json!({
-                            "id":question.id,
-                            "line":grammar::format(question),
-                            "question":codec::to_value(question)?,
-                        })))
-                        .collect::<Result<Vec<_>, codec::CodecError>>()?,
-                }),
             )
         }
         Command::Context { session, turn } => (

@@ -36,8 +36,6 @@ pub(crate) struct Header {
     /// How many of the facts replaced an earlier one.
     pub replaced: usize,
     pub questions: usize,
-    /// How many standing questions were asked again.
-    pub reasked: usize,
 }
 
 impl Header {
@@ -50,17 +48,13 @@ impl Header {
             None => "(not saved)".into(),
         }];
         let mut facts = plural(self.facts, "fact");
-        // What was replaced or asked again is a fact about the saved history,
-        // which a turn that was not saved does not touch.
-        let saved = self.turn.is_some();
-        if saved && self.replaced > 0 {
+        // What was replaced is a fact about the saved history, which a turn
+        // that was not saved does not touch.
+        if self.turn.is_some() && self.replaced > 0 {
             facts.push_str(&format!(" ({} replaced, kept in history)", self.replaced));
         }
         parts.push(facts);
         parts.push(plural(self.questions, "question"));
-        if saved && self.reasked > 0 {
-            parts.push(format!("re-asked {}", self.reasked));
-        }
         parts.join(" · ")
     }
 }
@@ -434,7 +428,6 @@ mod tests {
             facts: 1,
             replaced: 0,
             questions: 2,
-            reasked: 0,
         }
     }
     fn render(
@@ -478,10 +471,9 @@ mod tests {
                 facts: 1,
                 replaced: 1,
                 questions: 2,
-                reasked: 2
             }
             .text(),
-            "turn 3 · 1 fact (1 replaced, kept in history) · 2 questions · re-asked 2"
+            "turn 3 · 1 fact (1 replaced, kept in history) · 2 questions"
         );
         assert_eq!(header(None).text(), "(not saved) · 1 fact · 2 questions");
         // An unsaved turn leaves out what only a saved one has.
@@ -491,7 +483,6 @@ mod tests {
                 facts: 3,
                 replaced: 1,
                 questions: 3,
-                reasked: 3
             }
             .text(),
             "(not saved) · 3 facts · 3 questions"

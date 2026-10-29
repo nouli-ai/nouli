@@ -34,17 +34,20 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     );
     let first = seed.turn.unwrap();
     let original = seed.session.unwrap();
-    // The standing questions are asked again with only a new fact.
-    let next = report(home.run(["add", "Origin", "LATER"]));
+    // A later turn asks the questions it lists, here the same ones again.
+    let next = report(home.run([&["add", "Origin", "LATER"][..], &QUESTIONS].concat()));
     assert_eq!(next.session, Some(original));
     assert_eq!(next.questions, seed.questions);
-    let branch = report(home.run([
-        "new",
-        "Branch",
-        "BRANCH",
-        "--from",
-        &format!("Origin@{first}"),
-    ]));
+    let source = format!("Origin@{first}");
+    let branch = report(
+        home.run(
+            [
+                &["new", "Branch", "BRANCH", "--from", &source][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
+    );
     assert_ne!(branch.session, Some(original));
     assert_eq!(branch.manifest.sources[0].frontier, vec![first]);
     assert_eq!(branch.questions, seed.questions);
@@ -61,7 +64,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     );
     assert_eq!(blend.manifest.sources.len(), 2);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let ephemeral = report(home.run(["whatif", "Blend", "TEMPORARY"]));
+    let ephemeral = report(home.run([&["whatif", "Blend", "TEMPORARY"][..], &QUESTIONS].concat()));
     assert!(ephemeral.session.is_none());
     assert!(ephemeral.turn.is_none());
     assert!(
@@ -72,7 +75,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     let fresh_store = home.0.join("never-created");
     let fresh = home
         .command_at(&fresh_store)
-        .args(["whatif", "Blend", "FRESH"])
+        .args([&["whatif", "Blend", "FRESH"][..], &QUESTIONS].concat())
         .output()
         .unwrap();
     assert_eq!(fresh.status.code(), Some(6));
@@ -83,7 +86,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
         .arg(home.0.join("config.toml"))
         .arg("--store")
         .arg(&fresh_store)
-        .args(["whatif", "Blend", "FRESH"])
+        .args([&["whatif", "Blend", "FRESH"][..], &QUESTIONS].concat())
         .output()
         .unwrap();
     assert_eq!(no_home.status.code(), Some(6));

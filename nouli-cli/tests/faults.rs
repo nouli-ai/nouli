@@ -47,8 +47,6 @@ fn key_request(
 ) -> std::path::PathBuf {
     let mut turn = turn();
     turn.state.push(Input::Text { text: name.into() });
-    // The session's standing questions supply the questions.
-    turn.questions.clear();
     let request = EvaluationRequest {
         standing: Default::default(),
         turn,
@@ -105,29 +103,45 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     );
     std::fs::write(config, text).unwrap();
     let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTIONS].concat()));
-    let arguments = ["add", "Main", "CRASHING", "--request-id", "crash-request"];
+    let arguments = [
+        &["add", "Main", "CRASHING", "--request-id", "crash-request"][..],
+        &QUESTIONS,
+    ]
+    .concat();
     let child = OwnedChild::new(
         home.command()
-            .args(arguments)
+            .args(&arguments)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap(),
     );
     waiting.recv_timeout(Duration::from_secs(5)).unwrap();
-    error(home.run(arguments), 5);
+    error(home.run(&arguments), 5);
     error(
-        home.run([
-            "add",
-            "Main",
-            "OTHER_INTENT",
-            "--request-id",
-            "different-request",
-        ]),
+        home.run(
+            [
+                &[
+                    "add",
+                    "Main",
+                    "OTHER_INTENT",
+                    "--request-id",
+                    "different-request",
+                ][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
         5,
     );
     error(
-        home.run(["add", "Main", "CHANGED", "--request-id", "crash-request"]),
+        home.run(
+            [
+                &["add", "Main", "CHANGED", "--request-id", "crash-request"][..],
+                &QUESTIONS,
+            ]
+            .concat(),
+        ),
         5,
     );
     assert_eq!(primary.count(), 2);
@@ -165,7 +179,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[1].progress.state, AttemptStatus::Running);
     drop(ledger);
-    let interrupted = error(home.run(arguments), 130);
+    let interrupted = error(home.run(&arguments), 130);
     assert_eq!(
         interrupted.category,
         nouli_core::protocol::ErrorCategory::Interrupted
@@ -180,7 +194,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         vec![base.turn.unwrap()]
     );
     assert_eq!(primary.count(), 3);
-    let replay = report(home.run(arguments));
+    let replay = report(home.run(&arguments));
     assert!(replay.replayed);
     assert_eq!(replay.turn, recovered.turn);
     assert_eq!(primary.count(), 3);
@@ -300,7 +314,7 @@ fn adaptive() -> Server {
 }
 
 #[test]
-fn retrying_an_interrupted_request_applies_its_questions_and_drops_once() {
+fn retrying_an_interrupted_request_asks_its_own_question_once() {
     let server = adaptive();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -316,25 +330,12 @@ fn retrying_an_interrupted_request_applies_its_questions_and_drops_once() {
         "A new fact",
         "-q",
         "extra: Is it cheap?",
-        "--drop",
-        "on_time",
         "--request-id",
         "retry-questions",
         "--json",
     ];
     error(home.run(arguments), 6);
     assert_eq!(server.count(), 2);
-    // Nothing was applied to the session: it still asks the original questions.
-    let standing = |home: &Home| {
-        let output = home.run(["questions", "Main", "--format", "text"]);
-        assert!(output.status.success(), "{output:?}");
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .lines()
-            .map(|line| line.split(':').next().unwrap().to_owned())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(standing(&home), ["travel", "on_time", "quality"]);
     sql(&home, "DROP TRIGGER inject_fault;");
     // Without the flag the request is interrupted and nothing is sent.
     let interrupted = error(home.run(arguments), 130);
@@ -347,19 +348,16 @@ fn retrying_an_interrupted_request_applies_its_questions_and_drops_once() {
         .iter()
         .map(|question| question.id.as_str())
         .collect();
-    assert_eq!(asked, ["travel", "quality", "extra"]);
+    assert_eq!(asked, ["extra"]);
     let sent = server.calls.lock().unwrap().last().unwrap().clone();
-    let mut sent: Vec<_> = sent["questions"]
+    let sent: Vec<_> = sent["questions"]
         .as_object()
         .unwrap()
         .keys()
         .cloned()
         .collect();
-    sent.sort();
-    assert_eq!(sent, ["extra", "quality", "travel"]);
+    assert_eq!(sent, ["extra"]);
     assert_eq!(server.count(), 3);
-    // The changes applied once: the new question stands, the dropped one is gone.
-    assert_eq!(standing(&home), ["travel", "quality", "extra"]);
     let replay = report(home.run(arguments));
     assert!(replay.replayed && replay.turn == recovered.turn);
     assert_eq!(server.count(), 3);

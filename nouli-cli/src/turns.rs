@@ -8,9 +8,10 @@ use clap::{ArgAction, Args};
 use nouli_core::{
     codec,
     context::{ContextUpdate, facts},
-    decision::{CONTRACT_VERSION, TurnRequest, grammar},
+    decision::{CONTRACT_VERSION, ContractError, TurnRequest, grammar},
     history::{
-        EvaluationRequest, ModelSelection, SessionSelection, SourceSelection, StandingChanges,
+        EvaluationRequest, HistoryError, ModelSelection, SessionSelection, SourceSelection,
+        StandingChanges,
     },
     identity::{Id, SessionName, SessionSelector},
 };
@@ -59,7 +60,7 @@ pub(crate) struct New {
     /// Facts to record on the first turn.
     #[arg(value_name = "FACT")]
     pub facts: Vec<String>,
-    /// A standing question, like "id: prompt [a, b]" (repeatable).
+    /// A question to ask, like "id: prompt [a, b]" (repeatable).
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
     pub questions: Vec<String>,
     #[command(flatten)]
@@ -77,12 +78,9 @@ pub(crate) struct Add {
     /// Facts to record on this turn.
     #[arg(value_name = "FACT")]
     pub facts: Vec<String>,
-    /// Set or replace a standing question, like "id: prompt [a, b]" (repeatable).
+    /// A question to ask, like "id: prompt [a, b]" (repeatable).
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
     pub questions: Vec<String>,
-    /// Drop a standing question by ID (repeatable).
-    #[arg(long, value_name = "ID")]
-    pub drop: Vec<String>,
     /// Replace fact N with new text (repeatable).
     #[arg(long, num_args = 2, value_names = ["N", "TEXT"], action = ArgAction::Append)]
     pub replace: Vec<String>,
@@ -92,18 +90,15 @@ pub(crate) struct Add {
     pub replay: Replay,
 }
 
-/// Ask again without new facts.
+/// Ask a question without new facts.
 #[derive(Debug, Args)]
 pub(crate) struct Ask {
     /// The session, by ID or unique name.
     #[arg(value_name = "SESSION", value_parser = selector)]
     pub session: SessionSelector,
-    /// Set or replace a standing question, like "id: prompt [a, b]" (repeatable).
+    /// A question to ask, like "id: prompt [a, b]" (repeatable).
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
     pub questions: Vec<String>,
-    /// Drop a standing question by ID (repeatable).
-    #[arg(long, value_name = "ID")]
-    pub drop: Vec<String>,
     #[command(flatten)]
     pub common: Common,
     #[command(flatten)]
@@ -119,12 +114,9 @@ pub(crate) struct Whatif {
     /// Facts to add for this turn only.
     #[arg(value_name = "FACT")]
     pub facts: Vec<String>,
-    /// Ask an extra or changed question for this turn only (repeatable).
+    /// A question to ask, like "id: prompt [a, b]" (repeatable).
     #[arg(short = 'q', long = "question", value_name = "QUESTION")]
     pub questions: Vec<String>,
-    /// Leave a standing question out of this turn only (repeatable).
-    #[arg(long, value_name = "ID")]
-    pub drop: Vec<String>,
     /// Replace fact N with new text for this turn only (repeatable).
     #[arg(long, num_args = 2, value_names = ["N", "TEXT"], action = ArgAction::Append)]
     pub replace: Vec<String>,
@@ -170,7 +162,6 @@ pub(crate) struct Parts<'a> {
     pub numbering: Option<SessionSelector>,
     pub facts: &'a [String],
     pub questions: &'a [String],
-    pub drop: &'a [String],
     /// `--replace` values in pairs: a fact number, then its new text.
     pub replace: &'a [String],
     pub common: &'a Common,
@@ -208,7 +199,6 @@ impl Verb<'_> {
                     numbering: None,
                     facts: &args.facts,
                     questions: &args.questions,
-                    drop: &[],
                     replace: &[],
                     common: &args.common,
                     replay: Some(&args.replay),
@@ -230,7 +220,6 @@ impl Verb<'_> {
                 numbering: Some(args.session.clone()),
                 facts: &args.facts,
                 questions: &args.questions,
-                drop: &args.drop,
                 replace: &args.replace,
                 common: &args.common,
                 replay: Some(&args.replay),
@@ -244,7 +233,6 @@ impl Verb<'_> {
                 numbering: None,
                 facts: &[],
                 questions: &args.questions,
-                drop: &args.drop,
                 replace: &[],
                 common: &args.common,
                 replay: Some(&args.replay),
@@ -262,7 +250,6 @@ impl Verb<'_> {
                 numbering: Some(args.session.clone()),
                 facts: &args.facts,
                 questions: &args.questions,
-                drop: &args.drop,
                 replace: &args.replace,
                 common: &args.common,
                 replay: None,
@@ -306,11 +293,7 @@ impl Parts<'_> {
     pub(crate) fn draft(self, stdin: &mut impl Read) -> Result<Draft, InputError> {
         let replaces = pairs(self.replace)?;
         let mut request = if let Some(path) = &self.common.input {
-            if !(self.facts.is_empty()
-                && self.questions.is_empty()
-                && self.drop.is_empty()
-                && self.replace.is_empty())
-            {
+            if !(self.facts.is_empty() && self.questions.is_empty() && self.replace.is_empty()) {
                 return Err(InputError::InputConflict);
             }
             let (bytes, format) = input::file(path, self.common.input_format, stdin)?;
@@ -341,15 +324,12 @@ impl Parts<'_> {
                 }
             }
         } else {
-            let mut set = Vec::with_capacity(self.questions.len());
+            let mut questions = Vec::with_capacity(self.questions.len());
             for (index, line) in self.questions.iter().enumerate() {
-                set.push(grammar::parse(line).map_err(|source| InputError::Question {
+                questions.push(grammar::parse(line).map_err(|source| InputError::Question {
                     position: index + 1,
                     source,
                 })?);
-            }
-            if self.drop.iter().any(|id| id.trim().is_empty()) {
-                return Err(InputError::DropEmpty);
             }
             let mut updates = Vec::with_capacity(self.facts.len());
             for (index, text) in self.facts.iter().enumerate() {
@@ -362,12 +342,9 @@ impl Parts<'_> {
                 turn: TurnRequest {
                     version: CONTRACT_VERSION,
                     state: vec![],
-                    questions: vec![],
+                    questions,
                 },
-                standing: StandingChanges {
-                    set,
-                    drop: self.drop.to_vec(),
-                },
+                standing: StandingChanges::default(),
                 session: SessionSelection::New { name: None },
                 updates,
                 required_records: vec![],
@@ -391,7 +368,13 @@ impl Parts<'_> {
             }
             retry_interrupted = replay.retry_interrupted;
         }
-        request.validate()?;
+        // `new` with nothing to ask only creates the session.
+        if self.create.is_none() {
+            request.validate().map_err(|error| match error {
+                HistoryError::Decision(ContractError::Empty("questions")) => InputError::NoQuestion,
+                error => error.into(),
+            })?;
+        }
         Ok(Draft {
             request,
             ephemeral: self.ephemeral,
@@ -526,7 +509,18 @@ mod tests {
                 Err(InputError::CreateOnly)
             ));
         }
-        assert!(draft(&["new", "Trip", "A fact", "--request-id", "key"]).is_ok());
+        assert!(
+            draft(&[
+                "new",
+                "Trip",
+                "A fact",
+                "-q",
+                "q: Is it?",
+                "--request-id",
+                "key"
+            ])
+            .is_ok()
+        );
         let turn = draft(&[
             "new",
             "Trip",
@@ -539,31 +533,49 @@ mod tests {
         .unwrap();
         assert!(turn.create.is_none() && !turn.ephemeral);
         assert_eq!(turn.request.updates.len(), 1);
-        assert_eq!(turn.request.standing.set[0].id, "transport");
-        assert!(turn.request.turn.questions.is_empty());
+        assert_eq!(turn.request.turn.questions[0].id, "transport");
+        assert!(turn.request.standing.is_empty());
         assert!(matches!(
             turn.request.session,
             SessionSelection::From { ref sources, .. } if sources.len() == 1
         ));
-        // Facts alone are still a turn; the engine reports that nothing is asked.
-        assert!(draft(&["new", "Trip", "A fact"]).unwrap().create.is_none());
+        // Facts alone are a turn with nothing to ask.
+        assert!(matches!(
+            draft(&["new", "Trip", "A fact"]),
+            Err(InputError::NoQuestion)
+        ));
+    }
+
+    #[test]
+    fn a_turn_asks_exactly_the_questions_it_is_given() {
+        let asked = draft(&["add", "Trip", "-q", "a: A?", "-q", "b: B?"]).unwrap();
+        assert_eq!(asked.request.turn.questions.len(), 2);
+        assert!(asked.request.standing.is_empty());
+        for verb in ["add", "ask", "whatif"] {
+            assert!(matches!(
+                draft(&[verb, "Trip"]),
+                Err(InputError::NoQuestion)
+            ));
+        }
+        for removed in [&["add", "Trip", "--drop", "a"][..], &["questions", "Trip"]] {
+            assert!(Cli::try_parse_from([&["nouli"][..], removed].concat()).is_err());
+        }
     }
 
     #[test]
     fn verbs_choose_their_session_selection_and_durability() {
-        let add = draft(&["add", "Trip", "--drop", "old"]).unwrap();
+        let add = draft(&["add", "Trip", "-q", "q: Is it?"]).unwrap();
         assert!(matches!(
             add.request.session,
             SessionSelection::Continue { .. }
         ));
-        assert_eq!(add.request.standing.drop, ["old"]);
-        let what = draft(&["whatif", "Trip", "A fact"]).unwrap();
+        let what = draft(&["whatif", "Trip", "A fact", "-q", "q: Is it?"]).unwrap();
         assert!(what.ephemeral && what.request.request_id.is_none());
         assert!(matches!(
             what.request.session,
             SessionSelection::From { .. }
         ));
-        let ask = draft(&["ask", "Trip", "--request-id", "key"]).unwrap();
+        let ask = draft(&["ask", "Trip", "-q", "q: Is it?", "--request-id", "key"]).unwrap();
         assert!(ask.request.updates.is_empty());
         assert_eq!(ask.request.request_id.as_deref(), Some("key"));
         assert!(matches!(
@@ -582,6 +594,8 @@ mod tests {
                 "1",
                 text,
                 extra,
+                "-q",
+                "q: Is it?",
                 "--request-id",
                 "key",
             ])
@@ -645,10 +659,6 @@ mod tests {
             Err(InputError::InputConflict)
         ));
         assert!(matches!(
-            draft(&["add", "Trip", "--drop", " "]),
-            Err(InputError::DropEmpty)
-        ));
-        assert!(matches!(
             draft(&["add", "Trip", "  "]),
             Err(InputError::Fact(facts::FactError::Empty))
         ));
@@ -682,10 +692,19 @@ mod tests {
                 }
             })
             .collect();
-        let resolved = draft(&["add", "Trip", "New", "--replace", "2", "TWO"])
-            .unwrap()
-            .resolve(&current)
-            .unwrap();
+        let resolved = draft(&[
+            "add",
+            "Trip",
+            "New",
+            "--replace",
+            "2",
+            "TWO",
+            "-q",
+            "q: Is it?",
+        ])
+        .unwrap()
+        .resolve(&current)
+        .unwrap();
         assert!(matches!(
             &resolved.request.updates[0],
             ContextUpdate::Supersede { targets, .. } if targets == &current[1].records
@@ -695,20 +714,33 @@ mod tests {
             ContextUpdate::Append { .. }
         ));
         assert!(matches!(
-            draft(&["add", "Trip", "--replace", "3", "TWO"])
+            draft(&["add", "Trip", "--replace", "3", "TWO", "-q", "q: Is it?"])
                 .unwrap()
                 .resolve(&current),
             Err(InputError::UnknownFact(3))
         ));
         // The same command with the same request ID repeats its record IDs.
         let again = || {
-            draft(&["add", "Trip", "Same", "--request-id", "key"])
+            draft(&[
+                "add",
+                "Trip",
+                "Same",
+                "-q",
+                "q: Is it?",
+                "--request-id",
+                "key",
+            ])
+            .unwrap()
+            .request
+            .updates
+        };
+        assert_eq!(again(), again());
+        let anonymous = || {
+            draft(&["add", "Trip", "Same", "-q", "q: Is it?"])
                 .unwrap()
                 .request
                 .updates
         };
-        assert_eq!(again(), again());
-        let anonymous = || draft(&["add", "Trip", "Same"]).unwrap().request.updates;
         assert_ne!(anonymous(), anonymous());
         assert_eq!(fact_counts(&resolved.request.updates), (2, 1));
     }

@@ -3,7 +3,7 @@
 /// A line, classified. Questions and fact text are kept as typed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Line {
-    /// An empty line: send the queue, or ask the standing questions again.
+    /// An empty line: send the queue again when a failed turn left its question.
     Send,
     Fact(String),
     /// The text after `?`, in the question grammar.
@@ -21,12 +21,10 @@ pub(super) enum Command {
         sources: Vec<String>,
         name: String,
     },
+    /// The question a what-if asks, without its `?`.
     Whatif(String),
     Replace(usize, String),
-    Drop(String),
-    Ask,
     Facts,
-    Questions,
     View,
     Context,
     Clear,
@@ -52,9 +50,7 @@ pub(super) fn parse(line: &str) -> Line {
         .map_or((command, ""), |(name, rest)| (name, rest.trim()));
     Line::Command(match name {
         "help" => Command::Help,
-        "ask" => Command::Ask,
         "facts" => Command::Facts,
-        "questions" => Command::Questions,
         "view" => Command::View,
         "context" => Command::Context,
         "clear" => Command::Clear,
@@ -62,9 +58,10 @@ pub(super) fn parse(line: &str) -> Line {
         "use" => single(argument, Command::Use, "/use SESSION"),
         "new" => single(argument, Command::New, "/new NAME"),
         "branch" => single(argument, Command::Branch, "/branch NEW_NAME"),
-        "drop" => single(argument, Command::Drop, "/drop ID"),
-        "whatif" if argument.is_empty() => Command::Usage("/whatif FACT"),
-        "whatif" => Command::Whatif(argument.to_owned()),
+        "whatif" => match argument.strip_prefix('?') {
+            Some(question) => Command::Whatif(question.trim().to_owned()),
+            None => Command::Usage("/whatif ?id: prompt [a, b]"),
+        },
         "replace" => replace(argument),
         "blend" => blend(argument),
         other => Command::Unknown(other.to_owned()),
@@ -133,10 +130,12 @@ mod tests {
         assert_eq!(command("/use"), Command::Usage("/use SESSION"));
         assert_eq!(command("/use a b"), Command::Usage("/use SESSION"));
         assert_eq!(
-            command("/whatif The fare doubled."),
-            Command::Whatif("The fare doubled.".into())
+            command("/whatif ?late: Will it be late?"),
+            Command::Whatif("late: Will it be late?".into())
         );
-        assert!(matches!(command("/whatif"), Command::Usage(_)));
+        for bad in ["/whatif", "/whatif The fare doubled."] {
+            assert!(matches!(command(bad), Command::Usage(_)), "{bad}");
+        }
         assert_eq!(
             command("/replace 3 The train is late."),
             Command::Replace(3, "The train is late.".into())
@@ -159,7 +158,6 @@ mod tests {
         for bad in ["/blend travel as plan", "/blend a b", "/blend"] {
             assert!(matches!(command(bad), Command::Usage(_)), "{bad}");
         }
-        assert_eq!(command("/drop on_time"), Command::Drop("on_time".into()));
         assert_eq!(command("/exit"), Command::Quit);
         assert_eq!(command("/nonsense x"), Command::Unknown("nonsense".into()));
     }
