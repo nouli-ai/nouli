@@ -19,7 +19,7 @@
  "variants": {
   "cancelled|both": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -32,25 +32,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -66,10 +66,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-cf9e-7290-a8d9-314804d1f848",
+    "id": "01a1878c-d402-7192-bac1-369de606b0d3",
     "session": "travel",
     "turn": 2,
     "kind": "continued",
@@ -79,28 +79,28 @@
     "state": "The train has been cancelled. The taxi is still available at 70 USD.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.13
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 0.01
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0.99
        }
       ],
-      "selected": "taxi"
+      "selected": "take_a_taxi"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.1
      }
     ],
     "context": [
@@ -110,10 +110,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add travel '\u2026'"
+    "command": "nouli add travel '…'"
    },
    {
-    "id": "01a18683-33cd-7561-8b3c-5ad44058134a",
+    "id": "01a1878c-d4a9-7386-87bd-d1e714b5dcb0",
     "session": "plan",
     "turn": 1,
     "kind": "blend",
@@ -129,22 +129,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
         "p": 1
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
         "p": 0
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
         "p": 0
        }
       ],
-      "selected": "approval"
+      "selected": "request_approval_for_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -162,10 +162,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from travel --from budget '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from travel --from budget '…' -q '…'"
    },
    {
-    "id": "01a18683-346e-7175-811e-495daa102798",
+    "id": "01a1878c-d550-72e8-8020-40a5b9f23927",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -180,22 +180,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0.22
+        "p": 0.04
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.02
+        "p": 0
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0.76
+        "p": 0.96
        }
       ],
-      "selected": "taxi"
+      "selected": "book_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -217,12 +217,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "cancelled|travel": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -235,25 +235,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -269,10 +269,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-cf9e-7290-a8d9-314804d1f848",
+    "id": "01a1878c-d402-7192-bac1-369de606b0d3",
     "session": "travel",
     "turn": 2,
     "kind": "continued",
@@ -282,28 +282,28 @@
     "state": "The train has been cancelled. The taxi is still available at 70 USD.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.13
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 0.01
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0.99
        }
       ],
-      "selected": "taxi"
+      "selected": "take_a_taxi"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.1
      }
     ],
     "context": [
@@ -313,10 +313,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add travel '\u2026'"
+    "command": "nouli add travel '…'"
    },
    {
-    "id": "01a18683-3514-7370-a734-30b0a0da9d7d",
+    "id": "01a1878c-d60e-7021-b45e-ad8aabfad248",
     "session": "plan",
     "turn": 1,
     "kind": "branch",
@@ -331,22 +331,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
-        "p": 0.4
+        "p": 0.58
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.01
+        "p": 0
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
-        "p": 0.59
+        "p": 0.42
        }
       ],
-      "selected": "taxi"
+      "selected": "request_approval_for_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -360,10 +360,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-35e6-760f-a9d1-9c5be915c915",
+    "id": "01a1878c-d695-7245-aff9-160f353be656",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -378,22 +378,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0.01
+        "p": 0.04
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.01
+        "p": 0
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0.98
+        "p": 0.96
        }
       ],
-      "selected": "taxi"
+      "selected": "book_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -411,12 +411,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "cancelled|budget": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -429,25 +429,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -463,10 +463,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-cf9e-7290-a8d9-314804d1f848",
+    "id": "01a1878c-d402-7192-bac1-369de606b0d3",
     "session": "travel",
     "turn": 2,
     "kind": "continued",
@@ -476,28 +476,28 @@
     "state": "The train has been cancelled. The taxi is still available at 70 USD.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.13
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 0.01
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0.99
        }
       ],
-      "selected": "taxi"
+      "selected": "take_a_taxi"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.1
      }
     ],
     "context": [
@@ -507,10 +507,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add travel '\u2026'"
+    "command": "nouli add travel '…'"
    },
    {
-    "id": "01a18683-3cd0-7561-8c73-54ac2e65763d",
+    "id": "01a1878c-de3e-763f-8d92-e80f2b4d668f",
     "session": "plan",
     "turn": 1,
     "kind": "branch",
@@ -525,22 +525,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
-        "p": 0.44
+        "p": 0.64
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.56
+        "p": 0.35
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
-        "p": 0
+        "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "request_approval_for_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -550,10 +550,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from budget '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from budget '…' -q '…'"
    },
    {
-    "id": "01a18683-3d97-7486-a8d8-5ce2bed288ea",
+    "id": "01a1878c-dee2-704e-8c68-68614c025773",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -568,22 +568,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0.02
+        "p": 0.32
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.79
+        "p": 0.17
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0.19
+        "p": 0.51
        }
       ],
-      "selected": "train"
+      "selected": "book_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -597,12 +597,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "late|both": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -615,25 +615,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -649,10 +649,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-d2ca-72d8-8f33-4bd008e6decd",
+    "id": "01a1878c-d72a-747c-8ef4-e9215d7c5ddc",
     "session": "travel-late",
     "turn": 1,
     "kind": "branch",
@@ -662,28 +662,28 @@
     "state": "The train is running 10 minutes late but will still arrive 20 minutes before the meeting.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.95
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 0.99
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.94
      }
     ],
     "context": [
@@ -693,10 +693,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel-late --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel-late --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-36a1-76dd-b991-37f5fe0f86a3",
+    "id": "01a1878c-d7c5-7115-9d9b-ff24f21ac0e8",
     "session": "plan",
     "turn": 1,
     "kind": "blend",
@@ -712,22 +712,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
-        "p": 0
+        "p": 0.02
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 1
+        "p": 0.98
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -745,10 +745,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from travel-late --from budget '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from travel-late --from budget '…' -q '…'"
    },
    {
-    "id": "01a18683-3775-7253-b3ce-21da6fb94502",
+    "id": "01a1878c-d8b5-763c-af26-b9ee05d816e7",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -763,22 +763,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0
+        "p": 0.04
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.98
+        "p": 0.84
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0.02
+        "p": 0.12
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -800,12 +800,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "late|travel": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -818,25 +818,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -852,10 +852,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-d2ca-72d8-8f33-4bd008e6decd",
+    "id": "01a1878c-d72a-747c-8ef4-e9215d7c5ddc",
     "session": "travel-late",
     "turn": 1,
     "kind": "branch",
@@ -865,28 +865,28 @@
     "state": "The train is running 10 minutes late but will still arrive 20 minutes before the meeting.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.95
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 0.99
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.94
      }
     ],
     "context": [
@@ -896,10 +896,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel-late --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel-late --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-3815-751a-bbac-22a9b84c6acd",
+    "id": "01a1878c-d973-7443-8b83-106e41f28361",
     "session": "plan",
     "turn": 1,
     "kind": "branch",
@@ -914,22 +914,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
         "p": 0
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -943,10 +943,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from travel-late '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from travel-late '…' -q '…'"
    },
    {
-    "id": "01a18683-38c6-757d-89b4-19aa438cde91",
+    "id": "01a1878c-da26-703e-b2bd-6420f9f9e88f",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -961,22 +961,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
         "p": 0
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 1
+        "p": 0.99
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0
+        "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -994,12 +994,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "late|budget": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -1012,25 +1012,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -1046,10 +1046,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-d2ca-72d8-8f33-4bd008e6decd",
+    "id": "01a1878c-d72a-747c-8ef4-e9215d7c5ddc",
     "session": "travel-late",
     "turn": 1,
     "kind": "branch",
@@ -1059,28 +1059,28 @@
     "state": "The train is running 10 minutes late but will still arrive 20 minutes before the meeting.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.95
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 0.99
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.94
      }
     ],
     "context": [
@@ -1090,10 +1090,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel-late --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel-late --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-3cd0-7561-8c73-54ac2e65763d",
+    "id": "01a1878c-de3e-763f-8d92-e80f2b4d668f",
     "session": "plan",
     "turn": 1,
     "kind": "branch",
@@ -1108,22 +1108,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
-        "p": 0.44
+        "p": 0.64
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.56
+        "p": 0.35
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
-        "p": 0
+        "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "request_approval_for_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -1133,10 +1133,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from budget '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from budget '…' -q '…'"
    },
    {
-    "id": "01a18683-3d97-7486-a8d8-5ce2bed288ea",
+    "id": "01a1878c-dee2-704e-8c68-68614c025773",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -1151,22 +1151,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0.02
+        "p": 0.32
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.79
+        "p": 0.17
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0.19
+        "p": 0.51
        }
       ],
-      "selected": "train"
+      "selected": "book_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -1180,12 +1180,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "ontime|both": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -1198,25 +1198,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -1232,10 +1232,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-d626-772f-8ae5-39c4a3613528",
+    "id": "01a1878c-dac0-7076-9194-ef7f178abc00",
     "session": "travel-ontime",
     "turn": 1,
     "kind": "branch",
@@ -1245,28 +1245,28 @@
     "state": "The train is running on time.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.96
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.94
      }
     ],
     "context": [
@@ -1276,10 +1276,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel-ontime --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel-ontime --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-39e4-74f0-ad7a-96ae4c36588b",
+    "id": "01a1878c-db51-74b8-a766-2870c2d1785f",
     "session": "plan",
     "turn": 1,
     "kind": "blend",
@@ -1295,22 +1295,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
-        "p": 0
+        "p": 0.01
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 1
+        "p": 0.99
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -1328,10 +1328,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from travel-ontime --from budget '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from travel-ontime --from budget '…' -q '…'"
    },
    {
-    "id": "01a18683-3ab4-7425-a696-362dcb6db096",
+    "id": "01a1878c-dc33-7601-ada1-2a77107d727c",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -1346,22 +1346,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0
-       },
-       {
-        "id": "train",
-        "label": "Book the 40 USD train",
-        "p": 0.98
-       },
-       {
-        "id": "taxi",
-        "label": "Book the 70 USD taxi",
         "p": 0.02
+       },
+       {
+        "id": "book_the_40_usd_train",
+        "label": "Book the 40 USD train",
+        "p": 0.83
+       },
+       {
+        "id": "book_the_70_usd_taxi",
+        "label": "Book the 70 USD taxi",
+        "p": 0.15
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -1383,12 +1383,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "ontime|travel": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -1401,25 +1401,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -1435,10 +1435,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-d626-772f-8ae5-39c4a3613528",
+    "id": "01a1878c-dac0-7076-9194-ef7f178abc00",
     "session": "travel-ontime",
     "turn": 1,
     "kind": "branch",
@@ -1448,28 +1448,28 @@
     "state": "The train is running on time.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.96
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.94
      }
     ],
     "context": [
@@ -1479,10 +1479,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel-ontime --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel-ontime --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-3b8a-7779-ad5c-ee93659da473",
+    "id": "01a1878c-dce5-77d3-845a-d58da9672162",
     "session": "plan",
     "turn": 1,
     "kind": "branch",
@@ -1497,22 +1497,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
         "p": 0
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -1526,10 +1526,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from travel-ontime '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from travel-ontime '…' -q '…'"
    },
    {
-    "id": "01a18683-3c2d-7591-bff3-ab77166042f0",
+    "id": "01a1878c-dd7e-77fa-9c50-ce2f6f52af8c",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -1544,22 +1544,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
         "p": 0
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 1
+        "p": 0.99
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0
+        "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "book_the_40_usd_train"
      }
     ],
     "context": [
@@ -1577,12 +1577,12 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ],
   "ontime|budget": [
    {
-    "id": "01a18682-ce1e-70d2-bc30-681c3e208909",
+    "id": "01a1878c-d2ac-7523-878b-479f0cbb1d0b",
     "session": "travel",
     "turn": 1,
     "kind": "new",
@@ -1595,25 +1595,25 @@
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
      }
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel '…' -q '…'"
    },
    {
-    "id": "01a18682-cefb-7577-b4c6-58cbad569fa6",
+    "id": "01a1878c-d32c-7166-b27b-9c1fabd8bbd7",
     "session": "budget",
     "turn": 1,
     "kind": "new",
@@ -1629,10 +1629,10 @@
     ],
     "context": [],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new budget '\u2026' -q '\u2026'"
+    "command": "nouli new budget '…' -q '…'"
    },
    {
-    "id": "01a18682-d626-772f-8ae5-39c4a3613528",
+    "id": "01a1878c-dac0-7076-9194-ef7f178abc00",
     "session": "travel-ontime",
     "turn": 1,
     "kind": "branch",
@@ -1642,28 +1642,28 @@
     "state": "The train is running on time.",
     "questions": [
      {
-      "id": "on_time",
-      "prompt": "Will the train get me to the meeting on time?",
-      "type": "noul",
-      "probability": 0.96
-     },
-     {
       "id": "transport",
       "prompt": "How should I travel to the meeting now?",
       "type": "choice",
       "options": [
        {
-        "id": "train",
+        "id": "take_the_train",
         "label": "Take the train",
         "p": 1
        },
        {
-        "id": "taxi",
+        "id": "take_a_taxi",
         "label": "Take a taxi",
         "p": 0
        }
       ],
-      "selected": "train"
+      "selected": "take_the_train"
+     },
+     {
+      "id": "on_time",
+      "prompt": "Will the train get me to the meeting on time?",
+      "type": "noul",
+      "probability": 0.94
      }
     ],
     "context": [
@@ -1673,10 +1673,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new travel-ontime --from travel '\u2026' -q '\u2026'"
+    "command": "nouli new travel-ontime --from travel '…' -q '…'"
    },
    {
-    "id": "01a18683-3cd0-7561-8c73-54ac2e65763d",
+    "id": "01a1878c-de3e-763f-8d92-e80f2b4d668f",
     "session": "plan",
     "turn": 1,
     "kind": "branch",
@@ -1691,22 +1691,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "approval",
+        "id": "request_approval_for_the_70_usd_taxi",
         "label": "Request approval for the 70 USD taxi",
-        "p": 0.44
+        "p": 0.64
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.56
+        "p": 0.35
        },
        {
-        "id": "taxi",
+        "id": "book_the_taxi_without_approval",
         "label": "Book the taxi without approval",
-        "p": 0
+        "p": 0.01
        }
       ],
-      "selected": "train"
+      "selected": "request_approval_for_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -1716,10 +1716,10 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli new plan --from budget '\u2026' -q '\u2026'"
+    "command": "nouli new plan --from budget '…' -q '…'"
    },
    {
-    "id": "01a18683-3d97-7486-a8d8-5ce2bed288ea",
+    "id": "01a1878c-dee2-704e-8c68-68614c025773",
     "session": "plan",
     "turn": 2,
     "kind": "continued",
@@ -1734,22 +1734,22 @@
       "type": "choice",
       "options": [
        {
-        "id": "wait",
+        "id": "wait_for_more_approval",
         "label": "Wait for more approval",
-        "p": 0.02
+        "p": 0.32
        },
        {
-        "id": "train",
+        "id": "book_the_40_usd_train",
         "label": "Book the 40 USD train",
-        "p": 0.79
+        "p": 0.17
        },
        {
-        "id": "taxi",
+        "id": "book_the_70_usd_taxi",
         "label": "Book the 70 USD taxi",
-        "p": 0.19
+        "p": 0.51
        }
       ],
-      "selected": "train"
+      "selected": "book_the_70_usd_taxi"
      }
     ],
     "context": [
@@ -1763,7 +1763,7 @@
      }
     ],
     "model": "typesafe/jev-1.14.0",
-    "command": "nouli add plan '\u2026'"
+    "command": "nouli add plan '…'"
    }
   ]
  }
