@@ -73,35 +73,47 @@ A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` m
 
 ## Use it from scripts and agents
 
-Everything you can do at the prompt is also a command. Each command below adds what is new and asks a follow-up question, and the model answers it with every earlier fact and answer in view:
+Everything you can do at the prompt is also a command. In the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag. A `catalog` session holds the item's grasp history and a `policy` session the station's rules, each made with one `nouli new`. `pick` blends the two, then each turn adds the latest sensor report and asks the next question, each with its own options:
 
 ```text
-$ nouli new trip 'The train costs 40 USD and arrives 30 minutes before the meeting.' \
-    'A taxi costs 70 USD and also arrives in time.' \
-    -q 'transport: How should I get to the meeting? [Take the train, Take a taxi]'
-  turn 1 · 2 facts · 1 question
-  transport   ▶ Take the train                   ███████████████████▊ 0.99
-                Take a taxi                      ▎                    0.01
-$ nouli add trip 'The train has been cancelled.' \
-    -q 'rebook: How should I get to the meeting now? [Take the train, Take a taxi]'
+$ nouli new pick --from catalog --from policy \
+    'Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.' \
+    -q "action: What should the arm do first? [Nudge the covering item aside to expose the target's label,
+      Attempt suction on the visible bag film,
+      Request remote assistance now]"
+  turn 1 · 1 fact · 1 question
+  action      ▶ Nudge the covering item aside t… ████████████████▎    0.81
+                Attempt suction on the visible … ▋                    0.03
+                Request remote assistance now    ███▎                 0.16
+$ nouli add pick 'Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.' \
+    -q 'action: What should the arm do next? [Try a two-finger pinch on the bottle neck,
+      Retry suction on the same spot,
+      Stop and request remote assistance]'
   turn 2 · 1 fact · 1 question
-  rebook        Take the train                   ▍                    0.02
-              ▶ Take a taxi                      ███████████████████▋ 0.98
-$ nouli add trip "Trips over 50 USD need my manager's approval before booking." \
-    -q 'approval: Do I need approval before I book?'
+  action      ▶ Try a two-finger pinch on the b… ██████████████▊      0.74
+                Retry suction on the same spot   ████▊                0.24
+                Stop and request remote assista… ▍                    0.02
+$ nouli add pick 'Sensor update: the arm pinched the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.' \
+    -q 'load: What should the arm do with the load? [Lower the load back into the tote and request remote assistance,
+      Place the load in box B-12 and let the packer remove the extra bottle,
+      "Shake the load to separate the bottles, then place the target"]'
   turn 3 · 1 fact · 1 question
-  approval      yes                              █████████████████▋   0.88
-$ nouli add trip 'My manager approved up to 80 USD.' \
-    -q 'book: What should I book now? [The train, The taxi, Nothing yet]'
+  load        ▶ Lower the load back into the to… ████████████████████ 1.00
+                Place the load in box B-12 and …                      0.00
+                Shake the load to separate the …                      0.00
+$ nouli add pick "Remote assistance, 40 seconds: the operator separated the bottles by marking pinch points, and the arm now holds only the target (0.46 kg). The operator reports that the target's bag is torn along one edge." \
+    -q 'destination: Where should the arm put the target? [Send it to the exception station,
+      Place it in box B-12,
+      Return it to the tote]'
   turn 4 · 1 fact · 1 question
-  book          The train                                             0.00
-              ▶ The taxi                         █████████████████▊   0.89
-                Nothing yet                      ██▎                  0.11
+  destination ▶ Send it to the exception station ████████████████████ 1.00
+                Place it in box B-12                                  0.00
+                Return it to the tote                                 0.00
 ```
 
-Each follow-up depends on the turns before it. Turn 3's fact doesn't say how you're getting there or what it costs: the taxi comes from turn 2's answer and its 70 USD fare from turn 1's facts. Turn 4 needs all three earlier turns: the cancelled train, the fare, and the approval rule. `nouli context trip` shows exactly what reached the model for a turn, and every saved answer stays as it was decided.
+Each answer builds on the turns before it. The answers to turns 3 and 4 match station rules that no command in `pick` repeats: a load more than 15% off its expected weight is never placed, and a torn bag goes to the exception station. Those rules are in `policy`, and `pick` inherited them along with the item's history. `nouli context pick` shows exactly what reached the model for a turn, and every saved answer stays as it was decided.
 
-Every turn asks one `-q` question, in its own call. `nouli ask trip -q …` asks without new facts, `--replace N TEXT` corrects fact N, `nouli whatif trip … -q …` asks without saving, `nouli facts trip` lists the numbered facts, `nouli new NAME --from A --from B` blends sessions, and `nouli view trip` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
+Every turn asks one `-q` question, in its own call. `nouli ask pick -q …` asks without new facts, `--replace N TEXT` corrects fact N, `nouli whatif pick … -q …` asks without saving, `nouli facts pick` lists the numbered facts, and `nouli view pick` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
 ## A longer example
 
