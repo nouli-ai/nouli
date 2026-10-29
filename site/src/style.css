@@ -68,6 +68,7 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .replay { font: inherit; background: none; color: var(--paper); border: 1px solid #f4f1eb66; padding: 3px 10px; cursor: pointer; }
 .replay:hover { background: var(--paper); color: var(--ink); }
 .screen { height: 51em; overflow: auto; padding: 14px 16px 18px; font: 12px/1.6 var(--term); white-space: pre; }
+.screen .in { white-space: pre-wrap; overflow-wrap: break-word; }
 .screen:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: -2px; }
 .screen .prompt, .screen .was, .screen .pick { color: var(--teal-bright); }
 .screen .pick { font-weight: 700; }
