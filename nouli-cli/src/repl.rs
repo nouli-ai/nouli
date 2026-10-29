@@ -103,10 +103,10 @@ struct Current {
 }
 
 const HELP: [(&str, &str); 16] = [
-    ("plain text", "queue a fact"),
+    ("plain text", "queue a fact for the next turn"),
     (
         "?id: prompt [a, b]",
-        "queue a standing choice question (<a, b> for a score; no list for yes/no)",
+        "ask now with the queue; the question stays (<a, b> for a score; no list for yes/no)",
     ),
     (
         "(empty line)",
@@ -124,7 +124,7 @@ const HELP: [(&str, &str); 16] = [
     ("/blend A B as NAME", "combine histories into a new session"),
     ("/view", "the sessions and how they connect"),
     ("/context", "what the model saw last turn"),
-    ("/quit", "leave"),
+    ("/quit, /exit", "leave (or Ctrl-C on an empty prompt)"),
 ];
 
 struct Repl<'a, L, W> {
@@ -243,14 +243,15 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                     }
                     return self.say("  bye");
                 }
+                // The editor clears a typed line itself, so this is an empty
+                // prompt: clear the queue first, and leave once it is empty.
                 Event::Interrupt => {
                     warned = false;
                     if self.queue.is_empty() {
-                        self.say("")?;
-                    } else {
-                        self.queue = Queue::default();
-                        self.dim("^C  queue cleared")?;
+                        return self.say("  bye");
                     }
+                    self.queue = Queue::default();
+                    self.dim("^C  queue cleared")?;
                 }
                 Event::Line(line) => {
                     warned = false;
@@ -268,39 +269,31 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         match input::parse(line) {
             Line::Send => self.send(None, true)?,
             Line::Fact(text) => self.queue.facts.push(text),
-            Line::Question(text) => self.queue_question(&text)?,
+            Line::Question(text) => {
+                if self.queue_question(&text)? {
+                    self.send(None, false)?;
+                }
+            }
             Line::Command(command) => return self.command(command),
         }
         Ok(true)
     }
 
-    fn queue_question(&mut self, text: &str) -> io::Result<()> {
+    /// Queues a valid question for the turn it starts, or reports why it isn't one.
+    /// A question left queued by a failed turn is replaced, not repeated.
+    fn queue_question(&mut self, text: &str) -> io::Result<bool> {
         match grammar::parse(text) {
             Ok(question) => {
-                use nouli_core::decision::AnswerSpace;
-                let kind = match &question.answer_space {
-                    AnswerSpace::Noul => "yes/no".to_owned(),
-                    AnswerSpace::Choice { .. } => "choice".to_owned(),
-                    AnswerSpace::Score { .. } => "score".to_owned(),
-                };
-                let options = match &question.answer_space {
-                    AnswerSpace::Choice { options } => format!(
-                        " · options {}",
-                        options
-                            .iter()
-                            .map(|option| option.id.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                    _ => String::new(),
-                };
+                self.queue.questions.retain(|queued| {
+                    grammar::parse(queued).map_or(true, |old| old.id != question.id)
+                });
                 self.queue.questions.push(text.to_owned());
-                self.dim(&format!(
-                    "  queued: {kind} question \"{}\"{options}",
-                    render::clean(&question.id)
-                ))
+                Ok(true)
             }
-            Err(error) => writeln!(self.out, "  grammar error: {error}"),
+            Err(error) => {
+                writeln!(self.out, "  grammar error: {error}")?;
+                Ok(false)
+            }
         }
     }
 
@@ -649,13 +642,22 @@ mod tests {
         );
     }
 
-    fn repl<'a>(settings: &'a Settings, queue: Queue) -> Repl<'a, Reader<&'static [u8]>, Vec<u8>> {
+    /// Key presses for the loop to read, then the end of input.
+    struct Keys(std::collections::VecDeque<Event>);
+
+    impl Lines for Keys {
+        fn read(&mut self, _: &str, _: &str, _: &mut dyn Write) -> io::Result<Event> {
+            Ok(self.0.pop_front().unwrap_or(Event::Eof))
+        }
+    }
+
+    fn repl<'a, L: Lines>(settings: &'a Settings, queue: Queue, lines: L) -> Repl<'a, L, Vec<u8>> {
         Repl {
             settings,
             runtime: tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap(),
-            lines: Reader(&b""[..]),
+            lines,
             out: Vec::new(),
             paint: Paint(false),
             model: ModelSelection::default(),
@@ -694,15 +696,55 @@ mod tests {
             drops: vec!["old".into()],
             ..Queue::default()
         };
-        let mut sent = repl(&settings, queue());
+        let mut sent = repl(&settings, queue(), Reader(&b""[..]));
         sent.finish(saved_turn(), &[], false).unwrap();
         assert!(sent.queue.is_empty());
         let shown = String::from_utf8(sent.out).unwrap();
         assert!(shown.contains("error:"), "{shown}");
         // A what-if saves nothing, so the queue stays.
-        let mut whatif = repl(&settings, queue());
+        let mut whatif = repl(&settings, queue(), Reader(&b""[..]));
         whatif.finish(saved_turn(), &[], true).unwrap();
         assert_eq!(whatif.queue.len(), 2);
+    }
+
+    #[test]
+    fn ctrl_c_clears_the_queue_and_then_leaves_from_an_empty_prompt() {
+        let settings = Settings::for_test(
+            std::env::temp_dir().join(format!("nouli-repl-keys-{}", Id::generate())),
+        );
+        let queue = Queue {
+            facts: vec!["a fact".into()],
+            ..Queue::default()
+        };
+        let keys = Keys(
+            [
+                Event::Interrupt,
+                Event::Interrupt,
+                Event::Line("never read".into()),
+            ]
+            .into(),
+        );
+        let mut session = repl(&settings, queue, keys);
+        session.run().unwrap();
+        assert!(session.queue.is_empty());
+        assert_eq!(session.lines.0.len(), 1);
+        let shown = String::from_utf8(session.out).unwrap();
+        assert!(shown.contains("queue cleared"), "{shown}");
+        assert!(shown.ends_with("  bye\n"), "{shown}");
+    }
+
+    #[test]
+    fn a_question_asked_again_replaces_the_queued_one() {
+        let settings = Settings::for_test(std::env::temp_dir());
+        let mut session = repl(&settings, Queue::default(), Reader(&b""[..]));
+        assert!(session.queue_question("q: Is it?").unwrap());
+        assert!(session.queue_question("other: And this?").unwrap());
+        assert!(session.queue_question("q: Is it now?").unwrap());
+        assert!(!session.queue_question("broken").unwrap());
+        assert_eq!(
+            session.queue.questions,
+            ["other: And this?", "q: Is it now?"]
+        );
     }
 
     #[test]

@@ -116,22 +116,21 @@ fn turns(ledger: &Ledger, name: &str) -> usize {
 }
 
 #[test]
-fn queued_facts_and_a_standing_question_are_sent_by_an_empty_line_and_asked_again() {
+fn a_question_sends_the_queued_facts_and_an_empty_line_asks_again() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let script = "The train costs 40 USD.\nA taxi costs 70 USD.\n\
-        ?transport: How should I get there? [train, taxi]\n?on_time: Will the train arrive on time?\n\n\
+        ?transport: How should I get there? [train, taxi]\n?on_time: Will the train arrive on time?\n\
         ?broken question\nThe train is CANCELLED\n\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     let expected = [
         "new session \"travel\" · /help for commands",
         "travel › ?transport: How should I get there? [train, taxi]",
-        "  queued: choice question \"transport\" · options train, taxi",
-        "  queued: yes/no question \"on_time\"",
-        "  turn 1 · 2 facts · 2 questions",
+        "  turn 1 · 2 facts · 1 question",
+        "  turn 2 · 0 facts · 2 questions · re-asked 1",
         "  grammar error: a question starts with an ID and a colon",
-        "  turn 2 · 1 fact · 2 questions · re-asked 2",
+        "  turn 3 · 1 fact · 2 questions · re-asked 2",
         "→ was taxi 0.90",
         "→ was 0.98",
         "  bye",
@@ -142,7 +141,7 @@ fn queued_facts_and_a_standing_question_are_sent_by_an_empty_line_and_asked_agai
     assert!(!transcript.contains('\x1b'));
     // The grammar error queued nothing, and the ledger holds what was shown.
     let ledger = ledger(&home);
-    assert_eq!(turns(&ledger, "travel"), 2);
+    assert_eq!(turns(&ledger, "travel"), 3);
     assert_eq!(
         ids(&ledger.standing_questions(&session("travel")).unwrap()),
         ["transport", "on_time"]
@@ -150,11 +149,11 @@ fn queued_facts_and_a_standing_question_are_sent_by_an_empty_line_and_asked_agai
     let facts = ledger.facts(&session("travel")).unwrap();
     assert_eq!(facts.len(), 3);
     assert_eq!(facts[2].text, "The train is CANCELLED");
-    assert_eq!(server.count(), 2);
+    assert_eq!(server.count(), 3);
     // An empty line with nothing queued and nothing standing does nothing.
     let quiet = text(&open(&home, &["open", "Quiet"], "\n\n/ask\n/quit\n"));
     assert!(quiet.contains("nothing to ask: define a question with ?id: prompt"));
-    assert_eq!(server.count(), 2);
+    assert_eq!(server.count(), 3);
 }
 
 #[test]
@@ -162,7 +161,7 @@ fn whatif_saves_nothing_and_keeps_what_was_queued() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\n\n\
+    let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\n\
         /whatif The train is CANCELLED\nA queued fact\n/whatif Another what-if\n/facts\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     assert!(
@@ -196,14 +195,14 @@ fn replace_drop_and_clear_change_the_next_turn_only() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let script = "The taxi costs 70 USD.\n?transport: How? [train, taxi]\n?on_time: On time?\n\n\
+    let script = "The taxi costs 70 USD.\n?transport: How? [train, taxi]\n?on_time: On time?\n\
         /replace 1 The taxi costs 140 USD.\n/drop on_time\n/questions\n\n\
         A stray fact\n/drop missing\n/clear\n/facts\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     for line in [
         "  queued: replace fact 1",
         "  queued: drop on_time",
-        "  turn 2 · 1 fact (1 replaced, kept in history) · 1 question · re-asked 1",
+        "  turn 3 · 1 fact (1 replaced, kept in history) · 1 question · re-asked 1",
         "  queue cleared",
         "   1  The taxi costs 140 USD.   (replaced; was: The taxi costs 70 USD.)",
     ] {
@@ -219,13 +218,13 @@ fn replace_drop_and_clear_change_the_next_turn_only() {
     assert_eq!(facts.len(), 1);
     assert_eq!(facts[0].previous.as_deref(), Some("The taxi costs 70 USD."));
     // The model saw the replacement and not the original.
-    let state = server.calls.lock().unwrap()[1]["state"]
+    let state = server.calls.lock().unwrap()[2]["state"]
         .as_str()
         .unwrap()
         .to_owned();
     assert!(state.contains("140 USD") && !state.contains("70 USD"));
     assert!(!state.contains("A stray fact"));
-    assert_eq!(turns(&ledger, "travel"), 2);
+    assert_eq!(turns(&ledger, "travel"), 3);
     // A drop of an unknown question is an error that keeps the REPL running.
     let failed = text(&open(
         &home,
@@ -244,9 +243,9 @@ fn branch_blend_use_new_and_view_create_and_show_the_expected_sessions() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\n\n\
+    let script = "The train costs 40 USD.\n?transport: How? [train, taxi]\n\
         /branch Alt\nThe taxi is cheaper.\n\n\
-        /use travel\n/new Budget\nThe budget is 50 USD.\n?approval: Is approval needed?\n\n\
+        /use travel\n/new Budget\nThe budget is 50 USD.\n?approval: Is approval needed?\n\
         /blend travel Budget as Plan\n/questions\n/view\n/use nowhere\n/new bad name\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     for line in [
@@ -292,7 +291,7 @@ fn help_context_quit_and_end_of_input_with_a_queue_behave_as_documented() {
     let transcript = text(&open(
         &home,
         &["open", "travel"],
-        "/context\nA fact\n?q: Is it?\n\n/context\n/help\n/nonsense\n/replace x\nUnsent fact\n",
+        "/context\nA fact\n?q: Is it?\n/context\n/help\n/nonsense\n/replace x\nUnsent fact\n",
     ));
     for line in [
         "nothing sent yet: the model has seen no turn",

@@ -65,8 +65,8 @@ travel › ↵
 
 | Input | What it does |
 | --- | --- |
-| plain text | Queues a fact. |
-| `?id: prompt [a, b]` | Queues a standing question in the one-line grammar. A mistake is reported and nothing is queued. |
+| plain text | Queues a fact for the next turn. |
+| `?id: prompt [a, b]` | Sends a turn now: the queue, this question, and the other standing questions. The question stays with the session. A grammar mistake is reported and nothing is sent. |
 | an empty line | Sends the queue as one turn, as `add` does, or asks the standing questions again if nothing is queued. |
 | `/ask` | Sends now. |
 | `/whatif FACT` | An unsaved turn with the queue plus FACT. The queue stays for the next turn. |
@@ -78,9 +78,9 @@ travel › ↵
 | `/blend A B [...] as NAME` | A new session from several. |
 | `/view` | The sessions, with turn counts and where each came from; `●` marks the current one. |
 | `/context` | Which records the model saw on the last turn. |
-| `/help`, `/quit` | The command list, and leaving. |
+| `/help`, `/quit`, `/exit` | The command list, and leaving. |
 
-A turn that fails prints its error and keeps the queue. Ctrl-C clears the queue; during a turn it cancels the turn through the same cancellation the verbs use. Ctrl-D quits, warning first when the queue is not empty. History is kept in `repl_history` inside the store, readable only by you.
+A turn that fails prints its error and keeps the queue. Ctrl-C clears a typed line, then the queue, and on an empty prompt with nothing queued it quits; during a turn it cancels the turn through the same cancellation the verbs use. Ctrl-D quits, warning first when the queue is not empty. History is kept in `repl_history` inside the store, readable only by you.
 
 ## Output
 

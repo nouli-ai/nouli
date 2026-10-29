@@ -61,11 +61,12 @@ so the change is breaking.
   facts never share a key. Blended branches that replaced the same fact leave
   alternatives under one key; they are listed as one numbered fact, and
   `--replace N` supersedes all of them.
-- **REPL.** Plain lines queue facts, `?id: prompt …` queues a standing
-  question, and an empty line sends the queue as one turn. Slash commands map
+- **REPL.** Plain lines queue facts. `?id: prompt …` adds a standing question
+  and sends the queue with it as one turn, and an empty line sends the queue
+  or asks the standing questions again. Slash commands map
   to the verbs: `/whatif`, `/branch`, `/blend`, `/use`, `/facts`,
   `/questions`, `/drop`, `/replace`, `/ask`, `/view`, `/context`, `/help`, and
-  `/quit`. The REPL is a thin loop over the same operations as the CLI and
+  `/quit` or `/exit`. The REPL is a thin loop over the same operations as the CLI and
   never shows anything that isn't in the ledger. An optional drafting mode, in
   which a text model turns plain English into facts and questions for the
   person to approve, is deferred.
