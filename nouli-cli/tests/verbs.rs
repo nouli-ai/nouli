@@ -263,6 +263,36 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
     let saved = report(home.run(args));
     let replay = report(home.run(args));
     assert!(replay.replayed && replay.turn == saved.turn);
+    // A replacement replays too, though its fact number now names the
+    // replacement; a different replacement under the same ID conflicts.
+    let args = [
+        "add",
+        "Trip",
+        "--replace",
+        "1",
+        "The train is delayed",
+        "--request-id",
+        "replace-command",
+        "--json",
+    ];
+    let saved = report(home.run(args));
+    assert!(!saved.replayed);
+    let replay = report(home.run(args));
+    assert!(replay.replayed && replay.turn == saved.turn);
+    let other = home.run([
+        "add",
+        "Trip",
+        "--replace",
+        "1",
+        "The train is early",
+        "--request-id",
+        "replace-command",
+        "--json",
+    ]);
+    assert!(
+        String::from_utf8_lossy(&other.stdout).contains("request_conflict"),
+        "{other:?}"
+    );
 }
 
 #[test]
