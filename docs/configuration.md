@@ -51,7 +51,8 @@ Endpoints use HTTPS, or explicit local HTTP on loopback/private/link-local IPs
 or localhost. Base URL path prefixes are preserved by the transport. Credentials
 in URL userinfo/query/fragment are rejected. Put only environment-variable names
 in `api_key_env`. Unauthenticated local providers omit it. Only the selected
-provider's variable is read; unrelated missing keys do not block a request.
+provider's variable is read; unrelated missing keys do not block a request. A provider
+with a stored credential (see below) can omit `api_key_env` too.
 
 The CLI automatically reads `.env` from the current working directory for
 provider credentials. It does not search parent directories or the config
@@ -145,3 +146,67 @@ Use only models supported by the selected service and protocol. Models without
 settings use their recognized capability limits, if available; custom or unknown
 models require an explicit budget/window. The existing model settings are not
 copied into an unlisted model.
+
+## Credential store
+
+`nouli auth login PROVIDER` stores a key once, so every command works from any
+directory. The key goes in `auth.toml` next to `config.toml` (by default
+`~/.nouli/auth.toml`; with `--config FILE`, next to that file). The decision is
+recorded in [ADR 0003](adr/0003-central-credential-store.md).
+
+```sh
+nouli auth login typesafe                     # prompts for the key, without echo
+printf '%s\n' "$KEY" | nouli auth login typesafe --stdin
+nouli auth login typesafe --env TYPESAFE_TOKEN
+nouli auth login typesafe --command op read op://Private/TypeSafe/credential
+nouli auth list
+nouli auth logout typesafe
+```
+
+Login needs a terminal unless you pass `--stdin`, `--env`, or `--command`. It
+checks that the provider is in `config.toml` and never calls it. The file holds
+one table per provider, and exactly one of `key`, `env`, or `command` in each:
+
+```toml
+[providers.typesafe]
+type = "api_key"
+key = "…"
+# env = "TYPESAFE_TOKEN"
+# command = ["op", "read", "op://Private/TypeSafe/credential"]
+```
+
+`type` is required, and only `api_key` is accepted for now; unknown types and
+fields are errors that name the provider. A `command` runs without a shell, with
+only `PATH` and `HOME` in its environment and a 10-second limit, and its trimmed
+output is the key.
+
+A provider's key is the first of these that has a value:
+
+1. The variable named by its `api_key_env`, exported in the shell.
+2. The same variable in `--env-file` or `.env`.
+3. Its entry in `auth.toml`.
+
+An exported empty variable counts as a value and is an error, as before. If none
+applies the call fails with `credential_unavailable`. A provider with neither an
+`api_key_env` nor an entry is unauthenticated, which suits local models.
+`nouli auth list` shows each provider's stored source type and which source
+currently supplies its key (`shell`, `env file`, `store`, or `none`), and never a
+value.
+
+Nouli creates the directory with mode 0700 and the file with mode 0600 from the
+start, writing a temporary file and renaming it into place. It refuses to read a
+file that is readable by group or others, that you do not own, or that is a
+symbolic link, with `auth_store_insecure`; fix it with `chmod 600` on the file.
+Keys are never written to the ledger, to inspection exports, or to errors.
+
+A saved workflow run records where its key comes from (`env:NAME`, or
+`auth:PROVIDER` for a stored entry), not the key. Resuming uses the key as it is
+then, so changing the stored key before `nouli workflow resume` takes effect.
+
+| Code | Meaning |
+| --- | --- |
+| `credential_unavailable` | No source has a usable key; the message names the provider and suggests `nouli auth login PROVIDER`. A failing, empty, or timed-out `command` source gives the same code. |
+| `auth_store_insecure` | `auth.toml` is accessible by others, owned by someone else, or a link. Run `chmod 600` on it. |
+| `invalid_auth_store` | `auth.toml` does not parse or breaks the rules above; the message names the provider and field, never the value. |
+| `auth_store_unreadable` | `auth.toml` exists but cannot be read. |
+| `terminal_required` | `auth login` needs a terminal to prompt; use `--stdin`, `--env`, or `--command`. |

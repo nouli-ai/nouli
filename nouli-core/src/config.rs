@@ -1,5 +1,6 @@
 //! Explicit configuration inputs. No process environment or provider calls.
 
+pub mod auth;
 pub mod resolve;
 
 use std::{
@@ -79,7 +80,13 @@ pub struct ProviderProfile {
     pub protocol: Protocol,
     pub base_url: String,
     pub model: String,
+    /// The environment variable named by the provider's `api_key_env`. Saved
+    /// runs written before the credential store read as the source `env:NAME`.
     pub api_key_env: Option<String>,
+    /// With no `api_key_env`, the provider's entry in the credential store
+    /// supplies the key (the source `auth:PROVIDER`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stored_credential: bool,
     pub context_budget_tokens: Option<u64>,
     pub context_window_tokens: Option<u64>,
     pub reserved_output_tokens: Option<u64>,
@@ -159,6 +166,14 @@ pub enum ConfigError {
     #[error("credential environment variable {variable} is unavailable or invalid")]
     CredentialSource {
         variable: String,
+        /// The provider, for the suggestion to log in.
+        provider: String,
+        #[source]
+        source: Box<ConfigError>,
+    },
+    #[error("the stored credential for provider {provider} is unavailable or invalid")]
+    StoredCredential {
+        provider: String,
         #[source]
         source: Box<ConfigError>,
     },

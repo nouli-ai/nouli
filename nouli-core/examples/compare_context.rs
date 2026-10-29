@@ -80,7 +80,10 @@ async fn main() -> Result<(), EvaluationError> {
         &ModelSelection::default(),
         &ModelSelection::default(),
         &std::env::current_dir()?,
-        |name| std::env::var(name).ok(),
+        |source| match source {
+            nouli_core::config::auth::CredentialSource::Env(name) => std::env::var(name).ok(),
+            nouli_core::config::auth::CredentialSource::Auth(_) => None,
+        },
     )?;
     let request: TurnRequest = codec::decode(
         &std::fs::read(PathBuf::from(&arguments[3]))?,

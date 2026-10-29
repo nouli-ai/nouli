@@ -8,6 +8,12 @@ use std::{
 use nouli_core::protocol::{ErrorCategory, ErrorReport};
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Origin {
+    Shell,
+    File,
+}
+
 // Credential values deliberately have no Debug or serialization implementation.
 #[derive(Default)]
 pub(crate) struct Environment {
@@ -70,6 +76,17 @@ impl Environment {
             .collect::<Result<_, _>>()
             .map_err(|_| EnvironmentError::Invalid { path })?;
         Ok(Self { values })
+    }
+
+    /// Where a variable comes from. A value that cannot be used still has an origin.
+    pub(crate) fn origin(&self, name: &str) -> Option<Origin> {
+        match std::env::var(name) {
+            Ok(_) => Some(Origin::Shell),
+            Err(std::env::VarError::NotPresent) => {
+                self.values.contains_key(name).then_some(Origin::File)
+            }
+            Err(std::env::VarError::NotUnicode(_)) => None,
+        }
     }
 
     pub(crate) fn lookup(&self, name: &str) -> Option<String> {

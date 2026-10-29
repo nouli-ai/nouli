@@ -67,7 +67,7 @@ fn validate(
             .validate_request(request, Modality::Text)?;
     }
     snapshot
-        .with_credentials(|name| settings.environment.lookup(name))
+        .with_credentials(|source| settings.credentials.lookup(source))
         .map_err(config)?;
     Ok(())
 }

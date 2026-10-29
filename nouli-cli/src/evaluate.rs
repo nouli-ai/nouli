@@ -92,7 +92,7 @@ async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, Evalu
                 .evaluate_ephemeral(
                     worker.as_ref(),
                     input,
-                    |name| settings.environment.lookup(name),
+                    |source| settings.credentials.lookup(source),
                     &cancel,
                 )
                 .await?;
@@ -109,7 +109,7 @@ async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, Evalu
                 .evaluate(
                     worker.as_ref().ok_or(EngineError::EphemeralStore)?,
                     input,
-                    |name| settings.environment.lookup(name),
+                    |source| settings.credentials.lookup(source),
                     &cancel,
                 )
                 .await?;
@@ -150,6 +150,7 @@ pub(crate) fn overrides(draft: &Draft, settings: &Settings) -> RuntimeOverrides 
             model: draft.common_model.model.clone(),
         },
         store: Some(settings.store.clone()),
+        stored_credentials: settings.credentials.stored(),
         context_budget_tokens: draft.context_budget,
         ..Default::default()
     }

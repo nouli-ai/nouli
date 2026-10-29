@@ -26,7 +26,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         &self,
         ledger: Option<&LedgerWorker>,
         input: EvaluationInput<'_>,
-        lookup: impl Fn(&str) -> Option<String>,
+        lookup: impl Fn(&crate::config::auth::CredentialSource) -> Option<String>,
         cancel: &CancellationToken,
     ) -> Result<EphemeralResult, EngineError> {
         if cancel.is_cancelled() {

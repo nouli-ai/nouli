@@ -194,7 +194,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         &self,
         input: RunInput<'_>,
         mut recorder: Recorder<'_>,
-        lookup: impl Fn(&str) -> Option<String>,
+        lookup: impl Fn(&crate::config::auth::CredentialSource) -> Option<String>,
         cancel: &CancellationToken,
     ) -> Result<Executed, EngineError> {
         let required: Vec<_> = input

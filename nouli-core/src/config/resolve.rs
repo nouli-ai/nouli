@@ -7,7 +7,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::{Config, ConfigError, ExecutionSettings, OutputFormat, ProviderProfile};
+use super::{
+    Config, ConfigError, ExecutionSettings, OutputFormat, ProviderProfile, auth::CredentialSource,
+};
 use crate::history::ModelSelection;
 
 /// Intentionally not serializable. Credential source names belong in snapshots;
@@ -44,6 +46,9 @@ pub struct RuntimeOverrides {
     pub context_budget_tokens: Option<u64>,
     pub max_attempts: Option<u32>,
     pub attempt_timeout_seconds: Option<u64>,
+    /// Providers that have an entry in the credential store. A provider with an
+    /// entry and no `api_key_env` takes its key from the store.
+    pub stored_credentials: std::collections::BTreeSet<String>,
 }
 
 /// Frozen, serializable settings contain no credential values.
@@ -73,27 +78,39 @@ pub fn select_model(layers: &[&ModelSelection]) -> ModelSelection {
 }
 
 impl SettingsSnapshot {
-    /// Re-resolve only the saved source name, preserving every saved setting.
+    /// Re-resolve only the saved source, preserving every saved setting. An
+    /// environment variable comes first, and the provider's stored entry is the
+    /// fallback when the variable is not set at all.
     pub fn with_credentials(
         self,
-        lookup: impl Fn(&str) -> Option<String>,
+        lookup: impl Fn(&CredentialSource) -> Option<String>,
     ) -> Result<ResolvedSettings, ConfigError> {
         self.profile.validate()?;
         self.execution.validate()?;
-        let credential = self
-            .profile
-            .api_key_env
-            .as_ref()
-            .map(|name| {
-                lookup(name)
-                    .ok_or(ConfigError::MissingCredential)
-                    .and_then(Credential::new)
-                    .map_err(|source| ConfigError::CredentialSource {
-                        variable: name.clone(),
-                        source: Box::new(source),
-                    })
-            })
-            .transpose()?;
+        let provider = self.profile_name.clone();
+        let credential = if let Some(name) = &self.profile.api_key_env {
+            lookup(&CredentialSource::Env(name.clone()))
+                .or_else(|| lookup(&CredentialSource::Auth(provider.clone())))
+                .ok_or(ConfigError::MissingCredential)
+                .and_then(Credential::new)
+                .map_err(|source| ConfigError::CredentialSource {
+                    variable: name.clone(),
+                    provider: provider.clone(),
+                    source: Box::new(source),
+                })
+                .map(Some)?
+        } else if self.profile.stored_credential {
+            lookup(&CredentialSource::Auth(provider.clone()))
+                .ok_or(ConfigError::MissingCredential)
+                .and_then(Credential::new)
+                .map_err(|source| ConfigError::StoredCredential {
+                    provider: provider.clone(),
+                    source: Box::new(source),
+                })
+                .map(Some)?
+        } else {
+            None
+        };
         Ok(ResolvedSettings {
             snapshot: self,
             credential,
@@ -120,7 +137,7 @@ impl Config {
         request: &ModelSelection,
         session: &ModelSelection,
         home: &Path,
-        lookup: impl Fn(&str) -> Option<String>,
+        lookup: impl Fn(&CredentialSource) -> Option<String>,
     ) -> Result<ResolvedSettings, ConfigError> {
         self.resolve_snapshot(overrides, request, session, home)?
             .with_credentials(lookup)
@@ -154,6 +171,8 @@ impl Config {
             base_url: provider.base_url.clone(),
             model,
             api_key_env: provider.api_key_env.clone(),
+            stored_credential: provider.api_key_env.is_none()
+                && overrides.stored_credentials.contains(&name),
             context_budget_tokens: settings.context_budget_tokens,
             context_window_tokens: settings.context_window_tokens,
             reserved_output_tokens: settings.reserved_output_tokens,
@@ -201,8 +220,8 @@ mod tests {
     fn only_selected_credentials_are_read_and_never_serialized_or_debugged() {
         let config = config();
         let reads = RefCell::new(Vec::new());
-        let lookup = |name: &str| {
-            reads.borrow_mut().push(name.to_owned());
+        let lookup = |source: &CredentialSource| {
+            reads.borrow_mut().push(source.to_string());
             Some("SECRET_SENTINEL".to_owned())
         };
         let resolved = config
@@ -214,7 +233,7 @@ mod tests {
                 lookup,
             )
             .unwrap();
-        assert_eq!(*reads.borrow(), vec!["TYPESAFE_API_KEY"]);
+        assert_eq!(*reads.borrow(), vec!["env:TYPESAFE_API_KEY"]);
         assert_eq!(
             resolved.credential.as_ref().unwrap().expose(),
             "SECRET_SENTINEL"
@@ -235,7 +254,7 @@ mod tests {
             )
             .unwrap_err();
         assert!(
-            matches!(error, ConfigError::CredentialSource { variable, source } if variable=="TYPESAFE_API_KEY" && matches!(*source,ConfigError::MissingCredential))
+            matches!(error, ConfigError::CredentialSource { variable, source, .. } if variable=="TYPESAFE_API_KEY" && matches!(*source,ConfigError::MissingCredential))
         );
         let local = RuntimeOverrides {
             selection: ModelSelection {
@@ -278,6 +297,7 @@ mod tests {
             context_budget_tokens: Some(4096),
             max_attempts: Some(5),
             attempt_timeout_seconds: Some(7),
+            ..RuntimeOverrides::default()
         };
         let resolved = config
             .resolve(&overrides, &request, &session, Path::new("/home"), |_| {
@@ -311,6 +331,119 @@ mod tests {
                 .as_deref(),
             Some("node-model")
         );
+    }
+
+    #[test]
+    fn a_missing_variable_falls_back_to_the_stored_entry_but_an_empty_one_does_not() {
+        let config = config();
+        let resolve = |lookup: &dyn Fn(&CredentialSource) -> Option<String>| {
+            config.resolve(
+                &RuntimeOverrides::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
+                Path::new("/fake-home"),
+                lookup,
+            )
+        };
+        // The provider is named in the stored lookup.
+        let stored = resolve(&|source| match source {
+            CredentialSource::Auth(provider) => Some(format!("stored-for-{provider}")),
+            CredentialSource::Env(_) => None,
+        })
+        .unwrap();
+        let key = stored.credential.unwrap();
+        assert!(key.expose().starts_with("stored-for-"));
+        let shell = resolve(&|source| match source {
+            CredentialSource::Env(_) => Some("from-env".into()),
+            CredentialSource::Auth(_) => Some("from-store".into()),
+        })
+        .unwrap();
+        assert_eq!(shell.credential.unwrap().expose(), "from-env");
+        // An exported empty value is a real value, so it must not fall through.
+        let empty = resolve(&|source| match source {
+            CredentialSource::Env(_) => Some(String::new()),
+            CredentialSource::Auth(_) => Some("from-store".into()),
+        })
+        .unwrap_err();
+        assert!(
+            matches!(empty, ConfigError::CredentialSource { provider, .. } if !provider.is_empty())
+        );
+        let neither = resolve(&|_| None).unwrap_err();
+        assert!(matches!(neither, ConfigError::CredentialSource { .. }));
+    }
+
+    #[test]
+    fn a_provider_with_a_stored_entry_and_no_variable_freezes_the_stored_source() {
+        let config = config();
+        let overrides = RuntimeOverrides {
+            selection: ModelSelection {
+                provider: Some("local".into()),
+                model: Some("english".into()),
+            },
+            ..RuntimeOverrides::default()
+        };
+        let none = config
+            .resolve_snapshot(
+                &overrides,
+                &ModelSelection::default(),
+                &ModelSelection::default(),
+                Path::new("/fake-home"),
+            )
+            .unwrap();
+        assert!(!none.profile.stored_credential && none.profile.api_key_env.is_none());
+        // An unauthenticated provider needs no credential at all.
+        assert!(
+            none.clone()
+                .with_credentials(|_| None)
+                .unwrap()
+                .credential
+                .is_none()
+        );
+        let stored = RuntimeOverrides {
+            stored_credentials: ["local".to_owned()].into(),
+            ..overrides
+        };
+        let snapshot = config
+            .resolve_snapshot(
+                &stored,
+                &ModelSelection::default(),
+                &ModelSelection::default(),
+                Path::new("/fake-home"),
+            )
+            .unwrap();
+        assert!(snapshot.profile.stored_credential);
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("stored_credential"));
+        let restored: SettingsSnapshot = serde_json::from_str(&json).unwrap();
+        let asked = RefCell::new(Vec::new());
+        let resolved = restored
+            .with_credentials(|source| {
+                asked.borrow_mut().push(source.to_string());
+                Some("current-key".into())
+            })
+            .unwrap();
+        assert_eq!(*asked.borrow(), ["auth:local"]);
+        assert_eq!(resolved.credential.unwrap().expose(), "current-key");
+        let error = snapshot.with_credentials(|_| None).unwrap_err();
+        assert!(
+            matches!(error, ConfigError::StoredCredential { provider, .. } if provider == "local")
+        );
+        // Runs saved before the store have no such field and still read as env:NAME.
+        let mut legacy: serde_json::Value = serde_json::from_str(&json).unwrap();
+        legacy["profile"]
+            .as_object_mut()
+            .unwrap()
+            .remove("stored_credential");
+        legacy["profile"]["api_key_env"] = serde_json::json!("OLD_NAME");
+        let legacy: SettingsSnapshot = serde_json::from_value(legacy).unwrap();
+        let asked = RefCell::new(Vec::new());
+        legacy
+            .with_credentials(|source| {
+                asked.borrow_mut().push(source.to_string());
+                Some("key".into())
+            })
+            .unwrap();
+        assert_eq!(*asked.borrow(), ["env:OLD_NAME"]);
     }
 
     #[test]

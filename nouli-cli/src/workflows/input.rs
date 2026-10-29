@@ -95,7 +95,7 @@ impl RunArgs {
             .map_err(|_| input::InputError::Shape)?;
         Ok(request)
     }
-    pub(super) fn overrides(&self, store: &std::path::Path) -> RuntimeOverrides {
+    pub(super) fn overrides(&self, settings: &crate::settings::Settings) -> RuntimeOverrides {
         RuntimeOverrides {
             selection: ModelSelection {
                 provider: self.provider.clone(),
@@ -103,7 +103,8 @@ impl RunArgs {
             },
             max_parallel: self.parallel,
             context_budget_tokens: self.context_budget,
-            store: Some(store.to_owned()),
+            stored_credentials: settings.credentials.stored(),
+            store: Some(settings.store.clone()),
             ..Default::default()
         }
     }

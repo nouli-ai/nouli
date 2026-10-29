@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser};
 
+mod auth;
 mod commands;
 mod evaluate;
 mod input;
@@ -108,6 +109,9 @@ fn main() -> ExitCode {
                 }
                 commands::Command::Whatif(verb) => {
                     return evaluate::command(&args, turns::Verb::Whatif(verb));
+                }
+                commands::Command::Auth { command } => {
+                    return auth::run(&args, command);
                 }
                 commands::Command::Open(open) => {
                     return repl::run(&args, repl::Target::Named(open.session.clone()), Some(open));

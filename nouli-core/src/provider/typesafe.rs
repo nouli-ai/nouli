@@ -287,6 +287,7 @@ mod tests {
                 base_url,
                 model: "english".into(),
                 api_key_env: None,
+                stored_credential: false,
                 context_budget_tokens: Some(4096),
                 context_window_tokens: None,
                 reserved_output_tokens: None,

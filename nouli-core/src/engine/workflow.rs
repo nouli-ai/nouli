@@ -39,7 +39,8 @@ use std::{collections::HashSet, path::Path, sync::Arc};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-pub type CredentialLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+pub type CredentialLookup =
+    Arc<dyn Fn(&crate::config::auth::CredentialSource) -> Option<String> + Send + Sync>;
 pub struct WorkflowInput<'a> {
     pub request: &'a WorkflowRequest,
     pub config: &'a Config,
@@ -1657,7 +1658,7 @@ mod tests {
                     home: Path::new("/unused"),
                 },
                 Arc::new(|name| {
-                    assert_eq!(name, "SAVED_KEY_SOURCE");
+                    assert_eq!(name.to_string(), "env:SAVED_KEY_SOURCE");
                     Some("old-secret".into())
                 }),
                 CancellationToken::new(),
@@ -1694,7 +1695,7 @@ mod tests {
                 &worker,
                 run,
                 Arc::new(move |name| {
-                    captured.lock().unwrap().push(name.to_owned());
+                    captured.lock().unwrap().push(name.to_string());
                     Some("replacement-secret".into())
                 }),
                 CancellationToken::new(),
@@ -1715,7 +1716,7 @@ mod tests {
         );
         assert_eq!(done.result.nodes[0], initial);
         assert_eq!(done.result.nodes[2], skipped);
-        assert_eq!(*looked_up.lock().unwrap(), vec!["SAVED_KEY_SOURCE"; 3]);
+        assert_eq!(*looked_up.lock().unwrap(), vec!["env:SAVED_KEY_SOURCE"; 3]);
         assert_eq!(
             restarted.provider.calls.lock().unwrap()[0].model,
             "frozen-alias"
