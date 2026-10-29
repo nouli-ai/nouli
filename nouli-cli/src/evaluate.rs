@@ -155,7 +155,10 @@ pub(crate) fn overrides(draft: &Draft, settings: &Settings) -> RuntimeOverrides 
     }
 }
 
-fn create(settings: &Settings, creation: &Creation) -> Result<SessionReport, ErrorReport> {
+pub(crate) fn create(
+    settings: &Settings,
+    creation: &Creation,
+) -> Result<SessionReport, ErrorReport> {
     let mut ledger =
         Ledger::open(&settings.store, OpenMode::ReadWriteCreate).map_err(|error| error.report())?;
     let session = if creation.sources.is_empty() {
@@ -182,7 +185,7 @@ fn create(settings: &Settings, creation: &Creation) -> Result<SessionReport, Err
 }
 
 /// Replaces `--replace N` numbers with the session's current facts.
-fn resolve(settings: &Settings, draft: Draft) -> Result<Draft, ErrorReport> {
+pub(crate) fn resolve(settings: &Settings, draft: Draft) -> Result<Draft, ErrorReport> {
     let Some(session) = draft.replaced_session().cloned() else {
         return Ok(draft);
     };
@@ -265,6 +268,7 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
             &draft.request.updates,
             &settings.store,
             color,
+            true,
         ) {
             Ok(()) => ExitCode::from(render::exit_code(&result)),
             Err(PresentError::Render(_)) => ExitCode::from(6),

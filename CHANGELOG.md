@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a checksum-verified download installer for Apple silicon macOS and ARM64 or x86_64 GNU/Linux.
 - Build Linux x86_64 release archives alongside the existing ARM64 downloads.
 - Add a `session` report for a session created without a turn.
+- Add an interactive session loop: `nouli open SESSION`, or a bare `nouli` in a terminal. Type facts, define questions with `?id: prompt [a, b]`, and press return on an empty line to send. Slash commands branch, blend, replace facts, drop questions, and run what-ifs. Without a terminal, `nouli open` reads its lines from standard input.
 - Add `nouli facts SESSION`, which lists numbered facts and marks the ones inherited from a source session or replaced, and `nouli questions SESSION`, which prints standing questions in the one-line syntax. Both support `--json`.
 - Accept questions written as one-line strings in workflow files, mixed freely with full question objects. A mistake names the node and question.
 - Add a one-line question syntax: `id: prompt [a, b]` for a choice, `id: prompt <a, b, c>` for an ordered score, and `id: prompt` for a yes/no question.

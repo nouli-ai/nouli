@@ -1,6 +1,6 @@
 # Command line
 
-Nouli's commands are verbs. A session keeps its facts and the questions it keeps asking, so each turn only needs what is new. Bare invocation prints help. There is no interactive prompt yet.
+Nouli's commands are verbs. A session keeps its facts and the questions it keeps asking, so each turn only needs what is new. Bare invocation prints help, or opens the interactive session loop when both input and output are terminals.
 
 ```sh
 nouli new Trip "The train costs 40 USD and arrives 30 minutes before the meeting." \
@@ -47,6 +47,40 @@ nouli add Trip --input request.json
 nouli new Branch --from Trip@019a0000-0000-7000-8000-000000000001 --input request.toon
 nouli whatif Trip --input - --input-format json < request.json
 ```
+
+## Interactive sessions
+
+`nouli open SESSION` opens a session in a prompt, creating it if it does not exist and you agree. A bare `nouli` in a terminal first lists your sessions, with a number for each; type a number, or a new name. The loop is a thin layer over the same operations as the verbs, and shows only what the ledger holds. It uses `--provider`, `--model`, and `--context-budget` like the verbs. Without a terminal, `nouli open SESSION` reads its lines from standard input and echoes them, so a script reads as a transcript (it creates a missing session without asking), and a bare `nouli` prints help.
+
+```text
+$ nouli open travel
+travel · 2 standing questions · /help for commands
+travel › The train has been cancelled. The taxi is still available.
+travel › ↵
+  turn 2 · 1 fact · 2 questions · re-asked 2
+  transport   ▶ taxi                             ███████████████████▊ 0.99   → was train 1.00
+                train                            ▏                    0.01
+  on_time       yes                              ██▋                  0.13   → was 0.98
+```
+
+| Input | What it does |
+| --- | --- |
+| plain text | Queues a fact. |
+| `?id: prompt [a, b]` | Queues a standing question in the one-line grammar. A mistake is reported and nothing is queued. |
+| an empty line | Sends the queue as one turn, as `add` does, or asks the standing questions again if nothing is queued. |
+| `/ask` | Sends now. |
+| `/whatif FACT` | An unsaved turn with the queue plus FACT. The queue stays for the next turn. |
+| `/replace N TEXT`, `/drop ID` | Queue a fact replacement or the end of a standing question. |
+| `/clear` | Empties the queue. |
+| `/facts`, `/questions` | Show the session's facts and standing questions, then what is queued. |
+| `/new NAME`, `/use SESSION` | Start a session, or switch to one. |
+| `/branch NAME` | A new session from the current head. |
+| `/blend A B [...] as NAME` | A new session from several. |
+| `/view` | The sessions, with turn counts and where each came from; `●` marks the current one. |
+| `/context` | Which records the model saw on the last turn. |
+| `/help`, `/quit` | The command list, and leaving. |
+
+A turn that fails prints its error and keeps the queue. Ctrl-C clears the queue; during a turn it cancels the turn through the same cancellation the verbs use. Ctrl-D quits, warning first when the queue is not empty. History is kept in `repl_history` inside the store, readable only by you.
 
 ## Output
 

@@ -70,6 +70,7 @@ pub(crate) fn turn_text(
     updates: &[ContextUpdate],
     store: &Path,
     color: bool,
+    footer: bool,
 ) -> Result<(), PresentError> {
     let (history, own) = earlier(store, report)?;
     let previous = |id: &str| {
@@ -100,6 +101,10 @@ pub(crate) fn turn_text(
         previous,
         color,
     )?;
+    if !footer {
+        sink.flush().map_err(RenderError::from)?;
+        return Ok(());
+    }
     let mut line = format!(
         "  {}/{}",
         clean(&report.outcome.provider.provider),

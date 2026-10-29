@@ -160,17 +160,20 @@ pub(crate) struct Creation {
     pub defaults: ModelSelection,
 }
 
-struct Parts<'a> {
-    selection: SessionSelection,
-    numbering: Option<SessionSelector>,
-    facts: &'a [String],
-    questions: &'a [String],
-    drop: &'a [String],
-    replace: &'a [String],
-    common: &'a Common,
-    replay: Option<&'a Replay>,
-    ephemeral: bool,
-    create: Option<Creation>,
+/// The pieces of a turn, however they were entered: command-line arguments or
+/// the lines queued in the REPL.
+pub(crate) struct Parts<'a> {
+    pub selection: SessionSelection,
+    pub numbering: Option<SessionSelector>,
+    pub facts: &'a [String],
+    pub questions: &'a [String],
+    pub drop: &'a [String],
+    /// `--replace` values in pairs: a fact number, then its new text.
+    pub replace: &'a [String],
+    pub common: &'a Common,
+    pub replay: Option<&'a Replay>,
+    pub ephemeral: bool,
+    pub create: Option<Creation>,
 }
 
 impl Verb<'_> {
@@ -294,7 +297,7 @@ fn pairs(replace: &[String]) -> Result<Vec<(usize, String)>, InputError> {
 }
 
 impl Parts<'_> {
-    fn draft(self, stdin: &mut impl Read) -> Result<Draft, InputError> {
+    pub(crate) fn draft(self, stdin: &mut impl Read) -> Result<Draft, InputError> {
         let replaces = pairs(self.replace)?;
         let mut request = if let Some(path) = &self.common.input {
             if !(self.facts.is_empty()
