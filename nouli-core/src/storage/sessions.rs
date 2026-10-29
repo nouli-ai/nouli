@@ -77,7 +77,7 @@ pub(super) fn creation_error(error: StorageError, named: bool) -> SessionError {
 }
 
 pub(super) fn insert_session(
-    transaction: &rusqlite::Transaction<'_>,
+    transaction: &rusqlite::Connection,
     session: &Session,
     sources: &[SourcePoint],
 ) -> Result<(), StorageError> {
