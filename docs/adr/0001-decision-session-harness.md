@@ -66,6 +66,8 @@ planner. A future REPL or natural-language agent will use the same runtime.
   required `decide` verb. Support continuation and inline branch/blend
   sources, optional session names, files and stdin, adaptive text/JSON output,
   explicit output overrides, and optional JSONL workflow events.
+  Superseded in part by [ADR 0002](0002-verb-cli-standing-questions-and-repl.md),
+  which replaces root evaluation with verbs.
 
 ## Considered options
 
