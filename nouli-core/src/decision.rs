@@ -1,5 +1,7 @@
 //! Version-1 requests shared by every provider.
 
+pub mod grammar;
+
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
