@@ -74,6 +74,8 @@ so the change is breaking.
   never shows anything that isn't in the ledger. An optional drafting mode, in
   which a text model turns plain English into facts and questions for the
   person to approve, is deferred.
+  In a terminal, [ADR 0005](0005-full-screen-session-view.md) replaces the line
+  prompt with a full-screen view; piped input still reads lines.
 
 ## Considered options
 
@@ -83,7 +85,7 @@ so the change is breaking.
 | JSON questions only, with a template file per session | Still asks people to hand-write JSON. A one-line grammar is enough for all three answer types. |
 | Re-ask questions only when the caller lists them | Every turn repeats every question, which is the friction this change removes. Standing questions keep one-off questions possible. |
 | Keep facts as free-text turn state | Turn state can't be corrected after the turn. Keyed evidence records already support supersession with preserved history. |
-| A full-screen terminal UI first | More work, and harder to use over SSH or in scripts. A line-based REPL covers the main loop and leaves room for richer views later. |
+| A full-screen terminal UI first | More work, and harder to use over SSH or in scripts. A line-based REPL covers the main loop and leaves room for richer views later. [ADR 0005](0005-full-screen-session-view.md) replaces the line prompt with one. |
 
 ## Consequences
 
