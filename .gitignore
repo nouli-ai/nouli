@@ -85,3 +85,7 @@ Backups.backupdb
 MobileBackups.trash
 tmbootpicker.efi
 
+# Environment files, which can hold provider credentials
+.env
+.env.*
+*.env
