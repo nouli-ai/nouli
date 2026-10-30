@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Give new sessions without an explicit name a durable random `scientist-number-noun` name, such as `curie-7-diffraction`, using short lowercase surnames, numbers 1–20, and original spinner-style noun forms. Names are unique within the ledger, including concurrent launches. Bare `/new` now works without a name; explicit names remain available.
 - Drop files into the focused terminal field: UTF-8 files insert their contents, PDFs import text through Poppler's `pdftotext`, and PNG, JPEG, GIF, WebP, BMP, TIFF, and ICO images become saved image evidence. Quoted paths, shell-escaped paths, file URLs, multiple files, and terminals without bracketed drops are supported. Each file is limited to 16 MiB; unsupported files report an error without submitting.
 - Send image evidence using native TypeSafe, OpenAI Decisions, and OpenRouter formats. Images used by the current turn are required evidence, so context reduction cannot silently remove them. Provider model support and context limits still apply.
 

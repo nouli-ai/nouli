@@ -78,8 +78,8 @@ fn resolve(settings: &Settings, selector: SessionSelector) -> Result<(Session, b
     })
 }
 
-/// A new session with no name.
-fn new_session(settings: &Settings) -> Result<Session, ErrorReport> {
+/// A new session with an automatically assigned name.
+pub(super) fn new_session(settings: &Settings) -> Result<Session, ErrorReport> {
     Ledger::open(&settings.store, OpenMode::ReadWriteCreate)
         .map_err(|error| error.report())?
         .create_session(None, ModelSelection::default())
@@ -105,7 +105,7 @@ fn session_loop(settings: &Settings, start: Start) -> io::Result<Result<(), Erro
     } = start;
     let found = match target {
         Target::Named(selector) => resolve(settings, selector),
-        // A bare `nouli` starts a new session, known by its ID.
+        // A bare `nouli` starts a new session with a generated name.
         Target::Pick => new_session(settings).map(|session| (session, true)),
     };
     let (session, created) = match found {
@@ -211,12 +211,16 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_start_makes_a_new_session_without_a_name() {
+    fn a_bare_start_makes_a_new_session_with_a_stable_generated_name() {
         let root = std::env::temp_dir().join(format!("nouli-repl-new-{}", Id::generate()));
         let settings = Settings::for_test(root.clone());
         let session = new_session(&settings).unwrap();
-        assert!(session.name.is_none());
-        assert_eq!(label(&session).len(), 8, "known by its short ID");
+        let name = session.name.as_ref().unwrap();
+        assert_eq!(label(&session), name.as_str());
+        assert_eq!(name.as_str().split('-').count(), 3);
+        let (restored, created) = resolve(&settings, SessionSelector::Name(name.clone())).unwrap();
+        assert!(!created);
+        assert_eq!(restored, session);
         let _ = fs::remove_dir_all(&root);
     }
 }

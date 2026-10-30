@@ -288,7 +288,7 @@ fn branch_blend_use_new_and_view_create_and_show_the_expected_sessions() {
         "  ○ Budget  1 turn",
         "  ● Plan  0 turns  ← travel + Budget",
         "error: no session \"nowhere\"",
-        "usage: /new NAME",
+        "usage: /new [NAME]",
     ] {
         assert!(transcript.contains(line), "{line}\n{transcript}");
     }

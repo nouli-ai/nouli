@@ -459,9 +459,9 @@ impl Ledger {
         let run = Id::generate();
         let run_guard = self.run_guard(run)?;
         let definition=self.transaction::<_,WorkflowError>("accept frozen workflow",|tx| {
-            let current=if new {Session {id:session,name,defaults:defaults.clone(),frontier:vec![],revision:0}} else {sessions::read_session(tx,&SessionSelector::Id(session))?};
+            let mut current=if new {Session {id:session,name,defaults:defaults.clone(),frontier:vec![],revision:0}} else {sessions::read_session(tx,&SessionSelector::Id(session))?};
             let sources=sources::resolve_selection(tx,&request.session,&current)?;
-            if new {sessions::insert_session(tx,&current,&sources).map_err(|error|sessions::creation_error(error,current.name.is_some()))?;}
+            if new {sessions::insert_session(tx,&mut current,&sources)?;}
             let base=ContextBase {id:run,session,sources,state:request.workflow.state.clone(),updates:request.updates.clone(),runtime_only:false};
             let definition=WorkflowDefinition {run,session,request:request.clone(),base,defaults,initial_frontier:current.frontier.clone(),initial_revision:current.revision,plan:Data::new(codec::to_value(&plan).map_err(|_|WorkflowError::Snapshot)?).map_err(|_|WorkflowError::Snapshot)?};
             tx.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon,kind) VALUES(?1,?2,?3,?4,'pending',?5,'workflow')",params![session.to_string(),key,hash,session_guard.owner.to_string(),Self::encode_payload(&run)?]).map_err(|error|sql_error("reserve workflow request",error))?;

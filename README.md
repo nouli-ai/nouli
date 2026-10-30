@@ -101,7 +101,7 @@ The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/
 
 ## What does a session look like?
 
-`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Mouse drag selects terminal text, and arrows move between fields. Drop a text file, PDF, or image into the focused field; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
+`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. Bare `nouli` and `/new` create a session with a unique name like `curie-7-diffraction`; explicit names still work. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Mouse drag selects terminal text, and arrows move between fields. Drop a text file, PDF, or image into the focused field; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
 
 ```text
 $ nouli open catalog

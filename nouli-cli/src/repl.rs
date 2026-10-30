@@ -106,7 +106,10 @@ const HELP: [(&str, &str); 13] = [
     ("/replace N TEXT", "replace fact N (queued)"),
     ("/clear", "empty the queue"),
     ("/facts", "show the session's facts"),
-    ("/new NAME", "start a session"),
+    (
+        "/new [NAME]",
+        "start a session; name is automatic if omitted",
+    ),
     ("/use NAME", "switch session"),
     ("/branch NAME", "a new session from here"),
     ("/blend A B as NAME", "combine histories into a new session"),
@@ -315,7 +318,7 @@ impl<W: Write> Repl<'_, W> {
             Command::View => self.view()?,
             Command::Context => self.context()?,
             Command::Use(name) => self.use_session(&name)?,
-            Command::New(name) => self.new_session(&name)?,
+            Command::New(name) => self.new_session(name.as_deref())?,
             Command::Branch(name) => self.branch(&name)?,
             Command::Blend { sources, name } => self.blend(&sources, &name)?,
             Command::Usage(usage) => self.say(&format!("  usage: {usage}"))?,
@@ -549,10 +552,24 @@ impl<W: Write> Repl<'_, W> {
         }
     }
 
-    fn new_session(&mut self, name: &str) -> io::Result<()> {
-        if let Some(session) = self.create(name, vec![]) {
+    fn new_session(&mut self, name: Option<&str>) -> io::Result<()> {
+        let session = if let Some(name) = name {
+            self.create(name, vec![])
+        } else {
+            match start::new_session(self.settings) {
+                Ok(session) => Some(session),
+                Err(error) => {
+                    self.fail(&error.message)?;
+                    None
+                }
+            }
+        };
+        if let Some(session) = session {
             self.switch(&session);
-            self.dim(&format!("  new session \"{}\"", render::clean(name)))?;
+            self.dim(&format!(
+                "  new session \"{}\"",
+                render::clean(&self.session.label)
+            ))?;
         }
         Ok(())
     }

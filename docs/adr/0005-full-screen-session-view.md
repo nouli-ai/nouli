@@ -5,6 +5,9 @@ date: 2026-10-29
 
 # Replace the line prompt with a full-screen view
 
+UUID-fragment labels for new anonymous sessions are superseded by
+[ADR 0011](0011-generated-session-names.md).
+
 The form grammar and keyboard behavior below are superseded by
 [ADR 0006](0006-literal-form-and-file-drops.md).
 
