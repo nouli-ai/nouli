@@ -77,6 +77,11 @@ fn session(error: &SessionError) -> ErrorReport {
     match error {
         SessionError::Storage(error) => storage(error),
         SessionError::NameCollision => message(Category::Conflict, "session_name_exists"),
+        SessionError::NamesExhausted => {
+            let mut report = message(Category::Conflict, "session_names_exhausted");
+            report.message = error.to_string();
+            report
+        }
         _ => message(Category::Input, "invalid_session"),
     }
 }
@@ -312,6 +317,13 @@ impl WorkflowEngineError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn exhausted_automatic_names_explain_how_to_create_another_session() {
+        let report = super::session(&crate::storage::sessions::SessionError::NamesExhausted);
+        assert_eq!(report.code, "session_names_exhausted");
+        assert!(report.message.contains("supply an explicit name"));
+        assert!(!report.retryable);
+    }
     use super::*;
     #[test]
     fn configuration_reports_identify_setup_errors_without_echoing_private_details() {

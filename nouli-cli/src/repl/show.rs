@@ -235,11 +235,19 @@ mod tests {
         let left = create(None);
         let current = create(None);
         create(Some("named"));
+        // Old ledgers may still contain genuinely unnamed sessions.
+        rusqlite::Connection::open(ledger.path())
+            .unwrap()
+            .execute(
+                "UPDATE sessions SET name=NULL WHERE id=?1",
+                [left.to_string()],
+            )
+            .unwrap();
         let mut out = Vec::new();
         view(&ledger, current, Paint(false), &mut out).unwrap();
         let shown = String::from_utf8(out).unwrap();
-        // Only the current session and the named one; IDs made in the same
-        // millisecond share their short form, so count the rows.
+        // Keep the generated current name and explicit name, omitting the empty
+        // legacy unnamed session.
         assert_eq!(shown.lines().count(), 2, "{shown}");
         assert!(shown.contains("● ") && shown.contains("named"), "{shown}");
         assert_ne!(left, current);

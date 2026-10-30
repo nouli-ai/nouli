@@ -15,7 +15,7 @@ pub(super) enum Line {
 pub(super) enum Command {
     Help,
     Use(String),
-    New(String),
+    New(Option<String>),
     Branch(String),
     Blend {
         sources: Vec<String>,
@@ -54,7 +54,8 @@ pub(super) fn parse(line: &str) -> Line {
         "clear" => Command::Clear,
         "quit" | "exit" => Command::Quit,
         "use" => single(argument, Command::Use, "/use SESSION"),
-        "new" => single(argument, Command::New, "/new NAME"),
+        "new" if argument.is_empty() => Command::New(None),
+        "new" => single(argument, |name| Command::New(Some(name)), "/new [NAME]"),
         "branch" => single(argument, Command::Branch, "/branch NEW_NAME"),
         "replace" => replace(argument),
         "blend" => blend(argument),
@@ -123,6 +124,9 @@ mod tests {
         assert_eq!(command("/use travel"), Command::Use("travel".into()));
         assert_eq!(command("/use"), Command::Usage("/use SESSION"));
         assert_eq!(command("/use a b"), Command::Usage("/use SESSION"));
+        assert_eq!(command("/new"), Command::New(None));
+        assert_eq!(command("/new trip"), Command::New(Some("trip".into())));
+        assert_eq!(command("/new bad name"), Command::Usage("/new [NAME]"));
         assert_eq!(command("/whatif"), Command::Unknown("whatif".into()));
         assert_eq!(
             command("/replace 3 The train is late."),

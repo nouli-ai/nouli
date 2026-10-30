@@ -108,7 +108,7 @@ impl Ledger {
         selections: &[SourceSelection],
     ) -> Result<Session, SourceError> {
         super::sessions::validate_defaults(&defaults)?;
-        let session = Session {
+        let mut session = Session {
             id: Id::generate(),
             name,
             defaults,
@@ -117,12 +117,7 @@ impl Ledger {
         };
         self.transaction::<_, SourceError>("create derived session", |transaction| {
             let sources = resolve_on(transaction, selections)?;
-            insert_session(transaction, &session, &sources).map_err(|error| {
-                SourceError::Session(super::sessions::creation_error(
-                    error,
-                    session.name.is_some(),
-                ))
-            })?;
+            insert_session(transaction, &mut session, &sources)?;
             Ok(())
         })?;
         Ok(session)

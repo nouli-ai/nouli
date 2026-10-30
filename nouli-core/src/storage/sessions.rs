@@ -1,5 +1,7 @@
 //! Durable catalogs and explicit selectors. Unknown selectors never create data.
 
+mod names;
+
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -26,6 +28,8 @@ pub enum SessionError {
     UnknownSession,
     #[error("session name already exists")]
     NameCollision,
+    #[error("automatic session names are exhausted; supply an explicit name")]
+    NamesExhausted,
     #[error("session defaults contain an empty provider/model")]
     InvalidDefaults,
     #[error(transparent)]
@@ -78,9 +82,10 @@ pub(super) fn creation_error(error: StorageError, named: bool) -> SessionError {
 
 pub(super) fn insert_session(
     transaction: &rusqlite::Connection,
-    session: &Session,
+    session: &mut Session,
     sources: &[SourcePoint],
-) -> Result<(), StorageError> {
+) -> Result<(), SessionError> {
+    names::assign(transaction, session)?;
     let defaults = Ledger::encode_payload(&session.defaults)?;
     let frontier = Ledger::encode_payload(&session.frontier)?;
     transaction
@@ -93,7 +98,7 @@ pub(super) fn insert_session(
                 frontier
             ],
         )
-        .map_err(|error| sql_error("insert session", error))?;
+        .map_err(|error| creation_error(sql_error("insert session", error), true))?;
     let event = Ledger::encode_payload(&HistoryEvent::SessionCreated {
         session: session.id,
         sources: sources.to_vec(),
@@ -170,17 +175,16 @@ impl Ledger {
         defaults: ModelSelection,
     ) -> Result<Session, SessionError> {
         validate_defaults(&defaults)?;
-        let session = Session {
+        let mut session = Session {
             id: Id::generate(),
             name,
             defaults,
             frontier: vec![],
             revision: 0,
         };
-        self.transaction::<_, StorageError>("create session", |transaction| {
-            insert_session(transaction, &session, &[])
-        })
-        .map_err(|error| creation_error(error, session.name.is_some()))?;
+        self.transaction::<_, SessionError>("create session", |transaction| {
+            insert_session(transaction, &mut session, &[])
+        })?;
         Ok(session)
     }
     pub fn session(&self, selector: &SessionSelector) -> Result<Session, SessionError> {

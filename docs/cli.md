@@ -20,6 +20,8 @@ nouli whatif Trip "The taxi fare has doubled to 140 USD." -q "fare: Is the taxi 
 
 `SESSION` is an existing ID or unique case-sensitive name; an unknown selector never creates a session. `--from` names a source session, or `SESSION@TURN_ID` for a fixed finalized turn. Without `@`, acceptance captures the source's current frontier once, so later source changes do not flow into the saved branch or blend. A name belongs to one session.
 
+New sessions created without an explicit name get a persistent random name such as `curie-7-diffraction`: a short lowercase scientist surname, a number from 1–20, and a noun from an original spinner-style verb. Names are unique within the ledger and work with `nouli open NAME` or `/use NAME`. Bare `nouli` and `/new` choose a name automatically; `/new NAME` uses your supplied name. Existing sessions keep their names or legacy ID labels. If all 19,840 generated combinations are occupied, supply an explicit name.
+
 ## Facts
 
 Every positional `FACT` is saved as an evidence record in the session. The model sees the current text of every fact, and a turn does not repeat the facts of earlier turns. Facts are numbered in the order they were first added, and a blend or a branch numbers the facts it inherits first. `--replace N TEXT` supersedes fact N: the new text keeps number N, the model sees only the new text from then on, and the earlier version stays in the ledger and in `nouli context`. `--replace` is repeatable, applies before new facts, and rejects a number that does not exist. When a blend joins branches that replaced the same fact differently, the fact shows every alternative, the model sees them all, and `--replace N` settles it. Empty facts are rejected. A fact that begins with `-` needs `--` before it.
@@ -50,7 +52,7 @@ nouli whatif Trip --input - --input-format json < request.json
 
 ## Interactive sessions
 
-`nouli open SESSION` opens a session, full screen in a terminal, creating it if it does not exist. A bare `nouli` in a terminal starts a new session, known by its short ID; in a terminal that takes no escape codes it prints help. The loop is a thin layer over the same operations as the verbs, and shows only what the ledger holds. It uses `--provider`, `--model`, and `--context-budget` like the verbs. Without a terminal, `nouli open SESSION` reads its lines from standard input and echoes them, so a script reads as a transcript (it creates a missing session without asking), and a bare `nouli` prints help.
+`nouli open SESSION` opens a session, full screen in a terminal, creating it if it does not exist. A bare `nouli` in a terminal starts a new session with an automatically assigned name; in a terminal that takes no escape codes it prints help. The loop is a thin layer over the same operations as the verbs, and shows only what the ledger holds. It uses `--provider`, `--model`, and `--context-budget` like the verbs. Without a terminal, `nouli open SESSION` reads its lines from standard input and echoes them, so a script reads as a transcript (it creates a missing session without asking), and a bare `nouli` prints help.
 
 ```text
 $ nouli open trip
@@ -71,7 +73,7 @@ trip › ?rebook: How should I get to the meeting now? [Take the train, Take a t
 | `/replace N TEXT` | Queues a fact replacement. |
 | `/clear` | Empties the queue. |
 | `/facts` | Shows the session's facts, then what is queued. |
-| `/new NAME`, `/use SESSION` | Start a session, or switch to one. |
+| `/new [NAME]`, `/use SESSION` | Start a session with an optional name, or switch to one. |
 | `/branch NAME` | A new session from the current head. |
 | `/blend A B [...] as NAME` | A new session from several. |
 | `/view` | The sessions, with turn counts and where each came from; `●` marks the current one. |

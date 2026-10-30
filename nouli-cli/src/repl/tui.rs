@@ -95,7 +95,7 @@ fn matching(input: &str) -> Vec<(&'static str, &'static str)> {
 fn takes_argument(usage: &str) -> bool {
     usage
         .split_once(' ')
-        .is_some_and(|(name, _)| !name.ends_with(','))
+        .is_some_and(|(name, argument)| !name.ends_with(',') && !argument.starts_with('['))
 }
 
 /// Runs the view on the terminal until the person leaves, then puts the
@@ -510,7 +510,10 @@ impl<'a> App<'a> {
                     return Ok(None);
                 };
                 let name = usage.split([' ', ',']).next().unwrap_or(usage);
-                self.form.input = if takes_argument(usage) {
+                self.form.input = if usage
+                    .split_once(' ')
+                    .is_some_and(|(command, _)| !command.ends_with(','))
+                {
                     format!("{name} ")
                 } else {
                     name.to_owned()

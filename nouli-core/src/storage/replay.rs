@@ -475,9 +475,9 @@ impl Ledger {
         };
         let guard = guards::acquire_session(self, id)?;
         let frozen=self.transaction::<_,ReplayError>("accept unique request",|transaction| {
-            let current=if new {Session {id,name,defaults:ModelSelection {provider:Some(settings.profile_name.clone()),model:Some(settings.profile.model.clone())},frontier:vec![],revision:0}} else {read_session(transaction,&SessionSelector::Id(id))?};
+            let mut current=if new {Session {id,name,defaults:ModelSelection {provider:Some(settings.profile_name.clone()),model:Some(settings.profile.model.clone())},frontier:vec![],revision:0}} else {read_session(transaction,&SessionSelector::Id(id))?};
             let captured=super::sources::resolve_selection(transaction,&request.session,&current)?;
-            if new {insert_session(transaction,&current,&captured).map_err(|error|if current.name.is_some() && matches!(error,StorageError::Sqlite {code:Some(rusqlite::ErrorCode::ConstraintViolation),..}) {ReplayError::Session(SessionError::NameCollision)} else {ReplayError::Storage(error)})?;}
+            if new {insert_session(transaction,&mut current,&captured)?;}
             let frozen=FrozenRequest {request:request.clone(),settings,sources:captured,session:id,frontier:current.frontier,revision:current.revision};
             transaction.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon) VALUES(?1,?2,?3,?4,'pending',?5)",params![id.to_string(),key,hash,guard.owner.to_string(),Ledger::encode_payload(&frozen)?]).map_err(|error|sql_error("reserve unique request",error))?;
             Ok(frozen)
