@@ -3,7 +3,7 @@
 mod input;
 mod show;
 mod start;
-mod terminal;
+mod tui;
 
 use crate::{
     evaluate::{self, input_error},
@@ -14,7 +14,7 @@ use crate::{
     },
     selection,
     settings::Settings,
-    turns::{Common, Creation, Parts},
+    turns::{Common, Creation, Draft, Parts},
 };
 use clap::Args as ClapArgs;
 use input::{Command, Line};
@@ -28,8 +28,9 @@ use nouli_core::{
 };
 pub(crate) use start::{Target, run};
 use std::io::{self, BufRead, Write};
+use tokio::runtime::Runtime;
 
-/// Open the interactive session loop on a session, creating it if you agree.
+/// Open the interactive session loop on a session, creating it if it is missing.
 #[derive(Debug, ClapArgs)]
 pub(crate) struct Open {
     /// The session, by ID or unique name.
@@ -46,38 +47,30 @@ pub(crate) struct Open {
     pub context_budget: Option<u64>,
 }
 
-/// What the person typed, or Ctrl-C and Ctrl-D.
-pub(crate) enum Event {
-    Line(String),
-    Interrupt,
-    Eof,
+/// Whether standard input and output are a terminal that can draw the view.
+/// One that takes no escape codes is read like piped input.
+pub(crate) fn can_draw() -> bool {
+    use std::io::IsTerminal;
+    io::stdin().is_terminal()
+        && io::stdout().is_terminal()
+        && !render::plain_terminal(std::env::var_os("TERM").as_deref())
 }
 
-/// A source of lines. The terminal edits and remembers them; a reader of a
-/// script or pipe echoes them, so the output reads as a transcript.
-pub(crate) trait Lines {
-    fn read(&mut self, raw: &str, styled: &str, out: &mut dyn Write) -> io::Result<Event>;
-    /// Reads a yes/no answer, where Ctrl-C always interrupts, even after typing.
-    fn confirm(&mut self, prompt: &str, out: &mut dyn Write) -> io::Result<Event> {
-        self.read(prompt, prompt, out)
+/// The next line of `input`, echoed after `prompt` so a script's output reads
+/// as a transcript; `None` at the end of the input.
+fn read_line(
+    input: &mut impl BufRead,
+    prompt: &str,
+    out: &mut impl Write,
+) -> io::Result<Option<String>> {
+    let mut line = String::new();
+    if input.read_line(&mut line)? == 0 {
+        return Ok(None);
     }
-    fn finish(&mut self) {}
-}
-
-/// Lines from any `BufRead`, echoed after the prompt.
-pub(crate) struct Reader<R>(pub R);
-
-impl<R: BufRead> Lines for Reader<R> {
-    fn read(&mut self, _raw: &str, styled: &str, out: &mut dyn Write) -> io::Result<Event> {
-        let mut line = String::new();
-        if self.0.read_line(&mut line)? == 0 {
-            return Ok(Event::Eof);
-        }
-        let line = line.trim_end_matches(['\n', '\r']).to_owned();
-        let shown = if line.is_empty() { "↵" } else { &line };
-        writeln!(out, "{styled}{shown}")?;
-        Ok(Event::Line(line))
-    }
+    let line = line.trim_end_matches(['\n', '\r']).to_owned();
+    let shown = if line.is_empty() { "↵" } else { &line };
+    writeln!(out, "{prompt}{shown}")?;
+    Ok(Some(line))
 }
 
 /// Queued input that the next turn will carry. The question is there only
@@ -123,10 +116,21 @@ const HELP: [(&str, &str); 14] = [
     ("/quit, /exit", "leave (or Ctrl-C on an empty prompt)"),
 ];
 
-struct Repl<'a, L, W> {
+/// What a line leaves the loop to do.
+#[derive(Debug, PartialEq, Eq)]
+enum Step {
+    Continue,
+    /// Send the queue with this question; a what-if saves nothing. The loop
+    /// runs the turn, so it can wait for it or keep drawing while it runs.
+    Send {
+        question: String,
+        ephemeral: bool,
+    },
+    Quit,
+}
+
+struct Repl<'a, W> {
     settings: &'a Settings,
-    runtime: tokio::runtime::Runtime,
-    lines: L,
     out: W,
     paint: Paint,
     model: ModelSelection,
@@ -167,7 +171,7 @@ fn own_turns(ledger: &Ledger, session: &Session) -> Result<usize, ErrorReport> {
         .count())
 }
 
-impl<L: Lines, W: Write> Repl<'_, L, W> {
+impl<W: Write> Repl<'_, W> {
     fn say(&mut self, text: &str) -> io::Result<()> {
         show::say(&mut self.out, text)
     }
@@ -207,13 +211,14 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         self.say("")
     }
 
-    fn run(&mut self) -> io::Result<()> {
+    fn run(&mut self, input: &mut impl BufRead, runtime: &Runtime) -> io::Result<()> {
         let mut warned = false;
         loop {
-            let raw = format!("{} › ", self.session.label);
-            let styled = self.paint.apply(TEAL, &raw);
-            match self.lines.read(&raw, &styled, &mut self.out)? {
-                Event::Eof => {
+            let prompt = self
+                .paint
+                .apply(TEAL, &format!("{} › ", self.session.label));
+            match read_line(input, &prompt, &mut self.out)? {
+                None => {
                     if !self.queue.is_empty() && !warned {
                         warned = true;
                         let text = format!(
@@ -225,20 +230,15 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                     }
                     return self.say("  bye");
                 }
-                // The editor clears a typed line itself, so this is an empty
-                // prompt: clear the queue first, and leave once it is empty.
-                Event::Interrupt => {
+                Some(line) => {
                     warned = false;
-                    if self.queue.is_empty() {
-                        return self.say("  bye");
-                    }
-                    self.queue = Queue::default();
-                    self.dim("^C  queue cleared")?;
-                }
-                Event::Line(line) => {
-                    warned = false;
-                    if !self.handle(&line)? {
-                        return Ok(());
+                    match self.handle(&line)? {
+                        Step::Continue => {}
+                        Step::Send {
+                            question,
+                            ephemeral,
+                        } => self.send(runtime, &question, ephemeral)?,
+                        Step::Quit => return Ok(()),
                     }
                 }
             }
@@ -246,11 +246,15 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         }
     }
 
-    /// Returns false when the session should end.
-    fn handle(&mut self, line: &str) -> io::Result<bool> {
+    fn handle(&mut self, line: &str) -> io::Result<Step> {
         match input::parse(line) {
             Line::Send => match self.queue.question.clone() {
-                Some(question) => self.send(&question, false)?,
+                Some(question) => {
+                    return Ok(Step::Send {
+                        question,
+                        ephemeral: false,
+                    });
+                }
                 None if self.queue.is_empty() => {}
                 None => {
                     let text = format!(
@@ -265,12 +269,15 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                 if self.valid(&text)? {
                     // A question left by a failed turn gives way to the new one.
                     self.queue.question = Some(text.clone());
-                    self.send(&text, false)?;
+                    return Ok(Step::Send {
+                        question: text,
+                        ephemeral: false,
+                    });
                 }
             }
             Line::Command(command) => return self.command(command),
         }
-        Ok(true)
+        Ok(Step::Continue)
     }
 
     /// True for a line in the question grammar; otherwise reports why it isn't one.
@@ -284,11 +291,11 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
         }
     }
 
-    fn command(&mut self, command: Command) -> io::Result<bool> {
+    fn command(&mut self, command: Command) -> io::Result<Step> {
         match command {
             Command::Quit => {
                 self.say("  bye")?;
-                return Ok(false);
+                return Ok(Step::Quit);
             }
             Command::Help => {
                 for (name, meaning) in HELP {
@@ -298,7 +305,10 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
             }
             Command::Whatif(question) => {
                 if self.valid(&question)? {
-                    self.send(&question, true)?;
+                    return Ok(Step::Send {
+                        question,
+                        ephemeral: true,
+                    });
                 }
             }
             Command::Clear => {
@@ -322,12 +332,22 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                 render::clean(&name)
             ))?,
         }
-        Ok(true)
+        Ok(Step::Continue)
     }
 
     /// Sends the queued facts with `question` as one turn, or as a what-if
-    /// that saves nothing.
-    fn send(&mut self, question: &str, ephemeral: bool) -> io::Result<()> {
+    /// that saves nothing, and waits for it.
+    fn send(&mut self, runtime: &Runtime, question: &str, ephemeral: bool) -> io::Result<()> {
+        let Some(draft) = self.draft(question, ephemeral)? else {
+            return Ok(());
+        };
+        let result = runtime.block_on(evaluate::run(&draft, self.settings));
+        self.finish(result.result, &draft.request.updates, ephemeral)
+    }
+
+    /// The turn the queued facts and `question` make, or `None` once the
+    /// reason there is none is shown.
+    fn draft(&mut self, question: &str, ephemeral: bool) -> io::Result<Option<Draft>> {
         if ephemeral {
             match self.ledger().and_then(|ledger| {
                 ledger
@@ -335,10 +355,14 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
                     .map_err(|error| error.report())
             }) {
                 Ok(session) if session.frontier.is_empty() => {
-                    return self.say("  send a turn first: a what-if starts from the last one");
+                    self.say("  send a turn first: a what-if starts from the last one")?;
+                    return Ok(None);
                 }
                 Ok(_) => {}
-                Err(error) => return self.fail(&error.message),
+                Err(error) => {
+                    self.fail(&error.message)?;
+                    return Ok(None);
+                }
             }
         }
         let replace: Vec<String> = self
@@ -383,12 +407,13 @@ impl<L: Lines, W: Write> Repl<'_, L, W> {
             Ok(draft) => evaluate::resolve(self.settings, draft),
             Err(error) => Err(input_error(&error)),
         };
-        let draft = match draft {
-            Ok(draft) => draft,
-            Err(error) => return self.fail(&error.message),
-        };
-        let result = self.runtime.block_on(evaluate::run(&draft, self.settings));
-        self.finish(result.result, &draft.request.updates, ephemeral)
+        match draft {
+            Ok(draft) => Ok(Some(draft)),
+            Err(error) => {
+                self.fail(&error.message)?;
+                Ok(None)
+            }
+        }
     }
 
     /// Shows what a turn returned. A saved turn has taken the queue, even when
@@ -583,10 +608,10 @@ mod tests {
 
     #[test]
     fn a_reader_echoes_each_line_after_the_prompt_and_ends_at_the_end_of_input() {
-        let mut reader = Reader(&b"A fact\n\n?q: Why?\r\n"[..]);
+        let mut input = &b"A fact\n\n?q: Why?\r\n"[..];
         let mut out = Vec::new();
         let mut seen = Vec::new();
-        while let Event::Line(line) = reader.read("s › ", "s › ", &mut out).unwrap() {
+        while let Some(line) = read_line(&mut input, "s › ", &mut out).unwrap() {
             seen.push(line);
         }
         assert_eq!(seen, ["A fact", "", "?q: Why?"]);
@@ -596,22 +621,9 @@ mod tests {
         );
     }
 
-    /// Key presses for the loop to read, then the end of input.
-    struct Keys(std::collections::VecDeque<Event>);
-
-    impl Lines for Keys {
-        fn read(&mut self, _: &str, _: &str, _: &mut dyn Write) -> io::Result<Event> {
-            Ok(self.0.pop_front().unwrap_or(Event::Eof))
-        }
-    }
-
-    fn repl<'a, L: Lines>(settings: &'a Settings, queue: Queue, lines: L) -> Repl<'a, L, Vec<u8>> {
+    pub(super) fn repl(settings: &Settings, queue: Queue) -> Repl<'_, Vec<u8>> {
         Repl {
             settings,
-            runtime: tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap(),
-            lines,
             out: Vec::new(),
             paint: Paint(false),
             model: ModelSelection::default(),
@@ -624,7 +636,7 @@ mod tests {
         }
     }
 
-    fn saved_turn() -> nouli_core::protocol::Report {
+    pub(super) fn saved_turn() -> nouli_core::protocol::Report {
         let data: serde_json::Value =
             serde_json::from_str(include_str!("../../fixtures/contracts/history.json")).unwrap();
         let turn: nouli_core::history::FinalizedTurn =
@@ -650,53 +662,50 @@ mod tests {
             question: Some("q: Is it?".into()),
             ..Queue::default()
         };
-        let mut sent = repl(&settings, queue(), Reader(&b""[..]));
+        let mut sent = repl(&settings, queue());
         sent.finish(saved_turn(), &[], false).unwrap();
         assert!(sent.queue.is_empty());
         let shown = String::from_utf8(sent.out).unwrap();
         assert!(shown.contains("error:"), "{shown}");
         // A what-if saves nothing, so the queue stays.
-        let mut whatif = repl(&settings, queue(), Reader(&b""[..]));
+        let mut whatif = repl(&settings, queue());
         whatif.finish(saved_turn(), &[], true).unwrap();
         assert_eq!(whatif.queue.len(), 2);
     }
 
     #[test]
-    fn ctrl_c_clears_the_queue_and_then_leaves_from_an_empty_prompt() {
-        let settings = Settings::for_test(
-            std::env::temp_dir().join(format!("nouli-repl-keys-{}", Id::generate())),
-        );
-        let queue = Queue {
-            facts: vec!["a fact".into()],
-            ..Queue::default()
-        };
-        let keys = Keys(
-            [
-                Event::Interrupt,
-                Event::Interrupt,
-                Event::Line("never read".into()),
-            ]
-            .into(),
-        );
-        let mut session = repl(&settings, queue, keys);
-        session.run().unwrap();
-        assert!(session.queue.is_empty());
-        assert_eq!(session.lines.0.len(), 1);
-        let shown = String::from_utf8(session.out).unwrap();
-        assert!(shown.contains("queue cleared"), "{shown}");
-        assert!(shown.ends_with("  bye\n"), "{shown}");
-    }
-
-    #[test]
     fn a_question_that_breaks_the_grammar_is_reported_and_not_sent() {
         let settings = Settings::for_test(std::env::temp_dir());
-        let mut session = repl(&settings, Queue::default(), Reader(&b""[..]));
+        let mut session = repl(&settings, Queue::default());
         assert!(session.valid("q: Is it?").unwrap());
         assert!(!session.valid("broken").unwrap());
-        assert!(session.handle("?broken").unwrap());
+        assert_eq!(session.handle("?broken").unwrap(), Step::Continue);
         assert!(session.queue.is_empty());
         let shown = String::from_utf8(session.out).unwrap();
         assert_eq!(shown.matches("grammar error").count(), 2, "{shown}");
+    }
+
+    #[test]
+    fn lines_that_send_a_turn_leave_running_it_to_the_loop() {
+        let settings = Settings::for_test(std::env::temp_dir());
+        let mut session = repl(&settings, Queue::default());
+        let send = |question: &str, ephemeral| Step::Send {
+            question: question.into(),
+            ephemeral,
+        };
+        assert_eq!(session.handle("A fact").unwrap(), Step::Continue);
+        assert_eq!(
+            session.handle("?q: Is it?").unwrap(),
+            send("q: Is it?", false)
+        );
+        // Nothing ran, so the question waits for an empty line to send it again.
+        assert_eq!(session.handle("").unwrap(), send("q: Is it?", false));
+        assert_eq!(
+            session.handle("/whatif ?w: Would it?").unwrap(),
+            send("w: Would it?", true)
+        );
+        assert_eq!(session.queue.facts, ["A fact"]);
+        assert_eq!(session.handle("/quit").unwrap(), Step::Quit);
     }
 
     #[test]

@@ -47,7 +47,16 @@ impl EvaluationError {
     }
 }
 pub(crate) async fn run(draft: &Draft, settings: &Settings) -> ResultEnvelope {
-    let result = execute(draft, settings).await;
+    run_until(draft, settings, tokio::signal::ctrl_c()).await
+}
+/// Runs a turn that ends when `interrupt` completes, the way Ctrl-C ends one
+/// for [`run`]. The full-screen loop reads Ctrl-C as a key, not a signal.
+pub(crate) async fn run_until(
+    draft: &Draft,
+    settings: &Settings,
+    interrupt: impl Future<Output = io::Result<()>>,
+) -> ResultEnvelope {
+    let result = execute(draft, settings, interrupt).await;
     settings.credentials.forget();
     ResultEnvelope::new(match result {
         Ok(report) => Report::Turn(Box::new(report)),
@@ -93,7 +102,11 @@ async fn fetch_credential(
             .await;
     }
 }
-async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, EvaluationError> {
+async fn execute(
+    draft: &Draft,
+    settings: &Settings,
+    interrupt: impl Future<Output = io::Result<()>>,
+) -> Result<TurnReport, EvaluationError> {
     let request = &draft.request;
     let engine = Engine {
         provider: NativeProvider,
@@ -168,7 +181,7 @@ async fn execute(draft: &Draft, settings: &Settings) -> Result<TurnReport, Evalu
     tokio::select! {
         biased;
         result=&mut evaluation=>result.map_err(EvaluationError::from),
-        signal=tokio::signal::ctrl_c()=> {
+        signal=interrupt=> {
             cancel.cancel();let result=evaluation.await;
             if let Err(error)=signal {return Err(EvaluationError::Signal(error));}
             result.map_err(EvaluationError::from)

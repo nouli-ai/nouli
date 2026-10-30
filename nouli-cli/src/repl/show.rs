@@ -88,9 +88,14 @@ pub(super) fn view(
     let rows = (|| {
         let mut rows = Vec::new();
         for session in ledger.list_sessions().map_err(|e| e.report())? {
-            let parents: Vec<String> = ledger
-                .session_sources(session.id)
-                .map_err(|e| e.report())?
+            let sources = ledger.session_sources(session.id).map_err(|e| e.report())?;
+            // A bare `nouli` that was left before its first turn leaves an
+            // empty session with no name; there is nothing in it to show.
+            let empty = session.name.is_none() && session.frontier.is_empty() && sources.is_empty();
+            if empty && session.id != current {
+                continue;
+            }
+            let parents: Vec<String> = sources
                 .iter()
                 .filter_map(|source| {
                     ledger
@@ -205,5 +210,39 @@ pub(super) fn context(
             Ok(())
         }
         Err(error) => fail(out, &error.message),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nouli_core::{
+        history::ModelSelection,
+        storage::{Ledger, OpenMode},
+    };
+
+    #[test]
+    fn view_leaves_out_empty_sessions_without_a_name_except_the_current_one() {
+        let root = std::env::temp_dir().join(format!("nouli-show-{}", Id::generate()));
+        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let mut create = |name: Option<&str>| {
+            let name = name.map(|name| name.to_owned().try_into().unwrap());
+            ledger
+                .create_session(name, ModelSelection::default())
+                .unwrap()
+                .id
+        };
+        let left = create(None);
+        let current = create(None);
+        create(Some("named"));
+        let mut out = Vec::new();
+        view(&ledger, current, Paint(false), &mut out).unwrap();
+        let shown = String::from_utf8(out).unwrap();
+        // Only the current session and the named one; IDs made in the same
+        // millisecond share their short form, so count the rows.
+        assert_eq!(shown.lines().count(), 2, "{shown}");
+        assert!(shown.contains("● ") && shown.contains("named"), "{shown}");
+        assert_ne!(left, current);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

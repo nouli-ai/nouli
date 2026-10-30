@@ -13,7 +13,7 @@ use std::io::Write;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Bold teal, the product accent, for selected rows, the prompt, and changes.
-pub(crate) const TEAL: &str = "\x1b[1;36;38;5;30m";
+pub(crate) const TEAL: &str = "\x1b[1;36;38;5;37m";
 /// Dim, for headers, metadata, and unselected rows.
 pub(crate) const DIM: &str = "\x1b[2m";
 pub(crate) const RESET: &str = "\x1b[0m";
