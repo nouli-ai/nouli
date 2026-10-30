@@ -62,6 +62,13 @@ fn earlier(store: &Path, report: &TurnReport) -> Result<(Vec<FinalizedTurn>, usi
     ))
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum TurnDisplay {
+    Full,
+    Transcript,
+    Compact(usize),
+}
+
 /// Writes a turn as bars and changes. `updates` are the turn's caller updates,
 /// which tell how many facts it recorded or replaced.
 pub(crate) fn turn_text(
@@ -70,7 +77,7 @@ pub(crate) fn turn_text(
     updates: &[ContextUpdate],
     store: &Path,
     color: bool,
-    footer: bool,
+    display: TurnDisplay,
 ) -> Result<(), PresentError> {
     let (history, own) = earlier(store, report)?;
     let previous = |id: &str| {
@@ -88,15 +95,26 @@ pub(crate) fn turn_text(
         replaced,
         questions: report.questions.len(),
     };
-    turn::write(
-        sink,
-        &header,
-        &report.questions,
-        &report.outcome.outcomes,
-        previous,
-        color,
-    )?;
-    if !footer {
+    match display {
+        TurnDisplay::Compact(columns) => turn::write_compact(
+            sink,
+            &header,
+            &report.questions,
+            &report.outcome.outcomes,
+            previous,
+            color,
+            columns,
+        )?,
+        _ => turn::write(
+            sink,
+            &header,
+            &report.questions,
+            &report.outcome.outcomes,
+            previous,
+            color,
+        )?,
+    }
+    if !matches!(display, TurnDisplay::Full) {
         sink.flush().map_err(RenderError::from)?;
         return Ok(());
     }

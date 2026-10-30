@@ -16,7 +16,11 @@ use nouli_core::{
     storage::inspection::SessionExport,
 };
 use question::Lines;
-use std::{collections::HashMap, io::Write, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    ops::Range,
+};
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct Args {
@@ -69,30 +73,35 @@ struct Node<'a> {
     turn: &'a FinalizedTurn,
 }
 
-fn nodes(export: &SessionExport) -> Result<Vec<Node<'_>>, RenderError> {
-    let labels = abbreviations(export.turns.iter().map(|turn| turn.id));
-    let sessions: HashMap<_, _> = export
-        .provenance
+fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<'a>>, RenderError> {
+    let mut seen = HashSet::new();
+    let turns: Vec<_> = exports
         .iter()
+        .flat_map(|export| &export.turns)
+        .filter(|turn| seen.insert(turn.id))
+        .collect();
+    let labels = abbreviations(turns.iter().map(|turn| turn.id));
+    let sessions: HashMap<_, _> = exports
+        .iter()
+        .flat_map(|export| &export.provenance)
         .map(|session| (session.id, session))
         .collect();
-    let indices: HashMap<_, _> = export
-        .turns
+    let session_labels = abbreviations(sessions.keys().copied());
+    let indices: HashMap<_, _> = turns
         .iter()
         .enumerate()
         .map(|(index, turn)| (turn.id, index))
         .collect();
-    export
-        .turns
-        .iter()
+    turns
+        .into_iter()
         .map(|turn| {
             let session = sessions.get(&turn.session).ok_or(RenderError::Protocol)?;
             let session_label = session
                 .name
                 .as_ref()
                 .map(|name| name.as_str().to_owned())
-                .unwrap_or_else(|| format!("(unnamed {})", session.id));
-            let latest = export.session.frontier.contains(&turn.id);
+                .unwrap_or_else(|| format!("(unnamed {})", session_labels[&session.id]));
+            let latest = frontier.contains(&turn.id);
             Ok(Node {
                 title: format!(
                     "{} · {}{}",
@@ -185,9 +194,36 @@ pub(crate) fn cards(
     sink: &mut impl Write,
     color: bool,
 ) -> Result<Option<Placement>, RenderError> {
+    draw_cards(nodes(&[export], &export.session.frontier)?, sink, color)
+}
+
+/// A pane can retain several independent sessions without inventing parent edges.
+/// Shared ancestry is drawn once, and the selected session supplies the heads.
+pub(crate) fn cards_many(
+    exports: &[SessionExport],
+    selected: Option<Id>,
+    sink: &mut impl Write,
+    color: bool,
+) -> Result<Option<Placement>, RenderError> {
+    let frontier = exports
+        .iter()
+        .find(|export| Some(export.session.id) == selected)
+        .map_or(&[][..], |export| export.session.frontier.as_slice());
+    draw_cards(
+        nodes(&exports.iter().collect::<Vec<_>>(), frontier)?,
+        sink,
+        color,
+    )
+}
+
+fn draw_cards(
+    nodes: Vec<Node<'_>>,
+    sink: &mut impl Write,
+    color: bool,
+) -> Result<Option<Placement>, RenderError> {
     let mut cards = vec![];
     let mut latest = None;
-    for (index, node) in nodes(export)?.into_iter().enumerate() {
+    for (index, node) in nodes.into_iter().enumerate() {
         // A blend can leave several heads; the last is the newest.
         if node.latest {
             latest = Some(index);
@@ -256,6 +292,41 @@ mod tests {
         let mut sink = vec![];
         write(export, &mut sink, false).unwrap();
         String::from_utf8(sink).unwrap()
+    }
+
+    #[test]
+    fn several_sessions_keep_independent_roots_and_deduplicate_shared_ancestry() {
+        let original = fixture();
+        let mut new = original.clone();
+        new.session.id = Id::generate();
+        new.session.name = Some("Independent".to_owned().try_into().unwrap());
+        new.turns.truncate(1);
+        new.turns[0].id = Id::generate();
+        new.turns[0].session = new.session.id;
+        new.turns[0].parents.clear();
+        new.session.frontier = vec![new.turns[0].id];
+        new.provenance = vec![SessionProvenance {
+            id: new.session.id,
+            name: new.session.name.clone(),
+            defaults: Default::default(),
+            sources: vec![],
+        }];
+        let nodes = nodes(&[&original, &original, &new], &new.session.frontier).unwrap();
+        assert_eq!(nodes.len(), original.turns.len() + 1);
+        assert!(nodes.last().unwrap().parents.is_empty());
+        assert!(nodes.last().unwrap().latest);
+        let mut text = Vec::new();
+        assert!(
+            cards_many(
+                &[original, new.clone()],
+                Some(new.session.id),
+                &mut text,
+                false
+            )
+            .unwrap()
+            .is_some()
+        );
+        assert!(String::from_utf8(text).unwrap().contains("Independent"));
     }
 
     #[test]

@@ -116,6 +116,7 @@ pub struct TokenCount {
 pub enum CountMethod {
     #[default]
     ByteEstimate,
+    MultimodalEstimate,
     TokenizerEstimate,
     VerifiedProtocol,
     ProviderReported,
@@ -140,7 +141,8 @@ pub struct EvaluationManifest {
     pub budget: u64,
     pub input_count: TokenCount,
     pub reserved_output_tokens: u64,
-    /// The exact serialized model context sent to the provider.
+    /// Canonical evidence used by the provider adapter. Native image payloads
+    /// may be prepared from saved originals according to the selected protocol.
     pub context_toon: String,
 }
 

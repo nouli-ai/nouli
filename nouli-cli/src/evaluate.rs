@@ -343,7 +343,7 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
             &draft.request.updates,
             &settings.store,
             render::color_enabled(io::stdout().is_terminal()),
-            true,
+            present::TurnDisplay::Full,
         );
         if drawn.is_ok() {
             let mut stdout = io::stdout().lock();

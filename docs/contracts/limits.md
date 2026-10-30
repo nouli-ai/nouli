@@ -1,7 +1,7 @@
 # Capabilities and token budgets
 
 `fixtures/capabilities/models.json` is a primary-source snapshot verified on
-2026-10-28. Entries match protocol, official host, and an explicitly recognized
+2026-10-30. Entries match protocol, official host, and an explicitly recognized
 model ID. Custom hosts and unknown models require an explicit context budget or
 window. No network discovery or model calls run when loading the registry.
 
@@ -29,7 +29,7 @@ caps remain unknown; they are not copied from another protocol. The router's
 published 200-question cap remains separate from direct OpenAI's 400.
 
 Nouli v1 supports text/structured state, 2-255 choice IDs, and 2-10 ordered score
-levels. Images/audio/video are rejected even when a vendor model supports them.
+levels. Saved image evidence is supported by the image-capable adapters; audio/video remain unsupported.
 Refusal support is verified for direct OpenAI; undocumented protocols retain
 unknown support rather than fabricating refusal answers. Confidence and complete
 distributions are capability metadata, not automatic acceptance gates.
@@ -44,11 +44,20 @@ estimates cannot guarantee that a server will accept the request.
 `TokenCounter` receives protocol, model, assembled TOON evidence, and all complete
 live questions. A verified implementation must count the full native request,
 not just apply a generic text tokenizer. `ByteCounter` deterministically estimates
-one token per four UTF-8 bytes, rounded upward, plus explicit envelope/question
-overhead estimates. It counts prompts, IDs, criteria, descriptions, option IDs,
+one token per four UTF-8 text bytes, rounded upward, plus explicit envelope/question
+overhead estimates. Image payloads are removed from that text estimate. Jev and
+direct OpenAI use local pixel-based estimates for each reference occurrence,
+with shared occurrences counted in every per-question budget. These are recorded
+as `multimodal_estimate` with `exact: false`; they are not published vendor formulas.
+For non-Jev routed models, the estimate retains base64 sizing because Clef/Flash
+perform an encoded-byte preflight. Each distinct routed non-Jev image counts
+once because it is dispatched once; its text references add no further image
+cost. Direct OpenAI instructions can expand images, while its option descriptions
+and score levels remain text-only. See [TypeSafe images](https://docs.typesafe.ai/images)
+and [OpenRouter multimodal limits](https://openrouter.ai/docs/guides/community/multimodal-decisions). It counts prompts, IDs, criteria, descriptions, option IDs,
 and ordered rubric levels. It never labels these estimates exact.
 
-Every count records byte estimate, tokenizer estimate, verified protocol count,
+Every count records byte estimate, multimodal estimate, tokenizer estimate, verified protocol count,
 or provider-reported provenance and exactness. Preflight assessment accepts the
 first three and validates total/per-question counts separately. Provider-reported
 usage remains in the result's `Usage`; it never silently replaces the preflight

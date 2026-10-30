@@ -68,7 +68,6 @@ trip › ?rebook: How should I get to the meeting now? [Take the train, Take a t
 | plain text | Queues a fact for the next question. |
 | `?id: prompt [a, b]` | Sends a turn now: the queue and this question, in one call. Only this question is asked. A grammar mistake is reported and nothing is sent. |
 | an empty line | Sends the queue again when a failed turn left it, with its question. Otherwise it asks nothing, and says so when facts are waiting. |
-| `/whatif ?id: prompt [a, b]` | An unsaved turn with the queue and this question. The queue stays for the next turn. |
 | `/replace N TEXT` | Queues a fact replacement. |
 | `/clear` | Empties the queue. |
 | `/facts` | Shows the session's facts, then what is queued. |
@@ -83,31 +82,44 @@ A turn that fails prints its error and keeps the queue.
 
 ### Full-screen view
 
-In a terminal, the loop opens full screen. A terminal that takes no escape codes (`TERM` set to `dumb`, as in an Emacs shell buffer) reads lines from standard input, as a script does. The transcript fills the top, and a form under it builds the next question in three sections:
+In a terminal, the form asks for ordinary text:
 
-- **State** lists the queued facts (`+`) and replacements (`~`) above an input row, which takes any line the prompt takes: a fact, a `?` question, or a slash command. A question that a failed `?` line left shows as `?`, and Enter on the empty input row sends it again; a question sent from the form replaces it.
-- **Question** holds `id: prompt`, and its title shows the answer type: noul (yes/no), choice, or score.
-- **Options**, or **Levels** for a score with the lowest first, holds one item per row. Noul has neither.
+- **Context** holds the facts for the next question. Enter sends when a question is ready, including a reused question. Before a question is ready, Enter queues the context.
+- **Question** holds the question exactly as you write it. There is no ID, colon, bracket, quoting, or option-label syntax to remember.
+- Choose **Yes / No**, **Choose one**, or **Score** with Tab or Shift-Tab in Question. Choices show Options; scores show Levels, lowest first. Type one per row or paste a list to fill several at once. Each choice needs at least two options; each score needs at least two levels.
 
-The form sends the line a `?` line would, so `transport: How should I get there?` with the options `train` and `taxi` sends `?transport: How should I get there? [train, taxi]`. A turn that is saved empties the form. One that fails or is cancelled keeps it, so Enter sends it again.
+Press **Enter** to send from Question, Options/Levels, or Context when a question is ready. **Ctrl-S / F5** also sends from any field. Use Tab to add the next option or level. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
 
-The session's decisions, the cards `nouli view` draws, sit to the right when the terminal is at least 116 columns wide, and follow the latest one. In a narrower terminal, Ctrl-G shows them in place of the rest.
+After a choice or score, leave Options or Levels empty to reuse the latest matching question's exact answer list and criteria. The Options/Levels heading says **using previous N**. Entering any new list replaces the old one; a partial list must still meet the minimum of two items. Leave Question empty too to reuse the preceding prompt, add new context, and press Enter to get an updated judgment. Reusing a list keeps the question ID so results can show how the answer changed; each Send saves a new turn and preserves earlier answers. Yes/No has no fallback. Reuse is scoped to the current session's latest single question, and an empty new session or branch starts without a prior list. The question grammar for CLI verbs and piped input is unchanged.
 
-| Key | What it does |
+The Citrus palette gives Yes/No a lime accent, Choose one cyan, and Score rose. Results and graph cards keep their own question type's color. Labels, brackets, and emphasis still identify types with `NO_COLOR` set.
+
+A persistent status line shows the provider and model selected for the next request, plus Ready, Draft, Asking, or Cancelling. It is visible before the first answer and refreshes when you switch sessions. While a request runs, it shows the model resolved for that request. After a response, it shows the actual served model version in place of its alias. The bottom key hints follow the focused field; errors remain visible while your input stays available for correction or retry.
+
+The top line shows `nouli`, its version, and the session. Mouse capture is disabled so you can drag to select and copy terminal text normally. Use the keyboard to move between fields. Tab in Context moves to Question. In Question, Tab cycles answer types forward and Shift-Tab cycles them backward. F2 also cycles forward. In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
+
+| Key or action | What it does |
 | --- | --- |
-| Shift-Tab | Cycles the answer type: noul, choice, score. |
-| Tab | Moves to the next section: State, Question, then Options or Levels. |
-| Up, Down | Move to the row above or below, across sections. |
-| Enter | In State, queues the fact or runs the line. In Question, sends, or moves to Options when a choice or score has fewer than two. In Options, adds the next one, and on an empty one sends. |
-| `/` | Lists the commands that match what follows. Up and Down choose, Tab completes, Enter runs the command or completes one that takes an argument, and Esc hides the list. |
-| `/sessions` | Lists the other sessions with turns, newest first, each with its first fact or question. Enter resumes the chosen one. |
-| `/whatif` | Asks the form's question with the queue and saves nothing. |
-| PgUp, PgDn | Scroll the transcript. |
-| Ctrl-G | Gives the decisions the keys. Arrows, PgUp, PgDn, Home, and End scroll them, and Esc gives the keys back. |
-| Ctrl-C | Cancels a running turn. Otherwise it clears the row, then the queue and the form, and then quits. |
-| Ctrl-D | Deletes forward in a row with text. Otherwise it quits, warning first when anything is queued or typed. |
+| Mouse drag | Selects text using the terminal. |
+| Tab in Question / Shift-Tab | Cycles answer types forward / backward. F2 also cycles forward. |
+| Tab in Context | Moves to Question. |
+| Tab in Options/Levels | Moves to the next item, adds one after the last filled item, or leaves an empty trailing item without sending. |
+| Up, Down | Moves between rows. |
+| Ctrl-S / F5 | Sends the question and queued context. |
+| Enter | Sends when a question is ready; queues initial context or runs a slash command from Context. |
+| Drop files | Inserts their contents into the focused field without sending. |
+| `/` in Context | Lists optional session commands; pasted/imported files are literal evidence. |
+| `/sessions` | Lists sessions to resume. |
+| PgUp, PgDn | Scrolls the transcript. |
+| Ctrl-G | Focuses the decisions pane; Esc returns to the form. |
+| Ctrl-C | Cancels a turn, or clears the row, then the form, then quits. |
+| Ctrl-D | Deletes forward, or quits with a warning for unsent input. |
 
-Text pasted into a row stays on that row, with line breaks turned into spaces, so a paste never sends a turn. The view uses the terminal's alternate screen, so the transcript is gone once it closes; the session keeps every turn.
+Focus the destination with arrows or Tab, then drag files from Finder or another file manager into the terminal. Most terminals paste shell-escaped paths; quoted paths, spaces, Unicode, `file://` URLs, and multiple files work. UTF-8 files insert their actual text. PDF files insert extracted text and require Poppler's `pdftotext` on PATH (`brew install poppler` on macOS). Scanned PDFs with no text need OCR or pages exported as images. Other binary formats report an error and leave the form available.
+
+PNG, JPEG, GIF, WebP, BMP, TIFF, and ICO images appear as readable references in the focused context, question, option, or score level. Animated images use their first frame. The image bytes are saved as session evidence and sent through the provider's image format, so later turns do not depend on the original file path. Providers that only support images in shared state receive labelled images there. Choose a model with image support; provider limits still apply. For Jev, Nouli sends an upright still image scaled or padded to its accepted 280–1568 pixel dimensions, while saving the original. Image context uses a separate pixel-based estimate for Jev and direct OpenAI; repeated image references count separately. These estimates are approximate. Other routed models retain their encoded-byte capacity estimate where required by the provider. Each file is capped at 16 MiB.
+
+Pasting never submits. Context and question fields preserve paragraphs and indentation; Options split pasted lines into individual items. The alternate-screen transcript disappears when the view closes, while the session retains its saved turns. Scripts and `TERM=dumb` keep the line syntax documented above.
 
 ## Output
 

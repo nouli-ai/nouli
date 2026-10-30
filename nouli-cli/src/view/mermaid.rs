@@ -92,7 +92,7 @@ pub(crate) fn write(export: &SessionExport, sink: &mut impl Write) -> Result<(),
     if export.turns.is_empty() {
         writeln!(sink, "  empty[\"No finalized turns\"]")?;
     } else {
-        let nodes = super::nodes(export)?;
+        let nodes = super::nodes(&[export], &export.session.frontier)?;
         for (index, node) in nodes.iter().enumerate() {
             let mut label = Label::default();
             label.push(&node.title, true);

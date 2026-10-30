@@ -124,8 +124,8 @@ fn session_loop(settings: &Settings, start: Start) -> io::Result<Result<(), Erro
         label: label(&session),
     };
     if can_draw() {
-        // The view shows what the loop prints in its own pane.
-        let mut repl = Repl {
+        // The view's header identifies the app and session.
+        let repl = Repl {
             settings,
             out: Vec::new(),
             paint,
@@ -134,7 +134,6 @@ fn session_loop(settings: &Settings, start: Start) -> io::Result<Result<(), Erro
             session: current,
             queue: Queue::default(),
         };
-        repl.banner(created)?;
         return tui::run(repl, &runtime).map(Ok);
     }
     let mut repl = Repl {

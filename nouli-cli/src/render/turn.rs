@@ -98,14 +98,14 @@ fn pad(text: &str, columns: usize) -> String {
     format!("{text}{}", " ".repeat(spaces))
 }
 
-fn bar(probability: f64) -> String {
-    let eighths = (probability.clamp(0.0, 1.0) * (BAR_CELLS * 8) as f64).round() as usize;
+fn bar(probability: f64, cells: usize) -> String {
+    let eighths = (probability.clamp(0.0, 1.0) * (cells * 8) as f64).round() as usize;
     let (full, remainder) = (eighths / 8, eighths % 8);
     let mut bar = "█".repeat(full);
-    if full < BAR_CELLS {
+    if full < cells {
         bar.push(EIGHTHS[remainder]);
     }
-    pad(&bar, BAR_CELLS)
+    pad(&bar, cells)
 }
 
 fn percent(probability: Option<f64>) -> String {
@@ -139,17 +139,31 @@ fn chance(distribution: &[OptionProbability], id: &str) -> Option<f64> {
 }
 
 /// The change marker, shortened so the whole line stays within the column limit.
-fn marker(paint: Paint, used: usize, label: Option<&str>, probability: f64) -> String {
-    let tail = format!(" {probability:.2}");
-    let label = label.map(|label| {
-        let spent = used + "   → was ".width() + tail.width();
-        fit(&clean(label), MAX_COLUMNS.saturating_sub(spent).max(1))
-    });
-    let text = match label {
-        Some(label) => format!("   → was {label}{tail}"),
-        None => format!("   → was{tail}"),
+fn marker(
+    paint: Paint,
+    used: usize,
+    label: Option<&str>,
+    probability: f64,
+    accent: &str,
+    layout: Layout,
+) -> String {
+    let make = |used| {
+        let tail = format!(" {probability:.2}");
+        let label = label.map(|label| {
+            let spent = used + "   → was ".width() + tail.width();
+            fit(&clean(label), layout.columns.saturating_sub(spent).max(1))
+        });
+        match label {
+            Some(label) => format!("   → was {label}{tail}"),
+            None => format!("   → was{tail}"),
+        }
     };
-    paint.apply(TEAL, &text)
+    let text = make(used);
+    if layout.id_columns == 0 && used + text.width() > layout.columns {
+        // TUI colors are parsed per physical line, so style after the newline.
+        return format!("\n{}", paint.apply(accent, &format!("  {}", make(2))));
+    }
+    paint.apply(accent, &text)
 }
 
 fn choice_rows(
@@ -159,24 +173,35 @@ fn choice_rows(
     answer: (&str, &[OptionProbability]),
     previous: Option<&QuestionOutcome>,
     rows: &mut Vec<String>,
+    layout: Layout,
 ) {
     let (selected, distribution) = answer;
-    let name = pad(&clean(&question.id), ID_COLUMNS);
+    let name = if layout.id_columns == 0 {
+        String::new()
+    } else {
+        pad(&clean(&question.id), layout.id_columns)
+    };
     for (position, option) in options.iter().enumerate() {
         let chosen = option.id == selected;
         let lead = if position == 0 {
             format!("  {name}")
         } else {
-            format!("  {}", " ".repeat(ID_COLUMNS))
+            format!("  {}", " ".repeat(layout.id_columns))
         };
         let body = format!(
             "{} {} {}",
-            pad(&clean(&option.description), LABEL_COLUMNS),
-            bar(chance(distribution, &option.id).unwrap_or(0.0)),
+            pad(&clean(&option.description), layout.label_columns),
+            bar(
+                chance(distribution, &option.id).unwrap_or(0.0),
+                layout.bar_cells
+            ),
             percent(chance(distribution, &option.id)),
         );
         let mut row = if chosen {
-            format!("{lead}{}", paint.apply(TEAL, &format!(" ▶ {body}")))
+            format!(
+                "{lead}{}",
+                paint.apply(crate::palette::Tone::Choice.ansi(), &format!(" ▶ {body}"))
+            )
         } else {
             format!("{lead}   {}", paint.apply(DIM, &body))
         };
@@ -194,12 +219,20 @@ fn choice_rows(
             && let Some(now) = chance(distribution, selected)
             && (before != selected || moved(was, now))
         {
-            let used = 2 + ID_COLUMNS + 3 + LABEL_COLUMNS + 1 + BAR_CELLS + 1 + 4;
+            let used =
+                2 + layout.id_columns + 3 + layout.label_columns + 1 + layout.bar_cells + 1 + 4;
+            let label = option_label(options, before);
             row.push_str(&marker(
                 paint,
                 used,
-                Some(&option_label(options, before)),
+                if layout.id_columns == 0 && before == selected {
+                    None
+                } else {
+                    Some(&label)
+                },
                 was,
+                crate::palette::Tone::Choice.ansi(),
+                layout,
             ));
         }
         rows.push(row);
@@ -212,14 +245,22 @@ fn question_rows(
     outcome: Option<&QuestionOutcome>,
     previous: Option<&QuestionOutcome>,
     rows: &mut Vec<String>,
+    layout: Layout,
 ) {
-    let name = pad(&clean(&question.id), ID_COLUMNS);
+    let name = if layout.id_columns == 0 {
+        String::new()
+    } else {
+        pad(&clean(&question.id), layout.id_columns)
+    };
     let lead = format!("  {name}   ");
     let used = lead.width();
     let (answer, ..) = match outcome {
         Some(QuestionOutcome::Answered { answer, .. }) => (answer, ()),
         Some(QuestionOutcome::Refused { reason, .. }) => {
-            let text = fit(&clean(reason), MAX_COLUMNS.saturating_sub(used + 9).max(1));
+            let text = fit(
+                &clean(reason),
+                layout.columns.saturating_sub(used + 9).max(1),
+            );
             rows.push(format!(
                 "{lead}{}",
                 paint.apply(DIM, &format!("refused: {text}"))
@@ -249,20 +290,34 @@ fn question_rows(
             (selected, distribution),
             previous,
             rows,
+            layout,
         ),
         (AnswerSpace::Noul, Answer::Noul { probability }) => {
             // "yes" fills the label field, so the bar lines up with a choice's.
             let body = format!(
                 "yes{}{} {}",
-                " ".repeat(LABEL_COLUMNS - 2),
-                bar(*probability),
+                " ".repeat(layout.label_columns.saturating_sub(2)),
+                bar(*probability, layout.bar_cells),
                 percent(Some(*probability))
             );
-            let mut row = format!("{lead}{}", paint.apply(TEAL, &body));
+            let mut row = format!(
+                "{lead}{}",
+                paint.apply(
+                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
+                    &body
+                )
+            );
             if let Some(Answer::Noul { probability: was }) = earlier
                 && moved(*was, *probability)
             {
-                row.push_str(&marker(paint, used + body.width(), None, *was));
+                row.push_str(&marker(
+                    paint,
+                    used + body.width(),
+                    None,
+                    *was,
+                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
+                    layout,
+                ));
             }
             rows.push(row);
         }
@@ -283,7 +338,13 @@ fn question_rows(
                 "expected {value:.2} of {}   {sparkline}",
                 levels.len().saturating_sub(1)
             );
-            let mut row = format!("{lead}{}", paint.apply(TEAL, &body));
+            let mut row = format!(
+                "{lead}{}",
+                paint.apply(
+                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
+                    &body
+                )
+            );
             if let Some(Answer::Score {
                 value: was,
                 probabilities: before,
@@ -291,7 +352,14 @@ fn question_rows(
                 && before.len() == probabilities.len()
                 && moved(*was, *value)
             {
-                row.push_str(&marker(paint, used + body.width(), None, *was));
+                row.push_str(&marker(
+                    paint,
+                    used + body.width(),
+                    None,
+                    *was,
+                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
+                    layout,
+                ));
             }
             rows.push(row);
             let detail = levels
@@ -306,8 +374,11 @@ fn question_rows(
                 DIM,
                 &format!(
                     "  {}{}",
-                    " ".repeat(ID_COLUMNS + 3),
-                    fit(&detail, MAX_COLUMNS.saturating_sub(ID_COLUMNS + 5))
+                    " ".repeat(layout.id_columns + 3),
+                    fit(
+                        &detail,
+                        layout.columns.saturating_sub(layout.id_columns + 5)
+                    )
                 ),
             ));
         }
@@ -318,8 +389,14 @@ fn question_rows(
     }
 }
 
-/// Writes a turn's header and one block of rows per question. `previous` gives
-/// the last answer to a question ID, when there is one.
+#[derive(Clone, Copy)]
+struct Layout {
+    id_columns: usize,
+    bar_cells: usize,
+    label_columns: usize,
+    columns: usize,
+}
+
 pub(crate) fn write<'a>(
     sink: &mut impl Write,
     header: &Header,
@@ -327,6 +404,61 @@ pub(crate) fn write<'a>(
     outcomes: &[QuestionOutcome],
     previous: impl Fn(&str) -> Option<&'a QuestionOutcome>,
     color: bool,
+) -> Result<(), RenderError> {
+    write_layout(
+        sink,
+        header,
+        questions,
+        outcomes,
+        previous,
+        color,
+        Layout {
+            id_columns: ID_COLUMNS,
+            bar_cells: BAR_CELLS,
+            label_columns: LABEL_COLUMNS,
+            columns: MAX_COLUMNS,
+        },
+    )
+}
+
+pub(crate) fn write_compact<'a>(
+    sink: &mut impl Write,
+    header: &Header,
+    questions: &[Question],
+    outcomes: &[QuestionOutcome],
+    previous: impl Fn(&str) -> Option<&'a QuestionOutcome>,
+    color: bool,
+    columns: usize,
+) -> Result<(), RenderError> {
+    let bar_cells = columns.saturating_sub(30).clamp(1, BAR_CELLS);
+    write_layout(
+        sink,
+        header,
+        questions,
+        outcomes,
+        previous,
+        color,
+        Layout {
+            id_columns: 0,
+            bar_cells,
+            label_columns: columns
+                .saturating_sub(26 + bar_cells)
+                .clamp(1, LABEL_COLUMNS),
+            columns,
+        },
+    )
+}
+
+/// Writes a turn's header and one block of rows per question. `previous` gives
+/// the last answer to a question ID, when there is one.
+fn write_layout<'a>(
+    sink: &mut impl Write,
+    header: &Header,
+    questions: &[Question],
+    outcomes: &[QuestionOutcome],
+    previous: impl Fn(&str) -> Option<&'a QuestionOutcome>,
+    color: bool,
+    layout: Layout,
 ) -> Result<(), RenderError> {
     let paint = Paint(color);
     writeln!(
@@ -339,7 +471,14 @@ pub(crate) fn write<'a>(
         let outcome = outcomes
             .iter()
             .find(|outcome| outcome.question_id() == question.id);
-        question_rows(paint, question, outcome, previous(&question.id), &mut rows);
+        question_rows(
+            paint,
+            question,
+            outcome,
+            previous(&question.id),
+            &mut rows,
+            layout,
+        );
     }
     for row in rows {
         writeln!(sink, "{row}")?;
@@ -501,15 +640,18 @@ mod tests {
 
     #[test]
     fn bars_use_eighth_blocks_and_always_fill_twenty_cells() {
-        assert_eq!(bar(0.0), " ".repeat(20));
-        assert_eq!(bar(1.0), "█".repeat(20));
-        assert_eq!(bar(0.5), format!("{}{}", "█".repeat(10), " ".repeat(10)));
-        assert_eq!(bar(0.00625), format!("▏{}", " ".repeat(19)));
+        assert_eq!(bar(0.0, BAR_CELLS), " ".repeat(20));
+        assert_eq!(bar(1.0, BAR_CELLS), "█".repeat(20));
+        assert_eq!(
+            bar(0.5, BAR_CELLS),
+            format!("{}{}", "█".repeat(10), " ".repeat(10))
+        );
+        assert_eq!(bar(0.00625, BAR_CELLS), format!("▏{}", " ".repeat(19)));
         // 0.99 * 160 = 158.4 eighths: 19 full cells and 6 eighths.
-        assert_eq!(bar(0.99), format!("{}▊", "█".repeat(19)));
+        assert_eq!(bar(0.99, BAR_CELLS), format!("{}▊", "█".repeat(19)));
         // Rounding up to a whole cell never indexes past the eighths.
-        assert_eq!(bar(0.99999), "█".repeat(20));
-        assert_eq!(bar(7.0), "█".repeat(20));
+        assert_eq!(bar(0.99999, BAR_CELLS), "█".repeat(20));
+        assert_eq!(bar(7.0, BAR_CELLS), "█".repeat(20));
     }
 
     fn session() -> (Vec<Question>, Vec<QuestionOutcome>, Vec<QuestionOutcome>) {
@@ -660,14 +802,136 @@ mod tests {
         let off = render(&header(Some(3)), &questions, &now, &was, false);
         let on = render(&header(Some(3)), &questions, &now, &was, true);
         assert!(!off.contains('\x1b'));
-        assert!(on.contains(TEAL) && on.contains(DIM));
+        for tone in [
+            crate::palette::Tone::Noul,
+            crate::palette::Tone::Choice,
+            crate::palette::Tone::Score,
+        ] {
+            assert!(on.contains(tone.ansi()), "missing {tone:?} accent");
+        }
+        assert!(on.contains(crate::palette::Tone::Choice.ansi()) && on.contains(DIM));
         assert_eq!(plain(&on), off);
-        // Selected rows and change markers are teal; unselected options are dim.
+        // Selected rows and changes keep the question type color.
         let taxi = on.lines().find(|line| line.contains("taxi")).unwrap();
-        assert!(taxi.contains(&format!("{TEAL} ▶ taxi")));
-        assert!(taxi.ends_with(&format!("{TEAL}   → was train 1.00{RESET}")));
+        assert!(taxi.contains(&format!("{} ▶ taxi", crate::palette::Tone::Choice.ansi())));
+        assert!(taxi.ends_with(&format!(
+            "{}   → was train 1.00{RESET}",
+            crate::palette::Tone::Choice.ansi()
+        )));
         let train = on.lines().find(|line| line.contains("0.01")).unwrap();
         assert!(train.contains(DIM) && !train.contains(TEAL));
+    }
+
+    #[test]
+    fn compact_results_hide_ids_and_keep_same_choice_changes_on_one_line() {
+        let questions = [choice(
+            "q_f089742effff",
+            &[("a", "Hawaii"), ("b", "San Diego")],
+        )];
+        let now = [picked("q_f089742effff", "b", &[("a", 0.23), ("b", 0.77)])];
+        let was = picked("q_f089742effff", "b", &[("a", 0.38), ("b", 0.62)]);
+        for columns in [60, 79, 100] {
+            let mut bytes = Vec::new();
+            write_compact(
+                &mut bytes,
+                &header(Some(2)),
+                &questions,
+                &now,
+                |_| Some(&was),
+                false,
+                columns,
+            )
+            .unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            assert!(!text.contains("q_f089") && !text.contains('…'), "{text}");
+            assert!(text.contains("→ was 0.62"), "{text}");
+            assert!(!text.contains("was San Diego"), "{text}");
+            assert!(text.lines().all(|line| line.width() <= columns), "{text}");
+            assert_eq!(text.lines().count(), 3, "{text}");
+        }
+        // Tiny layouts must not underflow while padding a yes/no label.
+        let mut bytes = Vec::new();
+        write_compact(
+            &mut bytes,
+            &header(Some(1)),
+            &[noul("q_internal")],
+            &[chance_of("q_internal", 0.9)],
+            |_| None,
+            false,
+            20,
+        )
+        .unwrap();
+        assert!(!String::from_utf8(bytes).unwrap().contains("q_internal"));
+    }
+
+    #[test]
+    fn compact_changes_fit_narrow_screens_for_all_answer_types() {
+        let levels = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+        let questions = [
+            choice("internal-choice", &[("a", "First"), ("b", "Second")]),
+            noul("internal-noul"),
+            score("internal-score", &levels),
+        ];
+        let now = [
+            picked("internal-choice", "b", &[("a", 0.1), ("b", 0.9)]),
+            chance_of("internal-noul", 0.9),
+            scored(
+                "internal-score",
+                9.0,
+                &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            ),
+        ];
+        let was = [
+            picked("internal-choice", "a", &[("a", 0.9), ("b", 0.1)]),
+            chance_of("internal-noul", 0.1),
+            scored(
+                "internal-score",
+                0.0,
+                &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+        ];
+        for columns in [40, 46, 60, 79] {
+            let mut bytes = Vec::new();
+            write_compact(
+                &mut bytes,
+                &header(Some(2)),
+                &questions,
+                &now,
+                |id| was.iter().find(|outcome| outcome.question_id() == id),
+                false,
+                columns,
+            )
+            .unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            assert!(!text.contains("internal-"), "{text}");
+            assert_eq!(text.matches("→ was").count(), 3, "{text}");
+            assert!(
+                text.lines().all(|line| line.width() <= columns),
+                "width {columns}: {text}"
+            );
+            let mut colored = Vec::new();
+            write_compact(
+                &mut colored,
+                &header(Some(2)),
+                &questions,
+                &now,
+                |id| was.iter().find(|outcome| outcome.question_id() == id),
+                true,
+                columns,
+            )
+            .unwrap();
+            let colored = String::from_utf8(colored).unwrap();
+            assert_eq!(plain(&colored), text);
+            if columns == 40 {
+                assert!(
+                    colored.contains(&format!(
+                        "\n{}     → was",
+                        crate::palette::Tone::Score.ansi()
+                    )),
+                    "{colored:?}"
+                );
+            }
+        }
     }
 
     #[test]

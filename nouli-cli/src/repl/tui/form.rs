@@ -2,13 +2,10 @@
 //! options or levels, edited one row at a time. The facts are the loop's own
 //! queue, so the form only holds where they are being edited.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use nouli_core::decision::{
-    AnswerSpace, ChoiceOption, Criterion, Question,
-    grammar::{self, GrammarError},
-};
+use nouli_core::decision::{AnswerSpace, ChoiceOption, ContractError, Criterion, Question};
 use unicode_segmentation::UnicodeSegmentation;
 
-/// A question's answer type. Shift-Tab steps through them.
+/// A question's answer type, chosen with Tab, Shift-Tab, or F2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     Noul,
@@ -17,13 +14,20 @@ pub(super) enum Kind {
 }
 
 impl Kind {
+    pub(super) fn tone(self) -> crate::palette::Tone {
+        match self {
+            Self::Noul => crate::palette::Tone::Noul,
+            Self::Choice => crate::palette::Tone::Choice,
+            Self::Score => crate::palette::Tone::Score,
+        }
+    }
     pub(super) const ALL: [Kind; 3] = [Kind::Noul, Kind::Choice, Kind::Score];
 
     pub(super) fn name(self) -> &'static str {
         match self {
-            Kind::Noul => "noul",
-            Kind::Choice => "choice",
-            Kind::Score => "score",
+            Kind::Noul => "Yes / No",
+            Kind::Choice => "Choose one",
+            Kind::Score => "Score",
         }
     }
 
@@ -32,6 +36,14 @@ impl Kind {
             Kind::Noul => Kind::Choice,
             Kind::Choice => Kind::Score,
             Kind::Score => Kind::Noul,
+        }
+    }
+
+    fn previous(self) -> Self {
+        match self {
+            Kind::Noul => Kind::Score,
+            Kind::Choice => Kind::Noul,
+            Kind::Score => Kind::Choice,
         }
     }
 }
@@ -79,7 +91,7 @@ pub(super) struct Problem {
 pub(super) struct Form {
     pub kind: Kind,
     pub input: String,
-    /// `id: prompt`, as in the question grammar, without the answer list.
+    /// Literal question text. Identifiers are generated when sending.
     pub question: String,
     pub options: Vec<String>,
     pub row: Row,
@@ -103,7 +115,11 @@ impl Default for Form {
 impl Form {
     /// The focused row's text.
     pub(super) fn text<'s>(&'s self, facts: &'s [String]) -> &'s str {
-        match self.row {
+        self.row_text(self.row, facts)
+    }
+
+    pub(super) fn row_text<'s>(&'s self, row: Row, facts: &'s [String]) -> &'s str {
+        match row {
             Row::Fact(index) => facts.get(index).map_or("", String::as_str),
             Row::Input => &self.input,
             Row::Question => &self.question,
@@ -130,13 +146,16 @@ impl Form {
         edited
     }
 
-    /// Inserts pasted text at the cursor. A row is one line, so line breaks
-    /// and tabs become spaces.
+    /// Insert literal pasted text, preserving paragraphs and code indentation.
     pub(super) fn paste(&mut self, pasted: &str, facts: &mut [String]) {
-        let pasted: String = pasted
+        let normalized = pasted
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('\t', "    ");
+        let pasted: String = normalized
             .chars()
             .filter_map(|c| match c {
-                '\n' | '\r' | '\t' => Some(' '),
+                '\n' => Some('\n'),
                 c if c.is_control() => None,
                 c => Some(c),
             })
@@ -147,6 +166,19 @@ impl Form {
             cursor += pasted.len();
         }
         self.cursor = cursor;
+    }
+
+    pub(super) fn remove_range(&mut self, range: std::ops::Range<usize>, facts: &mut [String]) {
+        let start = range.start;
+        if let Some(text) = self.text_mut(facts) {
+            text.replace_range(range, "");
+            self.cursor = start;
+        }
+    }
+
+    pub(super) fn add_option(&mut self, facts: &mut Vec<String>) {
+        self.options.push(String::new());
+        self.go(Row::Option(self.options.len() - 1), facts);
     }
 
     /// Empties the focused row.
@@ -187,7 +219,7 @@ impl Form {
 
     /// Moves to `target` with the cursor at its end, dropping the row it
     /// leaves when that is an empty fact or option.
-    fn go(&mut self, mut target: Row, facts: &mut Vec<String>) {
+    pub(super) fn go(&mut self, mut target: Row, facts: &mut Vec<String>) {
         if target != self.row {
             match self.row {
                 Row::Fact(index) if facts.get(index).is_some_and(|fact| fact.trim().is_empty()) => {
@@ -243,6 +275,33 @@ impl Form {
             Section::Question | Section::Options => Section::State,
         };
         self.focus(next, facts);
+    }
+
+    /// Tab advances existing items, adds one after the last filled item, and
+    /// leaves an empty trailing item without submitting.
+    pub(super) fn tab(&mut self, facts: &mut Vec<String>) {
+        match self.row {
+            Row::Question => self.next_kind(facts),
+            Row::Option(index) if index + 1 < self.options.len() => {
+                self.go(Row::Option(index + 1), facts)
+            }
+            Row::Option(index) if self.options[index].trim().is_empty() => {
+                self.focus(Section::State, facts)
+            }
+            Row::Option(_) => self.add_option(facts),
+            _ => self.next_section(facts),
+        }
+    }
+
+    pub(super) fn previous_kind(&mut self, facts: &mut Vec<String>) {
+        self.set_kind(self.kind.previous(), facts);
+    }
+
+    pub(super) fn set_kind(&mut self, kind: Kind, facts: &mut Vec<String>) {
+        self.kind = kind;
+        if kind == Kind::Noul && matches!(self.row, Row::Option(_)) {
+            self.go(Row::Question, facts);
+        }
     }
 
     /// Shift-Tab: the next answer type. A yes/no question has no options, so
@@ -326,57 +385,62 @@ impl Form {
             .filter(|option| !option.is_empty())
     }
 
-    /// The question in the one-line grammar, checked the way a `?` line is.
-    pub(super) fn line(&self) -> Result<String, Problem> {
-        let problem = |section, message: String| Problem { message, section };
-        let (id, prompt) = self
-            .question
-            .split_once(':')
-            .ok_or_else(|| problem(Section::Question, GrammarError::MissingId.to_string()))?;
+    /// Build the typed request directly; punctuation is always literal.
+    pub(super) fn build_question(&self) -> Result<Question, Problem> {
+        self.build_question_with_prompt(&self.question)
+    }
+
+    pub(super) fn build_question_with_prompt(&self, prompt: &str) -> Result<Question, Problem> {
+        if prompt.trim().is_empty() {
+            return Err(Problem {
+                message: "Write a question to ask.".into(),
+                section: Section::Question,
+            });
+        }
+        let labels: Vec<_> = self.labels().collect();
         let answer_space = match self.kind {
             Kind::Noul => AnswerSpace::Noul,
             Kind::Choice => AnswerSpace::Choice {
-                options: self
-                    .labels()
-                    .map(|label| ChoiceOption {
-                        id: grammar::option_id(label),
-                        description: label.to_owned(),
+                options: labels
+                    .iter()
+                    .enumerate()
+                    .map(|(index, label)| ChoiceOption {
+                        id: format!("option_{}", index + 1),
+                        description: (*label).to_owned(),
                     })
                     .collect(),
             },
             Kind::Score => AnswerSpace::Score {
-                levels: self
-                    .labels()
-                    .map(|label| Criterion::Text(label.to_owned()))
+                levels: labels
+                    .iter()
+                    .map(|label| Criterion::Text((*label).to_owned()))
                     .collect(),
             },
         };
+        let identity = nouli_core::identity::Id::derived(
+            &serde_json::to_string(&(prompt.trim(), &answer_space))
+                .expect("question strings serialize"),
+        )
+        .to_string();
         let question = Question {
-            id: id.trim().to_owned(),
+            id: format!("q_{}", &identity[identity.len() - 12..]),
             prompt: prompt.trim().to_owned(),
             criteria: Vec::new(),
             answer_space,
         };
-        let line = grammar::format(&question);
-        match grammar::parse(&line) {
-            Ok(parsed) if parsed == question => Ok(line),
-            // A yes/no prompt that ends in a list reads back as that list.
-            Ok(_) => Err(problem(
-                Section::Question,
-                "a yes/no question can't end in ] or >; Shift-Tab makes it a choice or a score"
-                    .into(),
-            )),
-            Err(error) => {
-                let section = match error {
-                    GrammarError::ChoiceCount
-                    | GrammarError::ScoreCount
-                    | GrammarError::DuplicateOption(..)
-                    | GrammarError::EmptyOptionId(_) => Section::Options,
-                    _ => Section::Question,
-                };
-                Err(problem(section, error.to_string()))
-            }
-        }
+        question.validate().map_err(|error| Problem {
+            section: Section::Options,
+            message: match error {
+                ContractError::Cardinality("choice.options") => {
+                    "Add at least two options (up to 255).".into()
+                }
+                ContractError::Cardinality("score.levels") => {
+                    "Add at least two levels (up to 10).".into()
+                }
+                _ => error.to_string(),
+            },
+        })?;
+        Ok(question)
     }
 }
 
@@ -505,7 +569,7 @@ mod tests {
         assert!(!form.edit(&key(KeyCode::Enter), &mut facts));
         assert!(!form.edit(&control('g'), &mut facts));
         form.paste("two\nlines\t!\u{7}", &mut facts);
-        assert_eq!(form.input, "two lines ! is");
+        assert_eq!(form.input, "two\nlines    ! is");
     }
 
     #[test]
@@ -577,69 +641,45 @@ mod tests {
     }
 
     #[test]
-    fn the_form_writes_the_grammar_line_that_a_question_line_would() {
-        let mut form = Form {
-            question: "next: What now?".into(),
-            options: vec!["Retry, then wait".into(), " ".into(), "Stop \"now\"".into()],
-            kind: Kind::Choice,
-            ..Form::default()
-        };
-        let line = form.line().unwrap();
-        assert_eq!(
-            line,
-            r#"next: What now? ["Retry, then wait", "Stop \"now\""]"#
-        );
-        let AnswerSpace::Choice { options } = grammar::parse(&line).unwrap().answer_space else {
-            panic!("a choice: {line}")
-        };
-        let labels: Vec<_> = options
-            .iter()
-            .map(|option| option.description.as_str())
-            .collect();
-        assert_eq!(labels, ["Retry, then wait", "Stop \"now\""]);
-        form.kind = Kind::Score;
-        assert!(
-            form.line()
-                .unwrap()
-                .ends_with(r#"<"Retry, then wait", "Stop \"now\"">"#)
-        );
-        form.kind = Kind::Noul;
-        assert_eq!(form.line().unwrap(), "next: What now?");
+    fn questions_and_options_are_literal_without_ids_or_slug_collisions() {
+        for prompt in [
+            "What now?",
+            "Why: this [a, b]",
+            "中文？",
+            "Does x > y?",
+            "Which <one>",
+        ] {
+            let mut form = Form {
+                question: prompt.into(),
+                options: vec!["Rail!".into(), "rail".into(), "東京, [駅]".into()],
+                kind: Kind::Choice,
+                ..Form::default()
+            };
+            let question = form.build_question().unwrap();
+            assert_eq!(question.prompt, prompt);
+            let AnswerSpace::Choice { options } = question.answer_space else {
+                panic!()
+            };
+            assert_eq!(options[0].description, "Rail!");
+            assert_ne!(options[0].id, options[1].id);
+            assert_eq!(options[2].description, "東京, [駅]");
+            form.kind = Kind::Noul;
+            assert_eq!(form.build_question().unwrap().prompt, prompt);
+        }
     }
 
     #[test]
-    fn a_form_that_cannot_be_sent_says_why_and_where() {
-        let problem = |question: &str, kind, options: &[&str]| {
-            Form {
-                question: question.into(),
-                kind,
-                options: options.iter().map(|option| (*option).to_owned()).collect(),
-                ..Form::default()
-            }
-            .line()
-            .unwrap_err()
-        };
-        let missing = problem("What now?", Kind::Noul, &[]);
-        assert_eq!(missing.section, Section::Question);
-        assert!(missing.message.contains("ID and a colon"), "{missing:?}");
+    fn validation_only_requires_a_question_and_enough_options() {
+        let mut form = Form::default();
         assert_eq!(
-            problem("Next: Why?", Kind::Noul, &[]).section,
+            form.build_question().unwrap_err().section,
             Section::Question
         );
-        assert_eq!(
-            problem("next: ", Kind::Noul, &[]).section,
-            Section::Question
-        );
-        let few = problem("next: Which?", Kind::Choice, &["Only one"]);
-        assert_eq!(few.section, Section::Options);
-        assert!(few.message.contains("2 to 255"), "{few:?}");
-        let same = problem("next: Which?", Kind::Choice, &["Rail!", "rail"]);
-        assert!(same.message.contains("options 1 and 2"), "{same:?}");
-        assert_eq!(
-            problem("fit: How?", Kind::Score, &["low"]).section,
-            Section::Options
-        );
-        let listed = problem("pick: Which one [a, b]", Kind::Noul, &[]);
-        assert!(listed.message.contains("can't end in ]"), "{listed:?}");
+        form.question = "What now?".into();
+        assert!(form.build_question().is_ok());
+        form.kind = Kind::Choice;
+        assert_eq!(form.build_question().unwrap_err().section, Section::Options);
+        form.options = vec!["a".into(), "b".into()];
+        assert!(form.build_question().is_ok());
     }
 }

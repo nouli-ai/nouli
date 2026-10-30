@@ -8,6 +8,7 @@ mod commands;
 mod evaluate;
 mod input;
 mod inspect;
+mod palette;
 mod present;
 mod render;
 mod repl;

@@ -201,6 +201,13 @@ impl HttpTransport {
         credential: Option<&Credential>,
     ) -> Result<HttpResponse, TransportError> {
         let mut request = self.client.post(url).json(body);
+        if body
+            .get("assets")
+            .and_then(Value::as_object)
+            .is_some_and(|assets| !assets.is_empty())
+        {
+            request = request.header("TypeSafe-Danger-Zone-Images", "true");
+        }
         if let Some(credential) = credential {
             let mut header = HeaderValue::from_str(&format!("Bearer {}", credential.expose()))
                 .map_err(|_| TransportError::Settings)?;

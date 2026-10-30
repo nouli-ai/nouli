@@ -155,10 +155,12 @@ pub(super) fn write(
                 let vertex = &layout.vertices[*id];
                 let left = vertex.column * card::STEP;
                 let card = vertex.card.map(|card| &cards[card]);
-                let (offset, content, highlighted) = match card.and_then(|card| card.rows.get(row))
+                let (offset, content, highlighted, accent) = match card
+                    .and_then(|card| card.rows.get(row))
                 {
                     Some(content) => {
                         let highlighted = content.highlighted;
+                        let accent = content.accent;
                         let mut content = content.text.clone();
                         if outgoing[*id] && card.is_some_and(|card| row + 1 == card.rows.len()) {
                             content = content
@@ -167,19 +169,18 @@ pub(super) fn write(
                                 .map(|(index, ch)| if index == card::CENTER { '┬' } else { ch })
                                 .collect();
                         }
-                        (left, content, highlighted)
+                        (left, content, highlighted, accent)
                     }
-                    None if outgoing[*id] => (layout.center(*id), "│".into(), false),
+                    None if outgoing[*id] => (layout.center(*id), "│".into(), false, None),
                     None => continue,
                 };
                 line.push_str(&" ".repeat(offset - position));
                 position = offset + content.width();
-                if color && highlighted {
-                    // Bold teal, the product accent; terminals without 256 colors fall back to cyan.
-                    line.push_str("\x1b[1;36;38;5;37m");
+                if color && (highlighted || accent.is_some()) {
+                    line.push_str(accent.map_or(crate::render::turn::TEAL, |tone| tone.ansi()));
                 }
                 line.push_str(&content);
-                if color && highlighted {
+                if color && (highlighted || accent.is_some()) {
                     line.push_str("\x1b[0m");
                 }
             }

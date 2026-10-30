@@ -3,6 +3,7 @@
 //! over `Repl`, whose printed output fills the transcript. It runs each turn
 //! while it keeps drawing, and Ctrl-C, which arrives as a key, cancels it.
 mod ansi;
+mod attachments;
 mod draw;
 mod form;
 mod sessions;
@@ -20,8 +21,8 @@ use crate::{
 };
 use crossterm::{
     event::{
-        DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEvent,
-        KeyEventKind, KeyModifiers,
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, EventStream,
+        KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
     },
     execute,
 };
@@ -29,6 +30,8 @@ use form::{Form, Kind, Row, Section};
 use futures_util::StreamExt;
 use nouli_core::{
     context::ContextUpdate,
+    decision::{AnswerSpace, Question},
+    history::ModelSelection,
     identity::{Id, SessionSelector},
     protocol::{Report, ResultEnvelope},
     storage::{Ledger, OpenMode},
@@ -44,31 +47,26 @@ use tokio::{runtime::Runtime, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
 /// The keys, for `/help` before the commands the line loop lists.
-const KEYS: [(&str, &str); 10] = [
+const KEYS: [(&str, &str); 11] = [
+    ("Mouse drag", "select text using the terminal"),
     (
         "Tab",
-        "the next section: State, Question, then Options or Levels",
+        "Context: next field; Question: next type; Options: next item",
     ),
     (
-        "Shift-Tab",
-        "the answer type: noul (yes/no), choice, or score",
+        "Shift-Tab / F2",
+        "Shift-Tab: previous answer type; F2: next answer type",
     ),
-    ("Up, Down", "the row above or below, across the sections"),
+    ("Up, Down", "the row above or below"),
+    ("Enter", "send; run a slash command from Context"),
+    ("Ctrl-S / F5", "send the question from any field"),
     (
-        "Enter",
-        "in State, queue the fact or run the line; in Question, send",
+        "Drop / paste files",
+        "insert text, PDF contents, or an image into the focused field",
     ),
-    ("", "in Options, add the next one; on an empty one, send"),
     ("PgUp, PgDn", "scroll the transcript"),
-    (
-        "Ctrl-G",
-        "the decisions pane: arrows scroll it, Esc comes back",
-    ),
-    (
-        "Ctrl-C",
-        "cancel the turn, or clear the row, then the queue, then quit",
-    ),
-    ("/whatif", "ask the form's question and save nothing"),
+    ("Ctrl-G", "show the decisions; Esc returns"),
+    ("Ctrl-C", "cancel, clear input, or quit"),
     ("/sessions", "resume an earlier session"),
 ];
 
@@ -133,7 +131,7 @@ impl Screen {
             terminal,
             entered: true,
         };
-        execute!(io::stdout(), EnableBracketedPaste)?;
+        execute!(io::stdout(), EnableBracketedPaste, DisableMouseCapture)?;
         Ok(screen)
     }
 
@@ -141,7 +139,7 @@ impl Screen {
         if !std::mem::replace(&mut self.entered, false) {
             return Ok(());
         }
-        let paste = execute!(io::stdout(), DisableBracketedPaste);
+        let paste = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
         ratatui::try_restore().and(paste)
     }
 }
@@ -162,6 +160,7 @@ struct Running<'a> {
     /// Sent from the form, which empties once the turn is saved.
     from_form: bool,
     started: Instant,
+    model: ModelSelection,
 }
 
 /// A line for the status bar.
@@ -190,6 +189,10 @@ impl Status {
 /// shows it.
 #[derive(Default)]
 struct Graph {
+    /// Sessions visited in this view. Their histories stay independent.
+    sessions: Vec<Id>,
+    /// The most recently selected session with finalized decisions.
+    selected: Option<Id>,
     lines: Vec<Line<'static>>,
     /// The latest card's row and columns.
     latest: Option<Placement>,
@@ -205,9 +208,12 @@ struct Graph {
 
 impl Graph {
     fn show(&mut self, text: &str, latest: Option<Placement>) {
-        self.lines = text.lines().map(ansi::line).collect();
+        let lines: Vec<_> = text.lines().map(ansi::line).collect();
+        if self.lines != lines {
+            self.lines = lines;
+            self.follow = true;
+        }
         self.latest = latest;
-        self.follow = true;
         self.problem = None;
     }
 }
@@ -222,6 +228,22 @@ enum Wake {
     Input(Option<io::Result<Event>>),
     Done(Box<(ResultEnvelope, Draft)>),
     Tick,
+}
+
+#[derive(Clone)]
+struct PreviousQuestion {
+    turn: Id,
+    question: Question,
+}
+
+impl PreviousQuestion {
+    fn kind(&self) -> Kind {
+        match self.question.answer_space {
+            AnswerSpace::Noul => Kind::Noul,
+            AnswerSpace::Choice { .. } => Kind::Choice,
+            AnswerSpace::Score { .. } => Kind::Score,
+        }
+    }
 }
 
 struct App<'a> {
@@ -240,6 +262,8 @@ struct App<'a> {
     status: Option<Status>,
     /// The provider and model that answered the last turn.
     model: Option<String>,
+    /// Resolved selection for the next request, available before any answer.
+    selected_model: ModelSelection,
     /// Ctrl-D warned that quitting discards what is queued.
     warned: bool,
     /// The sessions `/sessions` offers, while that list is open.
@@ -248,6 +272,12 @@ struct App<'a> {
     choice: usize,
     /// Esc hid the command list until the input row changes.
     hidden: bool,
+    transcript_width: usize,
+    images: Vec<nouli_core::media::Image>,
+    drop_start: Option<(Row, usize, Instant)>,
+    literal_input: bool,
+    failed_drop: Option<(Row, String)>,
+    previous_question: Option<PreviousQuestion>,
 }
 
 impl<'a> App<'a> {
@@ -263,12 +293,21 @@ impl<'a> App<'a> {
             graph_focused: false,
             status: None,
             model: None,
+            selected_model: ModelSelection::default(),
             warned: false,
             sessions: None,
             choice: 0,
             hidden: false,
+            transcript_width: 80,
+            images: Vec::new(),
+            drop_start: None,
+            literal_input: false,
+            failed_drop: None,
+            previous_question: None,
         };
         app.drain();
+        app.refresh_model();
+        app.refresh_previous_question();
         app.refresh_graph();
         app
     }
@@ -288,7 +327,7 @@ impl<'a> App<'a> {
                     event = events.next() => Wake::Input(event),
                     done = finished(&mut running) => Wake::Done(Box::new(done)),
                     // Redraws the spinner while a turn runs.
-                    _ = tick.tick(), if busy => Wake::Tick,
+                    _ = tick.tick(), if busy || self.drop_start.is_some() => Wake::Tick,
                 }
             });
             match wake {
@@ -309,7 +348,15 @@ impl<'a> App<'a> {
                         )?;
                     }
                 }
-                Wake::Tick => {}
+                Wake::Tick => {
+                    if !busy
+                        && self.drop_start.is_some_and(|(_, _, time)| {
+                            time.elapsed() >= Duration::from_millis(150)
+                        })
+                    {
+                        self.consume_drop();
+                    }
+                }
             }
         }
     }
@@ -321,8 +368,14 @@ impl<'a> App<'a> {
                 if running.is_some() {
                     self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
                 } else {
+                    self.consume_drop();
                     self.graph_focused = false;
-                    self.form.paste(&text, &mut self.repl.queue.facts);
+                    if let Some(paths) = attachments::paths(&text) {
+                        self.attach(&paths);
+                    } else {
+                        self.paste_text(&text);
+                    }
+                    self.drop_start = None;
                 }
                 Ok(Flow::Continue)
             }
@@ -333,6 +386,14 @@ impl<'a> App<'a> {
 
     fn key(&mut self, key: KeyEvent, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if running.is_none()
+            && (matches!(
+                key.code,
+                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down | KeyCode::F(2)
+            ) || control && key.code == KeyCode::Char('g'))
+        {
+            self.consume_drop();
+        }
         if !(control && key.code == KeyCode::Char('d')) {
             self.warned = false;
         }
@@ -361,20 +422,42 @@ impl<'a> App<'a> {
             _ if running.is_some() => {
                 self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
             }
-            KeyCode::Enter => return self.enter(running),
-            KeyCode::Esc => self.status = None,
-            KeyCode::BackTab => self.form.next_kind(&mut self.repl.queue.facts),
-            KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.form.next_kind(&mut self.repl.queue.facts);
+            KeyCode::Char('s') if control => *running = self.send_form(false)?,
+            KeyCode::F(5) => *running = self.send_form(false)?,
+            KeyCode::F(2) => self.form.next_kind(&mut self.repl.queue.facts),
+            KeyCode::Enter => {
+                if !self.prepare_input() {
+                    return Ok(Flow::Continue);
+                }
+                return self.enter(running);
             }
-            KeyCode::Tab => self.form.next_section(&mut self.repl.queue.facts),
+            KeyCode::Esc => self.status = None,
+            KeyCode::BackTab => self.form.previous_kind(&mut self.repl.queue.facts),
+            KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.form.previous_kind(&mut self.repl.queue.facts);
+            }
+            KeyCode::Tab => self.form.tab(&mut self.repl.queue.facts),
             KeyCode::Up => self.form.up(&mut self.repl.queue.facts),
             KeyCode::Down => self.form.down(&mut self.repl.queue.facts),
             KeyCode::Backspace if self.form.cursor == 0 => {
                 self.form.remove_empty(&mut self.repl.queue.facts);
             }
             _ => {
+                let start = self.form.cursor;
                 if self.form.edit(&key, &mut self.repl.queue.facts) {
+                    if self.form.row == Row::Input && self.form.input.is_empty() {
+                        self.literal_input = false;
+                    }
+                    if matches!(key.code, KeyCode::Char('/' | '~' | '\'' | '"' | 'f'))
+                        && self.drop_start.is_none()
+                    {
+                        self.drop_start = Some((self.form.row, start, Instant::now()));
+                    }
+                    if let Some((row, _, time)) = &mut self.drop_start
+                        && *row == self.form.row
+                    {
+                        *time = Instant::now();
+                    }
                     self.status = None;
                     self.choice = 0;
                     self.hidden = false;
@@ -396,6 +479,12 @@ impl<'a> App<'a> {
             None => self.commands_shown().len(),
         };
         if rows == 0 || running.is_some() {
+            return Ok(None);
+        }
+        if self.sessions.is_none()
+            && key.code == KeyCode::Tab
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+        {
             return Ok(None);
         }
         match key.code {
@@ -430,7 +519,7 @@ impl<'a> App<'a> {
 
     /// The commands the list shows under the input row, if any.
     fn commands_shown(&self) -> Vec<(&'static str, &'static str)> {
-        if self.hidden || self.graph_focused || self.form.row != Row::Input {
+        if self.hidden || self.graph_focused || self.literal_input || self.form.row != Row::Input {
             return vec![];
         }
         matching(&self.form.input)
@@ -461,6 +550,8 @@ impl<'a> App<'a> {
         };
         self.repl.handle(&format!("/use {}", entry.id))?;
         self.drain();
+        self.refresh_model();
+        self.refresh_previous_question();
         self.refresh_graph();
         Ok(())
     }
@@ -470,7 +561,9 @@ impl<'a> App<'a> {
     fn graph_key(&mut self, key: &KeyEvent) -> bool {
         let graph = &mut self.graph;
         match key.code {
-            KeyCode::Esc | KeyCode::Tab => {
+            KeyCode::Esc | KeyCode::Tab
+                if key.code == KeyCode::Esc || !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
                 self.graph_focused = false;
                 return true;
             }
@@ -502,6 +595,9 @@ impl<'a> App<'a> {
         let facts = &mut self.repl.queue.facts;
         if !self.form.text(facts).is_empty() {
             self.form.clear_row(facts);
+            if self.form.row == Row::Input {
+                self.literal_input = false;
+            }
             return Flow::Continue;
         }
         if self.repl.queue.is_empty() && self.form.is_empty() {
@@ -509,6 +605,9 @@ impl<'a> App<'a> {
         }
         self.repl.queue = Queue::default();
         self.form.clear();
+        self.images.clear();
+        self.literal_input = false;
+        self.failed_drop = None;
         self.status = Some(Status::info("^C  queue cleared"));
         Flow::Continue
     }
@@ -538,21 +637,15 @@ impl<'a> App<'a> {
     }
 
     fn enter(&mut self, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
-        let facts = &mut self.repl.queue.facts;
-        match self.form.row {
-            Row::Fact(_) => self.form.down(facts),
-            Row::Input => return self.submit(running),
-            // A choice or a score needs its options before it can be sent.
-            Row::Question if self.form.kind != Kind::Noul && self.form.labels().count() < 2 => {
-                self.form.focus(Section::Options, facts);
-            }
-            Row::Question => *running = self.send_form(false)?,
-            Row::Option(index) => {
-                if self.form.enter_option(index) {
-                    *running = self.send_form(false)?;
-                }
+        if self.form.row == Row::Input {
+            let command = self.form.input.trim_start().starts_with('/') && !self.literal_input;
+            // Before the first question, Enter moves context into the queue.
+            if command || (self.form.question.trim().is_empty() && self.prior_for_kind().is_none())
+            {
+                return self.submit(running);
             }
         }
+        *running = self.send_form(false)?;
         Ok(Flow::Continue)
     }
 
@@ -569,14 +662,14 @@ impl<'a> App<'a> {
         }
         self.form.input.clear();
         self.form.cursor = 0;
+        if std::mem::take(&mut self.literal_input) && !line.is_empty() {
+            self.repl.queue.facts.push(line);
+            return Ok(Flow::Continue);
+        }
         match line.as_str() {
             "/help" => {
                 self.echo(&line);
                 self.help();
-                return Ok(Flow::Continue);
-            }
-            "/whatif" => {
-                *running = self.send_form(true)?;
                 return Ok(Flow::Continue);
             }
             "/sessions" => {
@@ -586,7 +679,11 @@ impl<'a> App<'a> {
             }
             _ => {}
         }
-        let fact = !line.is_empty() && !line.starts_with(['/', '?']);
+        let fact = !line.is_empty() && !line.starts_with('/');
+        if fact {
+            self.repl.queue.facts.push(line);
+            return Ok(Flow::Continue);
+        }
         let session = self.repl.session.id;
         let step = self.repl.handle(&line)?;
         match &step {
@@ -600,9 +697,13 @@ impl<'a> App<'a> {
         }
         if line == "/clear" {
             self.form.clear();
+            self.images.clear();
+            self.literal_input = false;
         }
         self.drain();
         if self.repl.session.id != session {
+            self.refresh_model();
+            self.refresh_previous_question();
             self.refresh_graph();
         }
         match step {
@@ -619,15 +720,63 @@ impl<'a> App<'a> {
     /// Sends the form's question with the queue, or says what to fix and
     /// moves there.
     fn send_form(&mut self, ephemeral: bool) -> io::Result<Option<Running<'a>>> {
-        match self.form.line() {
+        if !self.prepare_input() {
+            return Ok(None);
+        }
+        let inherited = self.inherited_answers().cloned();
+        let prompt = if self.form.question.trim().is_empty() {
+            self.prior_for_kind()
+                .map_or(self.form.question.as_str(), |previous| {
+                    previous.question.prompt.as_str()
+                })
+        } else {
+            self.form.question.as_str()
+        };
+        let question = if let Some(previous) = &inherited {
+            let mut question = previous.question.clone();
+            question.prompt = prompt.trim().to_owned();
+            Ok(question)
+        } else {
+            if prompt == self.form.question {
+                self.form.build_question()
+            } else {
+                self.form.build_question_with_prompt(prompt)
+            }
+        };
+        match question {
             Ok(question) => {
+                // Include context still being edited when sending.
+                if !self.form.input.trim().is_empty() {
+                    self.repl
+                        .queue
+                        .facts
+                        .push(std::mem::take(&mut self.form.input));
+                    if self.form.row == Row::Input {
+                        self.form.cursor = 0;
+                    }
+                }
+                self.literal_input = false;
                 if !ephemeral {
-                    // The form keeps this question if the turn fails, so one
-                    // that an earlier failed turn left gives way to it.
                     self.repl.queue.question = None;
                 }
-                self.echo_turn(&question, ephemeral);
-                self.launch(&question, ephemeral, true)
+                self.echo_turn(&question.prompt, ephemeral);
+                let mut draft = self.repl.draft_question(question, ephemeral)?;
+                if let (Some(previous), Some(draft)) = (&inherited, &mut draft) {
+                    let ids =
+                        std::iter::once(previous.turn)
+                            .chain(
+                                draft.request.updates.iter().filter_map(|update| {
+                                    update.new_record().map(|record| record.id)
+                                }),
+                            )
+                            .collect::<Vec<_>>();
+                    for id in ids {
+                        if !draft.request.required_records.contains(&id) {
+                            draft.request.required_records.push(id);
+                        }
+                    }
+                }
+                self.launch_draft(draft, ephemeral, true)
             }
             Err(problem) => {
                 self.status = Some(Status::error(problem.message));
@@ -637,8 +786,6 @@ impl<'a> App<'a> {
         }
     }
 
-    /// Starts the turn the queue and `question` make; the loop polls it while
-    /// it draws. `None` when there is no turn, after the loop said why.
     fn launch(
         &mut self,
         question: &str,
@@ -646,13 +793,86 @@ impl<'a> App<'a> {
         from_form: bool,
     ) -> io::Result<Option<Running<'a>>> {
         let draft = self.repl.draft(question, ephemeral)?;
+        self.launch_draft(draft, ephemeral, from_form)
+    }
+
+    fn launch_draft(
+        &mut self,
+        draft: Option<Draft>,
+        ephemeral: bool,
+        from_form: bool,
+    ) -> io::Result<Option<Running<'a>>> {
         self.drain();
-        let Some(draft) = draft else {
+        let Some(mut draft) = draft else {
             return Ok(None);
         };
+        let used_question = draft
+            .request
+            .turn
+            .questions
+            .iter()
+            .flat_map(|question| {
+                let mut text = vec![question.prompt.as_str()];
+                match &question.answer_space {
+                    nouli_core::decision::AnswerSpace::Choice { options } => {
+                        text.extend(options.iter().map(|option| option.description.as_str()))
+                    }
+                    nouli_core::decision::AnswerSpace::Score { levels } => {
+                        text.extend(levels.iter().map(|level| match level {
+                            nouli_core::decision::Criterion::Text(text) => text.as_str(),
+                            nouli_core::decision::Criterion::Detailed { description, .. } => {
+                                description.as_str()
+                            }
+                        }))
+                    }
+                    _ => {}
+                }
+                text
+            })
+            .collect::<Vec<_>>();
+        let referenced = |image: &&nouli_core::media::Image| {
+            self.repl
+                .queue
+                .facts
+                .iter()
+                .map(String::as_str)
+                .chain(used_question.iter().copied())
+                .any(|text| text.contains(&image.reference))
+        };
+        for image in self.images.iter().filter(referenced) {
+            let update = attachments::update(image);
+            draft
+                .request
+                .required_records
+                .push(update.new_record().expect("image record").id);
+            draft.request.updates.push(update);
+        }
         let cancel = CancellationToken::new();
         let stop = cancel.clone();
         let settings = self.repl.settings;
+        let session = if draft.ephemeral {
+            ModelSelection::default()
+        } else {
+            match &draft.request.session {
+                nouli_core::history::SessionSelection::Continue { session } => self
+                    .repl
+                    .ledger()
+                    .and_then(|ledger| ledger.session(session).map_err(|error| error.report()))
+                    .map(|session| session.defaults)
+                    .unwrap_or_default(),
+                _ => ModelSelection::default(),
+            }
+        };
+        let defaults = ModelSelection {
+            provider: settings.config.default_provider.clone(),
+            model: settings.config.default_model.clone(),
+        };
+        let model = nouli_core::config::resolve::select_model(&[
+            &draft.common_model,
+            &draft.request.model,
+            &session,
+            &defaults,
+        ]);
         self.status = None;
         Ok(Some(Running {
             turn: Box::pin(async move {
@@ -667,7 +887,114 @@ impl<'a> App<'a> {
             ephemeral,
             from_form,
             started: Instant::now(),
+            model,
         }))
+    }
+
+    fn paste_text(&mut self, text: &str) {
+        if let Row::Option(mut index) = self.form.row {
+            let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+            if let Some(first) = lines.next() {
+                self.form.paste(first, &mut self.repl.queue.facts);
+                for line in lines {
+                    self.form.enter_option(index);
+                    index += 1;
+                    self.form.paste(line, &mut self.repl.queue.facts);
+                }
+            }
+        } else {
+            self.form.paste(text, &mut self.repl.queue.facts);
+        }
+        self.status = None;
+    }
+
+    fn attach(&mut self, paths: &[std::path::PathBuf]) {
+        let loaded = paths
+            .iter()
+            .map(|path| attachments::load(path))
+            .collect::<Result<Vec<_>, _>>();
+        match loaded {
+            Ok(loaded) => self.insert_files(loaded),
+            Err(error) => self.status = Some(Status::error(error.to_string())),
+        }
+    }
+
+    fn insert_files(&mut self, loaded: Vec<attachments::Loaded>) {
+        let count = loaded.len();
+        if self.form.row == Row::Input {
+            self.literal_input = true;
+        }
+        for (index, file) in loaded.into_iter().enumerate() {
+            if index > 0 {
+                if matches!(self.form.row, Row::Option(_)) {
+                    self.form.add_option(&mut self.repl.queue.facts);
+                } else {
+                    self.form.paste(" ", &mut self.repl.queue.facts);
+                }
+            }
+            self.paste_text(&file.text);
+            if let Some(image) = file.image {
+                self.images.push(image);
+            }
+        }
+        self.status = Some(Status::info(format!(
+            "Inserted {count} file(s) here · review, then Send"
+        )));
+    }
+
+    fn prepare_input(&mut self) -> bool {
+        if !self.consume_drop() {
+            return false;
+        }
+        if let Some((row, text)) = &self.failed_drop {
+            if self.form.row_text(*row, &self.repl.queue.facts) == text
+                && !(matches!(row, Row::Option(_)) && self.form.kind == Kind::Noul)
+            {
+                self.status = Some(Status::error(
+                    "Edit or remove the file path that could not be imported.",
+                ));
+                return false;
+            }
+            self.failed_drop = None;
+        }
+        true
+    }
+
+    fn consume_drop(&mut self) -> bool {
+        let Some((row, start, _)) = self.drop_start.take() else {
+            return true;
+        };
+        if row != self.form.row {
+            return true;
+        }
+        let end = self.form.cursor;
+        let text = self.form.text(&self.repl.queue.facts);
+        let Some(candidate) = text.get(start..end) else {
+            return true;
+        };
+        let Some(paths) = attachments::paths(candidate) else {
+            return true;
+        };
+        match paths
+            .iter()
+            .map(|path| attachments::load(path))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(loaded) => {
+                self.form
+                    .remove_range(start..end, &mut self.repl.queue.facts);
+                self.insert_files(loaded);
+            }
+            Err(error) => {
+                self.status = Some(Status::error(error.to_string()));
+                self.failed_drop = Some((
+                    self.form.row,
+                    self.form.text(&self.repl.queue.facts).to_owned(),
+                ));
+                return false;
+            }
+        }
+        true
     }
 
     /// Shows a finished turn as the line loop would. A saved turn has taken
@@ -680,6 +1007,22 @@ impl<'a> App<'a> {
         from_form: bool,
     ) -> io::Result<()> {
         let saved = !ephemeral && matches!(envelope.result, Report::Turn(_));
+        let next_previous = match &envelope.result {
+            Report::Turn(report) if report.session == Some(self.repl.session.id) => {
+                match (report.turn, report.questions.as_slice()) {
+                    (Some(turn), [question])
+                        if !matches!(question.answer_space, AnswerSpace::Noul) =>
+                    {
+                        Some(PreviousQuestion {
+                            turn,
+                            question: question.clone(),
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         if let Report::Turn(report) = &envelope.result {
             let provider = &report.outcome.provider;
             self.model = Some(format!(
@@ -688,10 +1031,27 @@ impl<'a> App<'a> {
                 render::clean(&provider.model)
             ));
         }
-        self.repl.finish(envelope.result, updates, ephemeral)?;
+        if let Report::Error(error) = &envelope.result {
+            self.status = Some(if error.code == "evaluation_canceled" {
+                Status::info("Cancelled · your input is kept")
+            } else {
+                Status::error(format!(
+                    "{} · edit input or Ctrl-S to retry",
+                    render::clean(&error.message)
+                ))
+            });
+        }
+        self.repl.finish_display(
+            envelope.result,
+            updates,
+            ephemeral,
+            Some(self.transcript_width),
+        )?;
         self.drain();
         if saved {
+            self.previous_question = next_previous;
             self.form.sent(from_form);
+            self.images.clear();
             self.refresh_graph();
         }
         Ok(())
@@ -699,13 +1059,95 @@ impl<'a> App<'a> {
 
     fn refresh_graph(&mut self) {
         let store = &self.repl.settings.store;
-        match graph_text(store, self.repl.session.id, self.repl.paint.0) {
-            Ok((text, latest)) => self.graph.show(&text, latest),
+        let current = self.repl.session.id;
+        if !self.graph.sessions.contains(&current) {
+            self.graph.sessions.push(current);
+        }
+        match graph_text(
+            store,
+            &self.graph.sessions,
+            self.graph.selected,
+            current,
+            self.repl.paint.0,
+        ) {
+            Ok((text, latest, selected)) => {
+                self.graph.selected = selected;
+                self.graph.show(&text, latest);
+            }
             Err(error) => {
                 self.graph.lines.clear();
                 self.graph.problem = Some(render::clean(&error.report().message));
             }
         }
+    }
+
+    fn prior_for_kind(&self) -> Option<&PreviousQuestion> {
+        self.previous_question
+            .as_ref()
+            .filter(|previous| previous.kind() == self.form.kind && self.form.kind != Kind::Noul)
+    }
+
+    fn inherited_answers(&self) -> Option<&PreviousQuestion> {
+        if self.form.labels().next().is_some() {
+            None
+        } else {
+            self.prior_for_kind()
+        }
+    }
+
+    fn refresh_previous_question(&mut self) {
+        self.previous_question = None;
+        let Some(export) = self
+            .repl
+            .ledger()
+            .ok()
+            .and_then(|ledger| ledger.export_session(&self.repl.selector()).ok())
+        else {
+            return;
+        };
+        let [head] = export.session.frontier.as_slice() else {
+            return;
+        };
+        let Some(turn) = export
+            .turns
+            .iter()
+            .find(|turn| turn.id == *head && turn.session == self.repl.session.id)
+        else {
+            return;
+        };
+        let [question] = turn.request.questions.as_slice() else {
+            return;
+        };
+        let previous = PreviousQuestion {
+            turn: turn.id,
+            question: question.clone(),
+        };
+        if self.form.is_empty() {
+            self.form.kind = previous.kind();
+        }
+        if previous.kind() != Kind::Noul {
+            self.previous_question = Some(previous);
+        }
+    }
+
+    fn refresh_model(&mut self) {
+        let session = self
+            .repl
+            .ledger()
+            .and_then(|ledger| {
+                ledger
+                    .session(&self.repl.selector())
+                    .map_err(|error| error.report())
+            })
+            .map(|session| session.defaults)
+            .unwrap_or_default();
+        let defaults = ModelSelection {
+            provider: self.repl.settings.config.default_provider.clone(),
+            model: self.repl.settings.config.default_model.clone(),
+        };
+        self.selected_model =
+            nouli_core::config::resolve::select_model(&[&self.repl.model, &session, &defaults]);
+        self.model = None;
     }
 
     /// Moves what the loop printed into the transcript, which then shows its end.
@@ -732,12 +1174,8 @@ impl<'a> App<'a> {
 
     /// The lines that would send this turn at the line prompt: each queued
     /// fact, then the question. Queued replacements already showed as commands.
-    fn echo_turn(&mut self, question: &str, ephemeral: bool) {
-        let asked = if ephemeral {
-            format!("/whatif ?{question}")
-        } else {
-            format!("?{question}")
-        };
+    fn echo_turn(&mut self, question: &str, _ephemeral: bool) {
+        let asked = question.to_owned();
         let lines: Vec<String> = self
             .repl
             .queue
@@ -752,7 +1190,10 @@ impl<'a> App<'a> {
     }
 
     fn help(&mut self) {
-        for (name, meaning) in KEYS.into_iter().chain(HELP) {
+        for (name, meaning) in KEYS
+            .into_iter()
+            .chain(HELP.into_iter().filter(|(name, _)| name.starts_with('/')))
+        {
             let line = self
                 .repl
                 .paint
@@ -775,14 +1216,31 @@ async fn finished(running: &mut Option<Running<'_>>) -> (ResultEnvelope, Draft) 
 /// header, and the latest card's first row and columns.
 fn graph_text(
     store: &Path,
-    session: Id,
+    sessions: &[Id],
+    selected: Option<Id>,
+    current: Id,
     color: bool,
-) -> Result<(String, Option<Placement>), InspectError> {
+) -> Result<(String, Option<Placement>, Option<Id>), InspectError> {
     let ledger = Ledger::open(store, OpenMode::ReadOnlyExisting)?;
-    let export = ledger.export_session(&SessionSelector::Id(session))?;
+    let exports = sessions
+        .iter()
+        .map(|id| ledger.export_session(&SessionSelector::Id(*id)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let selected = if exports
+        .iter()
+        .any(|export| export.session.id == current && !export.turns.is_empty())
+    {
+        Some(current)
+    } else {
+        selected
+    };
     let mut text = Vec::new();
-    let latest = crate::view::cards(&export, &mut text, color)?;
-    Ok((String::from_utf8_lossy(&text).into_owned(), latest))
+    let latest = crate::view::cards_many(&exports, selected, &mut text, color)?;
+    Ok((
+        String::from_utf8_lossy(&text).into_owned(),
+        latest,
+        selected,
+    ))
 }
 
 #[cfg(test)]
@@ -830,18 +1288,331 @@ mod tests {
         }))
     }
 
+    fn draft_from(turn: Running<'_>) -> Draft {
+        turn.cancel.cancel();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(turn.turn).1
+    }
+
+    pub(super) fn previous(kind: Kind) -> PreviousQuestion {
+        use nouli_core::decision::{ChoiceOption, Criterion};
+        PreviousQuestion {
+            turn: Id::generate(),
+            question: Question {
+                id: "original_question".into(),
+                prompt: "Which destination suits this trip?".into(),
+                criteria: vec![Criterion::Detailed {
+                    label: "Sunlight".into(),
+                    description: "Prefer winter sunshine".into(),
+                }],
+                answer_space: match kind {
+                    Kind::Noul => AnswerSpace::Noul,
+                    Kind::Choice => AnswerSpace::Choice {
+                        options: vec![
+                            ChoiceOption {
+                                id: "original_a".into(),
+                                description: "Palm Springs".into(),
+                            },
+                            ChoiceOption {
+                                id: "original_b".into(),
+                                description: "San Diego".into(),
+                            },
+                        ],
+                    },
+                    Kind::Score => AnswerSpace::Score {
+                        levels: vec![
+                            Criterion::Detailed {
+                                label: "Low".into(),
+                                description: "Cold and cloudy".into(),
+                            },
+                            Criterion::Detailed {
+                                label: "High".into(),
+                                description: "Warm and sunny".into(),
+                            },
+                        ],
+                    },
+                },
+            },
+        }
+    }
+
     #[test]
-    fn shift_tab_picks_the_answer_type_and_tab_the_section() {
+    fn empty_lists_reuse_exact_prior_answers_and_require_new_evidence() {
+        for kind in [Kind::Choice, Kind::Score] {
+            let settings = settings();
+            let mut app = app(&settings);
+            let previous = previous(kind);
+            app.form.kind = kind;
+            app.previous_question = Some(previous.clone());
+            assert!(app.form.is_empty(), "inherited values are not unsent input");
+            app.form.options.push("  ".into());
+            app.form.input = "I now have a smaller budget.".into();
+            let draft = draft_from(app.send_form(false).unwrap().unwrap());
+            assert_eq!(
+                draft.request.turn.questions.as_slice(),
+                std::slice::from_ref(&previous.question)
+            );
+            assert!(draft.request.required_records.contains(&previous.turn));
+            assert_eq!(draft.request.updates.len(), 1);
+            let evidence = draft.request.updates[0].new_record().unwrap();
+            assert!(draft.request.required_records.contains(&evidence.id));
+            assert_eq!(evidence.value.value(), "I now have a smaller budget.");
+            // Updating the wording still compares with the preceding response.
+            app.form.question = "Which destination is affordable now?".into();
+            let draft = draft_from(app.send_form(false).unwrap().unwrap());
+            let question = &draft.request.turn.questions[0];
+            assert_eq!(question.id, previous.question.id);
+            assert_eq!(question.prompt, app.form.question);
+            assert_eq!(question.answer_space, previous.question.answer_space);
+            assert_eq!(question.criteria, previous.question.criteria);
+        }
+    }
+
+    #[test]
+    fn explicit_lists_replace_inheritance_and_yes_no_does_not_inherit() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let previous = previous(Kind::Choice);
+        app.form.kind = Kind::Choice;
+        app.previous_question = Some(previous.clone());
+        app.form.options = vec!["One new option".into()];
+        assert!(app.send_form(false).unwrap().is_none());
+        assert!(app.status.as_ref().unwrap().text.contains("at least two"));
+        assert!(app.inherited_answers().is_none());
+        app.form.options.push("Another new option".into());
+        let draft = draft_from(app.send_form(false).unwrap().unwrap());
+        let question = &draft.request.turn.questions[0];
+        assert_ne!(question.id, previous.question.id);
+        assert_eq!(question.prompt, previous.question.prompt);
+        assert!(question.criteria.is_empty());
+        assert!(!draft.request.required_records.contains(&previous.turn));
+        app.form.kind = Kind::Score;
+        assert!(app.prior_for_kind().is_none());
+        app.form.kind = Kind::Noul;
+        app.form.question.clear();
+        assert!(app.prior_for_kind().is_none());
+        assert!(app.send_form(false).unwrap().is_none());
+        app.form.question = "Will it be sunny?".into();
+        let draft = draft_from(app.send_form(false).unwrap().unwrap());
+        assert_eq!(
+            draft.request.turn.questions[0].answer_space,
+            AnswerSpace::Noul
+        );
+    }
+
+    #[test]
+    fn only_saved_answers_replace_the_previous_question() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let previous = previous(Kind::Score);
+        app.previous_question = Some(previous.clone());
+        app.form.kind = Kind::Score;
+        app.form.question = "A new judgment?".into();
+        app.finish(failed(), &[], false, true).unwrap();
+        assert_eq!(app.previous_question.as_ref().unwrap().turn, previous.turn);
+        assert_eq!(app.form.question, "A new judgment?");
+        let Report::Turn(mut report) = crate::repl::tests::saved_turn() else {
+            unreachable!()
+        };
+        report.session = Some(app.repl.session.id);
+        report.questions = vec![previous.question.clone()];
+        app.finish(
+            ResultEnvelope::new(Report::Turn(report.clone())),
+            &[],
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(app.previous_question.as_ref().unwrap().turn, previous.turn);
+        assert_eq!(app.form.question, "A new judgment?");
+        app.finish(
+            ResultEnvelope::new(Report::Turn(report.clone())),
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            app.previous_question.as_ref().unwrap().turn,
+            report.turn.unwrap()
+        );
+        assert_eq!(app.form.kind, Kind::Score);
+        assert!(app.form.is_empty());
+        report.questions[0].answer_space = AnswerSpace::Noul;
+        app.finish(ResultEnvelope::new(Report::Turn(report)), &[], false, true)
+            .unwrap();
+        assert!(app.previous_question.is_none());
+        app.previous_question = Some(previous);
+        // Missing/empty sessions cannot retain another session's definition.
+        app.repl.session.id = Id::generate();
+        app.refresh_previous_question();
+        assert!(app.previous_question.is_none());
+    }
+
+    #[test]
+    fn running_model_uses_the_draft_mode_instead_of_a_stale_ready_selection() {
+        let mut settings = settings();
+        settings.config.default_provider = Some("configured".into());
+        settings.config.default_model = Some("configured-model".into());
+        let mut app = app(&settings);
+        app.selected_model = ModelSelection {
+            provider: Some("session".into()),
+            model: Some("session-model".into()),
+        };
+        app.form.question = "Is this a what-if?".into();
+        let mut draft = app
+            .repl
+            .draft_question(app.form.build_question().unwrap(), false)
+            .unwrap()
+            .unwrap();
+        draft.ephemeral = true;
+        draft.request.session = nouli_core::history::SessionSelection::From {
+            sources: vec![nouli_core::history::SourceSelection {
+                session: app.repl.selector(),
+                frontier: None,
+            }],
+            name: None,
+        };
+        let running = app.launch_draft(Some(draft), true, true).unwrap().unwrap();
+        assert_eq!(running.model.provider.as_deref(), Some("configured"));
+        assert_eq!(running.model.model.as_deref(), Some("configured-model"));
+    }
+
+    #[test]
+    fn imported_commands_stay_literal_and_clearing_restores_the_command_palette() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.insert_files(vec![attachments::Loaded {
+            text: "/cl".into(),
+            image: None,
+        }]);
+        assert!(app.commands_shown().is_empty());
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["/cl"]);
+        app.insert_files(vec![attachments::Loaded {
+            text: "/quit".into(),
+            image: None,
+        }]);
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+        typed(&mut app, "/cl");
+        assert!(!app.commands_shown().is_empty());
+    }
+
+    #[test]
+    fn raw_drop_is_resolved_before_immediate_send_and_only_submitted_images_are_required() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let dir = std::env::temp_dir().join(format!("nouli-drop-send-{}", Id::generate()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("photo \"test\" 中文.png");
+        image::RgbImage::new(2, 2).save(&path).unwrap();
+        app.form.kind = Kind::Choice;
+        app.form.question = "Which image: [this] or <that>?".into();
+        app.form.options = vec![String::new(), "Other".into()];
+        app.form.row = Row::Option(0);
+        let quoted = shlex::try_quote(path.to_str().unwrap()).unwrap();
+        typed(&mut app, &quoted);
+        let mut running = None;
+        app.key(
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            &mut running,
+        )
+        .unwrap();
+        let draft = draft_from(running.unwrap());
+        assert_eq!(draft.request.turn.questions[0].prompt, app.form.question);
+        let record = draft.request.updates.last().unwrap().new_record().unwrap();
+        assert!(record.key.starts_with("image:"));
+        assert_eq!(draft.request.required_records, [record.id]);
+        assert!(
+            record.value.value()["nouli_image"]["name"]
+                .as_str()
+                .unwrap()
+                .contains("\"test\"")
+        );
+        assert!(app.form.options[0].contains("[image:"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn options_paste_as_separate_rows_and_shift_tab_cycles_answer_types() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.form.kind = Kind::Choice;
+        app.form.focus(Section::Options, &mut app.repl.queue.facts);
+        app.event(
+            Event::Paste("Palm Springs\nDenver\nLos Angeles\nSan Diego\nSan Francisco".into()),
+            &mut None,
+        )
+        .unwrap();
+        assert_eq!(app.form.options.len(), 5);
+        assert_eq!(app.form.options[3], "San Diego");
+        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!(app.form.row, Row::Question);
+        assert_eq!(app.form.kind, Kind::Noul);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.form.kind, Kind::Choice);
+        assert_eq!(app.form.row, Row::Question);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.form.kind, Kind::Score);
+        press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!(app.form.kind, Kind::Choice);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Option(0));
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Option(1));
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        }
+        assert_eq!(app.form.row, Row::Option(5));
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Input);
+    }
+
+    #[test]
+    fn an_idle_drop_failure_blocks_both_enter_and_send_until_corrected() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let path = std::env::temp_dir().join(format!("nouli-binary-{}", Id::generate()));
+        std::fs::write(&path, [0_u8, 255, 0]).unwrap();
+        typed(&mut app, path.to_str().unwrap());
+        assert!(!app.consume_drop()); // the idle-timer path
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.repl.queue.facts.is_empty());
+        app.form.question = "Is this relevant?".into();
+        assert!(app.send_form(false).unwrap().is_none());
+        app.form.clear_row(&mut app.repl.queue.facts);
+        assert!(app.send_form(false).unwrap().is_some());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn changing_fields_immediately_after_a_raw_drop_keeps_the_original_destination() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let path = std::env::temp_dir().join(format!("nouli-tab-drop-{}", Id::generate()));
+        std::fs::write(&path, "Imported context.").unwrap();
+        typed(&mut app, path.to_str().unwrap());
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Question);
+        assert_eq!(app.form.input, "Imported context.");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn f2_picks_the_answer_type_and_tab_the_section() {
         let settings = settings();
         let mut app = app(&settings);
         let none = KeyModifiers::NONE;
-        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
         assert_eq!(app.form.kind, Kind::Choice);
-        press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
+        press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
         assert_eq!(app.form.kind, Kind::Score);
         press(&mut app, KeyCode::Tab, none);
         assert_eq!(app.form.row, Row::Question);
-        press(&mut app, KeyCode::Tab, none);
+        press(&mut app, KeyCode::Down, none);
         assert_eq!(app.form.row, Row::Option(0));
         press(&mut app, KeyCode::Up, none);
         press(&mut app, KeyCode::Up, none);
@@ -850,6 +1621,9 @@ mod tests {
         press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
         press(&mut app, KeyCode::Down, none);
         assert_eq!((app.form.row, app.graph.follow), (Row::Input, false));
+        press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!(app.form.kind, Kind::Choice);
+        assert!(!app.graph_focused);
         press(&mut app, KeyCode::Esc, none);
         assert!(!app.graph_focused);
         press(&mut app, KeyCode::Down, none);
@@ -877,7 +1651,7 @@ mod tests {
             "{shown}"
         );
         assert!(shown.contains("queued: replace fact 1"), "{shown}");
-        assert!(shown.contains("s › ?broken\n  grammar error"), "{shown}");
+        assert!(app.repl.queue.facts.contains(&"?broken".to_owned()));
         assert_eq!(app.repl.queue.replaces.len(), 1);
         typed(&mut app, "/help");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -898,21 +1672,20 @@ mod tests {
         let settings = settings();
         let mut app = app(&settings);
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        typed(&mut app, "Will it rain?");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         let status = app.status.as_ref().unwrap();
-        assert!(status.error && status.text.contains("ID and a colon"));
+        assert!(status.error && status.text.contains("Write a question"));
         assert_eq!(app.form.row, Row::Question);
-        // A choice goes to its options first, and the list ends on an empty one.
+        // An incomplete list focuses its editor; Tab adds another item.
         app.form.question = "rain: Will it rain?".into();
-        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Option(0));
         typed(&mut app, "Yes");
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         let status = app.status.as_ref().unwrap();
-        assert!(status.text.contains("2 to 255"), "{}", status.text);
+        assert!(status.text.contains("at least two"), "{}", status.text);
         assert_eq!(app.form.row, Row::Option(1), "ready for the second option");
         assert!(app.transcript.is_empty(), "nothing was sent");
     }
@@ -974,6 +1747,7 @@ mod tests {
             ephemeral: false,
             from_form: true,
             started: Instant::now(),
+            model: ModelSelection::default(),
         });
         app.form.input = "sent".into();
         let key = |code, modifiers| KeyEvent::new(code, modifiers);
@@ -1107,11 +1881,16 @@ mod tests {
         assert_eq!(app.repl.queue.question, None);
         app.finish(failed(), &[], false, true).unwrap();
         assert_eq!(app.form.question, "b: Is this the one to send again?");
-        // With nothing left to send again, an empty line moves to the form's
-        // question instead of sending the older one.
+        // Enter from Context resends the current form, including after failure.
         press(&mut app, KeyCode::Up, KeyModifiers::NONE);
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(app.form.row, Row::Question);
+        let mut running = None;
+        app.key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut running,
+        )
+        .unwrap();
+        let draft = draft_from(running.unwrap());
+        assert_eq!(draft.request.turn.questions[0].prompt, app.form.question);
     }
 
     #[test]

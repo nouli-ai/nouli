@@ -96,14 +96,13 @@ struct Current {
     label: String,
 }
 
-const HELP: [(&str, &str); 14] = [
+const HELP: [(&str, &str); 13] = [
     ("plain text", "queue a fact for the next question"),
     (
         "?id: prompt [a, b]",
         "ask it now with the queue (<a, b> for a score; no list for yes/no)",
     ),
     ("(empty line)", "send the queue again after a failed turn"),
-    ("/whatif ?id: prompt", "ask with the queue and save nothing"),
     ("/replace N TEXT", "replace fact N (queued)"),
     ("/clear", "empty the queue"),
     ("/facts", "show the session's facts"),
@@ -140,7 +139,8 @@ struct Repl<'a, W> {
 }
 
 fn short(id: Id) -> String {
-    id.to_string().chars().take(8).collect()
+    let id = id.to_string();
+    id[id.len() - 8..].to_owned()
 }
 
 fn label(session: &Session) -> String {
@@ -303,14 +303,6 @@ impl<W: Write> Repl<'_, W> {
                     self.dim(&text)?;
                 }
             }
-            Command::Whatif(question) => {
-                if self.valid(&question)? {
-                    return Ok(Step::Send {
-                        question,
-                        ephemeral: true,
-                    });
-                }
-            }
             Command::Clear => {
                 self.queue = Queue::default();
                 self.dim("  queue cleared")?;
@@ -348,6 +340,20 @@ impl<W: Write> Repl<'_, W> {
     /// The turn the queued facts and `question` make, or `None` once the
     /// reason there is none is shown.
     fn draft(&mut self, question: &str, ephemeral: bool) -> io::Result<Option<Draft>> {
+        match grammar::parse(question) {
+            Ok(question) => self.draft_question(question, ephemeral),
+            Err(error) => {
+                self.fail(&error.to_string())?;
+                Ok(None)
+            }
+        }
+    }
+
+    fn draft_question(
+        &mut self,
+        question: nouli_core::decision::Question,
+        ephemeral: bool,
+    ) -> io::Result<Option<Draft>> {
         if ephemeral {
             match self.ledger().and_then(|ledger| {
                 ledger
@@ -395,14 +401,14 @@ impl<W: Write> Repl<'_, W> {
             selection,
             numbering: Some(self.selector()),
             facts: &self.queue.facts,
-            question: Some(question),
+            question: None,
             replace: &replace,
             common: &common,
             replay: None,
             ephemeral,
             create: None,
         }
-        .draft(&mut io::empty());
+        .draft_with_question(&mut io::empty(), Some(question));
         let draft = match draft {
             Ok(draft) => evaluate::resolve(self.settings, draft),
             Err(error) => Err(input_error(&error)),
@@ -424,6 +430,16 @@ impl<W: Write> Repl<'_, W> {
         updates: &[ContextUpdate],
         ephemeral: bool,
     ) -> io::Result<()> {
+        self.finish_display(result, updates, ephemeral, None)
+    }
+
+    fn finish_display(
+        &mut self,
+        result: Report,
+        updates: &[ContextUpdate],
+        ephemeral: bool,
+        width: Option<usize>,
+    ) -> io::Result<()> {
         match result {
             Report::Turn(report) => {
                 // A what-if saves nothing, so what was queued is still pending.
@@ -436,7 +452,10 @@ impl<W: Write> Repl<'_, W> {
                     updates,
                     &self.settings.store,
                     self.paint.0,
-                    false,
+                    width.map_or(
+                        present::TurnDisplay::Transcript,
+                        present::TurnDisplay::Compact,
+                    ),
                 ) {
                     return match error {
                         present::PresentError::Render(error) => {
@@ -607,6 +626,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nearby_unnamed_sessions_use_randomness_in_their_short_labels() {
+        let first = Id::generate();
+        let second = Id::generate();
+        assert_ne!(short(first), short(second));
+        assert!(first.to_string().ends_with(&short(first)));
+        assert!(second.to_string().ends_with(&short(second)));
+    }
+
+    #[test]
     fn a_reader_echoes_each_line_after_the_prompt_and_ends_at_the_end_of_input() {
         let mut input = &b"A fact\n\n?q: Why?\r\n"[..];
         let mut out = Vec::new();
@@ -702,8 +730,9 @@ mod tests {
         assert_eq!(session.handle("").unwrap(), send("q: Is it?", false));
         assert_eq!(
             session.handle("/whatif ?w: Would it?").unwrap(),
-            send("w: Would it?", true)
+            Step::Continue
         );
+        assert!(String::from_utf8_lossy(&session.out).contains("unknown command /whatif"));
         assert_eq!(session.queue.facts, ["A fact"]);
         assert_eq!(session.handle("/quit").unwrap(), Step::Quit);
     }

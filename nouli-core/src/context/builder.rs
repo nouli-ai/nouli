@@ -467,6 +467,36 @@ impl ContextBuilder {
         if entries.iter().any(|entry| !ids.insert(entry.id)) {
             return Err(BuildError::History(HistoryError::DuplicateTurn));
         }
+        // Explicitly reusing a saved image is current evidence, even when the
+        // original file has gone. Protect that dependency before reduction.
+        fn mentions(value: &serde_json::Value, reference: &str) -> bool {
+            match value {
+                serde_json::Value::String(text) => text.contains(reference),
+                serde_json::Value::Array(values) => {
+                    values.iter().any(|value| mentions(value, reference))
+                }
+                serde_json::Value::Object(values) => {
+                    values.values().any(|value| mentions(value, reference))
+                }
+                _ => false,
+            }
+        }
+        let live = data(&(input.request, input.updates))?;
+        for entry in &mut entries {
+            let value = entry.value.value();
+            if entry.kind == EntryKind::Context
+                && value["record"]["key"]
+                    .as_str()
+                    .is_some_and(|key| key.starts_with("image:"))
+                && value["record"]["value"]["nouli_image"]["reference"]
+                    .as_str()
+                    .is_some_and(|reference| {
+                        !reference.is_empty() && mentions(live.value(), reference)
+                    })
+            {
+                entry.protected = true;
+            }
+        }
         for required in input.required {
             let entry = entries
                 .iter_mut()
@@ -787,6 +817,53 @@ mod tests {
         input.workflow_base = &base;
         assert!(matches!(
             ContextBuilder::build(input, &limits(4096), &ByteCounter, &FullHistory),
+            Err(BuildError::ProtectedCapacity)
+        ));
+    }
+
+    #[test]
+    fn required_image_bytes_cannot_be_evicted_to_leave_only_a_reference() {
+        let history = history();
+        let request = history[0].request.clone();
+        let id = Id::generate();
+        let mut picture = crate::media::tests::picture(1568, 1568);
+        picture.reference = "[photo]".into();
+        let updates = [ContextUpdate::Append {
+            record: ContextRecord {
+                id,
+                key: format!("image:{id}"),
+                kind: ContextKind::Evidence,
+                value: Data::new(serde_json::json!({"nouli_image":picture})).unwrap(),
+            },
+        }];
+        let required = [RequiredItem {
+            record: id,
+            pointer: None,
+        }];
+        assert!(matches!(
+            ContextBuilder::build(
+                input(&history, &[], &request, &updates, &required),
+                &limits(4096),
+                &ByteCounter,
+                &crate::context::compact::Staged
+            ),
+            Err(BuildError::ProtectedCapacity)
+        ));
+        let mut history = history;
+        history[0].updates.extend(updates);
+        let sources = [SourcePoint {
+            session: history[0].session,
+            frontier: vec![history[0].id],
+        }];
+        let mut request = request;
+        request.questions[0].prompt = "Look again at [photo].".into();
+        assert!(matches!(
+            ContextBuilder::build(
+                input(&history, &sources, &request, &[], &[]),
+                &limits(4096),
+                &ByteCounter,
+                &crate::context::compact::Staged
+            ),
             Err(BuildError::ProtectedCapacity)
         ));
     }

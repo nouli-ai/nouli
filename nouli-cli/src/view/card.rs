@@ -11,6 +11,7 @@ const TEXT: usize = WIDTH - 4;
 pub(super) struct Row {
     pub text: String,
     pub highlighted: bool,
+    pub accent: Option<crate::palette::Tone>,
 }
 
 fn wrap(value: &str, width: usize) -> Vec<String> {
@@ -74,6 +75,7 @@ fn append(lines: &mut Vec<Row>, prefix: &str, value: &str, highlighted: bool) {
                 }
             ),
             highlighted,
+            accent: None,
         });
     }
 }
@@ -98,6 +100,7 @@ pub(super) fn table(lines: &mut Vec<Row>, heading: &str, entries: &[(String, Opt
             " ".repeat(TEXT - heading.width() - "Probability".len())
         ),
         highlighted: false,
+        accent: None,
     });
     for ((label, _, highlighted), probability) in entries.iter().zip(values) {
         if probability_width + 8 > TEXT {
@@ -126,6 +129,7 @@ pub(super) fn table(lines: &mut Vec<Row>, heading: &str, entries: &[(String, Opt
                     value
                 ),
                 highlighted: *highlighted,
+                accent: None,
             });
         }
     }
@@ -144,24 +148,29 @@ pub(super) fn frame(title: &str, content: Vec<Row>) -> Vec<Row> {
             "─".repeat(WIDTH - title[0].width() - 5)
         ),
         highlighted: false,
+        accent: None,
     }];
     rows.extend(title.iter().skip(1).map(|line| Row {
         text: body(line),
         highlighted: false,
+        accent: None,
     }));
     if title.len() > 1 {
         rows.push(Row {
             text: body(""),
             highlighted: false,
+            accent: None,
         });
     }
     rows.extend(content.into_iter().map(|line| Row {
         text: body(&line.text),
         highlighted: line.highlighted,
+        accent: line.accent,
     }));
     rows.push(Row {
         text: format!("└{}┘", "─".repeat(WIDTH - 2)),
         highlighted: false,
+        accent: None,
     });
     rows
 }

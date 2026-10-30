@@ -53,8 +53,8 @@ mod tests {
                 record.total_context > 0 && record.max_choices >= 2 && record.max_score_levels >= 2
             );
             assert!(!record.sources.is_empty());
-            assert_eq!(record.verified_on, "2026-10-28");
-            assert_eq!(record.modalities, vec![Modality::Text]);
+            assert_eq!(record.verified_on, "2026-10-30");
+            assert_eq!(record.modalities, vec![Modality::Text, Modality::Image]);
         }
     }
 }

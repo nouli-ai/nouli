@@ -109,11 +109,13 @@ impl ResolvedLimits {
         modality: Modality,
     ) -> Result<(), LimitError> {
         request.validate()?;
-        // Nouli v1 exposes text/structured state only, even on image-capable models.
-        if modality != Modality::Text {
+        if !matches!(modality, Modality::Text | Modality::Image) {
             return Err(LimitError::Modality);
         }
         if let Some(capabilities) = &self.capabilities {
+            if !capabilities.modalities.contains(&modality) {
+                return Err(LimitError::Modality);
+            }
             if capabilities
                 .max_questions
                 .is_some_and(|limit| request.questions.len() > limit)
@@ -143,7 +145,15 @@ impl ResolvedLimits {
         request: &TurnRequest,
         counter: &impl TokenCounter,
     ) -> Result<BudgetAssessment, LimitError> {
-        self.validate_request(request, Modality::Text)?;
+        let evidence = crate::media::Evidence::read(context_toon)?;
+        self.validate_request(
+            request,
+            if evidence.images.is_empty() {
+                Modality::Text
+            } else {
+                Modality::Image
+            },
+        )?;
         let InputCounts {
             total,
             per_question,
@@ -282,10 +292,7 @@ mod tests {
             router.validate_request(&request, Modality::Text),
             Err(LimitError::Count)
         );
-        assert_eq!(
-            direct.validate_request(&request, Modality::Image),
-            Err(LimitError::Modality)
-        );
+        assert_eq!(direct.validate_request(&request, Modality::Image), Ok(()));
         request.questions = (0..401)
             .map(|index| {
                 let mut question = question.clone();

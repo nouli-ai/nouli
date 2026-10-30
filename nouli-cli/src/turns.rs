@@ -290,6 +290,14 @@ fn pairs(replace: &[String]) -> Result<Vec<(usize, String)>, InputError> {
 
 impl Parts<'_> {
     pub(crate) fn draft(self, stdin: &mut impl Read) -> Result<Draft, InputError> {
+        self.draft_with_question(stdin, None)
+    }
+
+    pub(crate) fn draft_with_question(
+        self,
+        stdin: &mut impl Read,
+        question: Option<nouli_core::decision::Question>,
+    ) -> Result<Draft, InputError> {
         let replaces = pairs(self.replace)?;
         let mut request = if let Some(path) = &self.common.input {
             if !(self.facts.is_empty() && self.question.is_none() && self.replace.is_empty()) {
@@ -323,11 +331,12 @@ impl Parts<'_> {
                 }
             }
         } else {
-            let questions = self
-                .question
-                .map(grammar::parse)
-                .transpose()
-                .map_err(InputError::Question)?
+            let questions = question
+                .or(self
+                    .question
+                    .map(grammar::parse)
+                    .transpose()
+                    .map_err(InputError::Question)?)
                 .into_iter()
                 .collect();
             let mut updates = Vec::with_capacity(self.facts.len());

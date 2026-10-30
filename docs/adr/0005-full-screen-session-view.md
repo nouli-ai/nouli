@@ -5,6 +5,9 @@ date: 2026-10-29
 
 # Replace the line prompt with a full-screen view
 
+The form grammar and keyboard behavior below are superseded by
+[ADR 0006](0006-literal-form-and-file-drops.md).
+
 [ADR 0002](0002-verb-cli-standing-questions-and-repl.md) made the interactive
 session loop a line prompt and turned down a full-screen terminal UI as the
 first step, because it is more work and harder to use over SSH or in scripts.

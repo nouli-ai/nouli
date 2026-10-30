@@ -58,6 +58,15 @@ pub fn request_body(
     context_toon: &str,
     model: &str,
 ) -> Result<Value, ProviderError> {
+    request_body_with_images(request, context_toon, model, true)
+}
+
+pub(super) fn request_body_with_images(
+    request: &TurnRequest,
+    context_toon: &str,
+    model: &str,
+    prepare_jev: bool,
+) -> Result<Value, ProviderError> {
     request.validate()?;
     crate::decision::nonempty(model, "model")?;
     let mut questions = BTreeMap::new();
@@ -78,7 +87,12 @@ pub fn request_body(
         };
         questions.insert(&question.id, native);
     }
-    Ok(json!({"model":model,"state":context_toon,"questions":questions}))
+    let evidence = crate::media::Evidence::read(context_toon)?;
+    let mut body = json!({"model":model,"state":evidence.text,"questions":questions});
+    if !evidence.images.is_empty() {
+        body["assets"] = evidence.assets(prepare_jev)?;
+    }
+    Ok(body)
 }
 
 /// Normalize only documented primitives. Unknown refusal types fail rather than

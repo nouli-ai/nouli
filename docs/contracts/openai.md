@@ -13,6 +13,13 @@ score criteria map to ordered label/description entries. Complete question crite
 remain in the instructions. Named responses are validated and projected back into
 caller order, never assigned by an unchecked positional fallback.
 
+Image evidence becomes ordered `input_text` / `input_image` parts inside a user
+message's `content`; question instructions can also contain those parts. Native
+choice descriptions remain text and refer to labelled images in shared input.
+This uses the [Decisions reference](https://developers.openai.com/api/reference/resources/decisions/methods/create),
+checked 2026-10-30. Binary payloads remain in saved evidence and are removed from
+the TOON text sent to the model. Text-only requests preserve their string input.
+
 Predicate probability becomes noul probability. Choice distributions retain every
 original ID. Score probabilities are checked by level index and label before
 preserving their fractional expectation. Unknown/duplicate/missing names, boolean

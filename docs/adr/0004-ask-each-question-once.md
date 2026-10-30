@@ -5,6 +5,10 @@ date: 2026-10-29
 
 # Ask each question once and never ask it again
 
+Omitted fields on an explicit full-screen form Send are superseded by
+[ADR 0008](0008-citrus-and-implicit-answer-list-reuse.md). Earlier saved answers
+remain immutable.
+
 [ADR 0002](0002-verb-cli-standing-questions-and-repl.md) gave sessions standing
 questions: every later turn asked a session's questions again with the new
 facts, so a turn could carry only facts. That re-decides earlier answers. In the

@@ -9,6 +9,7 @@ pub mod engine;
 pub mod history;
 pub mod identity;
 pub mod limits;
+pub mod media;
 pub mod outcome;
 pub mod protocol;
 pub mod provider;

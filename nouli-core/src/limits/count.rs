@@ -29,11 +29,15 @@ pub trait TokenCounter {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ByteCounter;
 
-fn estimate(tokens: u64) -> TokenCount {
+fn estimate(tokens: u64, multimodal: bool) -> TokenCount {
     TokenCount {
         tokens,
         exact: false,
-        method: CountMethod::ByteEstimate,
+        method: if multimodal {
+            CountMethod::MultimodalEstimate
+        } else {
+            CountMethod::ByteEstimate
+        },
     }
 }
 
@@ -41,11 +45,40 @@ impl TokenCounter for ByteCounter {
     fn count(
         &self,
         protocol: Protocol,
-        _model: &str,
+        model: &str,
         context_toon: &str,
         questions: &[Question],
     ) -> Result<InputCounts, LimitError> {
-        let shared = context_toon.len().div_ceil(4) as u64;
+        let evidence = crate::media::Evidence::read(context_toon)?;
+        let multimodal = !evidence.images.is_empty();
+        let jev = protocol == Protocol::Typesafe
+            || protocol == Protocol::OpenrouterDecisions && model.contains("typesafe/jev");
+        let mut shared = evidence.text.len().div_ceil(4) as u64;
+        let mut image_costs = Vec::new();
+        for image in &evidence.images {
+            let cost = if protocol == Protocol::OpenrouterDecisions && !jev {
+                // Clef's upstream preflight explicitly counts encoded bytes.
+                image.data_base64.len().div_ceil(4) as u64
+            } else {
+                let (width, height) = if jev {
+                    image.jev_dimensions()?
+                } else {
+                    image.dimensions()?
+                };
+                // A local heuristic, not a vendor token formula or bound.
+                let patch = if jev { 28 } else { 32 };
+                u64::from(width.div_ceil(patch)) * u64::from(height.div_ceil(patch)) * 4 + 256
+            };
+            let shared_uses = if protocol == Protocol::OpenrouterDecisions && !jev {
+                1
+            } else {
+                evidence.text.matches(&image.reference).count() as u64
+            };
+            shared = shared
+                .checked_add(cost.checked_mul(shared_uses).ok_or(LimitError::Overflow)?)
+                .ok_or(LimitError::Overflow)?;
+            image_costs.push((image.reference.as_str(), cost));
+        }
         // These are explicit estimates, not asserted provider token constants.
         let envelope = match protocol {
             Protocol::Typesafe | Protocol::OpenaiDecisions => 32,
@@ -56,19 +89,51 @@ impl TokenCounter for ByteCounter {
         let mut per_question = Vec::with_capacity(questions.len());
         for question in questions {
             let serialized = codec::encode_toon(question)?;
-            let question_tokens = (serialized.len().div_ceil(4) as u64)
+            let mut question_tokens = (serialized.len().div_ceil(4) as u64)
                 .checked_add(16)
                 .ok_or(LimitError::Overflow)?;
+            let values = if protocol == Protocol::OpenrouterDecisions && !jev {
+                serde_json::Value::Null
+            } else if protocol == Protocol::OpenaiDecisions {
+                serde_json::to_value((&question.prompt, &question.criteria))
+                    .map_err(|_| crate::codec::CodecError::Shape)?
+            } else {
+                serde_json::to_value((&question.prompt, &question.criteria, &question.answer_space))
+                    .map_err(|_| crate::codec::CodecError::Shape)?
+            };
+            fn occurrences(value: &serde_json::Value, reference: &str) -> u64 {
+                match value {
+                    serde_json::Value::String(text) => text.matches(reference).count() as u64,
+                    serde_json::Value::Array(values) => values
+                        .iter()
+                        .map(|value| occurrences(value, reference))
+                        .sum(),
+                    serde_json::Value::Object(values) => values
+                        .values()
+                        .map(|value| occurrences(value, reference))
+                        .sum(),
+                    _ => 0,
+                }
+            }
+            for (reference, cost) in &image_costs {
+                question_tokens = question_tokens
+                    .checked_add(
+                        cost.checked_mul(occurrences(&values, reference))
+                            .ok_or(LimitError::Overflow)?,
+                    )
+                    .ok_or(LimitError::Overflow)?;
+            }
             total = total
                 .checked_add(question_tokens)
                 .ok_or(LimitError::Overflow)?;
             per_question.push(estimate(
                 base.checked_add(question_tokens)
                     .ok_or(LimitError::Overflow)?,
+                multimodal,
             ));
         }
         Ok(InputCounts {
-            total: estimate(total),
+            total: estimate(total, multimodal),
             per_question,
         })
     }
@@ -77,6 +142,105 @@ impl TokenCounter for ByteCounter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn images_use_separate_estimates_and_each_reference_is_counted() {
+        let picture = crate::media::tests::picture(1912, 1044);
+        let context = codec::encode_toon(&serde_json::json!({"records":[{"record":{"key":"image:fixture", "value":{"nouli_image":picture}}}]})).unwrap();
+        let mut question = crate::decision::Question {
+            id: "image".into(),
+            prompt: "Describe the image.".into(),
+            criteria: vec![],
+            answer_space: crate::decision::AnswerSpace::Noul,
+        };
+        let count = ByteCounter
+            .count(
+                Protocol::Typesafe,
+                "jev-1.14.0",
+                &context,
+                &[question.clone()],
+            )
+            .unwrap();
+        assert!(count.per_question[0].tokens < 32_000);
+        assert_eq!(count.total.method, CountMethod::MultimodalEstimate);
+        assert!(!count.total.exact);
+        question.prompt = "Compare [photo #123] and [photo #123].".into();
+        let repeated = ByteCounter
+            .count(Protocol::Typesafe, "jev-1.14.0", &context, &[question])
+            .unwrap();
+        assert!(repeated.per_question[0].tokens > count.per_question[0].tokens * 2);
+        let clef = ByteCounter
+            .count(
+                Protocol::OpenrouterDecisions,
+                "cloudflare/clef",
+                &context,
+                &[],
+            )
+            .unwrap();
+        assert!(clef.total.tokens >= picture.data_base64.len().div_ceil(4) as u64);
+        let mut question = crate::decision::Question {
+            id: "test".into(),
+            prompt: "Look at this.".into(),
+            criteria: vec![],
+            answer_space: crate::decision::AnswerSpace::Noul,
+        };
+        let plain = ByteCounter
+            .count(
+                Protocol::OpenrouterDecisions,
+                "cloudflare/clef",
+                &context,
+                &[question.clone()],
+            )
+            .unwrap();
+        question.prompt = "Look at [photo #123] and [photo #123].".into();
+        let refs = ByteCounter
+            .count(
+                Protocol::OpenrouterDecisions,
+                "cloudflare/clef",
+                &context,
+                &[question.clone()],
+            )
+            .unwrap();
+        assert!(
+            refs.total.tokens.abs_diff(plain.total.tokens) < 100,
+            "router references stay text; one native image is sent"
+        );
+        question.answer_space = crate::decision::AnswerSpace::Choice {
+            options: vec![
+                crate::decision::ChoiceOption {
+                    id: "a".into(),
+                    description: "First".into(),
+                },
+                crate::decision::ChoiceOption {
+                    id: "b".into(),
+                    description: "Second".into(),
+                },
+            ],
+        };
+        let plain = ByteCounter
+            .count(
+                Protocol::OpenaiDecisions,
+                "gpt-6-luna",
+                &context,
+                &[question.clone()],
+            )
+            .unwrap();
+        if let crate::decision::AnswerSpace::Choice { options } = &mut question.answer_space {
+            options[0].description = "[photo #123]".into();
+        }
+        let refs = ByteCounter
+            .count(
+                Protocol::OpenaiDecisions,
+                "gpt-6-luna",
+                &context,
+                &[question],
+            )
+            .unwrap();
+        assert!(
+            refs.total.tokens.abs_diff(plain.total.tokens) < 100,
+            "OpenAI option descriptions stay text"
+        );
+    }
     #[test]
     fn unicode_estimates_are_stable_and_complete_live_questions_count() {
         let request: crate::decision::TurnRequest = serde_json::from_str(include_str!(
