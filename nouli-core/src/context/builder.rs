@@ -482,21 +482,6 @@ impl ContextBuilder {
             }
         }
         let live = data(&(input.request, input.updates))?;
-        for entry in &mut entries {
-            let value = entry.value.value();
-            if entry.kind == EntryKind::Context
-                && value["record"]["key"]
-                    .as_str()
-                    .is_some_and(|key| key.starts_with("image:"))
-                && value["record"]["value"]["nouli_image"]["reference"]
-                    .as_str()
-                    .is_some_and(|reference| {
-                        !reference.is_empty() && mentions(live.value(), reference)
-                    })
-            {
-                entry.protected = true;
-            }
-        }
         for required in input.required {
             let entry = entries
                 .iter_mut()
@@ -514,6 +499,49 @@ impl ContextBuilder {
                 )?;
             }
             entry.protected = true;
+        }
+        // Required historical decisions retain any image payload their saved
+        // questions reference, not just an otherwise unusable filename/token.
+        let protected_turns: HashSet<_> = entries
+            .iter()
+            .filter(|entry| entry.protected && entry.kind == EntryKind::Decision)
+            .map(|entry| entry.id)
+            .collect();
+        let prior_input_records: HashSet<_> = input
+            .history
+            .iter()
+            .filter(|turn| protected_turns.contains(&turn.id))
+            .flat_map(|turn| &turn.manifest.records)
+            .filter(|record| record.representation != Representation::Omitted)
+            .map(|record| record.record)
+            .collect();
+        let linked_images: Vec<_> = entries
+            .iter()
+            .filter(|entry| {
+                let value = entry.value.value();
+                entry.kind == EntryKind::Context
+                    && value["record"]["key"]
+                        .as_str()
+                        .is_some_and(|key| key.starts_with("image:"))
+                    && value["record"]["value"]["nouli_image"]["reference"]
+                        .as_str()
+                        .is_some_and(|reference| {
+                            !reference.is_empty()
+                                && (prior_input_records.contains(&entry.id)
+                                    || mentions(live.value(), reference)
+                                    || entries.iter().any(|prior| {
+                                        prior.protected
+                                            && prior.kind == EntryKind::Decision
+                                            && mentions(prior.value.value(), reference)
+                                    }))
+                        })
+            })
+            .map(|entry| entry.id)
+            .collect();
+        for entry in &mut entries {
+            if linked_images.contains(&entry.id) {
+                entry.protected = true;
+            }
         }
         // A replaced fact is evicted from model context so the model sees only
         // the current text. The ledger keeps it, and an explicit requirement
@@ -866,6 +894,42 @@ mod tests {
             ),
             Err(BuildError::ProtectedCapacity)
         ));
+        history[0].request.questions[0].prompt = "Inspect [photo].".into();
+        request.questions[0].prompt = "Does the preceding judgment still hold?".into();
+        let required = [RequiredItem {
+            record: history[0].id,
+            pointer: None,
+        }];
+        assert!(
+            matches!(
+                ContextBuilder::build(
+                    input(&history, &sources, &request, &[], &required),
+                    &limits(4096),
+                    &ByteCounter,
+                    &crate::context::compact::Staged
+                ),
+                Err(BuildError::ProtectedCapacity)
+            ),
+            "a required prior question retains its image evidence"
+        );
+        history[0].request.questions[0].prompt = "Is this diagram useful?".into();
+        history[0].manifest.records.push(RecordProjection {
+            record: id,
+            representation: Representation::Full,
+            protected: false,
+        });
+        assert!(
+            matches!(
+                ContextBuilder::build(
+                    input(&history, &sources, &request, &[], &required),
+                    &limits(4096),
+                    &ByteCounter,
+                    &crate::context::compact::Staged
+                ),
+                Err(BuildError::ProtectedCapacity)
+            ),
+            "images used by the saved question remain available even without a literal reference in its prompt"
+        );
     }
 
     #[test]

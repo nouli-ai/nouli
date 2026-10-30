@@ -227,6 +227,9 @@ impl Rows {
         style: Style,
         cursor: Option<usize>,
     ) {
+        let (text, position) = render::image_label_projection(text, cursor.unwrap_or(0));
+        let text = text.as_str();
+        let cursor = cursor.map(|_| position);
         let indent = gutter.width();
         let room = self.width.saturating_sub(indent).max(1);
         let first = self.lines.len();
@@ -275,7 +278,7 @@ fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
                 format!(
                     "{}: {}  · {} {turns}",
                     render::clean(&entry.label),
-                    render::clean(&entry.first),
+                    render::clean(&render::image_labels(&entry.first)),
                     entry.turns
                 )
             })
@@ -334,7 +337,19 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     if queued > 0 {
         heading.push(Span::styled(format!(" · {queued} queued"), theme.dim));
     }
+    if app.latest_question.is_some() {
+        heading.push(Span::styled(" · latest question included", theme.dim));
+    }
     rows.rule(heading, theme);
+    if let Some(latest) = &app.latest_question {
+        rows.push(
+            Span::styled("  ↳ ", theme.dim),
+            &render::clean(&latest.question.prompt),
+            none(),
+            theme.dim,
+            None,
+        );
+    }
     for (index, fact) in queue.facts.iter().enumerate() {
         let gutter = Span::styled("  + ", theme.dim);
 
@@ -734,6 +749,31 @@ mod tests {
             assert!(plain.kind(kind, true).add_modifier.contains(Modifier::BOLD));
         }
         assert_eq!(theme.accent.fg, None, "context and model stay neutral");
+    }
+
+    #[test]
+    fn latest_context_is_visible_and_image_metadata_is_hidden() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        app.latest_question = Some(crate::repl::tui::tests::previous(Kind::Noul));
+        let reference = format!("[image:{}]", nouli_core::identity::Id::generate());
+        app.form.input = format!("holiday photo.png {reference}");
+        app.form.cursor = app.form.input.len();
+        let screen = shown(&mut app, 140, 24).join("\n");
+        assert!(
+            screen.contains("Context · latest question included"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("↳ Which destination suits this trip?"),
+            "{screen}"
+        );
+        assert!(screen.contains("holiday photo.png"), "{screen}");
+        assert!(!screen.contains("[image:"), "{screen}");
+        assert!(
+            app.form.input.contains(&reference),
+            "native media reference stays intact"
+        );
     }
 
     #[test]

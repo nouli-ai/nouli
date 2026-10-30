@@ -278,6 +278,8 @@ struct App<'a> {
     literal_input: bool,
     failed_drop: Option<(Row, String)>,
     previous_question: Option<PreviousQuestion>,
+    /// The latest saved question reachable from the selected session.
+    latest_question: Option<PreviousQuestion>,
     /// The previous Enter added/finished a list item; another Enter sends.
     option_enter: bool,
 }
@@ -306,6 +308,7 @@ impl<'a> App<'a> {
             literal_input: false,
             failed_drop: None,
             previous_question: None,
+            latest_question: None,
             option_enter: false,
         };
         app.drain();
@@ -456,7 +459,7 @@ impl<'a> App<'a> {
             }
             _ => {
                 let start = self.form.cursor;
-                if self.form.edit(&key, &mut self.repl.queue.facts) {
+                if self.edit_form(&key) {
                     if self.form.row == Row::Input && self.form.input.is_empty() {
                         self.literal_input = false;
                     }
@@ -635,10 +638,9 @@ impl<'a> App<'a> {
             self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
             return Flow::Continue;
         }
-        let facts = &mut self.repl.queue.facts;
-        if !self.form.text(facts).is_empty() {
+        if !self.form.text(&self.repl.queue.facts).is_empty() {
             let delete = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
-            self.form.edit(&delete, facts);
+            self.edit_form(&delete);
             return Flow::Continue;
         }
         if !(self.repl.queue.is_empty() && self.form.is_empty()) && !self.warned {
@@ -872,6 +874,23 @@ impl<'a> App<'a> {
                 .push(update.new_record().expect("image record").id);
             draft.request.updates.push(update);
         }
+        let required = self
+            .latest_question
+            .iter()
+            .map(|latest| latest.turn)
+            .chain(
+                draft
+                    .request
+                    .updates
+                    .iter()
+                    .filter_map(|update| update.new_record().map(|record| record.id)),
+            )
+            .collect::<Vec<_>>();
+        for id in required {
+            if !draft.request.required_records.contains(&id) {
+                draft.request.required_records.push(id);
+            }
+        }
         let cancel = CancellationToken::new();
         let stop = cancel.clone();
         let settings = self.repl.settings;
@@ -932,6 +951,90 @@ impl<'a> App<'a> {
             self.form.paste(text, &mut self.repl.queue.facts);
         }
         self.status = None;
+    }
+
+    /// Imported images are one editable attachment, even though their hidden
+    /// reference remains in the stored text for provider dispatch.
+    fn edit_form(&mut self, key: &KeyEvent) -> bool {
+        let text = self.form.text(&self.repl.queue.facts);
+        let ranges: Vec<_> = render::image_tags(text)
+            .into_iter()
+            .map(|tag| {
+                let start = self
+                    .images
+                    .iter()
+                    .find(|image| image.reference == text[tag.clone()])
+                    .and_then(|image| {
+                        text[..tag.start]
+                            .strip_suffix(' ')
+                            .and_then(|prefix| prefix.strip_suffix(&image.name))
+                    })
+                    .map_or(tag.start, str::len);
+                start..tag.end
+            })
+            .collect();
+        let cursor = self.form.cursor;
+        let control = key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT);
+        let backwards = key.code == KeyCode::Backspace
+            || control && matches!(key.code, KeyCode::Char('h' | 'w'));
+        let word_backwards = key.code == KeyCode::Backspace
+            && key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+            || control && key.code == KeyCode::Char('w');
+        if word_backwards {
+            let start = form::word_start(text, cursor);
+            let touched: Vec<_> = ranges
+                .iter()
+                .filter(|range| start < range.end && cursor > range.start)
+                .collect();
+            if !touched.is_empty() {
+                let start = touched
+                    .iter()
+                    .fold(start, |start, range| start.min(range.start));
+                let end = touched.iter().fold(cursor, |end, range| end.max(range.end));
+                self.form
+                    .remove_range(start..end, &mut self.repl.queue.facts);
+                return true;
+            }
+        }
+        if let Some(range) = ranges.iter().find(|range| {
+            backwards && cursor == range.end || key.code == KeyCode::Delete && cursor == range.start
+        }) {
+            self.form
+                .remove_range(range.clone(), &mut self.repl.queue.facts);
+            return true;
+        }
+        if key.code == KeyCode::Left
+            && let Some(range) = ranges
+                .iter()
+                .find(|range| range.start < cursor && cursor <= range.end)
+        {
+            self.form.cursor = range.start;
+            return true;
+        }
+        if key.code == KeyCode::Right
+            && let Some(range) = ranges
+                .iter()
+                .find(|range| range.start <= cursor && cursor < range.end)
+        {
+            self.form.cursor = range.end;
+            return true;
+        }
+        let edited = self.form.edit(key, &mut self.repl.queue.facts);
+        if matches!(key.code, KeyCode::Left | KeyCode::Right)
+            && let Some(range) = ranges
+                .iter()
+                .find(|range| range.start < self.form.cursor && self.form.cursor < range.end)
+        {
+            self.form.cursor = if key.code == KeyCode::Left {
+                range.start
+            } else {
+                range.end
+            };
+        }
+        edited
     }
 
     fn attach(&mut self, paths: &[std::path::PathBuf]) {
@@ -1033,6 +1136,16 @@ impl<'a> App<'a> {
         from_form: bool,
     ) -> io::Result<()> {
         let saved = !ephemeral && matches!(envelope.result, Report::Turn(_));
+        let next_latest = match &envelope.result {
+            Report::Turn(report) if report.session == Some(self.repl.session.id) => report
+                .turn
+                .zip(report.questions.last())
+                .map(|(turn, question)| PreviousQuestion {
+                    turn,
+                    question: question.clone(),
+                }),
+            _ => None,
+        };
         let next_previous = match &envelope.result {
             Report::Turn(report) if report.session == Some(self.repl.session.id) => {
                 match (report.turn, report.questions.as_slice()) {
@@ -1076,6 +1189,7 @@ impl<'a> App<'a> {
         self.drain();
         if saved {
             self.previous_question = next_previous;
+            self.latest_question = next_latest;
             self.form.sent(from_form);
             self.images.clear();
             self.refresh_graph();
@@ -1123,6 +1237,7 @@ impl<'a> App<'a> {
 
     fn refresh_previous_question(&mut self) {
         self.previous_question = None;
+        self.latest_question = None;
         let Some(export) = self
             .repl
             .ledger()
@@ -1131,6 +1246,15 @@ impl<'a> App<'a> {
         else {
             return;
         };
+        self.latest_question = export.turns.iter().rev().find_map(|turn| {
+            turn.request
+                .questions
+                .last()
+                .map(|question| PreviousQuestion {
+                    turn: turn.id,
+                    question: question.clone(),
+                })
+        });
         let [head] = export.session.frontier.as_slice() else {
             return;
         };
@@ -1180,7 +1304,7 @@ impl<'a> App<'a> {
     fn drain(&mut self) {
         let printed: Vec<_> = String::from_utf8_lossy(&self.repl.out)
             .lines()
-            .map(ansi::line)
+            .map(|line| ansi::line(&render::image_labels(line)))
             .collect();
         self.repl.out.clear();
         if !printed.is_empty() {
@@ -1193,8 +1317,10 @@ impl<'a> App<'a> {
     fn echo(&mut self, text: &str) {
         let prompt = format!("{} › ", self.repl.session.label);
         let prompt = self.repl.paint.apply(TEAL, &prompt);
-        self.transcript
-            .push(ansi::line(&format!("{prompt}{}", render::clean(text))));
+        self.transcript.push(ansi::line(&format!(
+            "{prompt}{}",
+            render::clean(&render::image_labels(text))
+        )));
         self.scroll = 0;
     }
 
@@ -1426,6 +1552,109 @@ mod tests {
         assert_eq!(
             draft.request.turn.questions[0].answer_space,
             AnswerSpace::Noul
+        );
+    }
+
+    #[test]
+    fn the_latest_question_and_new_evidence_stay_in_context_for_a_fresh_yes_no() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let latest = previous(Kind::Noul);
+        app.latest_question = Some(latest.clone());
+        app.form.question = "Are you sure about that?".into();
+        app.form.input = "Here is new information.".into();
+        assert!(
+            app.prior_for_kind().is_none(),
+            "Yes/No still uses a fresh prompt"
+        );
+        let draft = draft_from(app.send_form(false).unwrap().unwrap());
+        assert_eq!(draft.request.turn.questions[0].prompt, app.form.question);
+        assert!(draft.request.required_records.contains(&latest.turn));
+        let evidence = draft.request.updates[0].new_record().unwrap();
+        assert!(draft.request.required_records.contains(&evidence.id));
+        app.finish(failed(), &[], false, true).unwrap();
+        assert_eq!(app.latest_question.as_ref().unwrap().turn, latest.turn);
+        app.repl.session.id = Id::generate();
+        app.refresh_previous_question();
+        assert!(
+            app.latest_question.is_none(),
+            "independent sessions start without that context"
+        );
+    }
+
+    #[test]
+    fn image_labels_edit_as_attachments_without_exposing_reference_characters() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let name = "photo \"中文\".png";
+        let reference = format!("[image:{}]", Id::generate());
+        let text = format!("{name} {reference}");
+        app.insert_files(vec![attachments::Loaded {
+            text: text.clone(),
+            image: Some(nouli_core::media::Image {
+                reference: reference.clone(),
+                name: name.into(),
+                format: "png".into(),
+                data_base64: String::new(),
+            }),
+        }]);
+        assert_eq!(app.form.input, text);
+        for character in ['h', 'w'] {
+            app.form.input = text.clone();
+            app.form.cursor = text.len();
+            press(
+                &mut app,
+                KeyCode::Char(character),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            );
+            assert_eq!(
+                app.form.input,
+                format!("{text}{character}"),
+                "AltGr characters must preserve the attachment"
+            );
+        }
+        app.form.input = text.clone();
+        app.form.cursor = text.len();
+        press(&mut app, KeyCode::Left, KeyModifiers::NONE);
+        assert_eq!(app.form.cursor, 0);
+        press(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.form.cursor, text.len());
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert!(app.form.input.is_empty());
+        app.form.input = text.clone();
+        app.form.cursor = 0;
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert!(
+            app.form.input.is_empty(),
+            "Ctrl-D also removes the full attachment"
+        );
+        for (key, modifiers) in [
+            (KeyCode::Char('w'), KeyModifiers::CONTROL),
+            (KeyCode::Backspace, KeyModifiers::CONTROL),
+            (KeyCode::Backspace, KeyModifiers::ALT),
+        ] {
+            app.form.input = format!("prefix {text} ");
+            app.form.cursor = app.form.input.len();
+            press(&mut app, key, modifiers);
+            assert_eq!(
+                app.form.input, "prefix ",
+                "word deletion must include the attachment, not just its hidden reference"
+            );
+        }
+        app.form.input.clear();
+        app.repl
+            .out
+            .extend_from_slice(format!("photo \"中文\".png {reference}\n").as_bytes());
+        app.drain();
+        assert!(
+            !transcript(&app).contains("[image:"),
+            "all human transcript output hides image metadata"
+        );
+        app.form.question = "A text-only question?".into();
+        let draft = draft_from(app.send_form(false).unwrap().unwrap());
+        assert!(
+            draft.request.updates.is_empty(),
+            "deleted attachments are not sent"
         );
     }
 

@@ -487,7 +487,7 @@ fn delete_word(text: &mut String, cursor: &mut usize) {
 }
 
 /// The start of the word before `cursor`, past any spaces in between.
-fn word_start(text: &str, cursor: usize) -> usize {
+pub(super) fn word_start(text: &str, cursor: usize) -> usize {
     let before = text[..cursor].trim_end();
     before
         .char_indices()

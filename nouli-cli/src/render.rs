@@ -1,7 +1,9 @@
 //! Application output policy over explicit sinks, with no logging subscriber.
+mod media;
 mod text;
 pub(crate) mod turn;
 use clap::{Args, ValueEnum};
+pub(crate) use media::{image_label_projection, image_labels, image_tags};
 use nouli_core::{
     codec,
     config::OutputFormat,

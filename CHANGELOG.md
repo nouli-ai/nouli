@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Show the latest saved question included in the next TUI request, including Yes/No follow-ups, and retain its answer and used images alongside new evidence during context reduction.
+- Show image filenames in the form, transcript, graph, and session previews. Keep internal image references hidden while preserving native image data; attachment movement and deletion operate on the complete image label.
 - Use Shift-Tab as the only answer-type shortcut, cycling left to right from any field, with a short hint beside the selector. Tab navigates fields and options/levels.
 - In Options/Levels, Enter adds the next row; a second consecutive Enter sends. Typing, pasting, or navigation continues editing without sending.
 - Simplify the terminal view with a `nouli` header, plain question text, hidden generated question IDs, one-line reuse notices, shorter key hints, and one model name. Enter sends from Context/Question when ready; in Options/Levels, Enter adds a row and a second Enter sends. Tab moves between fields and list items.
