@@ -101,7 +101,7 @@ The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/
 
 ## What does a session look like?
 
-`nouli open catalog` opens a prompt on a session. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
+`nouli open catalog` opens a session full screen. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
 
 ```text
 $ nouli open catalog
@@ -149,6 +149,8 @@ pick › /quit
 - **What-ifs save nothing.** `/whatif` asks its own question with the queued facts and leaves the session as it was.
 
 A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/replace N TEXT` corrects a fact and keeps the old text in history, `/branch NAME` starts a new session from this one, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
+
+The lines above are typed into the view's input row and appear in its transcript. Under it, a form holds the facts, the question, and its options, and the session's decisions are drawn beside it. Shift-Tab switches between yes/no, choice, and score, typing `/` lists the commands, and `/sessions` resumes an earlier session. The [command-line guide](docs/cli.md#full-screen-view) lists the keys.
 
 ## Can a script or an agent drive it?
 

@@ -50,7 +50,7 @@ nouli whatif Trip --input - --input-format json < request.json
 
 ## Interactive sessions
 
-`nouli open SESSION` opens a session in a prompt, creating it if it does not exist and you agree. A bare `nouli` in a terminal first lists your sessions, with a number for each; type a number, or a new name. The loop is a thin layer over the same operations as the verbs, and shows only what the ledger holds. It uses `--provider`, `--model`, and `--context-budget` like the verbs. Without a terminal, `nouli open SESSION` reads its lines from standard input and echoes them, so a script reads as a transcript (it creates a missing session without asking), and a bare `nouli` prints help.
+`nouli open SESSION` opens a session, full screen in a terminal, creating it if it does not exist. A bare `nouli` in a terminal starts a new session, known by its short ID; in a terminal that takes no escape codes it prints help. The loop is a thin layer over the same operations as the verbs, and shows only what the ledger holds. It uses `--provider`, `--model`, and `--context-budget` like the verbs. Without a terminal, `nouli open SESSION` reads its lines from standard input and echoes them, so a script reads as a transcript (it creates a missing session without asking), and a bare `nouli` prints help.
 
 ```text
 $ nouli open trip
@@ -79,7 +79,35 @@ trip › ?rebook: How should I get to the meeting now? [Take the train, Take a t
 | `/context` | Which records the model saw on the last turn. |
 | `/help`, `/quit`, `/exit` | The command list, and leaving. |
 
-A turn that fails prints its error and keeps the queue. Ctrl-C clears a typed line, then the queue, and on an empty prompt with nothing queued it quits; during a turn it cancels the turn through the same cancellation the verbs use. Ctrl-D quits, warning first when the queue is not empty. History is kept in `repl_history` inside the store, readable only by you.
+A turn that fails prints its error and keeps the queue.
+
+### Full-screen view
+
+In a terminal, the loop opens full screen. A terminal that takes no escape codes (`TERM` set to `dumb`, as in an Emacs shell buffer) reads lines from standard input, as a script does. The transcript fills the top, and a form under it builds the next question in three sections:
+
+- **State** lists the queued facts (`+`) and replacements (`~`) above an input row, which takes any line the prompt takes: a fact, a `?` question, or a slash command. A question that a failed `?` line left shows as `?`, and Enter on the empty input row sends it again; a question sent from the form replaces it.
+- **Question** holds `id: prompt`, and its title shows the answer type: noul (yes/no), choice, or score.
+- **Options**, or **Levels** for a score with the lowest first, holds one item per row. Noul has neither.
+
+The form sends the line a `?` line would, so `transport: How should I get there?` with the options `train` and `taxi` sends `?transport: How should I get there? [train, taxi]`. A turn that is saved empties the form. One that fails or is cancelled keeps it, so Enter sends it again.
+
+The session's decisions, the cards `nouli view` draws, sit to the right when the terminal is at least 116 columns wide, and follow the latest one. In a narrower terminal, Ctrl-G shows them in place of the rest.
+
+| Key | What it does |
+| --- | --- |
+| Shift-Tab | Cycles the answer type: noul, choice, score. |
+| Tab | Moves to the next section: State, Question, then Options or Levels. |
+| Up, Down | Move to the row above or below, across sections. |
+| Enter | In State, queues the fact or runs the line. In Question, sends, or moves to Options when a choice or score has fewer than two. In Options, adds the next one, and on an empty one sends. |
+| `/` | Lists the commands that match what follows. Up and Down choose, Tab completes, Enter runs the command or completes one that takes an argument, and Esc hides the list. |
+| `/sessions` | Lists the other sessions with turns, newest first, each with its first fact or question. Enter resumes the chosen one. |
+| `/whatif` | Asks the form's question with the queue and saves nothing. |
+| PgUp, PgDn | Scroll the transcript. |
+| Ctrl-G | Gives the decisions the keys. Arrows, PgUp, PgDn, Home, and End scroll them, and Esc gives the keys back. |
+| Ctrl-C | Cancels a running turn. Otherwise it clears the row, then the queue and the form, and then quits. |
+| Ctrl-D | Deletes forward in a row with text. Otherwise it quits, warning first when anything is queued or typed. |
+
+Text pasted into a row stays on that row, with line breaks turned into spaces, so a paste never sends a turn. The view uses the terminal's alternate screen, so the transcript is gone once it closes; the session keeps every turn.
 
 ## Output
 
