@@ -5,6 +5,9 @@ date: 2026-10-30
 
 # Simplify the terminal view and restore native text selection
 
+Single-Enter submission from Options/Levels and type-selection shortcuts are
+superseded by [ADR 0010](0010-consistent-tab-navigation-and-list-entry.md).
+
 ## Context
 
 Generated question IDs and added question-mark prefixes cluttered the transcript.

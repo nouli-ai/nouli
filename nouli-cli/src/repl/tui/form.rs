@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::decision::{AnswerSpace, ChoiceOption, ContractError, Criterion, Question};
 use unicode_segmentation::UnicodeSegmentation;
 
-/// A question's answer type, chosen with Tab, Shift-Tab, or F2.
+/// A question's answer type, chosen with Shift-Tab.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     Noul,
@@ -36,14 +36,6 @@ impl Kind {
             Kind::Noul => Kind::Choice,
             Kind::Choice => Kind::Score,
             Kind::Score => Kind::Noul,
-        }
-    }
-
-    fn previous(self) -> Self {
-        match self {
-            Kind::Noul => Kind::Score,
-            Kind::Choice => Kind::Noul,
-            Kind::Score => Kind::Choice,
         }
     }
 }
@@ -281,7 +273,9 @@ impl Form {
     /// leaves an empty trailing item without submitting.
     pub(super) fn tab(&mut self, facts: &mut Vec<String>) {
         match self.row {
-            Row::Question => self.next_kind(facts),
+            Row::Question if self.kind != Kind::Noul && !self.options.is_empty() => {
+                self.go(Row::Option(0), facts)
+            }
             Row::Option(index) if index + 1 < self.options.len() => {
                 self.go(Row::Option(index + 1), facts)
             }
@@ -290,17 +284,6 @@ impl Form {
             }
             Row::Option(_) => self.add_option(facts),
             _ => self.next_section(facts),
-        }
-    }
-
-    pub(super) fn previous_kind(&mut self, facts: &mut Vec<String>) {
-        self.set_kind(self.kind.previous(), facts);
-    }
-
-    pub(super) fn set_kind(&mut self, kind: Kind, facts: &mut Vec<String>) {
-        self.kind = kind;
-        if kind == Kind::Noul && matches!(self.row, Row::Option(_)) {
-            self.go(Row::Question, facts);
         }
     }
 
@@ -576,15 +559,15 @@ mod tests {
     fn tab_visits_the_sections_and_options_only_for_choices_and_scores() {
         let mut facts = vec![];
         let mut form = Form::default();
-        form.next_section(&mut facts);
+        form.tab(&mut facts);
         assert_eq!(form.row, Row::Question);
         // A yes/no question has no options, so Tab goes back to State.
-        form.next_section(&mut facts);
+        form.tab(&mut facts);
         assert_eq!(form.row, Row::Input);
         form.next_kind(&mut facts);
         assert_eq!(form.kind, Kind::Choice);
-        form.next_section(&mut facts);
-        form.next_section(&mut facts);
+        form.tab(&mut facts);
+        form.tab(&mut facts);
         assert_eq!((form.row, form.options.len()), (Row::Option(0), 1));
         typed(&mut form, &mut facts, "Rail");
         form.next_kind(&mut facts);
@@ -594,7 +577,7 @@ mod tests {
         assert_eq!((form.kind, form.row), (Kind::Noul, Row::Question));
         assert_eq!(form.options, ["Rail"]);
         form.next_kind(&mut facts);
-        form.next_section(&mut facts);
+        form.tab(&mut facts);
         assert_eq!(
             (form.row, form.cursor, form.options.len()),
             (Row::Option(0), 4, 1)
@@ -602,7 +585,7 @@ mod tests {
         // An empty option left behind is dropped.
         assert!(!form.enter_option(0));
         assert_eq!(form.row, Row::Option(1));
-        form.next_section(&mut facts);
+        form.tab(&mut facts);
         assert_eq!((form.row, form.options.len()), (Row::Input, 1));
     }
 

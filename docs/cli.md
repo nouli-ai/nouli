@@ -86,9 +86,9 @@ In a terminal, the form asks for ordinary text:
 
 - **Context** holds the facts for the next question. Enter sends when a question is ready, including a reused question. Before a question is ready, Enter queues the context.
 - **Question** holds the question exactly as you write it. There is no ID, colon, bracket, quoting, or option-label syntax to remember.
-- Choose **Yes / No**, **Choose one**, or **Score** with Tab or Shift-Tab in Question. Choices show Options; scores show Levels, lowest first. Type one per row or paste a list to fill several at once. Each choice needs at least two options; each score needs at least two levels.
+- Choose **Yes / No**, **Choose one**, or **Score** with Shift-Tab from any field. Choices show Options; scores show Levels, lowest first. Type one per row or paste a list to fill several at once. Each choice needs at least two options; each score needs at least two levels.
 
-Press **Enter** to send from Question, Options/Levels, or Context when a question is ready. **Ctrl-S / F5** also sends from any field. Use Tab to add the next option or level. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
+Press **Enter** to send from Question or Context when a question is ready. In Options/Levels, Enter adds the next row; press Enter again on the empty row to send. Typing or pasting another item continues the list. Navigating away cancels the pending second Enter. **Ctrl-S / F5** still sends directly from any field. Tab moves between fields and list items without changing the answer type. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
 
 After a choice or score, leave Options or Levels empty to reuse the latest matching question's exact answer list and criteria. The Options/Levels heading says **using previous N**. Entering any new list replaces the old one; a partial list must still meet the minimum of two items. Leave Question empty too to reuse the preceding prompt, add new context, and press Enter to get an updated judgment. Reusing a list keeps the question ID so results can show how the answer changed; each Send saves a new turn and preserves earlier answers. Yes/No has no fallback. Reuse is scoped to the current session's latest single question, and an empty new session or branch starts without a prior list. The question grammar for CLI verbs and piped input is unchanged.
 
@@ -96,17 +96,19 @@ The Citrus palette gives Yes/No a lime accent, Choose one cyan, and Score rose. 
 
 A persistent status line shows the provider and model selected for the next request, plus Ready, Draft, Asking, or Cancelling. It is visible before the first answer and refreshes when you switch sessions. While a request runs, it shows the model resolved for that request. After a response, it shows the actual served model version in place of its alias. The bottom key hints follow the focused field; errors remain visible while your input stays available for correction or retry.
 
-The top line shows `nouli`, its version, and the session. Mouse capture is disabled so you can drag to select and copy terminal text normally. Use the keyboard to move between fields. Tab in Context moves to Question. In Question, Tab cycles answer types forward and Shift-Tab cycles them backward. F2 also cycles forward. In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
+The top line shows `nouli`, its version, and the session. Mouse capture is disabled so you can drag to select and copy terminal text normally. Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The selector shows a short `Shift-Tab →` hint. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No). In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use Tab or arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
 
 | Key or action | What it does |
 | --- | --- |
 | Mouse drag | Selects text using the terminal. |
-| Tab in Question / Shift-Tab | Cycles answer types forward / backward. F2 also cycles forward. |
+| Shift-Tab | Cycles answer types left to right from any field. |
+| Tab in Question | Moves to Options/Levels, or Context for Yes/No. |
 | Tab in Context | Moves to Question. |
 | Tab in Options/Levels | Moves to the next item, adds one after the last filled item, or leaves an empty trailing item without sending. |
 | Up, Down | Moves between rows. |
 | Ctrl-S / F5 | Sends the question and queued context. |
-| Enter | Sends when a question is ready; queues initial context or runs a slash command from Context. |
+| Enter | Sends from Question/Context when ready; queues initial context or runs a slash command. |
+| Enter in Options/Levels | Adds a row; a second consecutive Enter sends. Typing, pasting, or navigation cancels the second-Enter state. |
 | Drop files | Inserts their contents into the focused field without sending. |
 | `/` in Context | Lists optional session commands; pasted/imported files are literal evidence. |
 | `/sessions` | Lists sessions to resume. |
