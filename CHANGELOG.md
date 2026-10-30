@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
 ### Changed
 
 - Ask each question once. A turn asks only the questions given with it, `-q` or a `?` line, in one call, and no later turn, branch, or blend asks them again, so a saved answer is never decided again. Sessions saved by 0.2.0 keep reading, and the questions they saved are no longer asked.
