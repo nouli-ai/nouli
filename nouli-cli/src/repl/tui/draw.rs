@@ -1,0 +1,784 @@
+//! Drawing the view: a header, the transcript over the form, the decisions
+//! pane beside them when both fit, and a status line.
+use super::{App, Graph, Running, form::Kind, form::Row, form::Section};
+use crate::render;
+use ratatui::{
+    Frame,
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, Padding, Paragraph},
+};
+use std::ops::Range;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
+/// Turn results are laid out in 74 columns; the transcript keeps room for them.
+const TRANSCRIPT_COLUMNS: u16 = 76;
+/// A decision card is 36 columns, so the pane holds one with its border and
+/// the column that keeps the two apart.
+const GRAPH_MIN: u16 = 40;
+/// Two cards side by side, as the blend of two sessions draws them.
+const GRAPH_MAX: u16 = 80;
+/// Rows a list over the transcript shows at once.
+const LIST_ROWS: usize = 8;
+/// Rows the transcript keeps however tall the form grows.
+const TRANSCRIPT_ROWS: u16 = 3;
+const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+/// The status line's key hints, most useful first.
+const HINTS: [&str; 6] = [
+    "Tab section",
+    "Shift-Tab noul/choice/score",
+    "Enter queue or send",
+    "Ctrl-G decisions",
+    "Ctrl-C quit",
+    "PgUp/PgDn scroll",
+];
+
+/// The view's styles. Without color, emphasis is bold alone.
+struct Theme {
+    accent: Style,
+    dim: Style,
+    error: Style,
+}
+
+impl Theme {
+    fn new(color: bool) -> Self {
+        let dim = Style::new().add_modifier(Modifier::DIM);
+        let bold = Style::new().add_modifier(Modifier::BOLD);
+        if color {
+            Self {
+                accent: bold.fg(Color::Indexed(37)),
+                dim,
+                error: Style::new().fg(Color::Red),
+            }
+        } else {
+            Self {
+                accent: bold,
+                dim,
+                error: bold,
+            }
+        }
+    }
+}
+
+/// The decisions pane's width beside the rest, or `None` when the
+/// transcript would be too narrow for both.
+fn graph_width(total: u16) -> Option<u16> {
+    let room = total.checked_sub(TRANSCRIPT_COLUMNS)?;
+    (room >= GRAPH_MIN).then(|| room.min((total / 5 * 2).clamp(GRAPH_MIN, GRAPH_MAX)))
+}
+
+pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>) {
+    let theme = Theme::new(app.repl.paint.0);
+    let [header, body, footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
+    // Without room for both, the pane shows only while it has the keys.
+    let (left, graph) = match graph_width(body.width) {
+        Some(width) => {
+            let [left, right] =
+                Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(body);
+            (Some(left), Some(right))
+        }
+        None if app.graph_focused => (None, Some(body)),
+        None => (Some(body), None),
+    };
+    draw_header(frame, header, app, &theme);
+    if let Some(left) = left {
+        draw_left(frame, left, app, &theme);
+    }
+    if let Some(graph) = graph {
+        draw_graph(frame, graph, app, &theme);
+    }
+    draw_footer(frame, footer, app, running, &theme);
+}
+
+fn draw_header(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    let model = app.model.as_deref().unwrap_or_default();
+    let width = u16::try_from(model.width() + 1).unwrap_or(u16::MAX);
+    let [left, right] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(area);
+    let label = render::clean(&app.repl.session.label);
+    let title = Line::from(vec![
+        Span::styled(format!(" {label}"), theme.accent),
+        Span::styled(" · /help for keys and commands", theme.dim),
+    ]);
+    frame.render_widget(Paragraph::new(title), left);
+    frame.render_widget(Paragraph::new(Span::styled(model, theme.dim)), right);
+}
+
+fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
+    let (lines, cursor) = composer(app, usize::from(area.width), theme);
+    let tall = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+    let height = tall
+        .min(area.height.saturating_sub(TRANSCRIPT_ROWS))
+        .max(1)
+        .min(area.height);
+    let [top, bottom] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(height)]).areas(area);
+    app.page = usize::from(top.height).max(1);
+    let rows = transcript(
+        &app.transcript,
+        usize::from(top.width),
+        usize::from(top.height),
+        &mut app.scroll,
+    );
+    frame.render_widget(Paragraph::new(rows), top);
+    let list = list(app, usize::from(top.height), theme);
+    if !list.is_empty() {
+        let height = u16::try_from(list.len())
+            .unwrap_or(u16::MAX)
+            .min(top.height);
+        let area = Rect {
+            y: top.y + top.height - height,
+            height,
+            ..top
+        };
+        frame.render_widget(Clear, area);
+        frame.render_widget(Paragraph::new(list), area);
+    }
+    let shown = usize::from(bottom.height);
+    if shown == 0 {
+        return;
+    }
+    // The form scrolls when it is taller than its space, keeping the cursor in view.
+    let mut first = app.composer_top.min(lines.len().saturating_sub(shown));
+    if let Some((_, row)) = cursor {
+        if row < first {
+            first = row;
+        } else if row >= first + shown {
+            first = row + 1 - shown;
+        }
+    }
+    app.composer_top = first;
+    let window: Vec<_> = lines.into_iter().skip(first).take(shown).collect();
+    frame.render_widget(Paragraph::new(window), bottom);
+    if let Some((column, row)) = cursor {
+        let x = u16::try_from(column).map_or(u16::MAX, |column| bottom.x.saturating_add(column));
+        let y = u16::try_from(row - first).map_or(u16::MAX, |row| bottom.y.saturating_add(row));
+        frame.set_cursor_position((x.min(bottom.right().saturating_sub(1)), y));
+    }
+}
+
+/// The form's lines, gathered with the cursor's column and row in them.
+struct Rows {
+    lines: Vec<Line<'static>>,
+    cursor: Option<(usize, usize)>,
+    width: usize,
+}
+
+impl Rows {
+    /// A section's heading: its title in a rule across the width.
+    fn rule(&mut self, title: Vec<Span<'static>>, theme: &Theme) {
+        let used = 4 + title.iter().map(Span::width).sum::<usize>();
+        let mut spans = vec![Span::styled("── ", theme.dim)];
+        spans.extend(title);
+        let rest = "─".repeat(self.width.saturating_sub(used));
+        spans.push(Span::styled(format!(" {rest}"), theme.dim));
+        self.lines.push(Line::from(spans));
+    }
+
+    /// A row: its gutter, then its text wrapped under itself, or the
+    /// placeholder when there is none. `cursor` is a byte offset into `text`.
+    fn push(
+        &mut self,
+        gutter: Span<'static>,
+        text: &str,
+        placeholder: Span<'static>,
+        style: Style,
+        cursor: Option<usize>,
+    ) {
+        let indent = gutter.width();
+        let room = self.width.saturating_sub(indent).max(1);
+        let first = self.lines.len();
+        if text.is_empty() {
+            self.lines.push(Line::from(vec![gutter, placeholder]));
+            if cursor.is_some() {
+                self.cursor = Some((indent, first));
+            }
+            return;
+        }
+        let rows = wrap(text, room);
+        for (index, range) in rows.iter().enumerate() {
+            let lead = if index == 0 {
+                gutter.clone()
+            } else {
+                Span::raw(" ".repeat(indent))
+            };
+            let part = Span::styled(text[range.clone()].to_owned(), style);
+            self.lines.push(Line::from(vec![lead, part]));
+        }
+        let Some(cursor) = cursor else { return };
+        let row = rows
+            .iter()
+            .rposition(|range| range.start <= cursor)
+            .unwrap_or(0);
+        let column = text[rows[row].start..cursor].width();
+        self.cursor = Some(if column < room {
+            (indent + column, first + row)
+        } else {
+            // At the end of a full last row, the cursor starts the next one.
+            self.lines.push(Line::from(" ".repeat(indent)));
+            (indent, first + row + 1)
+        });
+    }
+}
+
+/// The open list, drawn over the bottom of the transcript: the sessions to
+/// resume, or the commands that match the input row. The chosen row stays in
+/// view.
+fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
+    let rows: Vec<String> = match &app.sessions {
+        Some(entries) => entries
+            .iter()
+            .map(|entry| {
+                let turns = if entry.turns == 1 { "turn" } else { "turns" };
+                format!(
+                    "{}: {}  · {} {turns}",
+                    render::clean(&entry.label),
+                    render::clean(&entry.first),
+                    entry.turns
+                )
+            })
+            .collect(),
+        None => app
+            .commands_shown()
+            .into_iter()
+            .map(|(usage, meaning)| format!("{usage:<22}{meaning}"))
+            .collect(),
+    };
+    let Some(last) = rows.len().checked_sub(1) else {
+        return vec![];
+    };
+    let chosen = app.choice.min(last);
+    let window = LIST_ROWS.min(height).max(1);
+    let first = chosen.saturating_sub(window - 1);
+    rows.into_iter()
+        .enumerate()
+        .skip(first)
+        .take(window)
+        .map(|(index, row)| {
+            if index == chosen {
+                Line::from(Span::styled(format!(" › {row}"), theme.accent))
+            } else {
+                Line::from(Span::styled(format!("   {row}"), theme.dim))
+            }
+        })
+        .collect()
+}
+
+/// The form as lines, with the cursor's column and row when it has the keys.
+fn composer(
+    app: &App,
+    width: usize,
+    theme: &Theme,
+) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
+    let form = &app.form;
+    let queue = &app.repl.queue;
+    let focused = (!app.graph_focused).then_some(form.row);
+    let here = |row: Row| (focused == Some(row)).then_some(form.cursor);
+    let section = focused.map(Row::section);
+    let title = |part: Section| {
+        if section == Some(part) {
+            theme.accent
+        } else {
+            Style::new()
+        }
+    };
+    let none = || Span::raw("");
+    let mut rows = Rows {
+        lines: Vec::new(),
+        cursor: None,
+        width,
+    };
+
+    let mut heading = vec![Span::styled("State", title(Section::State))];
+    let queued = queue.len();
+    if queued > 0 {
+        heading.push(Span::styled(format!(" · {queued} queued"), theme.dim));
+    }
+    rows.rule(heading, theme);
+    for (index, fact) in queue.facts.iter().enumerate() {
+        let gutter = Span::styled("  + ", theme.dim);
+        rows.push(gutter, fact, none(), Style::new(), here(Row::Fact(index)));
+    }
+    for (number, text) in &queue.replaces {
+        let replacement = format!("{number}: {}", render::clean(text));
+        rows.push(
+            Span::styled("  ~ ", theme.dim),
+            &replacement,
+            none(),
+            theme.dim,
+            None,
+        );
+    }
+    // A failed turn left it, and an empty line sends it again.
+    if let Some(question) = &queue.question {
+        let question = render::clean(question);
+        rows.push(
+            Span::styled("  ? ", theme.dim),
+            &question,
+            none(),
+            theme.dim,
+            None,
+        );
+    }
+    let prompt = if section == Some(Section::State) {
+        theme.accent
+    } else {
+        theme.dim
+    };
+    let placeholder = if queue.question.is_some() {
+        "Enter asks it again, or a fact, ?id: question, or /command"
+    } else {
+        "a fact, ?id: question to ask now, or /command"
+    };
+    let placeholder = Span::styled(placeholder, theme.dim);
+    rows.push(
+        Span::styled("  › ", prompt),
+        &form.input,
+        placeholder,
+        Style::new(),
+        here(Row::Input),
+    );
+
+    let mut heading = vec![
+        Span::styled("Question", title(Section::Question)),
+        Span::styled(" ·", theme.dim),
+    ];
+    for kind in Kind::ALL {
+        heading.push(if kind == form.kind {
+            Span::styled(format!(" [{}]", kind.name()), theme.accent)
+        } else {
+            Span::styled(format!(" {}", kind.name()), theme.dim)
+        });
+    }
+    rows.rule(heading, theme);
+    let placeholder = Span::styled("id: question", theme.dim);
+    rows.push(
+        Span::raw("    "),
+        &form.question,
+        placeholder,
+        Style::new(),
+        here(Row::Question),
+    );
+
+    if form.kind != Kind::Noul {
+        let (name, item) = match form.kind {
+            Kind::Score => ("Levels", "a level"),
+            _ => ("Options", "an option"),
+        };
+        let mut heading = vec![Span::styled(name, title(Section::Options))];
+        if form.kind == Kind::Score {
+            heading.push(Span::styled(" · lowest first", theme.dim));
+        }
+        rows.rule(heading, theme);
+        if form.options.is_empty() {
+            let placeholder = Span::styled("none yet · Tab here to add them", theme.dim);
+            rows.push(Span::raw("    "), "", placeholder, Style::new(), None);
+        }
+        for (index, option) in form.options.iter().enumerate() {
+            let gutter = Span::styled(format!("{:>3} ", index + 1), theme.dim);
+            let placeholder = Span::styled(item, theme.dim);
+            rows.push(
+                gutter,
+                option,
+                placeholder,
+                Style::new(),
+                here(Row::Option(index)),
+            );
+        }
+    }
+    (rows.lines, rows.cursor)
+}
+
+/// The transcript's last rows, `scroll` rows up from its end, wrapped to
+/// `width`. Only the lines it shows are wrapped, however long it grows;
+/// `scroll` stops at the transcript's start.
+fn transcript(
+    lines: &[Line<'static>],
+    width: usize,
+    height: usize,
+    scroll: &mut usize,
+) -> Vec<Line<'static>> {
+    let mut rows = Vec::new();
+    for line in lines.iter().rev() {
+        if rows.len() >= height + *scroll {
+            break;
+        }
+        rows.extend(wrap_line(line, width).into_iter().rev());
+    }
+    *scroll = (*scroll).min(rows.len().saturating_sub(height));
+    let mut shown: Vec<_> = rows.into_iter().skip(*scroll).take(height).collect();
+    shown.reverse();
+    shown
+}
+
+/// A styled line cut into rows of at most `width` columns.
+fn wrap_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if line.width() <= width {
+        return vec![line.clone()];
+    }
+    let text: String = line
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect();
+    let mut spans = Vec::with_capacity(line.spans.len());
+    let mut start = 0;
+    for span in &line.spans {
+        let end = start + span.content.len();
+        spans.push((start..end, span.style));
+        start = end;
+    }
+    wrap(&text, width)
+        .into_iter()
+        .map(|row| {
+            let parts: Vec<_> = spans
+                .iter()
+                .filter_map(|(range, style)| {
+                    let (from, to) = (range.start.max(row.start), range.end.min(row.end));
+                    (from < to).then(|| Span::styled(text[from..to].to_owned(), *style))
+                })
+                .collect();
+            Line::from(parts).style(line.style)
+        })
+        .collect()
+}
+
+/// Byte ranges of `text` for rows of at most `width` columns, breaking after
+/// a space where one fits and inside a word longer than a row. The ranges
+/// cover the text without gaps, so every cursor offset falls in one of them.
+fn wrap(text: &str, width: usize) -> Vec<Range<usize>> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let (mut start, mut used, mut space) = (0, 0, None);
+    for (at, grapheme) in text.grapheme_indices(true) {
+        let columns = grapheme.width();
+        if used + columns > width && at > start {
+            let end = space.filter(|&after| after > start).unwrap_or(at);
+            rows.push(start..end);
+            start = end;
+            used = text[start..at].width();
+            space = None;
+            if used + columns > width && at > start {
+                rows.push(start..at);
+                start = at;
+                used = 0;
+            }
+        }
+        used += columns;
+        if grapheme.chars().all(char::is_whitespace) {
+            space = Some(at + grapheme.len());
+        }
+    }
+    rows.push(start..text.len());
+    rows
+}
+
+fn draw_graph(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
+    let title = if app.graph_focused {
+        theme.accent
+    } else {
+        Style::new()
+    };
+    let block = Block::new()
+        .borders(Borders::LEFT)
+        .border_style(theme.dim)
+        .padding(Padding::left(1))
+        .title(Line::from(vec![
+            Span::styled(" decisions", title),
+            Span::styled(" · Ctrl-G", theme.dim),
+        ]));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let graph = &mut app.graph;
+    graph.page = usize::from(inner.height).max(1);
+    let note = if let Some(problem) = &graph.problem {
+        Some(format!("cannot read the decisions: {problem}"))
+    } else if graph.lines.is_empty() {
+        Some("no decisions yet · each answer adds one".to_owned())
+    } else {
+        None
+    };
+    if let Some(note) = note {
+        frame.render_widget(Paragraph::new(Span::styled(note, theme.dim)), inner);
+        return;
+    }
+    let (x, y) = place(graph, usize::from(inner.width), usize::from(inner.height));
+    let visible: Vec<_> = graph
+        .lines
+        .iter()
+        .skip(y)
+        .take(usize::from(inner.height))
+        .cloned()
+        .collect();
+    let x = u16::try_from(x).unwrap_or(u16::MAX);
+    frame.render_widget(Paragraph::new(visible).scroll((0, x)), inner);
+}
+
+/// Where the pane's view of the graph starts. Until it is scrolled, the pane
+/// shows the end of the graph and the whole latest card where it fits.
+fn place(graph: &mut Graph, width: usize, height: usize) -> (usize, usize) {
+    if graph.follow {
+        let (row, columns) = graph.latest.clone().unwrap_or((graph.lines.len(), 0..0));
+        graph.y = graph.lines.len().saturating_sub(height).min(row);
+        graph.x = columns.end.saturating_sub(width).min(columns.start);
+    }
+    let widest = graph.lines.iter().map(Line::width).max().unwrap_or(0);
+    graph.y = graph.y.min(graph.lines.len().saturating_sub(height));
+    graph.x = graph.x.min(widest.saturating_sub(width));
+    (graph.x, graph.y)
+}
+
+fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Running>, theme: &Theme) {
+    let line = match (running, &app.status) {
+        (Some(turn), _) if turn.cancel.is_cancelled() => {
+            Line::from(Span::styled(" cancelling the turn…", theme.dim))
+        }
+        (Some(turn), _) => {
+            let elapsed = turn.started.elapsed();
+            let frame = (elapsed.as_millis() / 100) as usize % SPINNER.len();
+            Line::from(vec![
+                Span::styled(format!(" {} ", SPINNER[frame]), theme.accent),
+                Span::styled(
+                    format!("asking the model · {}s · Ctrl-C cancels", elapsed.as_secs()),
+                    theme.dim,
+                ),
+            ])
+        }
+        (None, Some(status)) => {
+            let style = if status.error { theme.error } else { theme.dim };
+            Line::from(Span::styled(format!(" {}", status.text), style))
+        }
+        (None, None) if app.sessions.is_some() => Line::from(Span::styled(
+            " ↑↓ choose · Enter resumes the session · Esc closes",
+            theme.dim,
+        )),
+        (None, None) if !app.commands_shown().is_empty() => Line::from(Span::styled(
+            " ↑↓ choose · Tab completes · Enter runs · Esc hides",
+            theme.dim,
+        )),
+        (None, None) if app.graph_focused => Line::from(Span::styled(
+            " arrows, PgUp, and PgDn scroll the decisions · Esc goes back to the form",
+            theme.dim,
+        )),
+        (None, None) => Line::from(Span::styled(hints(area.width.into()), theme.dim)),
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+/// As many key hints as fit in `width` columns, leaving out whole hints.
+fn hints(width: usize) -> String {
+    let mut shown = String::new();
+    for hint in HINTS {
+        let next = if shown.is_empty() {
+            format!(" {hint}")
+        } else {
+            format!("{shown} · {hint}")
+        };
+        if next.width() > width {
+            break;
+        }
+        shown = next;
+    }
+    shown
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repl::tui::tests::app;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn shown(app: &mut App, width: u16, height: u16) -> Vec<String> {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| screen(frame, app, None)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..height)
+            .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn a_question_a_failed_turn_left_waits_in_state() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        app.repl.queue.facts.push("The train is late.".into());
+        app.repl.queue.question = Some("late: Will it be late?".into());
+        let screen = shown(&mut app, 140, 20).join("\n");
+        assert!(screen.contains("State · 2 queued"), "{screen}");
+        assert!(screen.contains("  + The train is late."), "{screen}");
+        assert!(screen.contains("  ? late: Will it be late?"), "{screen}");
+        assert!(screen.contains("  › Enter asks it again"), "{screen}");
+    }
+
+    #[test]
+    fn the_chosen_row_of_a_list_stays_in_view_when_the_transcript_is_short() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        for number in 0..8 {
+            app.repl.queue.facts.push(format!("fact {number}"));
+        }
+        app.form.input = "/".into();
+        app.form.cursor = 1;
+        app.choice = 5;
+        let screen = shown(&mut app, 80, 16).join("\n");
+        assert!(screen.contains(" › /clear"), "{screen}");
+    }
+
+    #[test]
+    fn the_status_line_leaves_out_the_key_hints_that_do_not_fit() {
+        let all = hints(200);
+        assert!(all.ends_with("Ctrl-C quit · PgUp/PgDn scroll"), "{all}");
+        let narrow = hints(all.width() - 1);
+        assert!(narrow.ends_with(" · Ctrl-C quit"), "{narrow}");
+        assert_eq!(hints(12), " Tab section");
+        assert_eq!(hints(11), "");
+    }
+
+    #[test]
+    fn the_decisions_pane_sits_beside_the_rest_only_when_both_fit() {
+        assert_eq!(graph_width(115), None);
+        assert_eq!(graph_width(116), Some(40));
+        assert_eq!(graph_width(140), Some(56));
+        assert_eq!(graph_width(200), Some(80));
+        assert_eq!(graph_width(0), None);
+    }
+
+    #[test]
+    fn the_form_shows_its_sections_and_which_answer_type_is_chosen() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        let screen = shown(&mut app, 140, 20).join("\n");
+        assert!(screen.contains("── State"), "{screen}");
+        assert!(
+            screen.contains("── Question · [noul] choice score"),
+            "{screen}"
+        );
+        assert!(!screen.contains("Options"), "{screen}");
+        assert!(screen.contains("│ decisions · Ctrl-G"), "{screen}");
+        app.form.kind = Kind::Score;
+        app.form.options = vec!["low".into(), "high".into()];
+        let screen = shown(&mut app, 140, 20).join("\n");
+        assert!(
+            screen.contains("── Question · noul choice [score]"),
+            "{screen}"
+        );
+        assert!(screen.contains("── Levels · lowest first"), "{screen}");
+        assert!(screen.contains("  2 high"), "{screen}");
+        // Too narrow for both: the pane waits for Ctrl-G.
+        let screen = shown(&mut app, 100, 20).join("\n");
+        assert!(!screen.contains("decisions · Ctrl-G"), "{screen}");
+        app.graph_focused = true;
+        let screen = shown(&mut app, 100, 20).join("\n");
+        assert!(screen.contains("decisions · Ctrl-G"), "{screen}");
+        assert!(!screen.contains("── State"), "{screen}");
+    }
+
+    #[test]
+    fn rows_wrap_after_spaces_and_cover_every_byte() {
+        let text = "the quick brown fox";
+        let rows = wrap(text, 10);
+        let parts: Vec<_> = rows.iter().map(|row| &text[row.clone()]).collect();
+        assert_eq!(parts, ["the quick ", "brown fox"]);
+        let parts: Vec<_> = wrap("abcdefghijkl", 5)
+            .into_iter()
+            .map(|row| &"abcdefghijkl"[row])
+            .collect();
+        assert_eq!(parts, ["abcde", "fghij", "kl"]);
+        // Wide characters count two columns each.
+        assert_eq!(wrap("東京東京", 5).len(), 2);
+        assert!(matches!(wrap("", 5).as_slice(), [row] if *row == (0..0)));
+        for width in 1..12 {
+            let rows = wrap("a bb ccc dddd eeeee", width);
+            assert_eq!(rows.first().unwrap().start, 0);
+            assert_eq!(rows.last().unwrap().end, 19);
+            assert!(rows.windows(2).all(|pair| pair[0].end == pair[1].start));
+        }
+    }
+
+    #[test]
+    fn the_cursor_follows_the_text_onto_wrapped_rows() {
+        let mut rows = Rows {
+            lines: Vec::new(),
+            cursor: None,
+            width: 14,
+        };
+        let theme = Theme::new(false);
+        rows.push(
+            Span::raw("  › "),
+            "one two three",
+            Span::raw(""),
+            theme.dim,
+            Some(8),
+        );
+        assert_eq!(rows.lines.len(), 2);
+        assert_eq!(
+            rows.cursor,
+            Some((4, 1)),
+            "after `two `, at the start of `three`"
+        );
+        // At the end of a full row, the cursor starts a row of its own.
+        let mut rows = Rows {
+            lines: Vec::new(),
+            cursor: None,
+            width: 8,
+        };
+        rows.push(Span::raw("  › "), "abcd", Span::raw(""), theme.dim, Some(4));
+        assert_eq!((rows.lines.len(), rows.cursor), (2, Some((4, 1))));
+    }
+
+    #[test]
+    fn the_transcript_shows_its_end_and_scrolls_back_to_its_start() {
+        let lines: Vec<Line<'static>> = (0..10).map(|n| Line::from(n.to_string())).collect();
+        let text = |rows: Vec<Line<'static>>| -> Vec<String> {
+            rows.iter().map(ToString::to_string).collect()
+        };
+        let mut scroll = 0;
+        assert_eq!(
+            text(transcript(&lines, 20, 3, &mut scroll)),
+            ["7", "8", "9"]
+        );
+        scroll = 2;
+        assert_eq!(
+            text(transcript(&lines, 20, 3, &mut scroll)),
+            ["5", "6", "7"]
+        );
+        scroll = 100;
+        assert_eq!(
+            text(transcript(&lines, 20, 3, &mut scroll)),
+            ["0", "1", "2"]
+        );
+        assert_eq!(scroll, 7);
+        let long = [Line::from("aaaa bbbb cccc")];
+        let mut scroll = 0;
+        assert_eq!(
+            text(transcript(&long, 5, 3, &mut scroll)),
+            ["aaaa ", "bbbb ", "cccc"]
+        );
+    }
+
+    #[test]
+    fn the_pane_keeps_the_latest_card_in_view_until_it_is_scrolled() {
+        let mut graph = Graph::default();
+        let mut text = String::new();
+        for row in 0..30 {
+            text.push_str(&format!("┌─ a{row} ─┐{}┌─ b ─┐\n", " ".repeat(30)));
+        }
+        text.push_str(&format!("{}┌─ c [latest] ─┐\n", " ".repeat(20)));
+        graph.show(&text, Some((30, 20..36)));
+        // The latest card is the last row, and it fits from column 0.
+        assert_eq!(place(&mut graph, 40, 10), (0, 21));
+        // In a narrower pane, the view moves right just enough to show it.
+        assert_eq!(place(&mut graph, 30, 10), (6, 21));
+        graph.follow = false;
+        graph.y = 0;
+        graph.x = 1000;
+        assert_eq!(place(&mut graph, 30, 10), (16, 0));
+    }
+}

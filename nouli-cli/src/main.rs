@@ -89,7 +89,7 @@ fn main() -> ExitCode {
                         );
                     }
                 }
-                if !outputs && io::stdin().is_terminal() && io::stdout().is_terminal() {
+                if !outputs && repl::can_draw() {
                     return repl::run(&args, repl::Target::Pick, None);
                 }
                 return match Args::command().write_long_help(&mut io::stdout().lock()) {

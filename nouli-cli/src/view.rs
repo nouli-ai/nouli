@@ -16,7 +16,7 @@ use nouli_core::{
     storage::inspection::SessionExport,
 };
 use question::Lines;
-use std::{collections::HashMap, io::Write};
+use std::{collections::HashMap, io::Write, ops::Range};
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct Args {
@@ -164,16 +164,7 @@ pub(crate) fn write(
             "No finalized turns. Use nouli sessions show for saved attempt details."
         )?;
     } else {
-        let mut cards = vec![];
-        for node in nodes(export)? {
-            let mut content = vec![];
-            describe(&mut content, node.turn)?;
-            cards.push(graph::Card {
-                parents: node.parents,
-                rows: card::frame(&node.title, content),
-            });
-        }
-        graph::write(&cards, sink, color)?;
+        cards(export, sink, color)?;
         writeln!(
             sink,
             "\nUse nouli sessions show or nouli context for complete details."
@@ -181,6 +172,38 @@ pub(crate) fn write(
     }
     sink.flush()?;
     Ok(())
+}
+
+/// A card's first row and its columns in the drawn graph.
+pub(crate) type Placement = (usize, Range<usize>);
+
+/// The decision cards and the wires between them, without the session
+/// header, for a pane beside other content. A session with no finalized
+/// turns writes nothing. Returns where the latest card is.
+pub(crate) fn cards(
+    export: &SessionExport,
+    sink: &mut impl Write,
+    color: bool,
+) -> Result<Option<Placement>, RenderError> {
+    let mut cards = vec![];
+    let mut latest = None;
+    for (index, node) in nodes(export)?.into_iter().enumerate() {
+        // A blend can leave several heads; the last is the newest.
+        if node.latest {
+            latest = Some(index);
+        }
+        let mut content = vec![];
+        describe(&mut content, node.turn)?;
+        cards.push(graph::Card {
+            parents: node.parents,
+            rows: card::frame(&node.title, content),
+        });
+    }
+    let placed = graph::write(&cards, sink, color)?;
+    Ok(latest.map(|index| {
+        let (row, left) = placed[index];
+        (row, left..left + card::WIDTH)
+    }))
 }
 
 #[cfg(test)]
@@ -297,6 +320,38 @@ mod tests {
         };
         *probability = 0.00000000001;
         assert!(text(&export).contains("P(yes)=0.00000000001"));
+    }
+
+    #[test]
+    fn cards_say_where_the_latest_card_is_even_when_its_title_wraps() {
+        let mut export = fixture();
+        let head = export.turns[3].session;
+        for session in &mut export.provenance {
+            if session.id == head {
+                session.name = Some("merged-picking-plan".to_owned().try_into().unwrap());
+            }
+        }
+        let mut sink = vec![];
+        let (row, columns) = cards(&export, &mut sink, false).unwrap().unwrap();
+        let text = String::from_utf8(sink).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let card = |row: usize| -> String {
+            lines[row]
+                .chars()
+                .skip(columns.start)
+                .take(columns.len())
+                .collect()
+        };
+        assert!(card(row).starts_with("┌─ merged-picking-plan"), "{text}");
+        assert!(card(row).ends_with('┐'), "{text}");
+        // The long name pushes the tag below the card's top row.
+        assert!(!card(row).contains("[latest]"), "{text}");
+        assert!(
+            (row + 1..row + 4).any(|row| card(row).contains("[latest]")),
+            "{text}"
+        );
+        export.session.frontier.clear();
+        assert_eq!(cards(&export, &mut vec![], false).unwrap(), None);
     }
 
     #[test]

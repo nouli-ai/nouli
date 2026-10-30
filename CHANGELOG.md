@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Open interactive sessions full screen. In a terminal, a bare `nouli` starts a new session, known by its short ID, and `nouli open SESSION` opens one, creating it without asking when it is missing. The transcript sits above a form that holds the queued facts, the question, and its options or levels: Shift-Tab picks yes/no, choice, or score, and Tab, Up, and Down move between the sections. The session's decisions are drawn beside the transcript when the terminal is at least 116 columns wide, and Ctrl-G shows them in narrower ones. Typing `/` lists the commands, `/sessions` resumes an earlier session, and Ctrl-C cancels a running turn.
+
+### Changed
+
+- Brighten the teal accent in terminal output.
+
+### Removed
+
+- Remove the line-by-line prompt. Nouli no longer writes `repl_history`, so you can delete that file from your store. Piped input, and terminals that take no escape codes (`TERM=dumb`), still read lines from standard input. A bare `nouli` no longer lists sessions before opening one; `/sessions` lists them in the view.
+
 ## [0.3.0] - 2026-10-29
 
 ### Changed

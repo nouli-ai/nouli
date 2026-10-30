@@ -119,7 +119,13 @@ impl Layout {
     }
 }
 
-pub(super) fn write(cards: &[Card], sink: &mut impl Write, color: bool) -> Result<(), RenderError> {
+/// Writes the cards in layers with the wires between them, and returns each
+/// card's first row and left column, in the order of `cards`.
+pub(super) fn write(
+    cards: &[Card],
+    sink: &mut impl Write,
+    color: bool,
+) -> Result<Vec<(usize, usize)>, RenderError> {
     let layout = Layout::new(cards)?;
     let mut outgoing = vec![false; layout.vertices.len()];
     for vertex in &layout.vertices {
@@ -127,12 +133,21 @@ pub(super) fn write(cards: &[Card], sink: &mut impl Write, color: bool) -> Resul
             outgoing[*parent] = true;
         }
     }
+    let mut placed = vec![(0, 0); cards.len()];
+    let mut top = 0;
     for (level, layer) in layout.layers.iter().enumerate() {
         let height = layer
             .iter()
             .filter_map(|id| layout.vertices[*id].card.map(|card| cards[card].rows.len()))
             .max()
             .unwrap_or(1);
+        for id in layer {
+            let vertex = &layout.vertices[*id];
+            if let Some(index) = vertex.card {
+                placed[index] = (top, vertex.column * card::STEP);
+            }
+        }
+        top += height;
         for row in 0..height {
             let mut line = String::new();
             let mut position = 0;
@@ -161,7 +176,7 @@ pub(super) fn write(cards: &[Card], sink: &mut impl Write, color: bool) -> Resul
                 position = offset + content.width();
                 if color && highlighted {
                     // Bold teal, the product accent; terminals without 256 colors fall back to cyan.
-                    line.push_str("\x1b[1;36;38;5;30m");
+                    line.push_str("\x1b[1;36;38;5;37m");
                 }
                 line.push_str(&content);
                 if color && highlighted {
@@ -180,10 +195,14 @@ pub(super) fn write(cards: &[Card], sink: &mut impl Write, color: bool) -> Resul
                         .map(|parent| (layout.center(*parent), layout.center(*id)))
                 })
                 .collect();
-            edges::write(&connections, sink)?;
+            // Wires take as many rows as their crossings need.
+            let mut wires = vec![];
+            edges::write(&connections, &mut wires)?;
+            top += wires.iter().filter(|byte| **byte == b'\n').count();
+            sink.write_all(&wires)?;
         }
     }
-    Ok(())
+    Ok(placed)
 }
 
 #[cfg(test)]
@@ -328,11 +347,11 @@ mod tests {
         let mut styled = vec![];
         write(&cards, &mut styled, true).unwrap();
         let styled = String::from_utf8(styled).unwrap();
-        assert_eq!(styled.matches("\u{1b}[1;36;38;5;30m").count(), 1);
+        assert_eq!(styled.matches("\u{1b}[1;36;38;5;37m").count(), 1);
         assert_eq!(styled.matches("\u{1b}[0m").count(), 1);
         assert_eq!(
             styled
-                .replace("\u{1b}[1;36;38;5;30m", "")
+                .replace("\u{1b}[1;36;38;5;37m", "")
                 .replace("\u{1b}[0m", ""),
             plain
         );

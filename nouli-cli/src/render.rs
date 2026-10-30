@@ -87,9 +87,12 @@ fn color_for(
     no_color: Option<&std::ffi::OsStr>,
     term: Option<&std::ffi::OsStr>,
 ) -> bool {
-    terminal
-        && no_color.is_none_or(|value| value.is_empty())
-        && term.is_none_or(|value| value != "dumb")
+    terminal && no_color.is_none_or(|value| value.is_empty()) && !plain_terminal(term)
+}
+/// Whether `TERM` names a terminal that takes no escape codes, such as an
+/// Emacs shell buffer.
+pub(crate) fn plain_terminal(term: Option<&std::ffi::OsStr>) -> bool {
+    term.is_some_and(|term| ["dumb", "cons25", "emacs"].iter().any(|name| term == *name))
 }
 pub(crate) fn exit_code(result: &ResultEnvelope) -> u8 {
     match &result.result {
@@ -245,6 +248,10 @@ mod tests {
         assert!(!on(false, None, Some("xterm")));
         assert!(!on(true, Some("1"), Some("xterm")));
         assert!(!on(true, None, Some("dumb")));
+        assert!(!on(true, None, Some("emacs")));
+        assert!(plain_terminal(Some(OsStr::new("cons25"))));
+        assert!(!plain_terminal(Some(OsStr::new("xterm-256color"))));
+        assert!(!plain_terminal(None));
     }
     fn turn() -> ResultEnvelope {
         let history: serde_json::Value =
