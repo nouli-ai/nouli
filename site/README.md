@@ -9,7 +9,7 @@ Requires Node.js 24 or later. From this directory:
 ```sh
 npm ci
 npm run dev      # local server with live reload
-npm test         # installer checks with local release fixtures
+npm test         # installer checks with local release fixtures, and the README hero
 npm run build    # writes dist/
 npm run preview  # serves dist/
 ```
@@ -38,6 +38,16 @@ NOULI=../target/debug/nouli node scripts/build-hero.mjs --store /tmp/nouli-hero/
 ```
 
 Recording makes 22 model calls on your provider account, one question each. Answers can differ between recordings, so check the new results before you commit them.
+
+## README hero
+
+`.github/readme/hero.svg`, the image at the top of the repository README, is drawn from the recall graph in the README's `nouli view --mermaid` block: every answer and probability comes from there, and its squares count each blend's earlier decisions in that graph. GitHub shows README images without fetching web fonts, so the script subsets Archivo and Martian Mono into the file. Download `Archivo[wdth,wght].ttf` and `MartianMono[wdth,wght].ttf` from [google/fonts](https://github.com/google/fonts/tree/main/ofl) into a directory, then run:
+
+```sh
+node scripts/readme-hero.mjs --fonts DIR > ../.github/readme/hero.svg
+```
+
+The layout and its shortened labels are drawn for this one graph, so the script stops if the README's graph or one of its answers changes. `npm test` checks that the committed image still matches the README.
 
 ## Replaying walkthroughs
 

@@ -1,37 +1,105 @@
-# Nouli
+<h1><img src=".github/readme/hero.svg" width="100%"
+  alt="Nouli. Every answer remembers. The README's recall example as a line map: three source sessions, recall-stock (can every jar be matched to a lot? P(yes) 0.07), recall-scope (match the product and both lot-code conditions, 1.00) and recall-customers (contact Summit first, 1.00; then, with 12 boxes sold, escalate them, 0.98). In layer 1, recall-stock-plan blends scope and stock (quarantine matching jars and hold unreadable codes, 1.00) and recall-outreach-updated blends scope and the customers update (escalate reported sales to the recall lead, 1.00). In layer 2, recall-response-updated blends those two blends: coordinate warehouse holds and escalation of sales to end customers, 1.00. It is built on 6 earlier decisions, 2 directly and 4 behind them."></h1>
 
-[![CI](https://github.com/standing-desks/nouli/actions/workflows/ci.yml/badge.svg)](https://github.com/standing-desks/nouli/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/standing-desks/nouli?include_prereleases&sort=semver)](https://github.com/standing-desks/nouli/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-orange.svg)](rust-toolchain.toml)
-
-**Nouli is a multi-turn decision harness: it runs decision models over many turns.**
-
-A decision model doesn't write text. You give it facts and a question with a fixed set of answers, and it returns a probability for each answer. That makes it useful for real decisions, but each call is stateless: the model forgets everything once it answers. Nouli gives it a memory. A session keeps every fact, question, and answer, so when something changes you add only what is new and ask your next question, and the model answers it with the whole history in view. Each question is asked once, so earlier answers stay as they were. Nouli ships as a CLI and a Rust library.
-
-## Install
-
-On **macOS (Apple silicon)**:
+**Nouli is a decision graph: it runs decision models over many turns and feeds earlier decisions into later ones.**
 
 ```sh
 brew install standing-desks/tap/nouli
 ```
 
-On **Linux**, or on macOS without Homebrew:
+On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh`. Then [define a provider](https://standing-desks.github.io/nouli/guide/#provider) and run `nouli auth login typesafe`.
 
-```sh
-curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
+[![CI](https://img.shields.io/github/actions/workflow/status/standing-desks/nouli/ci.yml?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/standing-desks/nouli?include_prereleases&sort=semver&style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0b6e63?style=flat-square&labelColor=1d2a28)](LICENSE)
+[![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-0b6e63?style=flat-square&labelColor=1d2a28)](rust-toolchain.toml)
+
+### Give this to your agent
+
+```text
+Install Nouli, a CLI that runs decision models over many turns:
+  curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
+Read https://standing-desks.github.io/nouli/llms.txt for the commands.
+Help me define a provider in ~/.nouli/config.toml, then run
+`nouli auth login typesafe` and let me type the key myself.
+Ask each decision as one -q question per command, add only new facts
+with `nouli add SESSION`, and read the answers from --json reports.
 ```
 
-The script installs into `~/.local/bin` after checking the download's checksum. Linux builds are for ARM64 and x86_64 and need glibc 2.38 or newer. See [installation and upgrades](docs/release.md) for choosing a version or directory and for switching from a Cargo installation.
+<sub>Works with any coding agent that can run a shell command. Every command in the prompt is documented in [docs/cli.md](docs/cli.md).</sub>
 
-Then define a provider in `~/.nouli/config.toml` ([how](https://standing-desks.github.io/nouli/guide/#provider)) and log in once. Nouli asks for the key without showing it and keeps it in a file only you can read:
+## What's a decision model?
+
+A decision model doesn't write text. You give it facts and a question with a fixed set of answers, and it returns a probability for each answer. That makes it useful for real decisions, but each call is stateless: the model forgets everything once it answers.
+
+## So what does Nouli add?
+
+Nouli gives it a memory: a ledger that keeps every fact, question, and answer. When something changes you add only what is new and ask your next question, and the model answers it with the whole history in view. Sessions branch and blend, so one decision can build on several earlier ones. Each question is asked once, so earlier answers stay as they were. Nouli ships as a CLI and a Rust library.
+
+## What does a decision graph look like?
+
+The map at the top of this README is this example.
+
+A food distributor handles a peanut butter recall. It keeps the recall scope, its warehouse stock, and its customers in separate sessions, then blends them into one coordinated response. When a customer reports that 12 affected boxes were already sold, it adds that one fact with a new question about it, and builds a revised response in new sessions, so the first response stays as it was decided. The new turn:
 
 ```sh
-nouli auth login typesafe
+nouli add recall-customers \
+  'Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
+notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to
+end customers. Whether those buyers have been notified is unknown. This
+replaces the earlier Summit nonresponse. Harbor still has all 30 boxes
+isolated.' \
+  -q 'customers: What is the next action for Summit? [Confirm acknowledgment only,
+    Escalate the 12 sold boxes and verify downstream notification,
+    Treat the customer response as complete]'
 ```
 
-## Open a session
+```text
+  turn 2 · 1 fact · 1 question
+  customers     Confirm acknowledgment only      ▎                    0.01
+              ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
+                Treat the customer response as … ▎                    0.01
+```
+
+### What each decision was built on
+
+A blend starts a session with the history of every session it names, so a blend of blends stands on everything behind both. The three blends behind the final response:
+
+| Decision | Layer | Built on directly | Behind those | Answer |
+| --- | --- | --- | --- | --- |
+| `recall-stock-plan` | 1 | `recall-scope`, `recall-stock` | — | Quarantine matching jars and hold unreadable codes for identification · **1.00** |
+| `recall-outreach-updated` | 1 | `recall-scope`, `recall-customers` turn 2 | `recall-customers` turn 1 | Escalate reported sales to the recall lead and verify downstream notification · **1.00** |
+| `recall-response-updated` | 2 | `recall-stock-plan`, `recall-outreach-updated` | `recall-scope`, `recall-stock`, `recall-customers` turns 1 and 2 | Coordinate warehouse holds and escalation of sales to end customers · **1.00** |
+
+<sub>Layers and inputs from `nouli view recall-response-updated`, answers as recorded. `recall-response-updated` stands on six earlier decisions: two directly, four behind them.</sub>
+
+`nouli view recall-response-updated --mermaid` prints the whole history behind the final response, and GitHub draws it:
+
+```mermaid
+%% Nouli session: recall-response-updated (01a187b5-e29d-775b-be9b-429228ad43ff)
+%%{init: {"flowchart": {"wrappingWidth": 320}}}%%
+flowchart TD
+  t0["<b>recall-scope · 01a187b5-e23</b><br/><br/>How should a jar be matched to this recall?<br/><br/><b>▶ Match the product and both lot-code conditions · 1</b><br/>Use the product name alone · 0<br/>Request a clearer recall notice · 0"]
+  t1["<b>recall-stock · 01a187b5-e24</b><br/><br/>Can every jar in this inventory be matched to an identifiable lot?<br/><br/><b>▶ P(yes)=0.07</b>"]
+  t2["<b>recall-stock-plan · 01a187b5-e26</b><br/><br/>What should the warehouse do with its stock?<br/><br/><b>▶ Quarantine matching jars and hold unreadable codes for identification · 1</b><br/>Hold every jar pending further review · 0<br/>Identify unreadable codes before choosing any stock action · 0"]
+  t3["<b>recall-customers · 01a187b5-e25</b><br/><br/>Which customer needs a response follow-up first?<br/><br/>Contact Harbor · 0<br/><b>▶ Contact Summit · 1</b><br/>Contact both customers again · 0"]
+  t4["<b>recall-customers · 01a187b5-e28</b><br/><br/>What is the next action for Summit?<br/><br/>Confirm acknowledgment only · 0.01<br/><b>▶ Escalate the 12 sold boxes and verify downstream notification · 0.98</b><br/>Treat the customer response as complete · 0.01"]
+  t5["<b>recall-outreach-updated · 01a187b5-e29</b><br/><br/>What customer follow-up is needed now?<br/><br/>Ask Summit to acknowledge the notice and account for its boxes · 0<br/>Verify that both customers have isolated all affected boxes · 0<br/><b>▶ Escalate reported sales to the recall lead and verify downstream notification · 1</b>"]
+  t6["<b>recall-response-updated · 01a187b5-e2a [latest]</b><br/><br/>Which response should the recall lead coordinate?<br/><br/>Coordinate warehouse holds only · 0<br/>Coordinate warehouse holds and missing customer responses · 0<br/><b>▶ Coordinate warehouse holds and escalation of sales to end customers · 1</b>"]
+  t0 --> t2
+  t1 --> t2
+  t3 --> t4
+  t0 --> t5
+  t4 --> t5
+  t2 --> t6
+  t5 --> t6
+  classDef latest stroke:#0b6e63,stroke-width:3px
+  class t6 latest
+```
+
+The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) goes through every step, and more [examples](https://standing-desks.github.io/nouli/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning. Each one shows its steps at the prompt or as commands.
+
+## What does a session look like?
 
 `nouli open catalog` opens a prompt on a session. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
 
@@ -82,7 +150,7 @@ pick › /quit
 
 A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/replace N TEXT` corrects a fact and keeps the old text in history, `/branch NAME` starts a new session from this one, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
 
-## Use it from scripts and agents
+## Can a script or an agent drive it?
 
 Everything you can do at the prompt is also a command. The `pick` session continues from a script, and each command adds the latest sensor report and asks the next question:
 
@@ -109,56 +177,29 @@ The answers match station rules that no command in `pick` repeats: a load more t
 
 Every turn asks one `-q` question, in its own call. `nouli new NAME [FACT...] -q …` starts a session and `--from A --from B` blends sessions, `nouli ask pick -q …` asks without new facts, `--replace N TEXT` corrects fact N, `nouli whatif pick … -q …` asks without saving, `nouli facts pick` lists the numbered facts, and `nouli view pick` draws the session's decision graph. Every command takes `--json` for a versioned report, and `--input FILE` takes a complete request, so agents get the full contract. Answers depend on your model.
 
-## A longer example
+## How do I install it properly?
 
-A food distributor handles a peanut butter recall. It keeps the recall scope, its warehouse stock, and its customers in separate sessions, then blends them into one coordinated response. When a customer reports that 12 affected boxes were already sold, it adds that one fact with a new question about it, and builds a revised response in new sessions, so the first response stays as it was decided. The new turn:
+On **macOS (Apple silicon)**:
 
 ```sh
-nouli add recall-customers \
-  'Illustrative update at 11:00 on May 23, 2022: Summit has now acknowledged the
-notice. It isolated 18 SNACK-A boxes and reports that 12 were already sold to
-end customers. Whether those buyers have been notified is unknown. This
-replaces the earlier Summit nonresponse. Harbor still has all 30 boxes
-isolated.' \
-  -q 'customers: What is the next action for Summit? [Confirm acknowledgment only,
-    Escalate the 12 sold boxes and verify downstream notification,
-    Treat the customer response as complete]'
+brew install standing-desks/tap/nouli
 ```
 
-```text
-  turn 2 · 1 fact · 1 question
-  customers     Confirm acknowledgment only      ▎                    0.01
-              ▶ Escalate the 12 sold boxes and … ███████████████████▋ 0.98
-                Treat the customer response as … ▎                    0.01
+On **Linux**, or on macOS without Homebrew:
+
+```sh
+curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
 ```
 
-`nouli view recall-response-updated --mermaid` prints the whole history behind the final response, and GitHub draws it:
+The script installs into `~/.local/bin` after checking the download's checksum. Linux builds are for ARM64 and x86_64 and need glibc 2.38 or newer. See [installation and upgrades](docs/release.md) for choosing a version or directory and for switching from a Cargo installation.
 
-```mermaid
-%% Nouli session: recall-response-updated (01a187b5-e29d-775b-be9b-429228ad43ff)
-%%{init: {"flowchart": {"wrappingWidth": 320}}}%%
-flowchart TD
-  t0["<b>recall-scope · 01a187b5-e23</b><br/><br/>How should a jar be matched to this recall?<br/><br/><b>▶ Match the product and both lot-code conditions · 1</b><br/>Use the product name alone · 0<br/>Request a clearer recall notice · 0"]
-  t1["<b>recall-stock · 01a187b5-e24</b><br/><br/>Can every jar in this inventory be matched to an identifiable lot?<br/><br/><b>▶ P(yes)=0.07</b>"]
-  t2["<b>recall-stock-plan · 01a187b5-e26</b><br/><br/>What should the warehouse do with its stock?<br/><br/><b>▶ Quarantine matching jars and hold unreadable codes for identification · 1</b><br/>Hold every jar pending further review · 0<br/>Identify unreadable codes before choosing any stock action · 0"]
-  t3["<b>recall-customers · 01a187b5-e25</b><br/><br/>Which customer needs a response follow-up first?<br/><br/>Contact Harbor · 0<br/><b>▶ Contact Summit · 1</b><br/>Contact both customers again · 0"]
-  t4["<b>recall-customers · 01a187b5-e28</b><br/><br/>What is the next action for Summit?<br/><br/>Confirm acknowledgment only · 0.01<br/><b>▶ Escalate the 12 sold boxes and verify downstream notification · 0.98</b><br/>Treat the customer response as complete · 0.01"]
-  t5["<b>recall-outreach-updated · 01a187b5-e29</b><br/><br/>What customer follow-up is needed now?<br/><br/>Ask Summit to acknowledge the notice and account for its boxes · 0<br/>Verify that both customers have isolated all affected boxes · 0<br/><b>▶ Escalate reported sales to the recall lead and verify downstream notification · 1</b>"]
-  t6["<b>recall-response-updated · 01a187b5-e2a [latest]</b><br/><br/>Which response should the recall lead coordinate?<br/><br/>Coordinate warehouse holds only · 0<br/>Coordinate warehouse holds and missing customer responses · 0<br/><b>▶ Coordinate warehouse holds and escalation of sales to end customers · 1</b>"]
-  t0 --> t2
-  t1 --> t2
-  t3 --> t4
-  t0 --> t5
-  t4 --> t5
-  t2 --> t6
-  t5 --> t6
-  classDef latest stroke:#0b6e63,stroke-width:3px
-  class t6 latest
+Then define a provider in `~/.nouli/config.toml` ([how](https://standing-desks.github.io/nouli/guide/#provider)) and log in once. Nouli asks for the key without showing it and keeps it in a file only you can read:
+
+```sh
+nouli auth login typesafe
 ```
 
-The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) goes through every step, and more [examples](https://standing-desks.github.io/nouli/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning. Each one shows its steps at the prompt or as commands.
-
-## Documentation
+## Where's the rest?
 
 - [User guide](https://standing-desks.github.io/nouli/guide/): setup, interactive mode, sessions, branching, blending, and workflows
 - [Configuration](docs/configuration.md): providers, models, credentials (`nouli auth login`), and storage
@@ -168,7 +209,7 @@ The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/
 - [Workflows](docs/cli-workflows.md): dependent decisions and resuming interrupted runs
 - [Rust library](docs/embedding.md): embed Nouli in your own application
 
-## Contributing
+## How do I run the checks?
 
 ```sh
 cargo fmt --all --check
