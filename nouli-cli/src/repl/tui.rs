@@ -49,16 +49,16 @@ use tokio_util::sync::CancellationToken;
 /// The keys, for `/help` before the commands the line loop lists.
 const KEYS: [(&str, &str); 11] = [
     ("Mouse drag", "select text using the terminal"),
+    ("Tab", "next field or option"),
     (
-        "Tab",
-        "Context: next field; Question: next type; Options: next item",
-    ),
-    (
-        "Shift-Tab / F2",
-        "Shift-Tab: previous answer type; F2: next answer type",
+        "Shift-Tab",
+        "next answer type: Yes / No → Choose one → Score",
     ),
     ("Up, Down", "the row above or below"),
-    ("Enter", "send; run a slash command from Context"),
+    (
+        "Enter",
+        "send; in Options/Levels, add an item then Enter again to send",
+    ),
     ("Ctrl-S / F5", "send the question from any field"),
     (
         "Drop / paste files",
@@ -278,6 +278,8 @@ struct App<'a> {
     literal_input: bool,
     failed_drop: Option<(Row, String)>,
     previous_question: Option<PreviousQuestion>,
+    /// The previous Enter added/finished a list item; another Enter sends.
+    option_enter: bool,
 }
 
 impl<'a> App<'a> {
@@ -304,6 +306,7 @@ impl<'a> App<'a> {
             literal_input: false,
             failed_drop: None,
             previous_question: None,
+            option_enter: false,
         };
         app.drain();
         app.refresh_model();
@@ -365,6 +368,7 @@ impl<'a> App<'a> {
         match event {
             Event::Key(key) if key.kind != KeyEventKind::Release => self.key(key, running),
             Event::Paste(text) => {
+                self.option_enter = false;
                 if running.is_some() {
                     self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
                 } else {
@@ -386,10 +390,13 @@ impl<'a> App<'a> {
 
     fn key(&mut self, key: KeyEvent, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if key.code != KeyCode::Enter {
+            self.option_enter = false;
+        }
         if running.is_none()
             && (matches!(
                 key.code,
-                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down | KeyCode::F(2)
+                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down
             ) || control && key.code == KeyCode::Char('g'))
         {
             self.consume_drop();
@@ -405,6 +412,16 @@ impl<'a> App<'a> {
                 return Ok(Flow::Continue);
             }
             _ => {}
+        }
+        if running.is_none()
+            && (key.code == KeyCode::BackTab
+                || key.code == KeyCode::Tab && key.modifiers.contains(KeyModifiers::SHIFT))
+        {
+            self.sessions = None;
+            self.hidden = true;
+            self.graph_focused = false;
+            self.form.next_kind(&mut self.repl.queue.facts);
+            return Ok(Flow::Continue);
         }
         if let Some(flow) = self.list_key(&key, running)? {
             return Ok(flow);
@@ -424,7 +441,6 @@ impl<'a> App<'a> {
             }
             KeyCode::Char('s') if control => *running = self.send_form(false)?,
             KeyCode::F(5) => *running = self.send_form(false)?,
-            KeyCode::F(2) => self.form.next_kind(&mut self.repl.queue.facts),
             KeyCode::Enter => {
                 if !self.prepare_input() {
                     return Ok(Flow::Continue);
@@ -432,10 +448,6 @@ impl<'a> App<'a> {
                 return self.enter(running);
             }
             KeyCode::Esc => self.status = None,
-            KeyCode::BackTab => self.form.previous_kind(&mut self.repl.queue.facts),
-            KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.form.previous_kind(&mut self.repl.queue.facts);
-            }
             KeyCode::Tab => self.form.tab(&mut self.repl.queue.facts),
             KeyCode::Up => self.form.up(&mut self.repl.queue.facts),
             KeyCode::Down => self.form.down(&mut self.repl.queue.facts),
@@ -637,6 +649,15 @@ impl<'a> App<'a> {
     }
 
     fn enter(&mut self, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
+        if let Row::Option(index) = self.form.row {
+            if std::mem::take(&mut self.option_enter) {
+                *running = self.send_form(false)?;
+            } else {
+                self.form.enter_option(index);
+                self.option_enter = true;
+            }
+            return Ok(Flow::Continue);
+        }
         if self.form.row == Row::Input {
             let command = self.form.input.trim_start().starts_with('/') && !self.literal_input;
             // Before the first question, Enter moves context into the queue.
@@ -720,6 +741,7 @@ impl<'a> App<'a> {
     /// Sends the form's question with the queue, or says what to fix and
     /// moves there.
     fn send_form(&mut self, ephemeral: bool) -> io::Result<Option<Running<'a>>> {
+        self.option_enter = false;
         if !self.prepare_input() {
             return Ok(None);
         }
@@ -892,6 +914,7 @@ impl<'a> App<'a> {
     }
 
     fn paste_text(&mut self, text: &str) {
+        self.option_enter = false;
         if let Row::Option(mut index) = self.form.row {
             let mut lines = text.lines().filter(|line| !line.trim().is_empty());
             if let Some(first) = lines.next() {
@@ -1549,18 +1572,15 @@ mod tests {
         .unwrap();
         assert_eq!(app.form.options.len(), 5);
         assert_eq!(app.form.options[3], "San Diego");
-        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
-        assert_eq!(app.form.row, Row::Question);
-        assert_eq!(app.form.kind, Kind::Noul);
-        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        assert_eq!(app.form.kind, Kind::Choice);
-        assert_eq!(app.form.row, Row::Question);
-        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        assert_eq!(app.form.kind, Kind::Score);
+        press(&mut app, KeyCode::BackTab, KeyModifiers::NONE);
+        assert_eq!((app.form.kind, app.form.row), (Kind::Score, Row::Option(4)));
         press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
-        assert_eq!(app.form.kind, Kind::Choice);
-        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!((app.form.kind, app.form.row), (Kind::Noul, Row::Question));
+        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!((app.form.kind, app.form.row), (Kind::Choice, Row::Question));
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Option(0));
+        assert_eq!(app.form.kind, Kind::Choice);
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Option(1));
         for _ in 0..4 {
@@ -1589,6 +1609,87 @@ mod tests {
     }
 
     #[test]
+    fn option_and_level_lists_need_two_consecutive_enters_to_send() {
+        for kind in [Kind::Choice, Kind::Score] {
+            let settings = settings();
+            let mut app = app(&settings);
+            app.form.kind = kind;
+            app.form.question = "Which fits?".into();
+            app.form.options = vec!["First".into(), "Second".into()];
+            app.form.row = Row::Option(1);
+            app.form.cursor = "Second".len();
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+            assert_eq!(app.form.row, Row::Option(2));
+            assert!(app.option_enter);
+            typed(&mut app, "Third");
+            assert!(!app.option_enter, "typing continues the list");
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+            assert_eq!(app.form.row, Row::Option(3));
+            // Tab navigates away and cancels the pending confirmation.
+            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+            assert!(!app.option_enter);
+            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+            assert_eq!(app.form.row, Row::Option(0));
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+            app.event(Event::Paste("Another".into()), &mut None)
+                .unwrap();
+            assert!(!app.option_enter, "pasting also continues the list");
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+            let expected = app.form.build_question().unwrap();
+            let mut running = None;
+            app.key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &mut running,
+            )
+            .unwrap();
+            let draft = draft_from(running.unwrap());
+            assert_eq!(draft.request.turn.questions, [expected]);
+            assert!(!app.option_enter);
+        }
+    }
+
+    #[test]
+    fn shift_tab_switches_type_even_when_a_list_is_open() {
+        let settings = settings();
+        let mut app = app(&settings);
+        typed(&mut app, "/");
+        assert!(!app.commands_shown().is_empty());
+        press(&mut app, KeyCode::BackTab, KeyModifiers::NONE);
+        assert_eq!(app.form.kind, Kind::Choice);
+        assert!(app.commands_shown().is_empty());
+        app.sessions = Some(vec![]);
+        press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
+        assert!(app.sessions.is_none());
+        assert_eq!(app.form.kind, Kind::Score);
+        assert_eq!(app.form.input, "/", "mode changes keep typed input");
+    }
+
+    #[test]
+    fn a_failed_file_paste_cancels_the_pending_second_enter() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.form.kind = Kind::Choice;
+        app.form.question = "Which fits?".into();
+        app.form.options = vec!["First".into(), "Second".into()];
+        app.form.row = Row::Option(1);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.option_enter);
+        let path = std::env::temp_dir().join(format!("nouli-list-drop-{}", Id::generate()));
+        std::fs::write(&path, [0, 255]).unwrap();
+        app.event(Event::Paste(path.to_string_lossy().into_owned()), &mut None)
+            .unwrap();
+        assert!(app.status.as_ref().unwrap().error);
+        assert!(!app.option_enter);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(
+            app.option_enter,
+            "the next Enter arms again instead of sending"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn changing_fields_immediately_after_a_raw_drop_keeps_the_original_destination() {
         let settings = settings();
         let mut app = app(&settings);
@@ -1602,18 +1703,20 @@ mod tests {
     }
 
     #[test]
-    fn f2_picks_the_answer_type_and_tab_the_section() {
+    fn shift_tab_changes_types_globally_and_tab_moves_between_fields() {
         let settings = settings();
         let mut app = app(&settings);
         let none = KeyModifiers::NONE;
-        press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
-        assert_eq!(app.form.kind, Kind::Choice);
-        press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
-        assert_eq!(app.form.kind, Kind::Score);
+        press(&mut app, KeyCode::F(2), none);
+        assert_eq!(app.form.kind, Kind::Noul, "only Shift-Tab changes types");
+        press(&mut app, KeyCode::BackTab, none);
+        assert_eq!((app.form.kind, app.form.row), (Kind::Choice, Row::Input));
+        press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!((app.form.kind, app.form.row), (Kind::Score, Row::Input));
         press(&mut app, KeyCode::Tab, none);
-        assert_eq!(app.form.row, Row::Question);
-        press(&mut app, KeyCode::Down, none);
-        assert_eq!(app.form.row, Row::Option(0));
+        assert_eq!((app.form.kind, app.form.row), (Kind::Score, Row::Question));
+        press(&mut app, KeyCode::Tab, none);
+        assert_eq!((app.form.kind, app.form.row), (Kind::Score, Row::Option(0)));
         press(&mut app, KeyCode::Up, none);
         press(&mut app, KeyCode::Up, none);
         assert_eq!(app.form.row, Row::Input);
@@ -1622,7 +1725,7 @@ mod tests {
         press(&mut app, KeyCode::Down, none);
         assert_eq!((app.form.row, app.graph.follow), (Row::Input, false));
         press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
-        assert_eq!(app.form.kind, Kind::Choice);
+        assert_eq!(app.form.kind, Kind::Noul);
         assert!(!app.graph_focused);
         press(&mut app, KeyCode::Esc, none);
         assert!(!app.graph_focused);
@@ -1678,11 +1781,11 @@ mod tests {
         assert_eq!(app.form.row, Row::Question);
         // An incomplete list focuses its editor; Tab adds another item.
         app.form.question = "rain: Will it rain?".into();
-        press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+        press(&mut app, KeyCode::BackTab, KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Option(0));
         typed(&mut app, "Yes");
-        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         let status = app.status.as_ref().unwrap();
         assert!(status.text.contains("at least two"), "{}", status.text);

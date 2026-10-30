@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Simplify the terminal view with a `nouli` header, plain question text, hidden generated question IDs, one-line reuse notices, shorter key hints, and one model name. Enter sends from any field when a question is ready; Tab adds the next option or level.
+- Use Shift-Tab as the only answer-type shortcut, cycling left to right from any field, with a short hint beside the selector. Tab navigates fields and options/levels.
+- In Options/Levels, Enter adds the next row; a second consecutive Enter sends. Typing, pasting, or navigation continues editing without sending.
+- Simplify the terminal view with a `nouli` header, plain question text, hidden generated question IDs, one-line reuse notices, shorter key hints, and one model name. Enter sends from Context/Question when ready; in Options/Levels, Enter adds a row and a second Enter sends. Tab moves between fields and list items.
 - Let mouse drag select terminal text by disabling mouse capture. Navigate form fields with the keyboard.
 - Use Citrus accents for answer types: lime for Yes/No, cyan for Choose one, and rose for Score, including results and decision cards. Color-free output keeps text emphasis.
 - Keep the selected answer type after sending. In the terminal form, leaving a choice's options or a score's levels empty reuses the latest matching question's exact list and rubric, with a visible notice. Leave its question empty too to ask it again with new context. Enter a new list to replace it. Yes/No questions stay fresh, and earlier answers remain in history.
-- Ask questions in plain text in the full-screen form, with automatic IDs and literal punctuation. In Question, Tab cycles answer types forward and Shift-Tab cycles backward; in Options/Levels, Tab moves to the next item and adds one after the last filled item. Press Enter to submit when a question is ready, or Ctrl-S / F5 from any field, including context still being edited.
+- Ask questions in plain text in the full-screen form, with automatic IDs and literal punctuation. Shift-Tab cycles answer types left to right from any field; Tab navigates fields and moves through options/levels, adding a row after the last filled item. Ctrl-S / F5 submits from any field, including context still being edited.
 - Paste several lines into Options to add one option per line. Context and question fields preserve paragraphs and indentation.
 - Keep decisions from sessions opened in the same TUI visible when starting another session. New sessions appear as independent roots; shared ancestry is drawn once.
 - Prepare upright, resized images for Jev automatically while preserving saved originals. Image estimates count visual input separately from text, including repeated references, so screenshots no longer consume context as base64 text.

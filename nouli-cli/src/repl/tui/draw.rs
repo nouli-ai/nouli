@@ -392,6 +392,7 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
             Span::styled(format!(" {}", kind.name()), theme.kind(kind, false))
         });
     }
+    heading.push(Span::styled(" · Shift-Tab →", theme.dim));
     let previous_prompt = app
         .prior_for_kind()
         .filter(|_| form.question.trim().is_empty())
@@ -452,7 +453,11 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
         }
     }
     rows.lines.push(Line::from(Span::styled(
-        "  Press Enter to send",
+        match form.row {
+            Row::Option(_) if app.option_enter => "  Press Enter again to send",
+            Row::Option(_) => "  Enter next item · Enter twice to send",
+            _ => "  Press Enter to send",
+        },
         theme.kind(form.kind, true),
     )));
     (rows.lines, rows.cursor)
@@ -651,7 +656,7 @@ fn hints(width: usize) -> String {
 
 fn focused_hints(width: usize, row: Row) -> String {
     match row {
-        Row::Question => fit_hints(width, &["Tab / Shift-Tab type", "↑↓ fields", "/help"]),
+        Row::Question => fit_hints(width, &["Tab next field", "↑↓ fields", "/help"]),
         Row::Option(_) => fit_hints(width, &["Tab next item", "↑↓ fields", "/help"]),
         Row::Fact(_) => fit_hints(width, &["↑↓ fields", "Tab question", "/help"]),
         _ => hints(width),
@@ -793,7 +798,7 @@ mod tests {
         assert!(screen.contains("typesafe/jev-1.13.0 · Draft"), "{screen}");
         assert!(!screen.contains("last served:"), "{screen}");
         assert!(focused_hints(140, Row::Option(0)).contains("Tab next item"));
-        assert!(focused_hints(140, Row::Question).contains("Tab / Shift-Tab type"));
+        assert!(focused_hints(140, Row::Question).contains("Tab next field"));
     }
 
     #[test]
@@ -812,6 +817,12 @@ mod tests {
         let screen = shown(&mut app, 140, 20).join("\n");
         assert!(screen.contains("── Context"), "{screen}");
         assert!(
+            screen
+                .lines()
+                .any(|line| line.contains("── Question") && line.contains("Shift-Tab →")),
+            "{screen}"
+        );
+        assert!(
             screen.contains("── Question · [Yes / No] Choose one Score"),
             "{screen}"
         );
@@ -826,6 +837,18 @@ mod tests {
         );
         assert!(screen.contains("── Levels · lowest first"), "{screen}");
         assert!(screen.contains("  2 high"), "{screen}");
+        app.form.row = Row::Option(1);
+        assert!(
+            shown(&mut app, 140, 20)
+                .join("\n")
+                .contains("Enter twice to send")
+        );
+        app.option_enter = true;
+        assert!(
+            shown(&mut app, 140, 20)
+                .join("\n")
+                .contains("Press Enter again to send")
+        );
         // Too narrow for both: the pane waits for Ctrl-G.
         let screen = shown(&mut app, 100, 20).join("\n");
         assert!(!screen.contains("decisions · Ctrl-G"), "{screen}");

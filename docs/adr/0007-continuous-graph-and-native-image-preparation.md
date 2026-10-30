@@ -5,6 +5,9 @@ date: 2026-10-30
 
 # Keep the graph across sessions and prepare native image requests
 
+Type-selection shortcuts and Tab navigation are superseded by
+[ADR 0010](0010-consistent-tab-navigation-and-list-entry.md).
+
 ## Context
 
 The terminal pane cleared whenever `/new` selected an empty session. A screenshot
