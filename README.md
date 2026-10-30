@@ -101,7 +101,7 @@ The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/
 
 ## What does a session look like?
 
-`nouli open catalog` opens a session full screen. Type facts as you learn them, and start a line with `?` to ask a question. The question goes to the model right away, together with the facts you typed. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
+`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Mouse drag selects terminal text, and arrows move between fields. Drop a text file, PDF, or image into the focused field; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
 
 ```text
 $ nouli open catalog
@@ -133,12 +133,6 @@ pick › ?next: What should the arm do next? [Try a two-finger pinch on the bott
   next        ▶ Try a two-finger pinch on the b… ██████████████▋      0.73
                 Retry suction on the same spot   █████                0.25
                 Stop and request remote assista… ▍                    0.02
-pick › What-if: the arm pinches the bottle neck, and pinch attempt 2 lifts the target. The wrist force sensor reads 0.46 kg against an expected 0.45 kg, and the tote camera shows a single bottle in the gripper.
-pick › /whatif ?placed: What should the arm do with the load? [Lower the load back into the tote and request remote assistance, Place the load in box B-12, "Shake the load to check for anything attached, then place it"]
-  (not saved) · 1 fact · 1 question
-  placed        Lower the load back into the to…                      0.00
-              ▶ Place the load in box B-12       ██████████████████▊  0.94
-                Shake the load to check for any… █▎                   0.06
 pick › /quit
   bye
 ```
@@ -146,11 +140,10 @@ pick › /quit
 - **Facts wait for a question.** Plain lines are facts. A `?` line sends them with the question as one turn.
 - **Sessions combine.** `catalog` holds the item's grasp history and `policy` the station's rules. `/blend catalog policy as pick` starts `pick` with both, so its questions are answered with that history in view.
 - **Each question is asked once, with its own options.** A `?` line asks only that question, in one call. Earlier answers stay as they were: the failed suction attempt shaped the answer to `next`, and `action` keeps the answer it had.
-- **What-ifs save nothing.** `/whatif` asks its own question with the queued facts and leaves the session as it was.
 
 A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` makes a choice, `<low, medium, high>` makes a score with levels in order, and no list makes a yes/no question. `/replace N TEXT` corrects a fact and keeps the old text in history, `/branch NAME` starts a new session from this one, `/facts` and `/view` show what the session holds, and `/help` lists the rest. Ctrl-C on an empty prompt, or `/exit`, leaves.
 
-The lines above are typed into the view's input row and appear in its transcript. Under it, a form holds the facts, the question, and its options, and the session's decisions are drawn beside it. Shift-Tab switches between yes/no, choice, and score, typing `/` lists the commands, and `/sessions` resumes an earlier session. The [command-line guide](docs/cli.md#full-screen-view) lists the keys.
+The lines above are typed into the view's input row and appear in its transcript. Under it, a form holds the facts, the question, and its options, and the session's decisions are drawn beside it. Shift-Tab switches between yes/no, choice, and score, typing `/` lists the commands, and `/sessions` resumes an earlier session. The selected answer type stays after sending. For choices and scores, an empty answer list reuses the prior options or levels with a visible notice; leave the question empty too to resend it with new information. Yes/No questions stay fresh. Citrus colors identify each type across the form and saved decisions. The [command-line guide](docs/cli.md#full-screen-view) lists the keys.
 
 ## Can a script or an agent drive it?
 

@@ -86,6 +86,7 @@ pub fn request_body(
 ) -> Result<Value, ProviderError> {
     request.validate()?;
     crate::decision::nonempty(model, "model")?;
+    let evidence = crate::media::Evidence::read(context_toon)?;
     let mut questions = Vec::with_capacity(request.questions.len());
     for question in &request.questions {
         let instructions = if question.criteria.is_empty() {
@@ -108,9 +109,19 @@ pub fn request_body(
                 json!({"name":question.id,"type":"score","instructions":instructions,"levels":levels.iter().map(|criterion|{let (label,description)=level(criterion);json!({"label":label,"description":description})}).collect::<Vec<_>>()})
             }
         };
+        let mut native = native;
+        native["instructions"] = evidence.openai_parts(&instructions);
         questions.push(native);
     }
-    Ok(json!({"model":model,"input":context_toon,"questions":questions}))
+    // Option descriptions are text-only on this protocol. Their references
+    // identify the labelled image in shared input rather than losing it.
+    let parts = evidence.openai_parts(&evidence.text);
+    let input = if parts.is_array() {
+        json!([{"role":"user", "content":parts}])
+    } else {
+        parts
+    };
+    Ok(json!({"model":model,"input":input,"questions":questions}))
 }
 
 pub fn normalize(

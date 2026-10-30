@@ -9,6 +9,10 @@ use std::collections::HashMap;
 
 /// Destination for one question's summary, shared by the card and Mermaid views.
 pub(super) trait Lines {
+    fn mark(&self) -> usize {
+        0
+    }
+    fn accent(&mut self, _: usize, _: crate::palette::Tone) {}
     fn text(&mut self, value: &str);
     fn selected(&mut self, value: &str);
     /// Options in caller order with exact probabilities; `true` marks the selection.
@@ -16,6 +20,20 @@ pub(super) trait Lines {
 }
 
 impl Lines for Vec<Row> {
+    fn mark(&self) -> usize {
+        self.len()
+    }
+    fn accent(&mut self, start: usize, tone: crate::palette::Tone) {
+        let mut prompt = true;
+        for row in &mut self[start..] {
+            if row.text.is_empty() {
+                prompt = false;
+            }
+            if row.highlighted || prompt {
+                row.accent = Some(tone);
+            }
+        }
+    }
     fn text(&mut self, value: &str) {
         card::text(self, "", value);
     }
@@ -47,6 +65,7 @@ pub(super) fn append(
     question: &Question,
     outcome: &QuestionOutcome,
 ) -> Result<(), RenderError> {
+    let start = lines.mark();
     lines.text(&question.prompt);
     lines.text("");
     match outcome {
@@ -130,6 +149,10 @@ pub(super) fn append(
             _ => return Err(RenderError::Protocol),
         },
     }
+    lines.accent(
+        start,
+        crate::palette::Tone::for_space(&question.answer_space),
+    );
     Ok(())
 }
 
@@ -151,6 +174,21 @@ mod tests {
         let mut rows = vec![];
         append(&mut rows, question, outcome).unwrap();
         rows
+    }
+
+    #[test]
+    fn each_question_keeps_its_type_accent_in_a_mixed_card() {
+        let mut rows = vec![];
+        for index in 0..3 {
+            let (question, outcome) = fixture(index);
+            let start = rows.len();
+            append(&mut rows, &question, &outcome).unwrap();
+            let tone = crate::palette::Tone::for_space(&question.answer_space);
+            assert_eq!(rows[start].accent, Some(tone));
+            for row in rows[start..].iter().filter(|row| row.highlighted) {
+                assert_eq!(row.accent, Some(tone));
+            }
+        }
     }
 
     fn text(rows: &[Row]) -> String {

@@ -21,8 +21,6 @@ pub(super) enum Command {
         sources: Vec<String>,
         name: String,
     },
-    /// The question a what-if asks, without its `?`.
-    Whatif(String),
     Replace(usize, String),
     Facts,
     View,
@@ -58,10 +56,6 @@ pub(super) fn parse(line: &str) -> Line {
         "use" => single(argument, Command::Use, "/use SESSION"),
         "new" => single(argument, Command::New, "/new NAME"),
         "branch" => single(argument, Command::Branch, "/branch NEW_NAME"),
-        "whatif" => match argument.strip_prefix('?') {
-            Some(question) => Command::Whatif(question.trim().to_owned()),
-            None => Command::Usage("/whatif ?id: prompt [a, b]"),
-        },
         "replace" => replace(argument),
         "blend" => blend(argument),
         other => Command::Unknown(other.to_owned()),
@@ -129,13 +123,7 @@ mod tests {
         assert_eq!(command("/use travel"), Command::Use("travel".into()));
         assert_eq!(command("/use"), Command::Usage("/use SESSION"));
         assert_eq!(command("/use a b"), Command::Usage("/use SESSION"));
-        assert_eq!(
-            command("/whatif ?late: Will it be late?"),
-            Command::Whatif("late: Will it be late?".into())
-        );
-        for bad in ["/whatif", "/whatif The fare doubled."] {
-            assert!(matches!(command(bad), Command::Usage(_)), "{bad}");
-        }
+        assert_eq!(command("/whatif"), Command::Unknown("whatif".into()));
         assert_eq!(
             command("/replace 3 The train is late."),
             Command::Replace(3, "The train is late.".into())

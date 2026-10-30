@@ -187,25 +187,25 @@ fn a_failed_turn_keeps_its_question_and_an_empty_line_sends_it_again() {
     });
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    // A what-if in between neither sends nor replaces the waiting question.
+    // An unknown command neither sends nor replaces the waiting question.
     let script =
         "?first: Is it first?\nA fact\n?q: Is it?\n/whatif ?other: Is it other?\n\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     assert!(transcript.contains("  error: "), "{transcript}");
     assert!(
-        transcript.contains("  (not saved) · 1 fact · 1 question"),
+        transcript.contains("unknown command /whatif"),
         "{transcript}"
     );
     assert!(
         transcript.contains("  turn 2 · 1 fact · 1 question"),
         "{transcript}"
     );
-    assert_eq!(asked(&server), [["first"], ["q"], ["other"], ["q"]]);
+    assert_eq!(asked(&server), [["first"], ["q"], ["q"]]);
     assert_eq!(turns(&ledger(&home), "travel"), 2);
 }
 
 #[test]
-fn whatif_asks_its_own_question_saves_nothing_and_keeps_what_was_queued() {
+fn removed_whatif_command_keeps_the_queue_and_sends_nothing() {
     let server = provider();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -213,8 +213,7 @@ fn whatif_asks_its_own_question_saves_nothing_and_keeps_what_was_queued() {
         /whatif ?late: Will I be late?\n/whatif The fare doubled.\nA queued fact\n/facts\n/quit\n";
     let transcript = text(&open(&home, &["open", "travel"], script));
     for line in [
-        "  (not saved) · 1 fact · 1 question",
-        "usage: /whatif ?id: prompt [a, b]",
+        "unknown command /whatif",
         "   +  The train is CANCELLED   (queued)",
         "   +  A queued fact   (queued)",
     ] {
@@ -225,20 +224,14 @@ fn whatif_asks_its_own_question_saves_nothing_and_keeps_what_was_queued() {
     assert_eq!(ledger.facts(&session("travel")).unwrap().len(), 1);
     let id = ledger.session(&session("travel")).unwrap().id;
     assert_eq!(ledger.list_attempts(id).unwrap().len(), 1);
-    // The what-if reached the provider with the queued fact, but not the ledger.
-    assert_eq!(asked(&server), [["transport"], ["late"]]);
-    let state = server.calls.lock().unwrap()[1]["state"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(state.contains("CANCELLED"), "{state}");
+    assert_eq!(asked(&server), [["transport"]]);
     // Before any turn there is nothing to start from.
     let early = text(&open(
         &home,
         &["open", "Fresh"],
         "/whatif ?q: Is it?\n/branch Nope\n/quit\n",
     ));
-    assert!(early.contains("send a turn first: a what-if starts from the last one"));
+    assert!(early.contains("unknown command /whatif"));
     assert!(early.contains("send a turn first: a branch starts from the last one"));
 }
 
@@ -327,7 +320,6 @@ fn help_context_quit_and_end_of_input_with_a_queue_behave_as_documented() {
         "fact      A fact",
         "answer    q",
         "/blend A B as NAME",
-        "/whatif ?id: prompt",
         "unknown command /nonsense · /help lists them",
         "usage: /replace N TEXT, where N is a number from /facts",
         "1 queued; press Ctrl-D again to quit and discard them",

@@ -3,11 +3,12 @@
     "max_choices": 255,
     "max_score_levels": 10,
     "modalities": [
-      "text"
+      "text",
+      "image"
     ],
     "supports_confidence": true,
     "full_distributions": true,
-    "verified_on": "2026-10-28",
+    "verified_on": "2026-10-30",
     "protocol": "typesafe",
     "host": "api.typesafe.ai",
     "models": [
@@ -22,7 +23,8 @@
     "supports_refusal": null,
     "sources": [
       "https://docs.typesafe.ai/models",
-      "https://docs.typesafe.ai/api/system-one"
+      "https://docs.typesafe.ai/api/system-one",
+      "https://docs.typesafe.ai/images"
     ],
     "notes": "Published standard limits are 64k per request and 32k per question; use conservative decimal caps. Long-context opt-in is not enabled. Alias mappings are date-specific."
   },
@@ -30,11 +32,12 @@
     "max_choices": 255,
     "max_score_levels": 10,
     "modalities": [
-      "text"
+      "text",
+      "image"
     ],
     "supports_confidence": true,
     "full_distributions": true,
-    "verified_on": "2026-10-28",
+    "verified_on": "2026-10-30",
     "protocol": "openai-decisions",
     "host": "api.openai.com",
     "models": [
@@ -55,11 +58,12 @@
     "max_choices": 255,
     "max_score_levels": 10,
     "modalities": [
-      "text"
+      "text",
+      "image"
     ],
     "supports_confidence": true,
     "full_distributions": true,
-    "verified_on": "2026-10-28",
+    "verified_on": "2026-10-30",
     "protocol": "openrouter-decisions",
     "host": "openrouter.ai",
     "models": [
@@ -71,7 +75,8 @@
     "supports_refusal": null,
     "sources": [
       "https://openrouter.ai/openai/gpt-6-luna-decisions",
-      "https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request"
+      "https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request",
+      "https://openrouter.ai/docs/guides/community/multimodal-decisions"
     ],
     "notes": "Router model page publishes 200 questions, independently of direct OpenAI limit."
   },
@@ -79,11 +84,12 @@
     "max_choices": 255,
     "max_score_levels": 10,
     "modalities": [
-      "text"
+      "text",
+      "image"
     ],
     "supports_confidence": true,
     "full_distributions": true,
-    "verified_on": "2026-10-28",
+    "verified_on": "2026-10-30",
     "protocol": "openrouter-decisions",
     "host": "openrouter.ai",
     "models": [
@@ -95,8 +101,9 @@
     "supports_refusal": null,
     "sources": [
       "https://openrouter.ai/typesafe/jev-1.13",
-      "https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request"
+      "https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request",
+      "https://openrouter.ai/docs/guides/community/multimodal-decisions"
     ],
-    "notes": "Published router context window; no router-specific per-question cap verified. Nouli remains text-only."
+    "notes": "Published router context window; no router-specific per-question cap verified."
   }
 ]

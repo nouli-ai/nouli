@@ -31,7 +31,31 @@ pub fn request_body(
     context_toon: &str,
     model: &str,
 ) -> Result<Value, ProviderError> {
-    let mut body = typesafe::request_body(request, context_toon, model)?;
+    let mut body = typesafe::request_body_with_images(
+        request,
+        context_toon,
+        model,
+        model.contains("typesafe/jev"),
+    )?;
+    if !model.contains("typesafe/jev") {
+        let evidence = crate::media::Evidence::read(context_toon)?;
+        if !evidence.images.is_empty() {
+            body.as_object_mut()
+                .expect("request object")
+                .remove("assets");
+            let mut state = vec![serde_json::json!(evidence.text)];
+            for image in evidence.images {
+                state.push(serde_json::json!(format!(
+                    "Image {}: {}",
+                    image.name, image.reference
+                )));
+                state.push(
+                    serde_json::json!({"type":"image_url","image_url":{"url":image.data_url()}}),
+                );
+            }
+            body["state"] = serde_json::json!(state);
+        }
+    }
     body["provider"] = serde_json::json!({"allow_fallbacks":false});
     Ok(body)
 }

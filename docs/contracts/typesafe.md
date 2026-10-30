@@ -16,6 +16,19 @@ Native shape follows the
 [score](https://docs.typesafe.ai/primitives/score), and
 [noul](https://docs.typesafe.ai/primitives/noul) documentation, checked 2026-10-28.
 
+Image evidence records use the reference and `assets` format in the
+[System One reference](https://docs.typesafe.ai/api/system-one), checked
+2026-10-30. Binary payloads are removed from TOON text; opaque references stay
+at their original positions in state, instructions, and criteria. Requests with
+assets set `TypeSafe-Danger-Zone-Images: true`. The selected model must support
+images; local Laya-compatible servers may reject them. Saved image references
+explicitly reused by a current question or update protect their original records
+from context reduction. Provider-bound copies apply EXIF orientation, normalize to still PNG, and scale
+or pad into 280–1568 pixels per side; saved original bytes are unchanged. See
+[image preparation](https://docs.typesafe.ai/images). Pixel-based estimates
+count each reference occurrence separately, are marked `multimodal_estimate`,
+and remain approximate. The model response records actual served usage.
+
 The adapter validates named coverage and types, complete option/level probabilities,
 score expectations, and any returned rubric legend against the original scale.
 Malformed, missing, extra, or foreign answers fail with typed errors. A supplied

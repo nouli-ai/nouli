@@ -26,20 +26,14 @@ const LIST_ROWS: usize = 8;
 const TRANSCRIPT_ROWS: u16 = 3;
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 /// The status line's key hints, most useful first.
-const HINTS: [&str; 6] = [
-    "Tab section",
-    "Shift-Tab noul/choice/score",
-    "Enter queue or send",
-    "Ctrl-G decisions",
-    "Ctrl-C quit",
-    "PgUp/PgDn scroll",
-];
+const HINTS: [&str; 3] = ["Tab question", "↑↓ fields", "/help"];
 
 /// The view's styles. Without color, emphasis is bold alone.
 struct Theme {
     accent: Style,
     dim: Style,
     error: Style,
+    color: bool,
 }
 
 impl Theme {
@@ -48,17 +42,31 @@ impl Theme {
         let bold = Style::new().add_modifier(Modifier::BOLD);
         if color {
             Self {
-                accent: bold.fg(Color::Indexed(37)),
+                accent: bold,
                 dim,
                 error: Style::new().fg(Color::Red),
+                color,
             }
         } else {
             Self {
                 accent: bold,
                 dim,
                 error: bold,
+                color,
             }
         }
+    }
+
+    fn kind(&self, kind: Kind, selected: bool) -> Style {
+        let mut style = Style::new();
+        if self.color {
+            style = style.fg(kind.tone().color());
+        }
+        style.add_modifier(if selected {
+            Modifier::BOLD
+        } else {
+            Modifier::DIM
+        })
     }
 }
 
@@ -71,9 +79,10 @@ fn graph_width(total: u16) -> Option<u16> {
 
 pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>) {
     let theme = Theme::new(app.repl.paint.0);
-    let [header, body, footer] = Layout::vertical([
+    let [header, body, model, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(0),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(frame.area());
@@ -94,21 +103,46 @@ pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>
     if let Some(graph) = graph {
         draw_graph(frame, graph, app, &theme);
     }
+    draw_model(frame, model, app, running, &theme);
     draw_footer(frame, footer, app, running, &theme);
 }
 
 fn draw_header(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
-    let model = app.model.as_deref().unwrap_or_default();
-    let width = u16::try_from(model.width() + 1).unwrap_or(u16::MAX);
-    let [left, right] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(area);
     let label = render::clean(&app.repl.session.label);
     let title = Line::from(vec![
-        Span::styled(format!(" {label}"), theme.accent),
-        Span::styled(" · /help for keys and commands", theme.dim),
+        Span::styled(" nouli", theme.accent),
+        Span::styled(
+            format!(" {} · {label}", env!("CARGO_PKG_VERSION")),
+            theme.dim,
+        ),
     ]);
-    frame.render_widget(Paragraph::new(title), left);
-    frame.render_widget(Paragraph::new(Span::styled(model, theme.dim)), right);
+    frame.render_widget(Paragraph::new(title), area);
+}
+
+fn draw_model(frame: &mut Frame, area: Rect, app: &App, running: Option<&Running>, theme: &Theme) {
+    let selection = running.map_or(&app.selected_model, |turn| &turn.model);
+    let model = match (&selection.provider, &selection.model) {
+        (Some(provider), Some(model)) => {
+            format!("{}/{}", render::clean(provider), render::clean(model))
+        }
+        _ => "Model not configured".into(),
+    };
+    let activity = match running {
+        Some(turn) if turn.cancel.is_cancelled() => "Cancelling".into(),
+        Some(turn) => format!("Asking · {}s", turn.started.elapsed().as_secs()),
+        None if !app.form.is_empty() || !app.repl.queue.is_empty() => "Draft".into(),
+        None => "Ready".into(),
+    };
+    let model = if running.is_none() {
+        app.model.as_deref().unwrap_or(&model)
+    } else {
+        &model
+    };
+    let spans = vec![
+        Span::styled(format!(" {model}"), theme.accent),
+        Span::styled(format!(" · {activity}"), theme.dim),
+    ];
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
@@ -121,6 +155,7 @@ fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     let [top, bottom] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(height)]).areas(area);
     app.page = usize::from(top.height).max(1);
+    app.transcript_width = usize::from(top.width).max(1);
     let rows = transcript(
         &app.transcript,
         usize::from(top.width),
@@ -271,12 +306,10 @@ fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
         .collect()
 }
 
+type Composer = (Vec<Line<'static>>, Option<(usize, usize)>);
+
 /// The form as lines, with the cursor's column and row when it has the keys.
-fn composer(
-    app: &App,
-    width: usize,
-    theme: &Theme,
-) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
+fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     let form = &app.form;
     let queue = &app.repl.queue;
     let focused = (!app.graph_focused).then_some(form.row);
@@ -296,7 +329,7 @@ fn composer(
         width,
     };
 
-    let mut heading = vec![Span::styled("State", title(Section::State))];
+    let mut heading = vec![Span::styled("Context", title(Section::State))];
     let queued = queue.len();
     if queued > 0 {
         heading.push(Span::styled(format!(" · {queued} queued"), theme.dim));
@@ -304,6 +337,7 @@ fn composer(
     rows.rule(heading, theme);
     for (index, fact) in queue.facts.iter().enumerate() {
         let gutter = Span::styled("  + ", theme.dim);
+
         rows.push(gutter, fact, none(), Style::new(), here(Row::Fact(index)));
     }
     for (number, text) in &queue.replaces {
@@ -320,7 +354,7 @@ fn composer(
     if let Some(question) = &queue.question {
         let question = render::clean(question);
         rows.push(
-            Span::styled("  ? ", theme.dim),
+            Span::styled("    ", theme.dim),
             &question,
             none(),
             theme.dim,
@@ -333,11 +367,12 @@ fn composer(
         theme.dim
     };
     let placeholder = if queue.question.is_some() {
-        "Enter asks it again, or a fact, ?id: question, or /command"
+        "Add context or retry"
     } else {
-        "a fact, ?id: question to ask now, or /command"
+        "Add context or drop a file"
     };
     let placeholder = Span::styled(placeholder, theme.dim);
+
     rows.push(
         Span::styled("  › ", prompt),
         &form.input,
@@ -347,24 +382,35 @@ fn composer(
     );
 
     let mut heading = vec![
-        Span::styled("Question", title(Section::Question)),
+        Span::styled("Question", theme.kind(form.kind, true)),
         Span::styled(" ·", theme.dim),
     ];
     for kind in Kind::ALL {
         heading.push(if kind == form.kind {
-            Span::styled(format!(" [{}]", kind.name()), theme.accent)
+            Span::styled(format!(" [{}]", kind.name()), theme.kind(kind, true))
         } else {
-            Span::styled(format!(" {}", kind.name()), theme.dim)
+            Span::styled(format!(" {}", kind.name()), theme.kind(kind, false))
         });
     }
+    let previous_prompt = app
+        .prior_for_kind()
+        .filter(|_| form.question.trim().is_empty())
+        .map(|previous| render::clean(&previous.question.prompt));
     rows.rule(heading, theme);
-    let placeholder = Span::styled("id: question", theme.dim);
+    let question_text = previous_prompt.as_deref().unwrap_or(&form.question);
+    let question_style = if previous_prompt.is_some() {
+        theme.dim
+    } else {
+        Style::new()
+    };
+    let placeholder = Span::styled("Ask a question", theme.dim);
+
     rows.push(
         Span::raw("    "),
-        &form.question,
+        question_text,
         placeholder,
-        Style::new(),
-        here(Row::Question),
+        question_style,
+        here(Row::Question).map(|cursor| if previous_prompt.is_some() { 0 } else { cursor }),
     );
 
     if form.kind != Kind::Noul {
@@ -372,18 +418,30 @@ fn composer(
             Kind::Score => ("Levels", "a level"),
             _ => ("Options", "an option"),
         };
-        let mut heading = vec![Span::styled(name, title(Section::Options))];
+        let mut heading = vec![Span::styled(name, theme.kind(form.kind, true))];
         if form.kind == Kind::Score {
             heading.push(Span::styled(" · lowest first", theme.dim));
         }
+        if let Some(previous) = app.inherited_answers() {
+            let count = match &previous.question.answer_space {
+                nouli_core::decision::AnswerSpace::Choice { options } => options.len(),
+                nouli_core::decision::AnswerSpace::Score { levels } => levels.len(),
+                _ => 0,
+            };
+            heading.push(Span::styled(
+                format!(" · using previous {count}"),
+                theme.dim,
+            ));
+        }
         rows.rule(heading, theme);
-        if form.options.is_empty() {
-            let placeholder = Span::styled("none yet · Tab here to add them", theme.dim);
+        if form.options.is_empty() && app.inherited_answers().is_none() {
+            let placeholder = Span::styled(format!("+ Add {item}"), theme.dim);
             rows.push(Span::raw("    "), "", placeholder, Style::new(), None);
         }
         for (index, option) in form.options.iter().enumerate() {
             let gutter = Span::styled(format!("{:>3} ", index + 1), theme.dim);
             let placeholder = Span::styled(item, theme.dim);
+
             rows.push(
                 gutter,
                 option,
@@ -393,6 +451,10 @@ fn composer(
             );
         }
     }
+    rows.lines.push(Line::from(Span::styled(
+        "  Press Enter to send",
+        theme.kind(form.kind, true),
+    )));
     (rows.lines, rows.cursor)
 }
 
@@ -458,6 +520,13 @@ fn wrap(text: &str, width: usize) -> Vec<Range<usize>> {
     let mut rows = Vec::new();
     let (mut start, mut used, mut space) = (0, 0, None);
     for (at, grapheme) in text.grapheme_indices(true) {
+        if grapheme == "\n" {
+            rows.push(start..at);
+            start = at + 1;
+            used = 0;
+            space = None;
+            continue;
+        }
         let columns = grapheme.width();
         if used + columns > width && at > start {
             let end = space.filter(|&after| after > start).unwrap_or(at);
@@ -501,7 +570,7 @@ fn draw_graph(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     let note = if let Some(problem) = &graph.problem {
         Some(format!("cannot read the decisions: {problem}"))
     } else if graph.lines.is_empty() {
-        Some("no decisions yet · each answer adds one".to_owned())
+        Some("No decisions yet".to_owned())
     } else {
         None
     };
@@ -567,15 +636,31 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Runnin
             " arrows, PgUp, and PgDn scroll the decisions · Esc goes back to the form",
             theme.dim,
         )),
-        (None, None) => Line::from(Span::styled(hints(area.width.into()), theme.dim)),
+        (None, None) => Line::from(Span::styled(
+            focused_hints(area.width.into(), app.form.row),
+            theme.dim,
+        )),
     };
     frame.render_widget(Paragraph::new(line), area);
 }
 
 /// As many key hints as fit in `width` columns, leaving out whole hints.
 fn hints(width: usize) -> String {
+    fit_hints(width, &HINTS)
+}
+
+fn focused_hints(width: usize, row: Row) -> String {
+    match row {
+        Row::Question => fit_hints(width, &["Tab / Shift-Tab type", "↑↓ fields", "/help"]),
+        Row::Option(_) => fit_hints(width, &["Tab next item", "↑↓ fields", "/help"]),
+        Row::Fact(_) => fit_hints(width, &["↑↓ fields", "Tab question", "/help"]),
+        _ => hints(width),
+    }
+}
+
+fn fit_hints(width: usize, hints: &[&str]) -> String {
     let mut shown = String::new();
-    for hint in HINTS {
+    for hint in hints {
         let next = if shown.is_empty() {
             format!(" {hint}")
         } else {
@@ -605,16 +690,58 @@ mod tests {
     }
 
     #[test]
+    fn inherited_answers_are_visible_without_becoming_an_unsent_draft() {
+        for (kind, message) in [
+            (Kind::Choice, "Options · using previous 2"),
+            (Kind::Score, "Levels · lowest first · using previous 2"),
+        ] {
+            let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+            let mut app = app(&settings);
+            app.form.kind = kind;
+            app.previous_question = Some(crate::repl::tui::tests::previous(kind));
+            let screen = shown(&mut app, 140, 24).join("\n");
+            assert!(screen.contains(message), "{screen}");
+            assert!(!screen.contains("previous question"), "{screen}");
+            assert!(screen.contains("Press Enter to send"), "{screen}");
+            assert!(screen.lines().next().unwrap().contains("nouli 0.4.0"));
+            assert!(
+                screen.contains("Which destination suits this trip?"),
+                "{screen}"
+            );
+            assert!(screen.contains("Ready"), "{screen}");
+            assert!(app.form.is_empty());
+            app.form.options = vec!["A replacement".into()];
+            assert!(!shown(&mut app, 140, 24).join("\n").contains(message));
+            app.form.kind = Kind::Noul;
+            let screen = shown(&mut app, 140, 24).join("\n");
+            assert!(!screen.contains("using previous"), "{screen}");
+        }
+    }
+
+    #[test]
+    fn type_controls_keep_distinct_citrus_colors_and_respect_no_color() {
+        let theme = Theme::new(true);
+        let plain = Theme::new(false);
+        for kind in Kind::ALL {
+            assert_eq!(theme.kind(kind, true).fg, Some(kind.tone().color()));
+            assert_eq!(theme.kind(kind, false).fg, Some(kind.tone().color()));
+            assert_eq!(plain.kind(kind, true).fg, None);
+            assert!(plain.kind(kind, true).add_modifier.contains(Modifier::BOLD));
+        }
+        assert_eq!(theme.accent.fg, None, "context and model stay neutral");
+    }
+
+    #[test]
     fn a_question_a_failed_turn_left_waits_in_state() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = app(&settings);
         app.repl.queue.facts.push("The train is late.".into());
         app.repl.queue.question = Some("late: Will it be late?".into());
         let screen = shown(&mut app, 140, 20).join("\n");
-        assert!(screen.contains("State · 2 queued"), "{screen}");
+        assert!(screen.contains("Context · 2 queued"), "{screen}");
         assert!(screen.contains("  + The train is late."), "{screen}");
-        assert!(screen.contains("  ? late: Will it be late?"), "{screen}");
-        assert!(screen.contains("  › Enter asks it again"), "{screen}");
+        assert!(screen.contains("    late: Will it be late?"), "{screen}");
+        assert!(screen.contains("  › Add context or retry"), "{screen}");
     }
 
     #[test]
@@ -626,7 +753,11 @@ mod tests {
         }
         app.form.input = "/".into();
         app.form.cursor = 1;
-        app.choice = 5;
+        app.choice = app
+            .commands_shown()
+            .iter()
+            .position(|(usage, _)| *usage == "/clear")
+            .unwrap();
         let screen = shown(&mut app, 80, 16).join("\n");
         assert!(screen.contains(" › /clear"), "{screen}");
     }
@@ -634,11 +765,35 @@ mod tests {
     #[test]
     fn the_status_line_leaves_out_the_key_hints_that_do_not_fit() {
         let all = hints(200);
-        assert!(all.ends_with("Ctrl-C quit · PgUp/PgDn scroll"), "{all}");
+        assert_eq!(all, " Tab question · ↑↓ fields · /help");
         let narrow = hints(all.width() - 1);
-        assert!(narrow.ends_with(" · Ctrl-C quit"), "{narrow}");
-        assert_eq!(hints(12), " Tab section");
-        assert_eq!(hints(11), "");
+        assert_eq!(narrow, " Tab question · ↑↓ fields");
+        assert_eq!(hints(13), " Tab question");
+        assert_eq!(hints(12), "");
+    }
+
+    #[test]
+    fn model_status_is_visible_before_answers_and_refreshes_the_next_selection() {
+        let mut settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        settings.config.default_provider = Some("typesafe".into());
+        settings.config.default_model = Some("jev-latest".into());
+        let mut app = app(&settings);
+        let screen = shown(&mut app, 140, 24).join("\n");
+        assert!(screen.contains("typesafe/jev-latest · Ready"), "{screen}");
+        app.model = Some("typesafe/jev-1.14.0".into());
+        assert!(
+            shown(&mut app, 140, 24)
+                .join("\n")
+                .contains("typesafe/jev-1.14.0 · Ready")
+        );
+        app.repl.model.model = Some("jev-1.13.0".into());
+        app.refresh_model();
+        app.form.question = "A draft question?".into();
+        let screen = shown(&mut app, 140, 24).join("\n");
+        assert!(screen.contains("typesafe/jev-1.13.0 · Draft"), "{screen}");
+        assert!(!screen.contains("last served:"), "{screen}");
+        assert!(focused_hints(140, Row::Option(0)).contains("Tab next item"));
+        assert!(focused_hints(140, Row::Question).contains("Tab / Shift-Tab type"));
     }
 
     #[test]
@@ -655,9 +810,9 @@ mod tests {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = app(&settings);
         let screen = shown(&mut app, 140, 20).join("\n");
-        assert!(screen.contains("── State"), "{screen}");
+        assert!(screen.contains("── Context"), "{screen}");
         assert!(
-            screen.contains("── Question · [noul] choice score"),
+            screen.contains("── Question · [Yes / No] Choose one Score"),
             "{screen}"
         );
         assert!(!screen.contains("Options"), "{screen}");
@@ -666,7 +821,7 @@ mod tests {
         app.form.options = vec!["low".into(), "high".into()];
         let screen = shown(&mut app, 140, 20).join("\n");
         assert!(
-            screen.contains("── Question · noul choice [score]"),
+            screen.contains("── Question · Yes / No Choose one [Score]"),
             "{screen}"
         );
         assert!(screen.contains("── Levels · lowest first"), "{screen}");
@@ -677,7 +832,16 @@ mod tests {
         app.graph_focused = true;
         let screen = shown(&mut app, 100, 20).join("\n");
         assert!(screen.contains("decisions · Ctrl-G"), "{screen}");
-        assert!(!screen.contains("── State"), "{screen}");
+        assert!(!screen.contains("── Context"), "{screen}");
+    }
+
+    #[test]
+    fn small_terminals_keep_a_valid_cursor() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        for (width, height) in [(1, 1), (4, 4), (24, 12)] {
+            shown(&mut app, width, height);
+        }
     }
 
     #[test]

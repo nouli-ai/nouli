@@ -16,6 +16,13 @@ routing preferences, and response metadata. The adapter sets
 `provider.allow_fallbacks=false`; it does not configure a fallback chain. Selected
 router-namespaced model IDs remain unchanged across attempts.
 
+Image evidence follows the [multimodal Decisions guide](https://openrouter.ai/docs/guides/community/multimodal-decisions),
+checked 2026-10-30. Routed Jev keeps the native assets/reference format and its
+positional references. Other routed models receive labelled `image_url` parts in
+top-level state, alongside text containing their references; those models do not
+support images inside option descriptions or instructions. Binary payloads are
+removed from textual context. Model support is still required.
+
 Results retain the selected profile, served model, optional upstream provider,
 optional native request ID, token usage, and optional provider-reported cost.
 Missing metadata stays absent. Invalid metadata types, negative/non-finite costs,
