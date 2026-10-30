@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Require a question for every turn: `nouli add`, `ask`, and `whatif`, and `new` with facts, fail with `questions_required` without `-q`. In `nouli open`, facts wait in the queue until a `?` line sends them.
 - Make `/whatif` ask its own question, `/whatif ?id: prompt [a, b]`, with the queued facts; it still saves nothing. An empty line now sends again only what a failed turn left queued.
 - Drop `re-asked N` from turn headers.
+- Describe Nouli as a decision graph in the README and on the website. The README opens on the recall example's graph, three source sessions and two layers of blends, with a table of what each blend was built on, and a prompt to hand Nouli to a coding agent.
+
+### Added
+
+- Add `llms.txt` to the website: the commands and rules an agent needs, with links to the docs.
 
 ### Removed
 

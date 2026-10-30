@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nouli · multi-turn decision harness</title>
-<meta name="description" content="Nouli is a multi-turn decision harness: it runs decision models over many turns, keeping every fact, question, and answer in a session.">
+<title>Nouli · decision graph</title>
+<meta name="description" content="Nouli is a decision graph: it runs decision models over many turns and feeds earlier decisions into later ones, keeping every fact, question, and answer in a ledger.">
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/src/style.css">
 </head>
@@ -12,7 +12,7 @@
 <header class="top"><a class="mark" href="./">NOULI</a><nav><a href="guide/#interactive">interactive</a><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 
 <h1 class="display">Every answer<br><span>remembers.</span></h1>
-<div class="sub"><p><strong>Nouli is a multi-turn decision harness.</strong> It runs decision models over many turns: each turn adds facts and a new question, and the model answers it with the whole history in view.</p></div>
+<div class="sub"><p><strong>Nouli is a decision graph.</strong> It runs decision models over many turns and feeds earlier decisions into later ones: each turn adds facts and a new question, and the model answers it with the whole history in view.</p></div>
 
 <section class="install" aria-label="Install">
   <div class="shell"><span class="os">macOS</span><span class="dollar" aria-hidden="true">$</span><code>brew install standing-desks/tap/nouli</code><button class="copy" type="button" data-copy="brew install standing-desks/tap/nouli" aria-label="Copy the Homebrew install command">copy</button></div>
