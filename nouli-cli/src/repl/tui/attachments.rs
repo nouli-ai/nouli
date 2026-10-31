@@ -1,10 +1,15 @@
 //! Terminal file drops are paths, either bracketed paste or ordinary key input.
 //! Resolve shell quoting without executing it, and snapshot bytes at drop time.
+mod documents;
+mod files;
+mod worker;
+pub(super) use files::discover;
 use std::{
     fs::File,
     io::{Cursor, Read},
     path::{Path, PathBuf},
 };
+pub(crate) use worker::maybe_worker;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use nouli_core::{
@@ -23,8 +28,12 @@ pub(super) enum Error {
     Read(String),
     #[error("{0} is larger than 16 MiB. Choose a smaller file.")]
     Large(String),
-    #[error("Cannot extract {0}. Use a text file, PDF, or image.")]
+    #[error("Cannot extract {0}. Choose a readable text file, document, spreadsheet, or image.")]
     Unsupported(String),
+    #[error("{0} import needs LibreOffice. Install it or export as DOCX/PPTX first.")]
+    OfficeUnavailable(String),
+    #[error("Cannot render {0}. Embed linked assets in the SVG or export it as PNG.")]
+    Svg(String),
     #[error("PDF import needs pdftotext (Poppler). Install it, then drop the file again.")]
     PdfUnavailable,
 }
@@ -84,6 +93,14 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err(Error::Large(name));
     }
+    let extension = path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if extension == "svg" {
+        bytes = worker::extract(bytes, "svg", &name).map_err(|_| Error::Svg(name.clone()))?;
+    }
     if let Ok(format) = image::guess_format(&bytes) {
         let reader = image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
@@ -121,10 +138,23 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
     }
     let text = if bytes.starts_with(b"%PDF-") {
         pdf_text(bytes, &name)?
+    } else if matches!(extension.as_str(), "csv" | "tsv") {
+        documents::delimited(&bytes, if extension == "tsv" { b'\t' } else { b',' }, &name)?
+    } else if matches!(
+        extension.as_str(),
+        "docx" | "pptx" | "xls" | "xlsx" | "xlsm" | "xlsb" | "ods" | "doc" | "ppt"
+    ) {
+        if matches!(extension.as_str(), "doc" | "ppt") {
+            documents::text(bytes, &extension, &name)?
+        } else {
+            String::from_utf8(worker::extract(bytes, &extension, &name)?)
+                .map_err(|_| Error::Unsupported(name.clone()))?
+        }
     } else {
         String::from_utf8(bytes).map_err(|_| Error::Unsupported(name.clone()))?
     };
     if text.trim().is_empty()
+        || text.len() as u64 > MAX_BYTES
         || text
             .chars()
             .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))

@@ -3,7 +3,7 @@
 mod input;
 mod show;
 mod start;
-mod tui;
+pub(crate) mod tui;
 
 use crate::{
     evaluate::{self, input_error},
