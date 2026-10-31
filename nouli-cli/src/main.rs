@@ -60,6 +60,9 @@ pub(crate) fn render_error(
 }
 
 fn main() -> ExitCode {
+    if let Some(code) = repl::tui::attachments::maybe_worker() {
+        return code;
+    }
     match Args::try_parse() {
         Ok(args) => {
             let Some(command) = &args.command else {

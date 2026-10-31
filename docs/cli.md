@@ -192,3 +192,48 @@ Credentials come from the current directory's `.env` or an explicit `--env-file 
 ## Library
 
 The same operations are available to embedding programs: see [embedding](embedding.md) for `context::facts` and `Ledger::facts`.
+
+### Local files with `@`
+
+Type `@` and a filename or relative path, such as `@documents/budget.xlsx`.
+The existing picker searches saved answers across the local ledger and files
+under the directory where Nouli started, including subfolders. File rows say
+“Local file”; paths are relative to that launch directory, which stays the same
+through session changes. Discovery respects ignore files, skips hidden paths
+and symlinks, and reads contents only after selection. Reopening the picker
+refreshes the file list. Discovery is bounded to 5,000 files, 20,000 directory
+entries and 250 ms per opening; drop an exact path for files outside that list.
+
+Enter inserts one file without sending the decision. Tab moves fields and
+Shift-Tab changes answer type as usual. The selected field receives extracted
+text/tables or an image label. In Options/Levels, a file occupies one item;
+ordinary multiline list paste still adds multiple items. Text imports show their
+contents for review; `@` also includes the relative filename. Sending uses that
+snapshot even if the original file is changed or deleted. Failed imports retain
+the query and draft.
+
+| Format | Input sent |
+| --- | --- |
+| Text, source files, JSON, Markdown and other UTF-8 text | Text |
+| CSV, TSV | Parsed rows with quoted/multiline cells preserved |
+| DOCX | Body text and tables |
+| PPTX | Slide text and tables, in presentation order |
+| XLS, XLSX, XLSM, XLSB, ODS | All sheets as named row arrays; dates as ISO text; cached formula values, or an explicit formula when no cached result exists |
+| PDF | Text extracted locally with Poppler `pdftotext`; scanned pages need a text export |
+| PNG, JPEG, GIF, WebP, BMP, TIFF, ICO | Native image input; other decoded raster formats normalize to PNG |
+| SVG | Rendered PNG; linked assets must be embedded or exported as PNG |
+| DOC, PPT | Optional local LibreOffice conversion to DOCX/PPTX, then text/table extraction |
+
+Documents do not render pages, charts or embedded images, and no OCR or formula
+recalculation runs. Macro code is not executed. Native image support and context
+limits depend on the selected provider/model; existing preflight checks apply.
+Nouli sends extracted text or images through its existing adapters, with no
+new document-upload API or conversion service.
+
+Files and extracted output are limited to 16 MiB, ZIP documents also have a
+16 MiB expanded-content limit, and sheets are limited to one million cells.
+Modern document/SVG parsing runs in an isolated worker with a ten-second deadline
+and memory/CPU limits; failed workers leave the TUI usable. Optional LibreOffice
+runs in a private temporary directory with a separate profile, resource limits
+and process-group cleanup. Install Poppler or LibreOffice separately when needed;
+Nouli does not install them automatically.

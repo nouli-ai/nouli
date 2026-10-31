@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Find files from the launch folder with `@` beside saved answers. Select without sending, and snapshot contents into the focused field. Import DOCX/PPTX text and tables, CSV/TSV rows, XLS/XLSX/XLSM/XLSB/ODS sheets and native images including rendered SVGs; PDF text uses Poppler and legacy DOC/PPT conversion optionally uses LibreOffice. File drops use the same parsers, and each file occupies one option/level.
 - Rename the current session with `/rename NAME`, preserving its history, IDs, model settings, references and unsent draft. Header, graph and later `@` searches use the new name; collisions leave the session unchanged.
 - Reference saved answers with `@` in any TUI field. Search question text or IDs across all sessions in the selected local store, inspect answer versions in Browse history, and insert an exact source without changing the current question type or answer list. References retain their saved results and image inputs, survive follow-ups and session changes, and remain ordinary selectable terminal text.
 - Give new sessions without an explicit name a durable random `scientist-number-noun` name, such as `curie-7-diffraction`, using short lowercase surnames, numbers 1–20, and original spinner-style noun forms. Names are unique within the ledger, including concurrent launches. Bare `/new` now works without a name; explicit names remain available.

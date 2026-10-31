@@ -417,6 +417,26 @@ fn reference_row(
     lines
 }
 
+fn reference_result(app: &App, index: usize, selected: bool, theme: &Theme) -> Vec<Line<'static>> {
+    if let Some(file) = app.references.file(index) {
+        vec![
+            Line::from(Span::styled(
+                format!(
+                    " {} {}",
+                    if selected { "›" } else { " " },
+                    app.references.file_label(file)
+                ),
+                if selected { theme.accent } else { Style::new() },
+            )),
+            Line::from(Span::styled("   Local file", theme.dim)),
+        ]
+    } else if let Some(entry) = app.references.catalog.get(index) {
+        reference_row(app, entry, selected, theme)
+    } else {
+        vec![]
+    }
+}
+
 fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
     let Some(picker) = &app.references.picker else {
         return vec![];
@@ -426,14 +446,14 @@ fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
     }
     let mut rows = vec![Line::from(Span::styled(
         format!(
-            "  Saved answers · all local sessions · {} matches",
+            "  Saved answers · all local sessions + files · {} matches",
             picker.matches.len()
         ),
         theme.dim,
     ))];
     if picker.matches.is_empty() {
         rows.push(Line::from(Span::styled(
-            "  No saved question found · Esc keeps the text",
+            "  No saved question found · no local file matches · Esc keeps the text",
             theme.dim,
         )));
     }
@@ -443,16 +463,14 @@ fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
         .take(super::references::COMPACT)
         .enumerate()
     {
-        rows.extend(reference_row(
-            app,
-            &app.references.catalog[index],
-            i == picker.choice,
-            theme,
-        ));
+        rows.extend(reference_result(app, index, i == picker.choice, theme));
     }
     let browse = picker.choice == picker.matches.len().min(super::references::COMPACT);
     rows.push(Line::from(Span::styled(
-        format!(" {} Browse history…", if browse { "›" } else { " " }),
+        format!(
+            " {} Browse history / files…",
+            if browse { "›" } else { " " }
+        ),
         if browse { theme.accent } else { theme.dim },
     )));
     rows
@@ -466,7 +484,7 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
     let title = if app.references.inspected.is_some() {
         " Reference source · Ctrl-O · Esc closes "
     } else {
-        " Saved answers · all local sessions "
+        " Saved answers · all local sessions + files "
     };
     let block = Block::new()
         .borders(Borders::ALL)
@@ -556,15 +574,24 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
         ));
     }
     for (i, index) in picker.matches.iter().enumerate().skip(first).take(size) {
-        lines.extend(reference_row(
-            app,
-            &app.references.catalog[*index],
-            i == picker.choice,
-            theme,
-        ));
+        lines.extend(reference_result(app, *index, i == picker.choice, theme));
         lines.push(Line::from(""));
     }
     frame.render_widget(Paragraph::new(lines), list_area);
+    if let Some(preview_area) = preview_area
+        && let Some(file) = app.references.selected_file()
+    {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(Span::styled(app.references.file_label(file), theme.accent)),
+                Line::from(""),
+                Line::from("File in the launch folder"),
+                Line::from("Enter adds its contents to this field."),
+            ])
+            .wrap(ratatui::widgets::Wrap { trim: false }),
+            preview_area,
+        );
+    }
     if let Some(preview_area) = preview_area
         && let Some(entry) = app.references.selected()
     {

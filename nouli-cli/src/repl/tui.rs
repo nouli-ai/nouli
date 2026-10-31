@@ -3,7 +3,7 @@
 //! over `Repl`, whose printed output fills the transcript. It runs each turn
 //! while it keeps drawing, and Ctrl-C, which arrives as a key, cancels it.
 mod ansi;
-mod attachments;
+pub(crate) mod attachments;
 mod draw;
 mod form;
 mod mouse;
@@ -57,7 +57,7 @@ const KEYS: [(&str, &str); 13] = [
         "next answer type: Yes / No → Choose one → Score",
     ),
     ("Up, Down", "the row above or below"),
-    ("@", "reference a saved answer from any local session"),
+    ("@", "find a saved answer or file in the launch folder"),
     ("Ctrl-O", "inspect the nearby saved reference"),
     (
         "Enter",
@@ -319,7 +319,7 @@ impl<'a> App<'a> {
             previous_question: None,
             latest_question: None,
             option_enter: false,
-            references: references::References::default(),
+            references: references::References::in_directory(std::env::current_dir().ok()),
         };
         app.drain();
         app.refresh_model();
@@ -1158,7 +1158,8 @@ impl<'a> App<'a> {
                     self.form.paste(" ", &mut self.repl.queue.facts);
                 }
             }
-            self.paste_text(&file.text);
+            self.option_enter = false;
+            self.form.paste(&file.text, &mut self.repl.queue.facts);
             if let Some(image) = file.image {
                 self.images.push(image);
             }

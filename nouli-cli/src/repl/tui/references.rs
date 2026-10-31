@@ -11,13 +11,19 @@ use nouli_core::{
         decisions::{DecisionSource, SavedDecision},
     },
 };
-use std::{collections::HashSet, ops::Range};
+use std::{
+    collections::HashSet,
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 pub(super) const COMPACT: usize = 3;
 
 #[derive(Default)]
 pub(super) struct References {
     pub catalog: Vec<SavedDecision>,
+    pub root: Option<PathBuf>,
+    pub files: Vec<PathBuf>,
     known: HashSet<Id>,
     pub picker: Option<Picker>,
     pub bindings: Vec<Binding>,
@@ -60,6 +66,12 @@ impl Binding {
 }
 
 impl References {
+    pub fn in_directory(root: Option<PathBuf>) -> Self {
+        Self {
+            root,
+            ..Self::default()
+        }
+    }
     pub fn close(&mut self) {
         if let Some(picker) = self.picker.take() {
             self.dismissed = Some((picker.row, picker.range.start));
@@ -102,6 +114,29 @@ impl References {
             return None;
         }
         self.catalog.get(*picker.matches.get(picker.choice)?)
+    }
+
+    pub fn file(&self, index: usize) -> Option<&Path> {
+        self.files
+            .get(index.checked_sub(self.catalog.len())?)
+            .map(PathBuf::as_path)
+    }
+
+    pub fn selected_file(&self) -> Option<&Path> {
+        let picker = self.picker.as_ref()?;
+        if !picker.expanded && picker.choice >= COMPACT {
+            return None;
+        }
+        self.file(*picker.matches.get(picker.choice)?)
+    }
+
+    pub fn file_label(&self, path: &Path) -> String {
+        render::clean(
+            &path
+                .strip_prefix(self.root.as_deref().unwrap_or(Path::new("")))
+                .unwrap_or(path)
+                .to_string_lossy(),
+        )
     }
 }
 
@@ -193,6 +228,12 @@ impl App<'_> {
         }
         let old = self.references.picker.take();
         if old.is_none() {
+            self.references.files = self
+                .references
+                .root
+                .as_deref()
+                .map(super::attachments::discover)
+                .unwrap_or_default();
             match self
                 .repl
                 .ledger()
@@ -202,11 +243,10 @@ impl App<'_> {
                 Ok(()) => {}
                 Err(message) => {
                     self.status = Some(Status::error(render::clean(&message)));
-                    return;
                 }
             }
         }
-        let found = self
+        let mut found = self
             .references
             .catalog
             .iter()
@@ -214,6 +254,24 @@ impl App<'_> {
             .filter(|(_, entry)| entry.matches(&query))
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
+        let query_path = query
+            .trim()
+            .strip_prefix("./")
+            .unwrap_or(query.trim())
+            .to_lowercase();
+        found.extend(
+            self.references
+                .files
+                .iter()
+                .enumerate()
+                .filter(|(_, path)| {
+                    let label = self.references.file_label(path).to_lowercase();
+                    query_path
+                        .split_whitespace()
+                        .all(|word| label.contains(word))
+                })
+                .map(|(i, _)| self.references.catalog.len() + i),
+        );
         let (choice, expanded) = old
             .filter(|p| p.row == self.form.row && p.range.start == range.start)
             .map_or((0, false), |p| {
@@ -352,14 +410,10 @@ impl App<'_> {
                 return false;
             }
             KeyCode::Char('s') if control => {
-                self.status = Some(Status::info(
-                    "Choose a saved answer, or Esc to keep the text.",
-                ))
+                self.status = Some(Status::info("Choose a result, or Esc to keep the text."))
             }
             KeyCode::F(5) => {
-                self.status = Some(Status::info(
-                    "Choose a saved answer, or Esc to keep the text.",
-                ))
+                self.status = Some(Status::info("Choose a result, or Esc to keep the text."))
             }
             _ => return false,
         }
@@ -368,6 +422,35 @@ impl App<'_> {
     }
 
     fn insert_reference(&mut self) {
+        if let Some(path) = self.references.selected_file().map(Path::to_path_buf) {
+            // Load successfully before editing the query. A failed conversion
+            // keeps the picker, selection and complete draft available.
+            match super::attachments::load(&path) {
+                Ok(mut file) => {
+                    let label = self.references.file_label(&path);
+                    if file.image.is_none() {
+                        file.text = format!("File: {label}\n{}", file.text);
+                    }
+                    let picker = self.references.picker.take().expect("selected file picker");
+                    self.form
+                        .remove_range(picker.range, &mut self.repl.queue.facts);
+                    if self.form.row == Row::Input {
+                        self.literal_input = true;
+                    }
+                    // An imported document occupies one option, even if its
+                    // extracted text has many lines. Ordinary list paste still splits.
+                    self.form.paste(&file.text, &mut self.repl.queue.facts);
+                    if let Some(image) = file.image {
+                        self.images.push(image);
+                    }
+                    self.references.dismissed = None;
+                    self.option_enter = false;
+                    self.status = Some(Status::info(format!("Added {label} · review, then Send")));
+                }
+                Err(error) => self.status = Some(Status::error(error.to_string())),
+            }
+            return;
+        }
         let Some(entry) = self.references.selected().cloned() else {
             return;
         };
@@ -513,6 +596,38 @@ impl App<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selecting_a_document_is_one_unsent_option_and_errors_preserve_the_query() {
+        let root = std::env::temp_dir().join(format!("nouli-select-file-{}", Id::generate()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("table.csv");
+        std::fs::write(&file, "city,fare\nSeattle,42").unwrap();
+        let settings = crate::settings::Settings::for_test(root.clone());
+        let mut app = super::super::tests::app(&settings);
+        app.references.root = Some(root.clone());
+        app.form.kind = super::super::form::Kind::Choice;
+        app.form.row = Row::Option(0);
+        app.form.question = "Which table?".into();
+        app.form.options = vec!["@table.csv".into()];
+        app.form.cursor = app.form.options[0].len();
+        app.sync_references();
+        assert_eq!(app.references.selected_file(), Some(file.as_path()));
+        std::fs::remove_file(&file).unwrap();
+        app.insert_reference();
+        assert!(app.references.picker.is_some());
+        assert_eq!(app.form.options, vec!["@table.csv"]);
+        std::fs::write(&file, "city,fare\nSeattle,42").unwrap();
+        app.insert_reference();
+        assert!(app.references.picker.is_none());
+        assert_eq!(app.form.options.len(), 1);
+        assert!(app.form.options[0].contains("Seattle"));
+        assert!(app.form.options[0].contains("42"));
+        assert!(app.form.options[0].contains("File: table.csv"));
+        assert_eq!(app.form.question, "Which table?");
+        assert_eq!(app.form.kind, super::super::form::Kind::Choice);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn search_uses_literal_text_and_boundary_at_without_email_or_unicode_rules() {
         assert_eq!(
