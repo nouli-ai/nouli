@@ -77,6 +77,16 @@ fn graph_width(total: u16) -> Option<u16> {
     (room >= GRAPH_MIN).then(|| room.min((total / 5 * 2).clamp(GRAPH_MIN, GRAPH_MAX)))
 }
 
+fn pane_width(total: u16, preferred: Option<u16>) -> Option<u16> {
+    if let Some(width) = preferred
+        && total >= 80
+    {
+        Some(width.clamp(GRAPH_MIN, total - 40))
+    } else {
+        graph_width(total)
+    }
+}
+
 pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>) {
     let theme = Theme::new(app.repl.paint.0);
     let [header, body, model, footer] = Layout::vertical([
@@ -87,7 +97,8 @@ pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>
     ])
     .areas(frame.area());
     // Without room for both, the pane shows only while it has the keys.
-    let (left, graph) = match graph_width(body.width) {
+    app.graph.body = body;
+    let (left, graph) = match pane_width(body.width, app.graph.preferred_width) {
         Some(width) => {
             let [left, right] =
                 Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(body);
@@ -95,6 +106,11 @@ pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>
         }
         None if app.graph_focused => (None, Some(body)),
         None => (Some(body), None),
+    };
+    app.graph.divider = if left.is_some() {
+        graph.map(|area| Rect { width: 1, ..area })
+    } else {
+        None
     };
     draw_header(frame, header, app, &theme);
     if let Some(left) = left {
@@ -937,7 +953,14 @@ fn draw_graph(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         .padding(Padding::left(1))
         .title(Line::from(vec![
             Span::styled(" decisions", title),
-            Span::styled(" · Ctrl-G", theme.dim),
+            Span::styled(
+                if app.graph_focused && app.graph.divider.is_some() {
+                    " · drag divider"
+                } else {
+                    " · Ctrl-G resize"
+                },
+                theme.dim,
+            ),
         ]));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1022,7 +1045,11 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Runnin
             theme.dim,
         )),
         (None, None) if app.graph_focused => Line::from(Span::styled(
-            " arrows, PgUp, and PgDn scroll the decisions · Esc goes back to the form",
+            if app.graph.divider.is_some() {
+                " drag divider to resize · arrows / wheel scroll · Esc selects text"
+            } else {
+                " arrows / wheel scroll · Esc selects text"
+            },
             theme.dim,
         )),
         (None, None) => Line::from(Span::styled(
@@ -1312,6 +1339,11 @@ mod tests {
         assert_eq!(graph_width(140), Some(56));
         assert_eq!(graph_width(200), Some(80));
         assert_eq!(graph_width(0), None);
+        assert_eq!(pane_width(200, Some(120)), Some(120));
+        assert_eq!(pane_width(100, Some(120)), Some(60));
+        assert_eq!(pane_width(100, Some(1)), Some(40));
+        assert_eq!(pane_width(80, Some(120)), Some(40));
+        assert_eq!(pane_width(79, Some(120)), None);
     }
 
     #[test]

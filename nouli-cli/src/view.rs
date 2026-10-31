@@ -4,6 +4,7 @@ mod edges;
 mod graph;
 mod mermaid;
 mod question;
+mod references;
 
 use crate::{
     render::{Format, OutputArgs, RenderError},
@@ -45,6 +46,7 @@ pub(crate) fn format(args: &OutputArgs, mermaid: bool) -> Result<Format, RenderE
 }
 
 pub(crate) use mermaid::write as write_mermaid;
+pub(crate) use references::include as include_references;
 
 fn abbreviations(ids: impl Iterator<Item = Id>) -> HashMap<Id, String> {
     let mut ids: Vec<_> = ids.map(|id| (id, id.to_string())).collect();
@@ -65,64 +67,173 @@ fn abbreviations(ids: impl Iterator<Item = Id>) -> HashMap<Id, String> {
         .collect()
 }
 
-/// One finalized turn in canonical order, with parents as indices of earlier nodes.
+/// A turn, or one question when exact reference endpoints need separate cards.
 struct Node<'a> {
     title: String,
     latest: bool,
     parents: Vec<usize>,
     turn: &'a FinalizedTurn,
+    question: Option<usize>,
+    references: Vec<usize>,
 }
 
 fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<'a>>, RenderError> {
     let mut seen = HashSet::new();
-    let turns: Vec<_> = exports
+    let turns = exports
         .iter()
         .flat_map(|export| &export.turns)
         .filter(|turn| seen.insert(turn.id))
-        .collect();
-    let labels = abbreviations(turns.iter().map(|turn| turn.id));
-    let sessions: HashMap<_, _> = exports
-        .iter()
-        .flat_map(|export| &export.provenance)
-        .map(|session| (session.id, session))
-        .collect();
-    let session_labels = abbreviations(sessions.keys().copied());
-    let indices: HashMap<_, _> = turns
+        .collect::<Vec<_>>();
+    let links = references::links(&turns)?;
+    let by_id = turns
         .iter()
         .enumerate()
         .map(|(index, turn)| (turn.id, index))
-        .collect();
-    turns
-        .into_iter()
-        .map(|turn| {
-            let session = sessions.get(&turn.session).ok_or(RenderError::Protocol)?;
-            let session_label = session
-                .name
-                .as_ref()
-                .map(|name| name.as_str().to_owned())
-                .unwrap_or_else(|| format!("(unnamed {})", session_labels[&session.id]));
-            let latest = frontier.contains(&turn.id);
-            Ok(Node {
+        .collect::<HashMap<_, _>>();
+    let mut dependencies = vec![HashSet::new(); turns.len()];
+    for (index, turn) in turns.iter().enumerate() {
+        for parent in &turn.parents {
+            dependencies[index].insert(*by_id.get(parent).ok_or(RenderError::Protocol)?);
+        }
+    }
+    let mut split = HashSet::new();
+    for link in &links {
+        let source = *by_id.get(&link.source.turn).ok_or(RenderError::Protocol)?;
+        if turns[source].session != link.source.session
+            || !turns[source]
+                .request
+                .questions
+                .iter()
+                .any(|q| q.id == link.source.question)
+        {
+            return Err(RenderError::Protocol);
+        }
+        dependencies[*by_id.get(&link.target).ok_or(RenderError::Protocol)?].insert(source);
+        split.insert(link.source.turn);
+        split.insert(link.target);
+    }
+    let mut children = vec![Vec::new(); turns.len()];
+    let mut remaining = dependencies.iter().map(HashSet::len).collect::<Vec<_>>();
+    for (child, parents) in dependencies.iter().enumerate() {
+        for parent in parents {
+            children[*parent].push(child);
+        }
+    }
+    let mut ready = remaining
+        .iter()
+        .enumerate()
+        .filter(|(_, count)| **count == 0)
+        .map(|(index, _)| index)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut order = Vec::new();
+    while let Some(index) = ready.pop_first() {
+        order.push(index);
+        for child in &children[index] {
+            remaining[*child] -= 1;
+            if remaining[*child] == 0 {
+                ready.insert(*child);
+            }
+        }
+    }
+    if order.len() != turns.len() {
+        return Err(RenderError::Protocol);
+    }
+    let labels = abbreviations(turns.iter().map(|turn| turn.id));
+    let sessions = exports
+        .iter()
+        .flat_map(|export| &export.provenance)
+        .map(|session| (session.id, session))
+        .collect::<HashMap<_, _>>();
+    let session_labels = abbreviations(sessions.keys().copied());
+    let mut nodes = Vec::new();
+    let mut groups = HashMap::<Id, Vec<usize>>::new();
+    for index in order {
+        let turn = turns[index];
+        let session = sessions.get(&turn.session).ok_or(RenderError::Protocol)?;
+        let session_label = session
+            .name
+            .as_ref()
+            .map(|name| name.as_str().to_owned())
+            .unwrap_or_else(|| format!("(unnamed {})", session_labels[&session.id]));
+        let latest = frontier.contains(&turn.id);
+        let questions = if split.contains(&turn.id) && turn.request.questions.len() > 1 {
+            (0..turn.request.questions.len())
+                .map(Some)
+                .collect::<Vec<_>>()
+        } else {
+            vec![None]
+        };
+        let mut group = Vec::new();
+        for question in questions {
+            let mut parents = turn
+                .parents
+                .iter()
+                .flat_map(|parent| groups.get(parent).into_iter().flatten().copied())
+                .collect::<Vec<_>>();
+            let mut referenced = Vec::new();
+            for link in links.iter().filter(|link| {
+                link.target == turn.id
+                    && question.is_none_or(|q| turn.request.questions[q].id == link.question)
+            }) {
+                let source = groups.get(&link.source.turn).ok_or(RenderError::Protocol)?;
+                let parent = *source
+                    .iter()
+                    .find(|node| {
+                        let source: &Node<'_> = &nodes[**node];
+                        source.question.is_none_or(|index| {
+                            source.turn.request.questions[index].id == link.source.question
+                        })
+                    })
+                    .ok_or(RenderError::Protocol)?;
+                referenced.push(parent);
+            }
+            referenced.sort_unstable();
+            referenced.dedup();
+            parents.extend(&referenced);
+            parents.sort_unstable();
+            parents.dedup();
+            group.push(nodes.len());
+            nodes.push(Node {
                 title: format!(
-                    "{} · {}{}",
+                    "{} · {}{}{}",
                     session_label,
                     labels.get(&turn.id).ok_or(RenderError::Protocol)?,
+                    question.map_or_else(String::new, |q| format!(
+                        " · {}/{}",
+                        q + 1,
+                        turn.request.questions.len()
+                    )),
                     if latest { " [latest]" } else { "" }
                 ),
                 latest,
-                parents: turn
-                    .parents
-                    .iter()
-                    .map(|id| indices.get(id).copied().ok_or(RenderError::Protocol))
-                    .collect::<Result<_, _>>()?,
+                parents,
                 turn,
-            })
-        })
-        .collect()
+                question,
+                references: referenced,
+            });
+        }
+        groups.insert(turn.id, group);
+    }
+    Ok(nodes)
 }
 
 /// Summarize a turn's questions in caller order with their typed results.
 fn describe(lines: &mut impl Lines, turn: &FinalizedTurn) -> Result<(), RenderError> {
+    describe_question(lines, turn, None)
+}
+
+fn describe_node(lines: &mut impl Lines, node: &Node<'_>) -> Result<(), RenderError> {
+    match node.question {
+        Some(question) => describe_question(lines, node.turn, Some(question)),
+        None => describe(lines, node.turn),
+    }
+}
+
+fn describe_question(
+    lines: &mut impl Lines,
+    turn: &FinalizedTurn,
+    selected: Option<usize>,
+) -> Result<(), RenderError> {
     if let Some(node) = &turn.workflow_node {
         lines.text(&format!("Workflow node: {node}"));
     }
@@ -140,7 +251,10 @@ fn describe(lines: &mut impl Lines, turn: &FinalizedTurn) -> Result<(), RenderEr
         })
         .collect();
     for (index, question) in turn.request.questions.iter().enumerate() {
-        if index > 0 {
+        if selected.is_some_and(|selected| selected != index) {
+            continue;
+        }
+        if selected.is_none() && index > 0 {
             lines.text("");
         }
         let outcome = outcomes
@@ -229,7 +343,7 @@ fn draw_cards(
             latest = Some(index);
         }
         let mut content = vec![];
-        describe(&mut content, node.turn)?;
+        describe_node(&mut content, &node)?;
         cards.push(graph::Card {
             parents: node.parents,
             rows: card::frame(&node.title, content),
@@ -292,6 +406,92 @@ mod tests {
         let mut sink = vec![];
         write(export, &mut sink, false).unwrap();
         String::from_utf8(sink).unwrap()
+    }
+
+    fn referenced_questions() -> SessionExport {
+        use nouli_core::{
+            context::{ContextKind, ContextRecord, ContextUpdate},
+            data::Data,
+            history::{RecordProjection, Representation},
+            storage::decisions::DecisionSource,
+        };
+        let mut export = fixture();
+        let mut source = export.turns[0].clone();
+        source.request.questions.truncate(2);
+        source.outcome.outcomes.truncate(2);
+        let mut target = source.clone();
+        target.id = Id::generate();
+        target.session = export.session.id;
+        target.parents.clear();
+        let id = Id::generate();
+        let reference = format!("[decision:{id}]");
+        target.request.questions[1].prompt = format!("Reconsider {reference}");
+        target.updates = vec![ContextUpdate::Append {
+            record: ContextRecord {
+                id,
+                key: format!("decision:{id}"),
+                kind: ContextKind::Evidence,
+                value: Data::new(serde_json::json!({"nouli_decision_reference": {
+                    "reference": reference,
+                    "source": DecisionSource {
+                        session: source.session,
+                        turn: source.id,
+                        question: source.request.questions[1].id.clone(),
+                    }
+                }}))
+                .unwrap(),
+            },
+        }];
+        target.manifest.records = vec![RecordProjection {
+            record: id,
+            representation: Representation::Full,
+            protected: true,
+        }];
+        export.session.frontier = vec![target.id];
+        // Dependency discovery must work even when the source is loaded later.
+        export.turns = vec![target, source];
+        export
+    }
+
+    #[test]
+    fn references_connect_exact_questions_once_and_sort_sources_before_destinations() {
+        let mut export = referenced_questions();
+        let binding = export.turns[0].updates[0].clone();
+        export.turns[0].updates.push(binding);
+        let nodes = nodes(&[&export], &export.session.frontier).unwrap();
+        assert_eq!(nodes.len(), 4);
+        assert_eq!(nodes[0].turn.id, export.turns[1].id);
+        assert_eq!(nodes[1].question, Some(1));
+        assert!(nodes[0].parents.is_empty());
+        assert!(nodes[1].parents.is_empty());
+        assert!(nodes[2].parents.is_empty());
+        assert_eq!(nodes[3].parents, vec![1]);
+        assert_eq!(nodes[3].references, vec![1]);
+        let mut mermaid = Vec::new();
+        write_mermaid(&export, &mut mermaid).unwrap();
+        let mermaid = String::from_utf8(mermaid).unwrap();
+        assert_eq!(mermaid.matches("-.->").count(), 1);
+        assert!(mermaid.contains("t1 -.-> t3"));
+    }
+
+    #[test]
+    fn shared_references_connect_all_questions_but_omitted_evidence_creates_no_edge() {
+        let mut export = referenced_questions();
+        let reference = export.turns[0].request.questions[1].prompt.clone();
+        export.turns[0].request.state = serde_json::from_value(serde_json::json!([
+            {"type": "text", "text": reference}
+        ]))
+        .unwrap();
+        assert_eq!(nodes(&[&export], &[]).unwrap()[2].references, vec![1]);
+        export.turns[0].manifest.records[0].representation =
+            nouli_core::history::Representation::Omitted;
+        let nodes = nodes(&[&export], &[]).unwrap();
+        assert_eq!(
+            nodes.len(),
+            2,
+            "unreferenced turns keep their existing cards"
+        );
+        assert!(nodes.iter().all(|node| node.parents.is_empty()));
     }
 
     #[test]
