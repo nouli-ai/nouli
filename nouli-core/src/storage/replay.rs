@@ -530,9 +530,12 @@ mod tests {
     }
     fn settings(store: &Store) -> SettingsSnapshot {
         SettingsSnapshot {
+            format_version: 2,
             profile_name: "fixture".into(),
             profile: ProviderProfile {
-                protocol: Protocol::Typesafe,
+                connection: Default::default(),
+                limits: Default::default(),
+                protocol: Protocol::SystemOne,
                 base_url: "http://127.0.0.1:8080".into(),
                 model: "offline".into(),
                 api_key_env: None,

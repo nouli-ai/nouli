@@ -1,37 +1,18 @@
-# OpenRouter Decisions adapter
+# OpenRouter setup using System One
 
-The `openrouter-decisions` profile sends a single request to the base URL plus
-`/alpha/decisions`. The standard base `https://openrouter.ai/api` therefore yields
-one `/api/alpha/decisions` path; custom proxy prefixes are preserved.
+OpenRouter is a setup shortcut, not a runtime protocol or model registry. It
+writes protocol `system-one`, base URL `https://openrouter.ai/api`, explicit
+`state-image-urls` media encoding and `extra_body.provider.allow_fallbacks=false`.
+The standard suffix yields `/api/v1/systemone`. Custom prefixes and suffixes are
+ordinary configuration. See the [TypeSafe SDK guide](https://openrouter.ai/docs/guides/community/typesafe-sdk),
+verified 2026-10-30. There is no implicit `/alpha/decisions` route.
 
-The state/questions map conversion shares the documented System One shape while
-router protocol selection, capability records, endpoint, model names, and native
-metadata remain separate. TOON state stays text. Choice/noul/score normalization
-validates every named answer and complete distribution, retains fractional scores,
-and rejects undocumented omissions or refusal types.
+Use an exact-model connection override for an upstream model that accepts a
+different media encoding, such as `assets`. No model ID selects that behavior.
+Model suggestions are examples, never an availability guarantee or allowlist.
 
-The [native reference](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request),
-verified 2026-10-28, documents model, named questions, state, optional provider
-routing preferences, and response metadata. The adapter sets
-`provider.allow_fallbacks=false`; it does not configure a fallback chain. Selected
-router-namespaced model IDs remain unchanged across attempts.
-
-Image evidence follows the [multimodal Decisions guide](https://openrouter.ai/docs/guides/community/multimodal-decisions),
-checked 2026-10-30. Routed Jev keeps the native assets/reference format and its
-positional references. Other routed models receive labelled `image_url` parts in
-top-level state, alongside text containing their references; those models do not
-support images inside option descriptions or instructions. Binary payloads are
-removed from textual context. Model support is still required.
-
-Results retain the selected profile, served model, optional upstream provider,
-optional native request ID, token usage, and optional provider-reported cost.
-Missing metadata stays absent. Invalid metadata types, negative/non-finite costs,
-and malformed answers fail explicitly. No cost is estimated or converted by the
-adapter. Other protocols do not acquire invented router metadata.
-
-The shared evaluator retry policy handles rate limits and transient statuses,
-including the documented router timeout/upstream-error statuses 524 and 529.
-The adapter performs no internal retry and no model switch. Synthetic fixtures
-under `fixtures/providers/openrouter` and inline loopback tests exercise prefixes,
-authorization, model names, all primitives, metadata, omissions, and errors without
-live router calls.
+The shared codec validates named answer coverage, full distributions and fractional
+score expectations. Optional native ID, upstream provider and usage cost are
+retained on any compatible System One response. Missing metadata stays absent;
+invalid or negative costs fail. Native confidence remains attributed. Retry and
+context reduction belong to the shared engine; no hidden fallback chain runs.

@@ -22,6 +22,10 @@ impl Home {
         self.0.join("ledger")
     }
     pub fn configure(&self, server: &Server, protocol: &str, credential: bool) {
+        let protocol = match protocol {
+            "typesafe" | "openrouter-decisions" => "system-one",
+            other => other,
+        };
         let config = format!(
             "default_provider = \"local\"\ndefault_model = \"offline\"\n[execution]\nmax_attempts = 1\nattempt_timeout_seconds = 5\n[providers.local]\nprotocol = \"{protocol}\"\nbase_url = \"{}\"\n{}\n[providers.local.models.offline]\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n",
             server.url,

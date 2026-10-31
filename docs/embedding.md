@@ -6,7 +6,7 @@ Run the complete credential-free example with `cargo run --package nouli-core --
 
 ## Explicit dependencies
 
-[`Engine`](crate::engine::Engine) takes a [`DecisionProvider`](crate::engine::execution::DecisionProvider), [`TokenCounter`](crate::limits::count::TokenCounter), and [`RetryClock`](crate::engine::execution::RetryClock). `NativeProvider`, `ByteCounter`, and `TokioClock` are supplied implementations; a fake provider needs no HTTP service. Providers must make one attempt and release owned work safely when their future is dropped. The engine can drop a provider future on timeout/cancellation. Providers must not hide retry, fallback, or detached background work.
+[`Engine`](crate::engine::Engine) takes a [`DecisionProvider`](crate::engine::execution::DecisionProvider), [`TokenCounter`](crate::limits::count::TokenCounter), and [`RetryClock`](crate::engine::execution::RetryClock). `TokenCounter::count` receives the fully resolved `ProviderProfile`, context and questions, so custom counters can use explicit compatibility settings. `NativeProvider`, `ByteCounter`, and `TokioClock` are supplied implementations; a fake provider needs no HTTP service. Providers must make one attempt and release owned work safely when their future is dropped. The engine can drop a provider future on timeout/cancellation. Providers must not hide retry, fallback, or detached background work.
 
 A caller supplies configuration, overrides, a home-path fallback for store resolution, an explicit credential lookup closure, and a cancellation token. Selecting a configured credential source does not read it until the caller's lookup runs. Credential values are not serializable and never enter frozen settings. The following compiles without making a call in the documentation test:
 
@@ -71,4 +71,4 @@ assert_ne!(explicit_null, skipped);
 
 A refusal can be selected as a full typed outcome, while requesting its nonexistent answer follows the reference's explicit required/optional/default policy. Score expectations retain their ordered rubric; a different model or rubric is not a compatible number to merge implicitly.
 
-Future REPL or natural-language orchestration can call these same contracts, engine methods, ledger worker, and event sink. The v1 seam supplies structured inputs and consumes typed results. It does not add tools, loops, approval nodes, image inputs, a generative planner, or another execution engine.
+Future REPL or natural-language orchestration can call these same contracts, engine methods, ledger worker, and event sink. The v1 seam supplies structured inputs and consumes typed results. It does not add tools, loops, approval nodes, a generative planner, or another execution engine.

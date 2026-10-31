@@ -90,18 +90,8 @@ impl Evidence {
         Ok(Self { text, images })
     }
 
-    pub fn assets(&self, prepare_jev: bool) -> Result<Value, codec::CodecError> {
-        let images = self
-            .images
-            .iter()
-            .map(|image| {
-                if prepare_jev {
-                    image.for_jev()
-                } else {
-                    Ok(image.clone())
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+    pub fn assets(&self) -> Result<Value, codec::CodecError> {
+        let images = &self.images;
         Ok(Value::Object(
             images
                 .iter()
@@ -166,30 +156,33 @@ impl Image {
             .map_err(|_| codec::CodecError::Shape)
     }
 
-    /// Published Jev bounds are inclusive: 280..1568 on each axis.
-    fn jev_size(width: u32, height: u32) -> (u32, u32, u32, u32) {
+    /// Fit pixels within explicit inclusive bounds, padding extreme aspect ratios.
+    fn image_size(width: u32, height: u32, minimum: u32, maximum: u32) -> (u32, u32, u32, u32) {
         let longest = f64::from(width.max(height).max(1));
         let shortest = f64::from(width.min(height).max(1));
-        let scale = if longest > 1568.0 {
-            1568.0 / longest
-        } else if shortest < 280.0 {
-            (280.0 / shortest).min(1568.0 / longest)
+        let scale = if longest > f64::from(maximum) {
+            f64::from(maximum) / longest
+        } else if shortest < f64::from(minimum) {
+            (f64::from(minimum) / shortest).min(f64::from(maximum) / longest)
         } else {
             1.0
         };
-        let width = (f64::from(width) * scale).round().clamp(1.0, 1568.0) as u32;
-        let height = (f64::from(height) * scale).round().clamp(1.0, 1568.0) as u32;
-        (width, height, width.max(280), height.max(280))
+        let width = (f64::from(width) * scale)
+            .round()
+            .clamp(1.0, f64::from(maximum)) as u32;
+        let height = (f64::from(height) * scale)
+            .round()
+            .clamp(1.0, f64::from(maximum)) as u32;
+        (width, height, width.max(minimum), height.max(minimum))
     }
 
-    pub fn jev_dimensions(&self) -> Result<(u32, u32), codec::CodecError> {
-        let (width, height) = self.dimensions()?;
-        let (_, _, width, height) = Self::jev_size(width, height);
-        Ok((width, height))
-    }
-
-    /// Derive a still, upright, bounded image without changing saved evidence.
-    pub fn for_jev(&self) -> Result<Self, codec::CodecError> {
+    pub fn prepare(
+        &self,
+        settings: &crate::config::ConnectionSettings,
+    ) -> Result<Self, codec::CodecError> {
+        if settings.min_image_dimension.is_none() && settings.max_image_dimension.is_none() {
+            return Ok(self.clone());
+        }
         let reader = image::ImageReader::new(Cursor::new(self.bytes()?))
             .with_guessed_format()
             .map_err(|_| codec::CodecError::Shape)?;
@@ -202,8 +195,12 @@ impl Image {
         let mut image =
             image::DynamicImage::from_decoder(decoder).map_err(|_| codec::CodecError::Shape)?;
         image.apply_orientation(orientation);
-        let (width, height, canvas_width, canvas_height) =
-            Self::jev_size(image.width(), image.height());
+        let (width, height, canvas_width, canvas_height) = Self::image_size(
+            image.width(),
+            image.height(),
+            settings.min_image_dimension.unwrap_or(1),
+            settings.max_image_dimension.unwrap_or(16384),
+        );
         if (width, height) != (image.width(), image.height()) {
             image = image.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
         }
@@ -258,10 +255,7 @@ pub(crate) mod tests {
     fn payload_is_removed_from_text_and_references_become_native_image_parts() {
         let evidence = Evidence::read(&context()).unwrap();
         assert!(!evidence.text.contains("data_base64"));
-        assert_eq!(
-            evidence.assets(false).unwrap()["[photo #123]"]["format"],
-            "png"
-        );
+        assert_eq!(evidence.assets().unwrap()["[photo #123]"]["format"], "png");
         let parts = evidence.openai_parts("Compare [photo #123] with this");
         assert_eq!(parts[0]["text"], "Compare ");
         assert_eq!(parts[2]["type"], "input_image");
@@ -330,7 +324,8 @@ pub(crate) mod tests {
                 },
             }],
         };
-        let direct = provider::typesafe::request_body(&request, &context(), "jev-latest").unwrap();
+        let direct =
+            provider::system_one::request_body(&request, &context(), "jev-latest").unwrap();
         assert!(direct["assets"]["[photo #123]"]["data_base64"].is_string());
         assert!(!direct["state"].as_str().unwrap().contains("aGVsbG8="));
         assert_eq!(
@@ -357,11 +352,25 @@ pub(crate) mod tests {
             openai["questions"][0]["choices"][0]["description"],
             "[photo #123]"
         );
-        let jev =
-            provider::openrouter::request_body(&request, &context(), "typesafe/jev-1.14").unwrap();
+        let jev = provider::wire::body(
+            &crate::limits::count::tests::profile(
+                crate::config::Protocol::SystemOne,
+                "typesafe/jev-1.14",
+            ),
+            &request,
+            &context(),
+        )
+        .unwrap();
         assert!(jev["assets"].is_object());
-        let router =
-            provider::openrouter::request_body(&request, &context(), "cloudflare/clef").unwrap();
+        let router = provider::wire::body(
+            &crate::limits::count::tests::profile(
+                crate::config::Protocol::SystemOne,
+                "cloudflare/clef",
+            ),
+            &request,
+            &context(),
+        )
+        .unwrap();
         assert!(router.get("assets").is_none());
         assert!(
             router["state"]
@@ -381,7 +390,13 @@ pub(crate) mod tests {
         ] {
             let original = picture(width, height);
             let bytes = original.data_base64.clone();
-            let prepared = original.for_jev().unwrap();
+            let prepared = original
+                .prepare(&crate::config::ConnectionSettings {
+                    min_image_dimension: Some(280),
+                    max_image_dimension: Some(1568),
+                    ..Default::default()
+                })
+                .unwrap();
             assert_eq!(prepared.dimensions().unwrap(), expected);
             assert_eq!(original.data_base64, bytes);
             assert_eq!(prepared.format, "png");
@@ -405,6 +420,17 @@ pub(crate) mod tests {
             format: "jpeg".into(),
             ..picture(300, 600)
         };
-        assert_eq!(picture.for_jev().unwrap().dimensions().unwrap(), (600, 300));
+        assert_eq!(
+            picture
+                .prepare(&crate::config::ConnectionSettings {
+                    min_image_dimension: Some(280),
+                    max_image_dimension: Some(1568),
+                    ..Default::default()
+                })
+                .unwrap()
+                .dimensions()
+                .unwrap(),
+            (600, 300)
+        );
     }
 }

@@ -8,7 +8,7 @@ max_attempts = 3
 attempt_timeout_seconds = 120
 
 [providers.jev]
-protocol = "typesafe"
+protocol = "system-one"
 base_url = "https://api.typesafe.ai"
 api_key_env = "TYPESAFE_API_KEY"
 
@@ -22,14 +22,14 @@ api_key_env = "OPENAI_API_KEY"
 [providers.openai.models."gpt-6-luna"]
 
 [providers.router]
-protocol = "openrouter-decisions"
+protocol = "system-one"
 base_url = "https://openrouter.ai/api"
 api_key_env = "OPENROUTER_API_KEY"
 
 [providers.router.models."openai/gpt-6-luna-decisions"]
 
 [providers.local]
-protocol = "typesafe"
+protocol = "system-one"
 base_url = "http://localhost:8000"
 
 [providers.local.models."english"]

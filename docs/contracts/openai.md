@@ -2,10 +2,12 @@
 
 The `openai-decisions` protocol uses `POST /v1/decisions` and the native input and
 questions array. It does not call Responses, chat, tools, or a fallback model.
-The configured `gpt-6-luna` profile and capability limits follow the official
+The shared codec follows the official
 [Decisions reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)
 and [guide](https://developers.openai.com/api/docs/guides/decisions), verified
-2026-10-28. Direct and router model records remain independent.
+2026-10-28. Endpoint, model ID, headers, media preparation and optional limits
+come from configuration. The OpenAI CLI shortcut only writes ordinary settings;
+there is no runtime provider/model catalog.
 
 Assembled TOON context is input text. Every question receives its unique portable
 name. Noul maps to predicate; choice IDs/descriptions map to typed string values;

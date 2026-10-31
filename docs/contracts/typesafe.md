@@ -1,9 +1,10 @@
 # TypeSafe and local Laya adapter
 
-The `typesafe` protocol posts one request to `/v1/systemone`, preserving the
-configured base prefix. `provider::typesafe::evaluate` accepts explicit resolved
-settings, assembled TOON context, a token counter, and cancellation. It checks
-capabilities and budgets before sending; it never retries or changes models.
+The `system-one` codec posts one request to `/v1/systemone` by default,
+preserving the configured base prefix. `provider::system_one::evaluate` accepts
+resolved settings, assembled TOON, a counter and cancellation. It performs one
+attempt, with no model/provider switching. TypeSafe, local compatible servers,
+and routed deployments use explicit connection settings with this shared codec.
 
 The native envelope has model, state, and a named questions map. State contains
 the assembled TOON as an escaped JSON string. Complete live choice descriptions
@@ -16,18 +17,12 @@ Native shape follows the
 [score](https://docs.typesafe.ai/primitives/score), and
 [noul](https://docs.typesafe.ai/primitives/noul) documentation, checked 2026-10-28.
 
-Image evidence records use the reference and `assets` format in the
-[System One reference](https://docs.typesafe.ai/api/system-one), checked
-2026-10-30. Binary payloads are removed from TOON text; opaque references stay
-at their original positions in state, instructions, and criteria. Requests with
-assets set `TypeSafe-Danger-Zone-Images: true`. The selected model must support
-images; local Laya-compatible servers may reject them. Saved image references
-explicitly reused by a current question or update protect their original records
-from context reduction. Provider-bound copies apply EXIF orientation, normalize to still PNG, and scale
-or pad into 280–1568 pixels per side; saved original bytes are unchanged. See
-[image preparation](https://docs.typesafe.ai/images). Pixel-based estimates
-count each reference occurrence separately, are marked `multimodal_estimate`,
-and remain approximate. The model response records actual served usage.
+Image encoding and preparation are explicit connection settings. The TypeSafe
+setup recipe writes `assets`, its image opt-in header, inclusive dimension bounds
+of 280 to 1568 and approximate patch accounting. Those defaults live only in the
+CLI recipe, never in the codec. Hand-written settings can express the same thing.
+Other servers choose `images-base64`, `images-data-urls` or `state-image-urls` as
+required. Original image evidence remains unchanged; see [limits](limits.md).
 
 The adapter validates named coverage and types, complete option/level probabilities,
 score expectations, and any returned rubric legend against the original scale.
@@ -46,7 +41,7 @@ must not be substituted for that statistic or assumed calibrated like Jev.
 
 [Laya's HTTP server](https://github.com/NandhaKishorM/laya#self-hosting-http-server-jev-compatible)
 documents the same systemone wire protocol. Configure a local unauthenticated
-profile with its actual model and an explicit budget. Nouli does not install,
+profile with its actual model and optional explicit limits. Nouli does not install,
 start, or tune Laya. Its defaults and confidence semantics are independent of
 hosted Jev; recorded profile/model provenance preserves that distinction.
 

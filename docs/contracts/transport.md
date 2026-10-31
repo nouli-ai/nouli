@@ -2,7 +2,13 @@
 
 `HttpTransport::post` issues one cancellable JSON POST and reads one bounded
 response. Reqwest protocol retries, redirects, and environment proxy discovery
-are disabled. Protocol paths append to validated base URL prefixes. HTTPS uses
+are disabled. Protocol paths append to validated base URL prefixes. Explicit `request_path`
+replaces the suffix. The `cloudflare-workers-ai` binding appends `run/MODEL`
+(or an explicit path override followed by MODEL); `wire_model` independently
+selects the request body's model field. The binding unwraps success/result
+responses before the shared System One decoder. Literal headers, environment-backed
+headers and primary auth are merged in that order, case-insensitively. Core has
+no vendor-specific header defaults. HTTPS uses
 Rustls; explicit local HTTP uses the same transport. Building the native TLS
 dependency requires a C compiler (Xcode Command Line Tools on macOS, a system C
 toolchain on Linux). No subscriber is installed by the library.

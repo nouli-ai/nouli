@@ -136,6 +136,12 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
                 if !settings.config.providers.contains_key(&login.provider) {
                     return Err(settings.config_error(ConfigError::UnknownProvider));
                 }
+                let authentication_disabled = settings
+                    .config
+                    .connection_settings(&login.provider, settings.config.default_model.as_deref())
+                    .map_err(|error| settings.config_error(error))?
+                    .no_auth
+                    == Some(true);
                 let source = key_source(login)?;
                 store::update(&path, |entries| {
                     entries.insert(login.provider.clone(), AuthEntry::ApiKey(source.clone()));
@@ -148,6 +154,7 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
                         "version": 1,
                         "provider": login.provider,
                         "source": source.kind(),
+                        "authentication_disabled_for_default_model": authentication_disabled,
                         "path": path.display().to_string(),
                     }),
                 ))
@@ -182,7 +189,7 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
                             "provider": name,
                             "configured": definition.is_some(),
                             "stored": credentials.store().get(name).map(|e| e.source().kind()),
-                            "source": credentials.winner(name, variable),
+                            "source": if settings.config.connection_settings(name, settings.config.default_model.as_deref()).is_ok_and(|connection| connection.no_auth == Some(true)) { "disabled" } else { credentials.winner(name, variable) },
                         })
                     })
                     .collect();
@@ -212,13 +219,22 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
 fn text(sink: &mut impl io::Write, command: &Command, value: &serde_json::Value) -> io::Result<()> {
     let word = |key: &str| render::clean(value[key].as_str().unwrap_or(""));
     match command {
-        Command::Login(_) => writeln!(
-            sink,
-            "Stored the {} credential for {} in {}",
-            word("source"),
-            word("provider"),
-            word("path")
-        ),
+        Command::Login(_) => {
+            writeln!(
+                sink,
+                "Stored the {} credential for {} in {}",
+                word("source"),
+                word("provider"),
+                word("path")
+            )?;
+            if value["authentication_disabled_for_default_model"] == true {
+                writeln!(
+                    sink,
+                    "Primary authentication is disabled for the default model; this source is available to models that enable it"
+                )?;
+            }
+            Ok(())
+        }
         Command::Logout { .. } => {
             if value["removed"] == true {
                 writeln!(

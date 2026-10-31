@@ -1,6 +1,8 @@
 //! Top-level command names; each subsystem owns its arguments and execution.
 #[derive(Debug, clap::Subcommand)]
 pub(crate) enum Command {
+    /// Configure and authenticate a decision endpoint.
+    Connect(crate::connect::Connect),
     #[command(flatten)]
     Inspect(crate::inspect::Command),
     /// Create a session, and run its first turn when facts or a question are given.

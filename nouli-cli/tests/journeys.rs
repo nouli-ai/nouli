@@ -87,9 +87,9 @@ fn configure(home: &Home, jev: &Server, openai: &Server, router: &Server, attemp
         "default_provider = \"jev\"\ndefault_model = \"fixture-requested-alias\"\n[execution]\nmax_attempts = {attempts}\nattempt_timeout_seconds = 10\n"
     );
     for (name, protocol, endpoint) in [
-        ("jev", "typesafe", &jev.url),
+        ("jev", "system-one", &jev.url),
         ("openai", "openai-decisions", &openai.url),
-        ("router", "openrouter-decisions", &router.url),
+        ("router", "system-one", &router.url),
     ] {
         text += &format!(
             "[providers.{name}]\nprotocol = \"{protocol}\"\nbase_url = \"{endpoint}\"\n[providers.{name}.models.\"fixture-requested-alias\"]\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n"

@@ -42,6 +42,12 @@ fn storage(error: &StorageError) -> ErrorReport {
         StorageError::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
             message(Category::Storage, "missing_ledger")
         }
+        StorageError::FrozenSettings => ErrorReport {
+            category: Category::Storage,
+            code: "unsupported_frozen_settings".into(),
+            message: error.to_string(),
+            retryable: false,
+        },
         _ => message(Category::Storage, "ledger_unavailable"),
     }
 }
@@ -158,6 +164,7 @@ fn config(error: &ConfigError) -> ErrorReport {
             ),
             retryable: false,
         },
+        ConfigError::HeaderCredential { .. } => ErrorReport { category: Category::Configuration, code: "header_credential_unavailable".into(), message: error.to_string(), retryable: false },
         ConfigError::MissingCredential | ConfigError::InvalidCredential => {
             message(Category::Authentication, "credential_unavailable")
         }
@@ -200,10 +207,10 @@ fn limit(error: &crate::limits::LimitError) -> ErrorReport {
             message: crate::codec::CodecError::ImageReferenceConflict.to_string(),
             retryable: false,
         },
-        LimitError::TotalCapacity | LimitError::QuestionCapacity => {
+        LimitError::TotalCapacity | LimitError::QuestionCapacity | LimitError::RequestBytes => {
             message(Category::Capacity, "context_capacity")
         }
-        LimitError::MissingBudget | LimitError::InvalidBudget | LimitError::Profile => {
+        LimitError::InvalidBudget | LimitError::Profile => {
             message(Category::Configuration, "invalid_model_budget")
         }
         _ => message(Category::Capability, "unsupported_model_input"),

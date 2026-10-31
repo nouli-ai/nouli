@@ -5,6 +5,7 @@ use clap::{CommandFactory, Parser};
 
 mod auth;
 mod commands;
+mod connect;
 mod evaluate;
 mod input;
 mod inspect;
@@ -102,6 +103,7 @@ fn main() -> ExitCode {
                 };
             };
             match command {
+                commands::Command::Connect(options) => return connect::run(&args, options),
                 commands::Command::New(verb) => {
                     return evaluate::command(&args, turns::Verb::New(verb));
                 }

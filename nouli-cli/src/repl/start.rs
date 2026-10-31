@@ -126,7 +126,7 @@ fn session_loop(settings: &Settings, start: Start) -> io::Result<Result<(), Erro
     if can_draw() {
         // The view's header identifies the app and session.
         let repl = Repl {
-            settings,
+            settings: std::borrow::Cow::Borrowed(settings),
             out: Vec::new(),
             paint,
             model,
@@ -137,7 +137,7 @@ fn session_loop(settings: &Settings, start: Start) -> io::Result<Result<(), Erro
         return tui::run(repl, &runtime).map(Ok);
     }
     let mut repl = Repl {
-        settings,
+        settings: std::borrow::Cow::Borrowed(settings),
         out: io::stdout().lock(),
         paint,
         model,
@@ -170,11 +170,73 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
     {
         return render_error(args, settings.config.output, error);
     }
+    if can_draw() && settings.config.providers.is_empty() {
+        match crate::connect::configure(args, &crate::connect::Connect::default()) {
+            Ok(_) => {
+                settings = match settings::load(args) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return render_error(
+                            args,
+                            nouli_core::config::OutputFormat::Auto,
+                            settings::error(args, e),
+                        );
+                    }
+                };
+                if let Err(e) = settings.load_environment() {
+                    return render_error(args, settings.config.output, e);
+                }
+            }
+            Err(error) => {
+                return render_error(
+                    args,
+                    settings.config.output,
+                    nouli_core::protocol::ErrorReport {
+                        category: nouli_core::protocol::ErrorCategory::Configuration,
+                        code: "connection_setup_failed".into(),
+                        message: error.to_string(),
+                        retryable: false,
+                    },
+                );
+            }
+        }
+    }
     let paint = Paint(render::color_enabled(io::stdout().is_terminal()));
-    let model = ModelSelection {
+    let mut model = ModelSelection {
         provider: open.and_then(|open| open.provider.clone()),
         model: open.and_then(|open| open.model.clone()),
     };
+    if can_draw()
+        && let Target::Named(selector) = &target
+    {
+        match open_existing(&settings).and_then(|ledger| {
+            ledger
+                .map(|ledger| ledger.session(selector))
+                .transpose()
+                .map_err(|error| error.report())
+        }) {
+            Ok(Some(session)) => {
+                model = nouli_core::config::resolve::select_model(&[&model, &session.defaults])
+            }
+            Ok(None) => {}
+            Err(error) if error.code == "invalid_session" => {}
+            Err(error) => return render_error(args, settings.config.output, error),
+        }
+    }
+    if can_draw()
+        && let Err(error) = crate::connect::startup(&mut settings, &mut model)
+    {
+        return render_error(
+            args,
+            settings.config.output,
+            nouli_core::protocol::ErrorReport {
+                category: nouli_core::protocol::ErrorCategory::Configuration,
+                code: "connection_setup_failed".into(),
+                message: error.to_string(),
+                retryable: false,
+            },
+        );
+    }
     let outcome = session_loop(
         &settings,
         Start {

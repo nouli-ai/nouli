@@ -2,7 +2,7 @@
 //
 //   node scripts/replay.mjs --example NAME --nouli PATH [--check] [--live]
 //
-// Offline (the default): a local stub speaks the TypeSafe protocol and answers each model
+// Offline (the default): a local stub speaks the System One protocol and answers each model
 // call with the result recorded for the matching walkthrough step, so a run is free and
 // deterministic. Live (--live): the commands call the provider configured in the current
 // directory's .env, which costs money, and the answers can differ from the recorded ones.
@@ -319,8 +319,19 @@ default_model = "${live ? "jev-latest" : MODEL}"
 max_attempts = 1
 
 [providers.typesafe]
-protocol = "typesafe"
+protocol = "system-one"
 ${provider}
+
+[providers.typesafe.connection]
+image_encoding = "assets"
+min_image_dimension = 280
+max_image_dimension = 1568
+pixel_patch_size = 28
+pixel_multiplier = 4
+pixel_overhead = 256
+
+[providers.typesafe.connection.headers]
+TypeSafe-Danger-Zone-Images = "true"
 
 [providers.typesafe.models."${live ? "jev-latest" : MODEL}"]
 context_budget_tokens = ${live ? 8192 : 100000}

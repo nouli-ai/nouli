@@ -16,7 +16,7 @@ pub(crate) struct Settings {
     pub store: PathBuf,
     pub config_path: PathBuf,
     pub credentials: Arc<auth::Credentials>,
-    env_file: Option<PathBuf>,
+    pub(crate) env_file: Option<PathBuf>,
     initialize_default: bool,
     store_override: Option<PathBuf>,
 }

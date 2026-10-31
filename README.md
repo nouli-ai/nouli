@@ -7,7 +7,7 @@
 brew install standing-desks/tap/nouli
 ```
 
-On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh`. Then [define a provider](https://standing-desks.github.io/nouli/guide/#provider) and run `nouli auth login typesafe`.
+On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh`. Then run `nouli connect` to choose a service, authenticate and select a model. You can also [write the configuration yourself](docs/configuration.md).
 
 [![CI](https://img.shields.io/github/actions/workflow/status/standing-desks/nouli/ci.yml?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/standing-desks/nouli?include_prereleases&sort=semver&style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/releases)

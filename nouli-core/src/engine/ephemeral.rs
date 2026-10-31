@@ -172,6 +172,13 @@ mod tests {
         profile.models.insert(
             "offline".into(),
             crate::config::ModelSettings {
+                connection: Default::default(),
+                per_question_context_tokens: None,
+                max_questions: None,
+                max_choices: None,
+                max_score_levels: None,
+                max_request_bytes: None,
+                input_modalities: None,
                 context_budget_tokens: Some(100_000),
                 context_window_tokens: Some(100_000),
                 reserved_output_tokens: Some(128),

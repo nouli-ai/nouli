@@ -1,58 +1,174 @@
 # Configuration
 
-The CLI reads `~/.nouli/config.toml`; `--config FILE` selects an explicit file.
-On the first valid decision or workflow evaluation, a missing default file is
-created as a minimal scaffold containing `output = "auto"` and no providers.
-Define a `[providers.NAME]` section, set `default_provider` to that name
-and `default_model` to a compatible model (or pass `--provider NAME --model MODEL`),
-and supply its credential environment variable or
-separately run the configured local Laya service. A configuration with no providers
-reports `providers_required` and asks you to define providers.
+The CLI reads `~/.nouli/config.toml`; `--config FILE` selects a different file.
+Start with `nouli connect`. Choose a service, authenticate, choose a model, and
+optionally save it as your startup default. `nouli connect typesafe` skips the
+service question. Shortcuts exist for OpenAI, TypeSafe, OpenRouter, Cloudflare
+Workers AI, Ollama and llama.cpp; `custom` accepts any compatible endpoint.
+Setup validates locally without contacting the provider.
 
-In your provider definitions, put environment-variable names in `api_key_env`, never key values. New Unix
-configuration directories/files use modes 0700/0600. A complete temporary file
-is published atomically without replacing an existing file, including when two
-processes initialize concurrently. Existing or malformed configuration is
-preserved. Missing explicit `--config` files are errors and are never generated.
-The template is `nouli-cli/config.default.toml`.
+Shortcuts only write ordinary configuration and credential sources. The runtime
+never looks up a service by name, host or model ID. Hand-written configuration
+has exactly the same behavior. Rename a connection, change its URL, or use any
+model ID supported by your server without registering it with Nouli.
 
-Help, version, invalid decision/graph input, inspection, and saved workflow resume
-do not initialize configuration. A `whatif` still allows first-run configuration
-setup, but needs an existing ledger and creates none. The library loader remains read-only and accepts a
-missing optional default as empty settings. CLI setup errors identify the missing
-provider/model or selected credential variable and show the configuration path.
+```sh
+nouli connect
+nouli connect openai
+nouli connect cloudflare
+nouli connect custom --name gateway --protocol system-one \
+  --base-url https://gateway.example/api --model my-model \
+  --env GATEWAY_TOKEN --default --non-interactive
+nouli connect ollama --model clef --default --non-interactive
+```
 
-Before creating a new ledger, CLI evaluation validates selected providers and models, native
-input/capability limits, budgets, and credentials. Correcting a preflight failure
-is a normal new attempt; no request was accepted, so `--retry-interrupted` is
-unnecessary. Existing ledgers keep engine-owned replay/recovery and session defaults:
-completed replay and frozen resume can work without current provider definitions.
-Unknown fields, invalid protocols/URLs, and invalid limits fail without prompting.
-Configuration setup performs no provider calls.
+Authentication options are a masked key prompt, `--stdin`, `--env NAME`,
+`--command PROGRAM ARGS...`, or `--no-auth`. Put options before `--command`,
+whose remaining words are the credential program's arguments. Keys and credential
+sources are stored in private `auth.toml`, separately from the configuration.
+`--replace` explicitly replaces one existing connection. Existing unrelated TOML
+comments and settings are preserved. Setup collects and validates the draft before
+writing, serializes concurrent edits under a lock, writes credentials first, and
+publishes the configuration by atomic rename. New directories/files are private
+(0700/0600). `/cancel` or EOF cancels a prompt. A failed final config write may
+leave a reusable credential entry, never a configuration with a newly missing key.
 
-`fixtures/config/providers.toml` shows the supported layout. Each named provider
-specifies `protocol` (`typesafe`, `openai-decisions`, or `openrouter-decisions`),
-`base_url`, optional `api_key_env`, and optional `max_attempts` and
-`attempt_timeout_seconds`. Custom endpoints use those same protocols.
+In a terminal, bare `nouli` starts setup when no providers exist, and prompts for
+missing startup model or credentials before allocating a session. In the full-screen
+session, `/connect [SERVICE]`, `/login [CONNECTION]`, `/logout [CONNECTION]`, and
+`/model [CONNECTION]` run setup while idle, then reload settings and retain the
+unsent draft. `/model` offers configured IDs and protocol examples and accepts a manually typed ID;
+changing it affects the active session unless you choose to save a startup default.
+Piped evaluation never prompts.
 
-Top-level `default_provider` and `default_model` select independent defaults.
-Neither is required in the file if the request, session, CLI, or workflow nodes
-supply the missing selection. An evaluation with no selected model reports
-`model_required`; it never chooses a model from the provider's model entries.
+For manual setup, only the protocol and base URL define the connection:
 
-Optional `[providers.NAME.models."MODEL_ID"]` tables configure
-`context_budget_tokens`, `context_window_tokens`, and `reserved_output_tokens`
-for exact model IDs. They do not restrict which models you can select. Model IDs
-containing dots or slashes must be quoted. The selected model uses only its own
-limits, so switching models does not reuse another model's capacity. Model names
-in examples are illustrative, not availability claims.
+```toml
+default_provider = "my-server"
+default_model = "any-compatible-model"
 
-Endpoints use HTTPS, or explicit local HTTP on loopback/private/link-local IPs
-or localhost. Base URL path prefixes are preserved by the transport. Credentials
-in URL userinfo/query/fragment are rejected. Put only environment-variable names
-in `api_key_env`. Unauthenticated local providers omit it. Only the selected
-provider's variable is read; unrelated missing keys do not block a request. A provider
-with a stored credential (see below) can omit `api_key_env` too.
+[providers.my-server]
+protocol = "system-one"
+base_url = "https://gateway.example/prefix"
+api_key_env = "GATEWAY_TOKEN"
+```
+
+The two protocols are `system-one` (named questions, state, choice/noul/score) and
+`openai-decisions` (OpenAI Decisions' native schema). Standard paths append
+`v1/systemone` or `v1/decisions` to the URL, preserving its prefix. Override the
+suffix with `connection.request_path` without introducing another protocol.
+This is decision inference, not a generic chat-completions adapter.
+
+HTTPS and explicit local HTTP on localhost/private/link-local IPs are supported.
+URL credentials, query strings and fragments are rejected. `api_key_env` contains
+a variable name, never its value. A provider with neither an environment source
+nor a stored credential is unauthenticated. Explicit `connection.no_auth = true`
+disables primary authentication, including stale stored keys. `auth login` can
+store a source in advance and reports when the default model has auth disabled.
+`/login` uses the active model's resolved settings; enable authentication there
+before logging in.
+
+Provider and model selection resolve independently: CLI, request, session defaults,
+then top-level `default_provider` / `default_model`. Model tables are optional
+exact-ID settings, not an allowlist. Quote IDs containing dots or slashes.
+
+Limits resolve from `[defaults]`, then `[providers.NAME.defaults]`, then the exact
+`[providers.NAME.models."ID"]`. Explicit `--context-budget` wins. The operational
+budget is 8192 when omitted, clamped to an explicitly configured context window;
+it is an estimate budget, not a claim about the model's capacity. Output reserve
+defaults to zero. No provider/model capability catalog is loaded.
+
+```toml
+[defaults]
+context_budget_tokens = 8192
+
+[providers.my-server.defaults]
+max_questions = 16
+
+[providers.my-server.models."any-compatible-model"]
+context_window_tokens = 32768
+context_budget_tokens = 16000
+reserved_output_tokens = 128
+per_question_context_tokens = 12000
+max_choices = 64
+max_score_levels = 10
+max_request_bytes = 1048576
+input_modalities = ["text", "image"]
+```
+
+Connection fields overlay independently from global `[defaults.connection]`,
+provider `[providers.NAME.defaults.connection]`, provider `[providers.NAME.connection]`,
+then exact model `[providers.NAME.models."ID".connection]`. Maps merge by key;
+HTTP headers merge case-insensitively, including across literal/environment sources.
+A more specific header source replaces the earlier one.
+
+```toml
+[providers.my-server.connection]
+binding = "standard"
+request_path = "v1/systemone"
+auth_header = "X-Api-Key"
+auth_scheme = "" # empty means raw key; default is Bearer
+image_encoding = "images-data-urls"
+# Optional image preparation and approximate pixel accounting:
+max_image_dimension = 1568
+min_image_dimension = 280
+pixel_patch_size = 28
+pixel_multiplier = 4
+pixel_overhead = 256
+
+[providers.my-server.connection.headers]
+X-Tenant = "example"
+
+[providers.my-server.connection.headers_env]
+X-Gateway-Token = "GATEWAY_HEADER" # resolved value never enters saved settings
+
+[providers.my-server.connection.extra_body]
+provider = { allow_fallbacks = false }
+```
+
+`headers` is for nonsecret values; use `headers_env` for secret headers. Primary
+authentication overrides a header with the same name. `extra_body` cannot replace
+model/state/input/questions/assets/images. Image encodings are `assets` (default
+System One references), `images-base64`, `images-data-urls`, `state-image-urls`, and
+`openai-content` (OpenAI default). Choose the encoding your server accepts; no model
+or hostname selects it. Optional dimensions resize/pad an upright PNG copy; original
+evidence remains immutable. Pixel or encoded-byte counts are approximate.
+
+Cloudflare Workers AI uses the same System One codec with a different HTTP binding:
+
+```toml
+[providers.edge]
+protocol = "system-one"
+base_url = "https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai"
+api_key_env = "CLOUDFLARE_API_TOKEN"
+
+[providers.edge.connection]
+binding = "cloudflare-workers-ai"
+image_encoding = "images-data-urls"
+
+[providers.edge.models."@cf/cloudflare/clef".connection]
+wire_model = "clef"
+```
+
+This posts to `BASE/run/@cf/cloudflare/clef`, sends `model = "clef"` in the body,
+and unwraps the Workers AI `success/result` response. `wire_model` is an explicit
+exact-model override, independent of the path selector. There is no third decision
+protocol. For OpenRouter, `nouli connect openrouter` writes the System One route
+under `https://openrouter.ai/api` and explicit routing preferences. Hand-written
+settings can express the same connection. Local Ollama uses `images-base64`;
+llama.cpp uses `images-data-urls`.
+
+Unknown fields, invalid URLs/protocol combinations and nonpositive bounds fail
+locally. Help, version, invalid requests and inspection do not initialize config.
+Noninteractive first evaluation can create a minimal default scaffold but still
+requires a configured selection. Missing explicit config files remain errors
+except when intentionally authored by `nouli connect --config FILE`.
+
+Before inference, selected settings, credentials, modalities, counts and estimated
+budgets are checked. Correcting preflight is a new attempt, without
+`--retry-interrupted`. Completed replay and frozen resume use saved settings.
+Frozen settings now use format version 2. Older saved runs require a fresh store
+(`--store DIR`); they are never silently migrated, rewritten or deleted.
 
 The CLI automatically reads `.env` from the current working directory for
 provider credentials. It does not search parent directories or the config
@@ -115,37 +231,9 @@ working directory; no project configuration discovery occurs. Settings resolutio
 returns the chosen path without opening or creating a ledger.
 
 
-Known model limits come from the dated, host/protocol/model-specific capability snapshot described in [limits](contracts/limits.md). A smaller `--context-budget` is allowed; exceeding a known/configured window fails. Unknown aliases, custom endpoints, and local Laya models require a budget or window in their model settings, or an explicit `--context-budget`. Output reservation defaults to zero if omitted and counts against the budget. Native usage remains separate from estimated preflight tokens. See [all numerical defaults](defaults.md).
-
-For a separately running local Laya service, configure a provider such as the following. Endpoint, served model name, and capacity must match that service; these values demonstrate configuration shape, not a model installation or capacity guarantee:
-
-```toml
-default_provider = "local"
-default_model = "english"
-output = "auto"
-[providers.local]
-protocol = "typesafe"
-base_url = "http://localhost:8000"
-
-[providers.local.models."english"]
-context_budget_tokens = 8192
-reserved_output_tokens = 128
-```
-
-The offline [walkthrough](walkthrough.md) generates a temporary loopback provider instead. Hosted examples in `fixtures/config/providers.toml` name environment sources, never credentials. No key is collected interactively; supply it through the shell or an env file. Full request syntax, selection, and stdin rules are in [the command line guide](cli.md).
-
-One provider can serve multiple models. Add a settings table for each model that
-needs explicit limits, then select a model for a call:
-
-```sh
-nouli add Trip --input request.json --model another-model --context-budget 4096
-nouli add Trip --input request.json --provider another-provider --model compatible-model
-```
-
-Use only models supported by the selected service and protocol. Models without
-settings use their recognized capability limits, if available; custom or unknown
-models require an explicit budget/window. The existing model settings are not
-copied into an unlisted model.
+All optional limits and counting behavior are described in
+[limits](contracts/limits.md); [defaults](defaults.md) lists Nouli's operational
+settings. Selecting a model does not copy another model's overrides.
 
 ## Credential store
 
