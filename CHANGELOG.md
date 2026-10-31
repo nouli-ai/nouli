@@ -15,11 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Move Nouli to the `nouli-ai` GitHub organization. Install with `brew install nouli-ai/tap/nouli` or `curl -fsSL https://nouli.ai/install.sh | sh`; existing `standing-desks/tap` installations migrate to the new tap on the next `brew update`, and the old installer URL keeps working.
-- Serve the website's fonts from nouli.ai so the headline and TUI layout remain consistent when external font services are unavailable.
-- Present Nouli as a ledger-backed decision network with "Every decision has a history" across the website, guide, agent reference, and README. Link the Nouli brand to nouli.ai.
-- Bring the website's TUI higher with a smaller headline, a compact product explanation beside it, and no second introduction above the replay.
-- Add page descriptions, canonical URLs, and an automatically generated sitemap to help readers and search engines find Nouli's guide and recorded examples.
+- Install with `brew install nouli-ai/tap/nouli`; installations from `standing-desks/tap` switch to the new tap on the next `brew update`. The download installer is now at `https://nouli.ai/install.sh`, and the previous URL keeps working.
 - Keep the TUI's bee greeter at the top of the transcript, so output scrolls it away instead of replacing it; scrolling back reveals it again.
 
 ## [0.4.2] - 2026-10-30
@@ -33,7 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Configure any compatible service through `system-one` or `openai-decisions`, explicit HTTP bindings, headers, image formats and optional limits. Remove provider/model recognition and the bundled capacity catalog; omitted budgets use 8,192 estimated tokens, clamped to a configured window. This replaces the `typesafe` and `openrouter-decisions` protocol names. Older frozen runs require a fresh store and are preserved untouched.
-- Refresh the Pages home page, guide and walkthroughs with captures of the current full-screen TUI. Add a simple three-turn meeting example alongside the complex multi-session examples, preserving recorded model answers.
 - Resize the graph by dragging its divider at any time, including while editing a field. Ctrl-G remains keyboard navigation; use the terminal’s selection modifier for native text selection. Keep the chosen width through session changes and clamp it when the terminal shrinks.
 - Connect referenced answers to the questions that use them in the TUI and `nouli view`, including after reopening a destination session. Load the exact saved source history without blending sessions; separate question cards where necessary and mark reference edges with dashed arrows in Mermaid.
 - Search saved conversation text with `@`, including context, structured values, options and answers across local sessions. Show matching excerpts, carry the selected saved state into the next decision, and preview historical input with image filenames and scrolling in Browse history, including narrow terminals and long drafts.
@@ -90,11 +85,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Require a question for every turn: `nouli add`, `ask`, and `whatif`, and `new` with facts, fail with `questions_required` without `-q`. In `nouli open`, facts wait in the queue until a `?` line sends them.
 - Make `/whatif` ask its own question, `/whatif ?id: prompt [a, b]`, with the queued facts; it still saves nothing. An empty line now sends again only what a failed turn left queued.
 - Drop `re-asked N` from turn headers.
-- Describe Nouli as a decision graph in the README and on the website. The README opens on the recall example's graph, three source sessions and two layers of blends, with a table of what each blend was built on, and a prompt to hand Nouli to a coding agent.
-
-### Added
-
-- Add `llms.txt` to the website: the commands and rules an agent needs, with links to the docs.
 
 ### Removed
 
@@ -104,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add Homebrew installation through `standing-desks/tap/nouli` and notify the tap when stable releases are published.
+- Add Homebrew installation through `standing-desks/tap/nouli`.
 - Add a checksum-verified download installer for Apple silicon macOS and ARM64 or x86_64 GNU/Linux.
 - Build Linux x86_64 release archives alongside the existing ARM64 downloads.
 - Add a `session` report for a session created without a turn.
@@ -123,13 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Record facts as numbered evidence instead of turn text. `--replace N TEXT` corrects fact N; the model sees only the new text and the earlier version stays in the session history.
 - Print turns as text with probability bars for every option, with a marker where an answer moved since the last turn. `--json`, `--jsonl`, and TOON output keep their shape.
 - Select the session by position in `nouli view SESSION`, and rename `nouli workflows` to `nouli workflow`.
-- Update the guide, README, and website walkthroughs to the new commands, with walkthrough outputs recorded from this release.
-- Put the install commands, a recorded interactive session, and a getting-started section on the website's home page, add an "interactive" link to every page, and move interactive mode to the start of the guide. Walkthroughs show each step as the lines you would type in `nouli open`, with a toggle for the commands. Terminal output on the site uses the system monospace font, so probability bars line up.
 - Take a request file as `--input FILE` without a `session`; the command supplies the session.
-
-### Fixed
-
-- Keep the user guide within the viewport on narrow screens, with long commands and tables scrolling within the content.
 
 ### Removed
 
@@ -145,6 +129,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add durable session histories, branching, blending, and workflow recovery.
 - Add decision graph views in the terminal, and `nouli view --mermaid` for Mermaid flowcharts on GitHub and other Markdown renderers.
 - Add provider configuration and `.env` credential loading.
-- Add a website with a user guide and interactive walkthroughs for robotics, banking, venture investing, food recalls, cybersecurity, and energy planning. Each walkthrough shows its commands, recorded model outputs, and a decision graph that follows along as you read.
 - License Nouli and its Rust packages under MIT, including the license in native archives.
-- Add Linux and macOS ARM64 downloads, with draft releases prepared when a version tag is pushed.
+- Add Linux and macOS ARM64 downloads.
