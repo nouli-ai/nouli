@@ -39,8 +39,32 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .sub p { font: 400 14px/1.6 var(--mono); font-stretch: 87%; max-width: 46ch; }
 .sub strong { font-weight: 700; color: var(--teal); }
 
+/* The opening message and its plain-text explanation share the same space. */
+.hero { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 56px; align-items: end; padding: 22px 28px 28px; }
+.hero .display { font-size: clamp(70px, 9.8vw, 156px); padding: 0; }
+.hero .sub { display: block; padding: 0 0 2px; }
+.hero .sub h2 { margin-bottom: 12px; color: var(--teal); font: 600 12px var(--mono); font-stretch: 87%; }
+.hero .sub p { max-width: 54ch; font-size: 12px; line-height: 1.6; }
+.hero .sub p + p { margin-top: 12px; }
+.hero .sub a { text-underline-offset: 3px; }
+.hero .sub .org { margin-top: 14px; color: var(--soft); font-size: 10px; }
+.hero .sub .org a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.hero .sub .org a:hover { text-decoration: underline; }
+.hero .sub .org img { width: 14px; height: 16px; }
+@media (max-width: 1100px) {
+  .hero { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 32px; }
+  .hero .display { font-size: clamp(56px, 8.7vw, 104px); }
+  .hero .sub p { font-size: 11px; }
+}
+@media (max-width: 760px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 16px 28px 24px; }
+  .hero .display { font-size: clamp(40px, 12vw, 84px); }
+  .hero .sub p { max-width: 64ch; }
+}
+@media (max-width: 600px) { .hero { padding-left: 16px; padding-right: 16px; } }
+
 /* Install: both commands, right under the opening line */
-.install { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px 40px; padding: 0 28px 40px; }
+.install { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px 40px; padding: 0 28px 24px; }
 .shell { display: flex; align-items: center; gap: 12px; min-width: 0; padding-bottom: 8px; border-bottom: 2px solid var(--teal); font: 400 13px var(--mono); font-stretch: 87%; }
 .shell .os { flex: none; width: 6ch; font-size: 11px; color: var(--soft); }
 .shell .dollar { color: var(--teal); }
@@ -54,8 +78,8 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .install .meta a { color: var(--ink); text-underline-offset: 3px; }
 
 /* Section heads and the terminal */
-.cli-replay h2, .start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
-.cli-replay h2 span, .start h2 span { color: var(--teal); }
+.start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
+.start h2 span { color: var(--teal); }
 .steps code { color: var(--teal); }
 .term { background: var(--ink); color: var(--paper); min-width: 0; }
 

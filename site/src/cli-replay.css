@@ -1,8 +1,4 @@
-.cli-replay { padding:56px 28px 56px; }
-.replay-head { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:48px; align-items:end; margin-bottom:28px; }
-.cli-replay h2 { font-size:clamp(30px, 3.4vw, 52px); }
-.replay-head .thesis { font-weight:300; font-stretch:87%; font-size:clamp(20px, 2.1vw, 30px); line-height:1.15; letter-spacing:-0.01em; max-width:34ch; }
-.replay-head .thesis b { font-weight:800; }
+.cli-replay { padding:0 28px 56px; }
 
 /* The bench: a teal surface with ruler ticks on its edges, the terminal on top
    and the session's graph beneath it. */
@@ -28,8 +24,6 @@
 .bench .fig { border-top:1px solid var(--on-teal-dim); }
 
 @media (max-width: 960px) {
-  .replay-head { grid-template-columns:minmax(0, 1fr); gap:20px; }
-  .cli-replay { padding-top:40px; }
   .bench { padding:24px 16px 20px 22px; }
   .bench::after { display:none; }
 }

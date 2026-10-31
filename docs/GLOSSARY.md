@@ -1,8 +1,8 @@
 # Nouli
 
-Nouli coordinates typed model judgments over supplied evidence and recorded
-decision histories. These terms distinguish judgments, caller commitments, and
-the histories used to make subsequent decisions.
+Nouli is a ledger-backed decision network. It coordinates typed model judgments
+over supplied evidence and recorded decision histories. These terms distinguish
+judgments, caller commitments, and the histories used to make subsequent decisions.
 
 ## Language
 
