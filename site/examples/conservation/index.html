@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/src/style.css">
 </head>
-<body data-graph="conservation" data-view="repl">
+<body data-graph="conservation" data-view="tui">
 <header class="top"><a class="mark" href="../../">NOULI</a><nav><a href="../../guide/#interactive">interactive</a><a href="../../guide/">guide</a><a href="../" aria-current="page">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 <main class="walk">
 <article class="story prose">
@@ -27,21 +27,46 @@
 <pre><code>example=energy</code></pre>
 </div>
 <div class="views" role="group" aria-label="Show the steps as">
-<span>show the steps as</span><button type="button" data-view="repl" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
-<p class="repl-only">Open the first session with <code>nouli open request</code>, then type each step's lines at the prompt. A question sends the turn.</p>
+<span>show the steps as</span><button type="button" data-view="tui" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
+<p class="tui-only">Open <code>nouli open request</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>
 </div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record the conservation request</h2>
 <p>Record the external request separately from the facility limits. The two-hour planning interval is 18:00-20:00, after the historical alert.</p>
-<pre class="repl"><code>$ nouli open request
-new session "request" · /help for commands
-
-request › Cal OES reported a September 6, 2022 emergency alert at 17:45, requesting reductions in nonessential electricity use where health permits until 21:00. Our illustrative facility is considering 18:00-20:00. This is a voluntary conservation request, not a market dispatch instruction.
-request › ?request: Which type of response fits this request? [Reduce nonessential use while preserving critical operations, Include critical operations in load reductions, Request clarification before choosing any response]
+<div class="tui-snapshot" data-capture="conservation" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · request
+request › Cal OES reported a September 6, 2022 emergency alert at 17:45,
+requesting reductions in nonessential electricity use where health permits
+until 21:00. Our illustrative facility is considering 18:00-20:00. This is a
+voluntary conservation request, not a market dispatch instruction.
+request › Which type of response fits this request?
   turn 1 · 1 fact · 1 question
-  request     ▶ Reduce nonessential use while p… ███████████████████▊ 0.99
-                Include critical operations in …                      0.00
-                Request clarification before ch… ▎                    0.01</code></pre>
+   ▶ Reduce nonessential use while p… ███████████████████▊ 0.99
+     Include critical operations in …                      0.00
+     Request clarification before ch… ▎                    0.01
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ Which type of response fits this request?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    Which type of response fits this request?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-request&quot; \
   &#x27;Cal OES reported a September 6, 2022 emergency alert at 17:45, requesting
 reductions in nonessential electricity use where health permits until 21:00.
@@ -61,14 +86,40 @@ conservation request, not a market dispatch instruction.&#x27; \
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Record battery availability</h2>
 <p>Record battery telemetry without applying a reserve requirement yet. Stored energy and the discharge power limit are distinct quantities.</p>
-<pre class="repl"><code>request › /new battery
-  new session "battery"
-battery › Illustrative reading at 17:50: stored AC-deliverable energy is 800 kWh in a 1000 kWh battery. The discharge limit is 200 kW. No charging is planned during the two-hour interval. This telemetry record does not define the required reserve.
-battery › ?battery: What battery power limit applies before reserve requirements are considered? [100 kW, 150 kW, 200 kW]
+<div class="tui-snapshot" data-capture="conservation" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery
+request › Cal OES reported a September 6, 2022 emergency alert at 17:45,
+requesting reductions in nonessential electricity use where health permits
+until 21:00. Our illustrative facility is considering 18:00-20:00. This is a
+voluntary conservation request, not a market dispatch instruction.
+request › Which type of response fits this request?
   turn 1 · 1 fact · 1 question
-  battery       100 kW                                                0.00
-                150 kW                                                0.00
-              ▶ 200 kW                           ████████████████████ 1.00</code></pre>
+   ▶ Reduce nonessential use while p… ███████████████████▊ 0.99
+     Include critical operations in …                      0.00
+     Request clarification before ch… ▎                    0.01
+battery › /new battery
+  new session &quot;battery&quot;
+battery › Illustrative reading at 17:50: stored AC-deliverable energy is 800
+kWh in a 1000 kWh battery. The discharge limit is 200 kW. No charging is
+planned during the two-hour interval. This telemetry record does not define the
+required reserve.
+battery › What battery power limit applies before reserve requirements are
+considered?
+  turn 1 · 1 fact · 1 question
+     100 kW                                                0.00
+     150 kW                                                0.00
+   ▶ 200 kW                           ████████████████████ 1.00
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ What battery power limit applies before reserve requirements are considered?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    What battery power limit applies before reserve requirements are considered?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-battery&quot; \
   &#x27;Illustrative reading at 17:50: stored AC-deliverable energy is 800 kWh in a
 1000 kWh battery. The discharge limit is 200 kW. No charging is planned during
@@ -88,14 +139,40 @@ reserve.&#x27; \
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record facility obligations</h2>
 <p>Record facility obligations in a separate history so both planning branches can reuse them. The reserve is 500 kWh and refrigeration cannot be curtailed.</p>
-<pre class="repl"><code>battery › /new facility
-  new session "facility"
-facility › Illustrative facility policy: retain at least 500 kWh of AC-deliverable battery energy after 20:00 for critical operations. Vehicle charging can be deferred by 100 kW throughout 18:00-20:00 without affecting departures. Critical refrigeration uses 150 kW and cannot be curtailed. There are no other flexible loads. The local conservation goal is 250 kW for the interval.
-facility › ?facility: Which load can be reduced without disrupting critical operations? [Defer vehicle charging, Curtail refrigeration, Request a review of operating constraints]
+<div class="tui-snapshot" data-capture="conservation" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · facility
+  new session &quot;battery&quot;
+battery › Illustrative reading at 17:50: stored AC-deliverable energy is 800
+kWh in a 1000 kWh battery. The discharge limit is 200 kW. No charging is
+planned during the two-hour interval. This telemetry record does not define the
+required reserve.
+battery › What battery power limit applies before reserve requirements are
+considered?
   turn 1 · 1 fact · 1 question
-  facility    ▶ Defer vehicle charging           ████████████████████ 1.00
-                Curtail refrigeration                                 0.00
-                Request a review of operating c…                      0.00</code></pre>
+     100 kW                                                0.00
+     150 kW                                                0.00
+   ▶ 200 kW                           ████████████████████ 1.00
+facility › /new facility
+  new session &quot;facility&quot;
+facility › Illustrative facility policy: retain at least 500 kWh of
+AC-deliverable battery energy after 20:00 for critical operations. Vehicle
+charging can be deferred by 100 kW throughout 18:00-20:00 without affecting
+departures. Critical refrigeration uses 150 kW and cannot be curtailed. There
+are no other flexible loads. The local conservation goal is 250 kW for the
+interval.
+facility › Which load can be reduced without disrupting critical operations?
+  turn 1 · 1 fact · 1 question
+   ▶ Defer vehicle charging           ████████████████████ 1.00
+     Curtail refrigeration                                 0.00
+     Request a review of operating c…                      0.00
+── Context · latest question included ──────────────────────────────────────────
+  ↳ Which load can be reduced without disrupting critical operations?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    Which load can be reduced without disrupting critical operations?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-facility&quot; \
   &#x27;Illustrative facility policy: retain at least 500 kWh of AC-deliverable
 battery energy after 20:00 for critical operations. Vehicle charging can be
@@ -116,14 +193,40 @@ flexible loads. The local conservation goal is 250 kW for the interval.&#x27; \
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Choose the battery contribution</h2>
 <p>Blend telemetry and facility policy to choose constant battery output for two hours. The plan has not executed.</p>
-<pre class="repl"><code>facility › /blend battery facility as battery-plan
-  new session "battery-plan" from battery + facility
-battery-plan › Choose the greatest constant battery output for 18:00-20:00 that leaves at least the recorded reserve. Use the latest telemetry. The proposed plan has not executed.
-battery-plan › ?battery_plan: What constant battery contribution is feasible? [Discharge at 100 kW for two hours, Discharge at 150 kW for two hours, Discharge at 200 kW for two hours]
+<div class="tui-snapshot" data-capture="conservation" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery-plan
+   ▶ 200 kW                           ████████████████████ 1.00
+facility › /new facility
+  new session &quot;facility&quot;
+facility › Illustrative facility policy: retain at least 500 kWh of
+AC-deliverable battery energy after 20:00 for critical operations. Vehicle
+charging can be deferred by 100 kW throughout 18:00-20:00 without affecting
+departures. Critical refrigeration uses 150 kW and cannot be curtailed. There
+are no other flexible loads. The local conservation goal is 250 kW for the
+interval.
+facility › Which load can be reduced without disrupting critical operations?
   turn 1 · 1 fact · 1 question
-  battery_pl…   Discharge at 100 kW for two hou… ███▋                 0.18
-              ▶ Discharge at 150 kW for two hou… █████████            0.45
-                Discharge at 200 kW for two hou… ███████▍             0.37</code></pre>
+   ▶ Defer vehicle charging           ████████████████████ 1.00
+     Curtail refrigeration                                 0.00
+     Request a review of operating c…                      0.00
+battery-plan › /blend battery facility as battery-plan
+  new session &quot;battery-plan&quot; from battery + facility
+battery-plan › Choose the greatest constant battery output for 18:00-20:00 that
+leaves at least the recorded reserve. Use the latest telemetry. The proposed
+plan has not executed.
+battery-plan › What constant battery contribution is feasible?
+  turn 1 · 1 fact · 1 question
+     Discharge at 100 kW for two hou… ███▋                 0.18
+   ▶ Discharge at 150 kW for two hou… █████████            0.45
+     Discharge at 200 kW for two hou… ███████▍             0.37
+── Context · latest question included ──────────────────────────────────────────
+  ↳ What constant battery contribution is feasible?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    What constant battery contribution is feasible?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-battery-plan&quot; --from &quot;$example-battery&quot; --from &quot;$example-facility&quot; \
   &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
 least the recorded reserve. Use the latest telemetry. The proposed plan has
@@ -142,14 +245,40 @@ not executed.&#x27; \
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Choose the load contribution</h2>
 <p>Blend the conservation request with facility policy to choose a load response independently of battery dispatch.</p>
-<pre class="repl"><code>battery-plan › /blend request facility as load-plan
-  new session "load-plan" from request + facility
-load-plan › Choose a voluntary load reduction consistent with the conservation request and the facility obligations.
-load-plan › ?load_plan: Which load response should the facility offer? [Defer 100 kW of vehicle charging for two hours, Defer charging and refrigeration for two hours, Request a revised operating plan before offering a reduction]
+<div class="tui-snapshot" data-capture="conservation" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · load-plan
+facility › Which load can be reduced without disrupting critical operations?
   turn 1 · 1 fact · 1 question
-  load_plan   ▶ Defer 100 kW of vehicle chargin… ███████████████████▊ 0.99
-                Defer charging and refrigeratio…                      0.00
-                Request a revised operating pla… ▎                    0.01</code></pre>
+   ▶ Defer vehicle charging           ████████████████████ 1.00
+     Curtail refrigeration                                 0.00
+     Request a review of operating c…                      0.00
+battery-plan › /blend battery facility as battery-plan
+  new session &quot;battery-plan&quot; from battery + facility
+battery-plan › Choose the greatest constant battery output for 18:00-20:00 that
+leaves at least the recorded reserve. Use the latest telemetry. The proposed
+plan has not executed.
+battery-plan › What constant battery contribution is feasible?
+  turn 1 · 1 fact · 1 question
+     Discharge at 100 kW for two hou… ███▋                 0.18
+   ▶ Discharge at 150 kW for two hou… █████████            0.45
+     Discharge at 200 kW for two hou… ███████▍             0.37
+load-plan › /blend request facility as load-plan
+  new session &quot;load-plan&quot; from request + facility
+load-plan › Choose a voluntary load reduction consistent with the conservation
+request and the facility obligations.
+load-plan › Which load response should the facility offer?
+  turn 1 · 1 fact · 1 question
+   ▶ Defer 100 kW of vehicle chargin… ███████████████████▊ 0.99
+     Defer charging and refrigeratio…                      0.00
+     Request a revised operating pla… ▎                    0.01
+── Context · latest question included ──────────────────────────────────────────
+  ↳ Which load response should the facility offer?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    Which load response should the facility offer?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-load-plan&quot; --from &quot;$example-request&quot; --from &quot;$example-facility&quot; \
   &#x27;Choose a voluntary load reduction consistent with the conservation request and
 the facility obligations.&#x27; \
@@ -167,14 +296,40 @@ the facility obligations.&#x27; \
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine the two plans</h2>
 <p>Combine both planning branches into one offer toward the sample local target.</p>
-<pre class="repl"><code>load-plan › /blend battery-plan load-plan as plan
-  new session "plan" from battery-plan + load-plan
-plan › Choose a combined offer consistent with battery reserve, power limit, flexible loads, and the local goal. Prefer meeting the goal when feasible. Otherwise choose the largest feasible offer and report its shortfall. All proposed plans are alternatives before execution, not successive discharges.
-plan › ?plan: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging, Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall, Request a revised plan because neither offer fits the constraints]
+<div class="tui-snapshot" data-capture="conservation" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · plan
   turn 1 · 1 fact · 1 question
-  plan        ▶ Reduce imports by 250 kW: 150 k… █████████████▍       0.67
-                Reduce imports by 200 kW: 100 k… █████▊               0.29
-                Request a revised plan because … ▊                    0.04</code></pre>
+     Discharge at 100 kW for two hou… ███▋                 0.18
+   ▶ Discharge at 150 kW for two hou… █████████            0.45
+     Discharge at 200 kW for two hou… ███████▍             0.37
+load-plan › /blend request facility as load-plan
+  new session &quot;load-plan&quot; from request + facility
+load-plan › Choose a voluntary load reduction consistent with the conservation
+request and the facility obligations.
+load-plan › Which load response should the facility offer?
+  turn 1 · 1 fact · 1 question
+   ▶ Defer 100 kW of vehicle chargin… ███████████████████▊ 0.99
+     Defer charging and refrigeratio…                      0.00
+     Request a revised operating pla… ▎                    0.01
+plan › /blend battery-plan load-plan as plan
+  new session &quot;plan&quot; from battery-plan + load-plan
+plan › Choose a combined offer consistent with battery reserve, power limit,
+flexible loads, and the local goal. Prefer meeting the goal when feasible.
+Otherwise choose the largest feasible offer and report its shortfall. All
+proposed plans are alternatives before execution, not successive discharges.
+plan › Which conservation plan is feasible for 18:00-20:00?
+  turn 1 · 1 fact · 1 question
+   ▶ Reduce imports by 250 kW: 150 k… █████████████▍       0.67
+     Reduce imports by 200 kW: 100 k… █████▊               0.29
+     Request a revised plan because … ▊                    0.04
+── Context · latest question included ──────────────────────────────────────────
+  ↳ Which conservation plan is feasible for 18:00-20:00?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    Which conservation plan is feasible for 18:00-20:00?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-plan&quot; --from &quot;$example-battery-plan&quot; --from &quot;$example-load-plan&quot; \
   &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
 loads, and the local goal. Prefer meeting the goal when feasible. Otherwise
@@ -194,15 +349,15 @@ are alternatives before execution, not successive discharges.&#x27; \
 <section class="step" id="step-7">
 <h2><span class="num">07</span>Try an unsaved alternative</h2>
 <p>Use <code>whatif</code> to evaluate a hypothetical 700 kWh reading without saving a new decision or updating the telemetry session. It asks only its own question; the saved plan keeps its answer.</p>
-<p class="repl-only note">This what-if runs from the shell:</p>
-<pre class="repl-only"><code>nouli --format text whatif &quot;plan&quot; \
-  &#x27;What-if only: replace the stored-energy reading with 700 kWh for this
+<p class="tui-only note">This unsaved alternative uses the shell command:</p>
+<pre class="tui-only"><code>nouli --format text whatif &quot;$example-plan&quot; \
+  'What-if only: replace the stored-energy reading with 700 kWh for this
 evaluation. Keep the 500 kWh reserve, 200 kW power limit, 100 kW deferrable
 charging, and two-hour interval. Choose the largest feasible offer toward the
-250 kW goal. No plan has executed.&#x27; \
-  -q &#x27;what_if: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
+250 kW goal. No plan has executed.' \
+  -q 'what_if: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging,
     Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall,
-    Request a revised plan because neither offer fits the constraints]&#x27;</code></pre>
+    Request a revised plan because neither offer fits the constraints]'</code></pre>
 <pre><code>nouli --format text whatif &quot;$example-plan&quot; \
   &#x27;What-if only: replace the stored-energy reading with 700 kWh for this
 evaluation. Keep the 500 kWh reserve, 200 kW power limit, 100 kW deferrable
@@ -222,14 +377,40 @@ charging, and two-hour interval. Choose the largest feasible offer toward the
 <section class="step" id="step-8" data-node="6">
 <h2><span class="num">08</span>Record corrected telemetry</h2>
 <p>Continue the telemetry session with the corrected 700 kWh reading. Unlike the what-if, this becomes saved source evidence for new decisions. It asks a reworded question under the same ID, and the first reading's answer stays in the history.</p>
-<pre class="repl"><code>plan › /use battery
+<div class="tui-snapshot" data-capture="conservation" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery
+     Defer charging and refrigeratio…                      0.00
+     Request a revised operating pla… ▎                    0.01
+plan › /blend battery-plan load-plan as plan
+  new session &quot;plan&quot; from battery-plan + load-plan
+plan › Choose a combined offer consistent with battery reserve, power limit,
+flexible loads, and the local goal. Prefer meeting the goal when feasible.
+Otherwise choose the largest feasible offer and report its shortfall. All
+proposed plans are alternatives before execution, not successive discharges.
+plan › Which conservation plan is feasible for 18:00-20:00?
+  turn 1 · 1 fact · 1 question
+   ▶ Reduce imports by 250 kW: 150 k… █████████████▍       0.67
+     Reduce imports by 200 kW: 100 k… █████▊               0.29
+     Request a revised plan because … ▊                    0.04
+battery › /use battery
   battery
-battery › Confirmed illustrative correction at 17:55, replacing the 17:50 reading: stored AC-deliverable energy is 700 kWh. The power limit remains 200 kW. No discharge has occurred; this is a corrected measurement before the interval starts.
-battery › ?battery: What stored-energy reading should the next plan use? [700 kWh, 800 kWh, Request a fresh reading]
+battery › Confirmed illustrative correction at 17:55, replacing the 17:50
+reading: stored AC-deliverable energy is 700 kWh. The power limit remains 200
+kW. No discharge has occurred; this is a corrected measurement before the
+interval starts.
+battery › What stored-energy reading should the next plan use?
   turn 2 · 1 fact · 1 question
-  battery     ▶ 700 kWh                          ███████████████████▎ 0.96
-                800 kWh                          ▎                    0.01
-                Request a fresh reading          ▋                    0.03</code></pre>
+   ▶ 700 kWh                          ███████████████████▎ 0.96
+     800 kWh                          ▎                    0.01
+     Request a fresh reading          ▋                    0.03
+── Context · latest question included ──────────────────────────────────────────
+  ↳ What stored-energy reading should the next plan use?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    What stored-energy reading should the next plan use?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-battery&quot; \
   &#x27;Confirmed illustrative correction at 17:55, replacing the 17:50 reading:
 stored AC-deliverable energy is 700 kWh. The power limit remains 200 kW. No
@@ -249,14 +430,40 @@ starts.&#x27; \
 <section class="step" id="step-9" data-node="7">
 <h2><span class="num">09</span>Recompute the battery plan from its sources</h2>
 <p>Create a new battery plan from updated telemetry and unchanged facility obligations. This brings the corrected source into a fresh blend.</p>
-<pre class="repl"><code>battery › /blend battery facility as battery-plan-updated
-  new session "battery-plan-updated" from battery + facility
-battery-plan-updated › Choose the greatest constant battery output for 18:00-20:00 that leaves at least the recorded reserve. Use the latest telemetry. The proposed plan has not executed.
-battery-plan-updated › ?battery_plan_updated: What constant battery contribution is feasible? [Discharge at 100 kW for two hours, Discharge at 150 kW for two hours, Discharge at 200 kW for two hours]
+<div class="tui-snapshot" data-capture="conservation" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery-plan-updated
+   ▶ Reduce imports by 250 kW: 150 k… █████████████▍       0.67
+     Reduce imports by 200 kW: 100 k… █████▊               0.29
+     Request a revised plan because … ▊                    0.04
+battery › /use battery
+  battery
+battery › Confirmed illustrative correction at 17:55, replacing the 17:50
+reading: stored AC-deliverable energy is 700 kWh. The power limit remains 200
+kW. No discharge has occurred; this is a corrected measurement before the
+interval starts.
+battery › What stored-energy reading should the next plan use?
+  turn 2 · 1 fact · 1 question
+   ▶ 700 kWh                          ███████████████████▎ 0.96
+     800 kWh                          ▎                    0.01
+     Request a fresh reading          ▋                    0.03
+battery-plan-updated › /blend battery facility as battery-plan-updated
+  new session &quot;battery-plan-updated&quot; from battery + facility
+battery-plan-updated › Choose the greatest constant battery output for
+18:00-20:00 that leaves at least the recorded reserve. Use the latest
+telemetry. The proposed plan has not executed.
+battery-plan-updated › What constant battery contribution is feasible?
   turn 1 · 1 fact · 1 question
-  battery_pl…   Discharge at 100 kW for two hou… ████▊                0.24
-                Discharge at 150 kW for two hou… ███████▎             0.36
-              ▶ Discharge at 200 kW for two hou… ████████             0.40</code></pre>
+     Discharge at 100 kW for two hou… ████▊                0.24
+     Discharge at 150 kW for two hou… ███████▎             0.36
+   ▶ Discharge at 200 kW for two hou… ████████             0.40
+── Context · latest question included ──────────────────────────────────────────
+  ↳ What constant battery contribution is feasible?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    What constant battery contribution is feasible?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-battery-plan-updated&quot; --from &quot;$example-battery&quot; --from &quot;$example-facility&quot; \
   &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
 least the recorded reserve. Use the latest telemetry. The proposed plan has
@@ -275,14 +482,40 @@ not executed.&#x27; \
 <section class="step" id="step-10" data-node="8">
 <h2><span class="num">10</span>Save a revised combined plan</h2>
 <p>Combine the revised battery branch with the unchanged load plan to save a new overall recommendation.</p>
-<pre class="repl"><code>battery-plan-updated › /blend battery-plan-updated load-plan as plan-updated
-  new session "plan-updated" from battery-plan-updated + load-plan
-plan-updated › Choose a combined offer consistent with battery reserve, power limit, flexible loads, and the local goal. Prefer meeting the goal when feasible. Otherwise choose the largest feasible offer and report its shortfall. All proposed plans are alternatives before execution, not successive discharges.
-plan-updated › ?plan_updated: Which conservation plan is feasible for 18:00-20:00? [Reduce imports by 250 kW: 150 kW battery plus 100 kW deferred charging, Reduce imports by 200 kW: 100 kW battery plus 100 kW deferred charging; report a 50 kW shortfall, Request a revised plan because neither offer fits the constraints]
+<div class="tui-snapshot" data-capture="conservation" data-step="9"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · plan-updated
+   ▶ 700 kWh                          ███████████████████▎ 0.96
+     800 kWh                          ▎                    0.01
+     Request a fresh reading          ▋                    0.03
+battery-plan-updated › /blend battery facility as battery-plan-updated
+  new session &quot;battery-plan-updated&quot; from battery + facility
+battery-plan-updated › Choose the greatest constant battery output for
+18:00-20:00 that leaves at least the recorded reserve. Use the latest
+telemetry. The proposed plan has not executed.
+battery-plan-updated › What constant battery contribution is feasible?
   turn 1 · 1 fact · 1 question
-  plan_updat… ▶ Reduce imports by 250 kW: 150 k… █████████████▎       0.66
-                Reduce imports by 200 kW: 100 k… ██████               0.30
-                Request a revised plan because … ▊                    0.04</code></pre>
+     Discharge at 100 kW for two hou… ████▊                0.24
+     Discharge at 150 kW for two hou… ███████▎             0.36
+   ▶ Discharge at 200 kW for two hou… ████████             0.40
+plan-updated › /blend battery-plan-updated load-plan as plan-updated
+  new session &quot;plan-updated&quot; from battery-plan-updated + load-plan
+plan-updated › Choose a combined offer consistent with battery reserve, power
+limit, flexible loads, and the local goal. Prefer meeting the goal when
+feasible. Otherwise choose the largest feasible offer and report its shortfall.
+All proposed plans are alternatives before execution, not successive discharges.
+plan-updated › Which conservation plan is feasible for 18:00-20:00?
+  turn 1 · 1 fact · 1 question
+   ▶ Reduce imports by 250 kW: 150 k… █████████████▎       0.66
+     Reduce imports by 200 kW: 100 k… ██████               0.30
+     Request a revised plan because … ▊                    0.04
+── Context · latest question included ──────────────────────────────────────────
+  ↳ Which conservation plan is feasible for 18:00-20:00?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    Which conservation plan is feasible for 18:00-20:00?
+── Options · using previous 3 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-plan-updated&quot; --from &quot;$example-battery-plan-updated&quot; --from &quot;$example-load-plan&quot; \
   &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
 loads, and the local goal. Prefer meeting the goal when feasible. Otherwise

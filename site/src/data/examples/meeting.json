@@ -1,0 +1,104 @@
+{
+ "session": "travel",
+ "nodes": [
+  {
+   "id": "01a18fdc-8d81-77bc-8f5d-178ec51987fb",
+   "session": "travel",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.",
+   "questions": [
+    {
+     "id": "transport",
+     "prompt": "How should I travel to the meeting?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "take_the_train",
+       "label": "Take the train",
+       "p": 1
+      },
+      {
+       "id": "take_a_taxi",
+       "label": "Take a taxi",
+       "p": 0
+      }
+     ],
+     "selected": "take_the_train"
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli new travel '…' -q '…'"
+  },
+  {
+   "id": "01a18fdc-8d8e-705f-a85f-e224d1f0d69b",
+   "session": "travel",
+   "turn": 2,
+   "kind": "continued",
+   "parents": [
+    0
+   ],
+   "state": "The train has been cancelled. The taxi is still available at 70 USD.",
+   "questions": [
+    {
+     "id": "on_time",
+     "prompt": "Will the train get me to the meeting on time?",
+     "type": "noul",
+     "probability": 0.09
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli add travel '…' -q '…'"
+  },
+  {
+   "id": "01a18fdc-8d9b-7449-80e2-b242cbdd3859",
+   "session": "travel",
+   "turn": 3,
+   "kind": "continued",
+   "parents": [
+    1
+   ],
+   "state": "",
+   "questions": [
+    {
+     "id": "rebook",
+     "prompt": "How should I travel to the meeting now?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "take_the_train",
+       "label": "Take the train",
+       "p": 0
+      },
+      {
+       "id": "take_a_taxi",
+       "label": "Take a taxi",
+       "p": 1
+      }
+     ],
+     "selected": "take_a_taxi"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli ask travel -q '…'"
+  }
+ ]
+}

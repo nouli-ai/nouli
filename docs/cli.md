@@ -101,13 +101,13 @@ The Citrus palette gives Yes/No a lime accent, Choose one cyan, and Score rose. 
 
 A persistent status line shows the provider and model selected for the next request, plus Ready, Draft, Asking, or Cancelling. It is visible before the first answer and refreshes when you switch sessions. While a request runs, it shows the model resolved for that request. After a response, it shows the actual served model version in place of its alias. The bottom key hints follow the focused field; errors remain visible while your input stays available for correction or retry.
 
-The top line shows `nouli`, its version, and the session. Drag to select and copy terminal text while editing the form. Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The selector shows a short `Shift-Tab →` hint. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No). In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use Tab or arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. Press Ctrl-G, then drag the divider to resize both panes; Esc restores normal text selection. The width stays through session changes and adapts to terminal size. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
+The top line shows `nouli`, its version, and the session. Drag the divider to resize at any time. For native text selection, hold your terminal’s selection modifier (Option-drag in iTerm2; other terminals may use Shift or Alt). Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The selector shows a short `Shift-Tab →` hint. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No). In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use Tab or arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. Drag the divider to resize both panes without changing keyboard focus. Ctrl-G focuses the graph for keyboard navigation, and Esc returns to the form. The width stays through session changes and adapts to terminal size. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
 
 References connect the exact saved source question to the question using it, including across sessions and after reopening. Referenced source history loads automatically, up to the selected saved turn; later source answers are excluded. Multi-question turns separate into question cards at reference endpoints. `nouli view SESSION` includes the same dependencies; `--mermaid` draws reference edges dashed. These graph links do not change session ancestry, active facts or structured exports.
 
 | Key or action | What it does |
 | --- | --- |
-| Mouse drag | Selects text in the form; resizes the divider while graph focus is active. |
+| Mouse drag | Resizes the divider without Ctrl-G. Use the terminal’s selection modifier to select text. |
 | Shift-Tab | Cycles answer types left to right from any field. |
 | Tab in Question | Moves to Options/Levels, or Context for Yes/No. |
 | Tab in Context | Moves to Question. |
@@ -120,7 +120,7 @@ References connect the exact saved source question to the question using it, inc
 | `/` in Context | Lists optional session commands; pasted/imported files are literal evidence. |
 | `/sessions` | Lists sessions to resume. |
 | PgUp, PgDn | Scrolls the transcript. |
-| Ctrl-G | Focuses decisions for divider dragging, arrows and mouse-wheel scrolling; Esc returns to the form and text selection. |
+| Ctrl-G | Focuses decisions for keyboard scrolling; Esc returns to the form. |
 | Ctrl-C | Cancels a turn, or clears the row, then the form, then quits. |
 | Ctrl-D | Deletes forward, or quits with a warning for unsent input. |
 

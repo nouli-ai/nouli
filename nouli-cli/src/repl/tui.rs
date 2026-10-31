@@ -50,7 +50,10 @@ use tokio_util::sync::CancellationToken;
 
 /// The keys, for `/help` before the commands the line loop lists.
 const KEYS: [(&str, &str); 13] = [
-    ("Mouse drag", "select text using the terminal"),
+    (
+        "Mouse drag",
+        "resize the divider; Option-drag selects text in iTerm2",
+    ),
     ("Tab", "next field or option"),
     (
         "Shift-Tab",
@@ -69,7 +72,10 @@ const KEYS: [(&str, &str); 13] = [
         "insert text, PDF contents, or an image into the focused field",
     ),
     ("PgUp, PgDn", "scroll the transcript"),
-    ("Ctrl-G", "focus decisions to drag the divider; Esc returns"),
+    (
+        "Ctrl-G",
+        "focus decisions for keyboard scrolling; Esc returns",
+    ),
     ("Ctrl-C", "cancel, clear input, or quit"),
     ("/sessions", "resume an earlier session"),
 ];
@@ -135,7 +141,7 @@ impl Screen {
             terminal,
             entered: true,
         };
-        execute!(io::stdout(), EnableBracketedPaste, DisableMouseCapture)?;
+        execute!(io::stdout(), EnableBracketedPaste, EnableMouseCapture)?;
         Ok(screen)
     }
 
@@ -335,17 +341,7 @@ impl<'a> App<'a> {
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut running: Option<Running<'a>> = None;
-        let mut mouse_capture = false;
         loop {
-            if mouse_capture != self.graph_focused {
-                if self.graph_focused {
-                    execute!(io::stdout(), EnableMouseCapture)?;
-                } else {
-                    execute!(io::stdout(), DisableMouseCapture)?;
-                    self.graph.dragging = false;
-                }
-                mouse_capture = self.graph_focused;
-            }
             terminal.draw(|frame| draw::screen(frame, self, running.as_ref()))?;
             let busy = running.is_some();
             let wake = runtime.block_on(async {
@@ -390,6 +386,9 @@ impl<'a> App<'a> {
     fn event(&mut self, event: Event, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         match event {
             Event::Mouse(event) => {
+                if !matches!(event.kind, crossterm::event::MouseEventKind::Moved) {
+                    self.option_enter = false;
+                }
                 self.graph_mouse(event);
                 Ok(Flow::Continue)
             }
@@ -397,8 +396,12 @@ impl<'a> App<'a> {
                 self.graph.dragging = false;
                 Ok(Flow::Continue)
             }
-            Event::Key(key) if key.kind != KeyEventKind::Release => self.key(key, running),
+            Event::Key(key) if key.kind != KeyEventKind::Release => {
+                self.graph.dragging = false;
+                self.key(key, running)
+            }
             Event::Paste(text) => {
+                self.graph.dragging = false;
                 self.option_enter = false;
                 if running.is_some() {
                     self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));

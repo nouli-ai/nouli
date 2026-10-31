@@ -1,6 +1,6 @@
 // Walkthrough pages: the figure follows the step being read, and nodes jump to their step.
 import { Figure } from "./figure.js";
-import { paint } from "./repl.js";
+import { mountCaptures } from "./tui.js";
 
 // Steps show as interactive lines or as commands; the choice is remembered on this device.
 const VIEW = "nouli-walkthrough-view";
@@ -10,7 +10,7 @@ const show = (view) => {
 };
 try {
   const saved = localStorage.getItem(VIEW);
-  if (saved === "repl" || saved === "commands") show(saved);
+  if (saved === "repl" || saved === "tui" || saved === "commands") show(saved === "repl" ? "tui" : saved);
 } catch {}
 document.querySelectorAll(".views button").forEach((b) =>
   b.addEventListener("click", () => {
@@ -20,7 +20,7 @@ document.querySelectorAll(".views button").forEach((b) =>
     } catch {}
   }),
 );
-document.querySelectorAll("pre.repl code").forEach(paint);
+mountCaptures();
 
 const graphs = import.meta.glob("./data/examples/*.json", { eager: true, import: "default" });
 const graph = graphs[`./data/examples/${document.body.dataset.graph}.json`];

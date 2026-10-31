@@ -73,50 +73,58 @@ reserved_output_tokens = 128</code></pre>
 <p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
 
 <h2 id="interactive"><span class="num">03</span>Interactive mode</h2>
-<p>The quickest way to use Nouli is a session you work in. <code>nouli open catalog</code> opens a session full screen, creating it if needed, and a bare <code>nouli</code> starts a new one. Type a fact to queue it, then ask a question with <code>?</code>: the question goes to the model right away, together with the queued facts. Each question is asked once, in its own call. Earlier answers stay as they were, and the model sees them as history when it answers the next question. In this session, from the <a href="../examples/robot-picking/">robot-picking walkthrough</a>, a warehouse arm picks a shampoo bottle in a polybag:</p>
-<pre><code>$ nouli open catalog
-new session "catalog" · /help for commands
+<p><code>nouli open travel</code> opens a session full screen. A bare <code>nouli</code> starts a new session with a random name. Add facts in Context, press Tab for a plain-text question, and use Shift-Tab to choose the answer type. There are no question IDs or bracket syntax to type in the form.</p>
+<div class="tui-snapshot" data-capture="meeting" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · travel
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
+taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
+arrives on time.
+travel › How should I travel to the meeting?
+  turn 1 · 1 fact · 1 question
+   ▶ Take the train                   ████████████████████ 1.00
+     Take a taxi                                           0.00
 
-catalog › Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.
-catalog › ?grasp: Which grasp should the arm prefer for this item? [Suction on the flat label area of the bottle, Suction on any flat bag surface, A two-finger pinch on the bottle neck]
-  turn 1 · 1 fact · 1 question
-  grasp       ▶ Suction on the flat label area … ███████████████████▊ 0.99
-                Suction on any flat bag surface                       0.00
-                A two-finger pinch on the bottl… ▎                    0.01
-catalog › /new policy
-  new session "policy"
-policy › Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.
-policy › ?overweight: May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?
-  turn 1 · 1 fact · 1 question
-  overweight    yes                              ▋                    0.03
-policy › /blend catalog policy as pick
-  new session "pick" from catalog + policy
-pick › Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.
-pick › ?action: What should the arm do first? [Nudge the covering item aside to expose the target's label, Attempt suction on the visible bag film, Request remote assistance now]
-  turn 1 · 1 fact · 1 question
-  action      ▶ Nudge the covering item aside t… ████████████████▊    0.84
-                Attempt suction on the visible … ▋                    0.03
-                Request remote assistance now    ██▋                  0.13
-pick › Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.
-pick › ?next: What should the arm do next? [Try a two-finger pinch on the bottle neck, Retry suction on the same spot, Stop and request remote assistance]
-  turn 2 · 1 fact · 1 question
-  next        ▶ Try a two-finger pinch on the b… ██████████████▋      0.73
-                Retry suction on the same spot   █████                0.25
-                Stop and request remote assista… ▍                    0.02
-pick › What-if: the arm pinches the bottle neck, and pinch attempt 2 lifts the target. The wrist force sensor reads 0.46 kg against an expected 0.45 kg, and the tote camera shows a single bottle in the gripper.
-pick › /whatif ?placed: What should the arm do with the load? [Lower the load back into the tote and request remote assistance, Place the load in box B-12, "Shake the load to check for anything attached, then place it"]
-  (not saved) · 1 fact · 1 question
-  placed        Lower the load back into the to…                      0.00
-              ▶ Place the load in box B-12       ██████████████████▊  0.94
-                Shake the load to check for any… █▎                   0.06
-pick › /quit
-  bye</code></pre>
-<p>A question is one line: an ID, a colon, the prompt, and then the answers. <code>[a, b]</code> makes a choice, <code>&lt;low, medium, high&gt;</code> makes a score with levels in order, and no list makes a yes/no question. Quote an answer that contains a comma.</p>
-<p>Slash commands do the rest: <code>/whatif ?id: prompt</code> asks its own question with the queued facts without saving, <code>/replace N TEXT</code> queues a correction, <code>/branch NAME</code> and <code>/blend A B as NAME</code> start new sessions, and <code>/help</code> lists them all. The view only shows what the store holds. Ctrl-C clears the row, then what you have queued, and then quits, as <code>/exit</code> does.</p>
-<p>A form under the transcript holds the queued facts, the question, and its options or levels, so you don't write the brackets yourself. Shift-Tab switches between yes/no, choice, and score, and Tab, Up, and Down move between the sections. The session's decisions are drawn to the right when the terminal is at least 116 columns wide, and Ctrl-G shows them in a narrower one. The lines shown above are typed into the form's first row, typing <code>/</code> lists the commands, and <code>/sessions</code> resumes an earlier session.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ How should I travel to the meeting?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    How should I travel to the meeting?
+── Options · using previous 2 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+<p>These captures replay saved model answers in the current TUI. Use Form to see the inputs before sending, Answer for the result, and Decisions for the graph. Start with <a href="../examples/meeting/">one session and three travel questions</a>, then try a <a href="../examples/recall/">multi-session recall response</a>.</p>
+<table><thead><tr><th>Key or action</th><th>What happens</th></tr></thead><tbody>
+<tr><td>Tab</td><td>Move fields; in Options/Levels, move to the next item.</td></tr>
+<tr><td>Shift-Tab</td><td>Cycle Yes / No → Choose one → Score from any field.</td></tr>
+<tr><td>Enter</td><td>Send from Context/Question when ready. In Options/Levels, add another item; a second consecutive Enter sends.</td></tr>
+<tr><td>Ctrl-S / F5</td><td>Send the complete form from any field.</td></tr>
+<tr><td>@</td><td>Find saved answers across local sessions and files under the launch folder. Enter inserts a selection without sending.</td></tr>
+<tr><td>Drag the divider</td><td>Resize the graph at any time, while keeping the current field focused.</td></tr>
+<tr><td>Ctrl-G / Esc</td><td>Focus the graph for keyboard navigation, then return to the form.</td></tr>
+<tr><td>Option-drag in iTerm2</td><td>Select terminal text. Other terminals use their own selection modifier.</td></tr>
+</tbody></table>
+<p>After a choice or score, leave Options/Levels empty to reuse the prior list; the form says when it will do so. Add new context and a follow-up question to reconsider the answer. Yes/No questions stay fresh. Context previews the latest included question, while earlier answers remain in the saved history.</p>
+<p>Use <code>@budget.xlsx</code> or a relative filename to add a local file. DOCX/PPTX contribute text and tables; CSV/TSV and XLS/XLSX/XLSM/XLSB/ODS contribute rows from their sheets. PDFs need Poppler for text extraction. Raster images and SVGs use native image input when the model supports it; legacy DOC/PPT needs LibreOffice. Select a file to snapshot it, review the contents, then send. Documents do not render pages or run OCR.</p>
+<p>Use <code>@</code> with words you remember from a saved conversation to reference an exact earlier answer. Browse history shows its saved state. References appear as graph edges, including across sessions. Use <code>/rename NAME</code> to rename the current session, <code>/sessions</code> or <code>/use NAME</code> to resume one, and <code>/branch NAME</code> or <code>/blend A B as NAME</code> to combine histories. <code>/help</code> lists the available keys and commands. Ctrl-C cancels a turn, then clears input, and quits when the draft is empty.</p>
 
 <h2 id="first"><span class="num">04</span>Make a decision</h2>
-<p>Everything you can do at the prompt is also a command, for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the question with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
+<p>Use shell commands for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the question with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>
 <pre><code>nouli new travel \
   'The train costs 40 USD and arrives 30 minutes before the meeting.
 A taxi costs 70 USD and also arrives in time. Prefer the cheaper option
@@ -226,5 +234,6 @@ nouli workflow resume RUN_ID</code></pre>
 </div>
 
 <footer class="site"><span>MIT</span><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
+<script type="module">import { mountCaptures } from "../src/tui.js"; mountCaptures();</script>
 </body>
 </html>

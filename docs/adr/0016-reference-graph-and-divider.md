@@ -12,6 +12,8 @@ but the graph previously showed only turn ancestry. A destination could appear
 independent of its referenced answer, especially after restarting. Users also
 need to adjust the graph width while retaining ordinary terminal text selection.
 
+The mouse-focus portion is superseded by [ADR 0018](0018-unfocused-divider-dragging.md).
+
 ## Decision
 
 - Derive graph edges from included saved reference bindings, targeting the
