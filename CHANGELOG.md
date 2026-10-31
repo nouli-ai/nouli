@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-31
+
+### Added
+
+- Select and copy TUI text with the Select text header control or F6. Drag normally and use the terminal's Copy command; Esc or F6 restores the draft and graph controls. The view holds still during selection while active model requests continue.
+
 ### Changed
 
 - Serve the website's fonts from nouli.ai so the headline and TUI layout remain consistent when external font services are unavailable.

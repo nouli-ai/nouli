@@ -70,6 +70,8 @@ jobs:
         run: cargo test --workspace --locked
       - name: Build release binary
         run: cargo build --package nouli-cli --release --locked
+      - name: Check release TUI native selection and terminal cleanup
+        run: python3 nouli-cli/scripts/check-tui-selection.py --nouli target/release/nouli
       - name: Smoke test release binary
         shell: bash
         run: |

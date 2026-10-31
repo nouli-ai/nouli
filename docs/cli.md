@@ -101,13 +101,14 @@ The Citrus palette gives Yes/No a lime accent, Choose one cyan, and Score rose. 
 
 A persistent status line shows the provider and model selected for the next request, plus Ready, Draft, Asking, or Cancelling. It is visible before the first answer and refreshes when you switch sessions. While a request runs, it shows the model resolved for that request. After a response, it shows the actual served model version in place of its alias. The bottom key hints follow the focused field; errors remain visible while your input stays available for correction or retry.
 
-The top line shows `nouli`, its version, and the session. Drag the divider to resize at any time. For native text selection, hold your terminal’s selection modifier (Option-drag in iTerm2; other terminals may use Shift or Alt). Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The selector shows a short `Shift-Tab →` hint. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No). In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use Tab or arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. Drag the divider to resize both panes without changing keyboard focus. Ctrl-G focuses the graph for keyboard navigation, and Esc returns to the form. The width stays through session changes and adapts to terminal size. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
+The top line shows `nouli`, its version, and the session. Drag the divider to resize at any time. To copy text, click **select text** in the header or press **F6**, drag normally, and use your terminal’s Copy command. The visible screen stays still while requests continue in the background. **Esc** or **F6** resumes the previous draft and focus; resizing also resumes. Typing and paste are ignored while selecting, and Ctrl-C exits without clearing an idle draft or cancels an active request. The terminal’s selection modifier (Option-drag in iTerm2; Shift or Alt in other terminals) still works in normal mode. Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The selector shows a short `Shift-Tab →` hint. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No). In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use Tab or arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. Drag the divider to resize both panes without changing keyboard focus. Ctrl-G focuses the graph for keyboard navigation, and Esc returns to the form. The width stays through session changes and adapts to terminal size. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
 
 References connect the exact saved source question to the question using it, including across sessions and after reopening. Referenced source history loads automatically, up to the selected saved turn; later source answers are excluded. Multi-question turns separate into question cards at reference endpoints. `nouli view SESSION` includes the same dependencies; `--mermaid` draws reference edges dashed. These graph links do not change session ancestry, active facts or structured exports.
 
 | Key or action | What it does |
 | --- | --- |
-| Mouse drag | Resizes the divider without Ctrl-G. Use the terminal’s selection modifier to select text. |
+| Mouse drag | Resizes the divider without Ctrl-G in normal mode; selects text in F6 mode. |
+| F6 / select text | Holds the view for native drag-selection and terminal Copy. Esc or F6 resumes; the draft, focus, and graph width stay intact. |
 | Shift-Tab | Cycles answer types left to right from any field. |
 | Tab in Question | Moves to Options/Levels, or Context for Yes/No. |
 | Tab in Context | Moves to Question. |
@@ -256,3 +257,12 @@ unsent question/options. Setup uses the terminal outside the alternate screen,
 then reloads settings. API keys never enter transcript/history fields. `/model`
 accepts any exact model ID; saving a startup default is an explicit choice.
 See [configuration](configuration.md) for manual TOML and all compatibility fields.
+
+## Verify terminal selection before release
+
+With Python 3 and a built CLI, run from the workspace root:
+
+    cargo build --workspace
+    python3 nouli-cli/scripts/check-tui-selection.py --nouli target/debug/nouli
+
+This POSIX PTY check runs without credentials or provider calls. It verifies mouse reporting, screen stability, input preservation, resizing, and cleanup. Native clipboard behavior is owned by the host terminal; also check Select text, drag, Copy, and resume in the terminals supported for the release.

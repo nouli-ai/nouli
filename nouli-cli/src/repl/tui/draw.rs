@@ -123,7 +123,27 @@ pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>
     draw_footer(frame, footer, app, running, &theme);
 }
 
-fn draw_header(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+fn draw_header(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
+    let action = if app.selection.active {
+        " resume · Esc/F6 "
+    } else {
+        " select text · F6 "
+    };
+    let width = u16::try_from(action.width()).unwrap_or(u16::MAX);
+    app.selection.button = (area.width >= width + 20).then(|| Rect {
+        x: area.right() - width,
+        width,
+        ..area
+    });
+    let title_area = Rect {
+        width: area
+            .width
+            .saturating_sub(app.selection.button.map_or(0, |area| area.width)),
+        ..area
+    };
+    if let Some(button) = app.selection.button {
+        frame.render_widget(Paragraph::new(Span::styled(action, theme.accent)), button);
+    }
     let label = render::clean(&app.repl.session.label);
     let title = Line::from(vec![
         Span::styled(" nouli", theme.accent),
@@ -132,7 +152,7 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             theme.dim,
         ),
     ]);
-    frame.render_widget(Paragraph::new(title), area);
+    frame.render_widget(Paragraph::new(title), title_area);
 }
 
 fn draw_model(frame: &mut Frame, area: Rect, app: &App, running: Option<&Running>, theme: &Theme) {
@@ -1044,6 +1064,14 @@ fn place(graph: &mut Graph, width: usize, height: usize) -> (usize, usize) {
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Running>, theme: &Theme) {
+    if app.selection.active {
+        let hints = fit_hints(
+            area.width.into(),
+            &["Esc/F6 resume", "drag to select", "copy with terminal"],
+        );
+        frame.render_widget(Paragraph::new(Span::styled(hints, theme.accent)), area);
+        return;
+    }
     let line = match (running, &app.status) {
         (Some(turn), _) if turn.cancel.is_cancelled() => {
             Line::from(Span::styled(" cancelling the turn…", theme.dim))
@@ -1152,6 +1180,25 @@ mod tests {
         (0..height)
             .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
             .collect()
+    }
+
+    #[test]
+    fn copy_controls_and_escape_hint_fit_narrow_and_wide_views() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        for width in [24, 40, 80, 160] {
+            app.select_text(false);
+            let normal = shown(&mut app, width, 24);
+            if width >= 40 {
+                assert!(normal[0].contains("select text"));
+                assert!(app.selection.button.is_some());
+            } else {
+                assert!(app.selection.button.is_none());
+            }
+            app.select_text(true);
+            let held = shown(&mut app, width, 24);
+            assert!(held.last().unwrap().contains("Esc/F6 resume"));
+        }
     }
 
     #[test]

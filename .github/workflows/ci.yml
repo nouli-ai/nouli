@@ -94,6 +94,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run unit, integration, and documentation tests
         run: cargo test --workspace --locked
+      - name: Check TUI native selection and terminal cleanup
+        run: python3 nouli-cli/scripts/check-tui-selection.py --nouli target/debug/nouli
   docs:
     name: Build API documentation
     needs: select
