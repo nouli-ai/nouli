@@ -6,14 +6,14 @@
 [Website: nouli.ai](https://nouli.ai/) · [User guide](https://nouli.ai/guide/) · [Examples](https://nouli.ai/examples/)
 
 ```sh
-brew install standing-desks/tap/nouli
+brew install nouli-ai/tap/nouli
 ```
 
-On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh`. Then run `nouli connect` to choose a service, authenticate and select a model. You can also [write the configuration yourself](docs/configuration.md).
+On Linux, or on macOS without Homebrew: `curl -fsSL https://nouli.ai/install.sh | sh`. Then run `nouli connect` to choose a service, authenticate and select a model. You can also [write the configuration yourself](docs/configuration.md).
 
-[![CI](https://img.shields.io/github/actions/workflow/status/standing-desks/nouli/ci.yml?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/standing-desks/nouli?include_prereleases&sort=semver&style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/releases)
-[![Total downloads across all release assets](https://img.shields.io/github/downloads/standing-desks/nouli/total?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/nouli-ai/nouli/ci.yml?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/nouli-ai/nouli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nouli-ai/nouli?include_prereleases&sort=semver&style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/nouli-ai/nouli/releases)
+[![Total downloads across all release assets](https://img.shields.io/github/downloads/nouli-ai/nouli/total?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/nouli-ai/nouli/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0b6e63?style=flat-square&labelColor=1d2a28)](LICENSE)
 [![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-0b6e63?style=flat-square&labelColor=1d2a28)](rust-toolchain.toml)
 
@@ -21,7 +21,7 @@ On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.githu
 
 ```text
 Install Nouli, a CLI that runs decision models over many turns:
-  curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
+  curl -fsSL https://nouli.ai/install.sh | sh
 Read https://nouli.ai/llms.txt for the commands.
 Help me define a provider in ~/.nouli/config.toml, then run
 `nouli auth login typesafe` and let me type the key myself.
@@ -187,18 +187,18 @@ Every turn asks one `-q` question, in its own call. `nouli new NAME [FACT...] -q
 On **macOS (Apple silicon)**:
 
 ```sh
-brew install standing-desks/tap/nouli
+brew install nouli-ai/tap/nouli
 ```
 
 On **Linux**, or on macOS without Homebrew:
 
 ```sh
-curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
+curl -fsSL https://nouli.ai/install.sh | sh
 ```
 
 The script installs into `~/.local/bin` after checking the download's checksum. Linux builds are for ARM64 and x86_64 and need glibc 2.38 or newer. See [installation and upgrades](docs/release.md) for choosing a version or directory and for switching from a Cargo installation.
 
-Then define a provider in `~/.nouli/config.toml` ([how](https://standing-desks.github.io/nouli/guide/#provider)) and log in once. Nouli asks for the key without showing it and keeps it in a file only you can read:
+Then define a provider in `~/.nouli/config.toml` ([how](https://nouli.ai/guide/#provider)) and log in once. Nouli asks for the key without showing it and keeps it in a file only you can read:
 
 ```sh
 nouli auth login typesafe
@@ -206,7 +206,7 @@ nouli auth login typesafe
 
 ## Where's the rest?
 
-- [User guide](https://standing-desks.github.io/nouli/guide/): setup, interactive mode, sessions, branching, blending, and workflows
+- [User guide](https://nouli.ai/guide/): setup, interactive mode, sessions, branching, blending, and workflows
 - [Configuration](docs/configuration.md): providers, models, credentials (`nouli auth login`), and storage
 - [CLI guide](docs/cli.md): the interactive prompt, sessions, facts, questions, request files, branching, and blending
 - [Question types](docs/contracts/decisions.md): `choice`, `noul`, and `score`

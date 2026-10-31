@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Move Nouli to the `nouli-ai` GitHub organization. Install with `brew install nouli-ai/tap/nouli` or `curl -fsSL https://nouli.ai/install.sh | sh`; existing `standing-desks/tap` installations migrate to the new tap on the next `brew update`, and the old installer URL keeps working.
 - Serve the website's fonts from nouli.ai so the headline and TUI layout remain consistent when external font services are unavailable.
 - Present Nouli as a ledger-backed decision network with "Every decision has a history" across the website, guide, agent reference, and README. Link the Nouli brand to nouli.ai.
 - Bring the website's TUI higher with a smaller headline, a compact product explanation beside it, and no second introduction above the replay.

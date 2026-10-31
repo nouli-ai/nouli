@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<header class="top"><a class="mark" href="../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav><a href="./" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<header class="top"><a class="mark" href="../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav><a href="./" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header>
 <h1 class="display small">Guide</h1>
 
 <div class="guide">
@@ -34,9 +34,9 @@
 
 <h2 id="install"><span class="num">01</span>Install</h2>
 <p>On <strong>macOS (Apple silicon)</strong>, use Homebrew:</p>
-<pre><code>brew install standing-desks/tap/nouli</code></pre>
+<pre><code>brew install nouli-ai/tap/nouli</code></pre>
 <p>On <strong>Linux</strong>, use the download installer:</p>
-<pre><code>curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh</code></pre>
+<pre><code>curl -fsSL https://nouli.ai/install.sh | sh</code></pre>
 <p>The script installs the latest published binary into <code>~/.local/bin</code> after verifying its checksum. It also works on Apple silicon macOS. Linux needs glibc 2.38 or newer.</p>
 <p>If your shell cannot find Nouli, add the installation directory to your PATH:</p>
 <pre><code>export PATH="$HOME/.local/bin:$PATH"
@@ -44,9 +44,9 @@ nouli --version</code></pre>
 <p>If you previously installed with Cargo, run <code>cargo uninstall nouli-cli</code> before switching so the old executable does not take precedence.</p>
 <p>To update a Homebrew installation:</p>
 <pre><code>brew update
-brew upgrade standing-desks/tap/nouli</code></pre>
-<p>For a script installation, run the download installer again. Uninstall with <code>brew uninstall standing-desks/tap/nouli</code> for Homebrew, or remove <code>~/.local/bin/nouli</code> for the script. Your configuration and saved sessions are preserved.</p>
-<p>See the <a href="https://github.com/standing-desks/nouli/blob/main/docs/release.md">installation guide</a> for selecting a version, changing the installation directory, inspecting the script, and building from source.</p>
+brew upgrade nouli-ai/tap/nouli</code></pre>
+<p>For a script installation, run the download installer again. Uninstall with <code>brew uninstall nouli-ai/tap/nouli</code> for Homebrew, or remove <code>~/.local/bin/nouli</code> for the script. Your configuration and saved sessions are preserved.</p>
+<p>See the <a href="https://github.com/nouli-ai/nouli/blob/main/docs/release.md">installation guide</a> for selecting a version, changing the installation directory, inspecting the script, and building from source.</p>
 
 <h2 id="provider"><span class="num">02</span>Connect a model</h2>
 <p>Run <code>nouli connect</code>, choose a service, authenticate, and select a model. Shortcuts are available for OpenAI, TypeSafe, OpenRouter, Cloudflare Workers AI, Ollama and llama.cpp. Choose <code>custom</code> for another compatible server. You can type any model ID your server supports.</p>
@@ -226,11 +226,11 @@ nouli workflow resume RUN_ID</code></pre>
     <tr><td><code>invalid_configuration_syntax</code></td><td>Check the TOML. Top-level settings go before provider sections.</td></tr>
   </tbody>
 </table>
-<p>A provider can refuse a single question; that's recorded as a refusal, not an error. Run <code>nouli --help</code> for every option. The <a href="https://github.com/standing-desks/nouli/tree/main/docs">reference docs</a> cover each subsystem in detail.</p>
+<p>A provider can refuse a single question; that's recorded as a refusal, not an error. Run <code>nouli --help</code> for every option. The <a href="https://github.com/nouli-ai/nouli/tree/main/docs">reference docs</a> cover each subsystem in detail.</p>
 </article>
 </div>
 
-<footer class="site"><span>MIT</span><a href="../examples/">examples</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
+<footer class="site"><span>MIT</span><a href="../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">nouli-ai/nouli</a></footer>
 <script type="module">import { mountCaptures } from "../src/tui.js"; mountCaptures();</script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 ## macOS: install with Homebrew
 
 ```sh
-brew install standing-desks/tap/nouli
+brew install nouli-ai/tap/nouli
 nouli --version
 ```
 
@@ -13,13 +13,13 @@ To update:
 
 ```sh
 brew update
-brew upgrade standing-desks/tap/nouli
+brew upgrade nouli-ai/tap/nouli
 ```
 
 To uninstall:
 
 ```sh
-brew uninstall standing-desks/tap/nouli
+brew uninstall nouli-ai/tap/nouli
 ```
 
 Uninstalling keeps your configuration and saved sessions in `~/.nouli` or your custom store.
@@ -28,7 +28,7 @@ If you previously installed with Cargo, remove that executable before switching 
 
 ```sh
 cargo uninstall nouli-cli
-brew install standing-desks/tap/nouli
+brew install nouli-ai/tap/nouli
 command -v nouli
 nouli --version
 ```
@@ -38,7 +38,7 @@ If you installed an archive manually, remove that copy from your PATH before swi
 ## Linux: install a release binary
 
 ```sh
-curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
+curl -fsSL https://nouli.ai/install.sh | sh
 ```
 
 The script selects the archive for Linux x86_64 or ARM64, verifies its SHA-256 checksum, and installs `nouli` into `~/.local/bin`. It also supports Apple silicon macOS. Linux requires GNU libc 2.38 or newer; musl-based systems such as Alpine need a source build.
@@ -59,14 +59,14 @@ rm "$HOME/.local/bin/nouli"
 To select a release or another installation directory, set variables for the shell running the installer:
 
 ```sh
-curl -fsSL https://standing-desks.github.io/nouli/install.sh | NOULI_VERSION=0.1.0 sh
-curl -fsSL https://standing-desks.github.io/nouli/install.sh | NOULI_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://nouli.ai/install.sh | NOULI_VERSION=0.1.0 sh
+curl -fsSL https://nouli.ai/install.sh | NOULI_INSTALL_DIR="$HOME/bin" sh
 ```
 
 You can download and inspect the script before running it:
 
 ```sh
-curl -fsSL https://standing-desks.github.io/nouli/install.sh -o install.sh
+curl -fsSL https://nouli.ai/install.sh -o install.sh
 less install.sh
 sh install.sh
 ```
@@ -75,7 +75,7 @@ If another installation comes first on your PATH, remove it or adjust your PATH 
 
 ## Install a release archive
 
-Choose an archive matching your operating system and processor from [GitHub Releases](https://github.com/standing-desks/nouli/releases):
+Choose an archive matching your operating system and processor from [GitHub Releases](https://github.com/nouli-ai/nouli/releases):
 
 - `nouli-VERSION-aarch64-apple-darwin.tar.gz` for Apple silicon Macs.
 - `nouli-VERSION-aarch64-unknown-linux-gnu.tar.gz` for ARM64 GNU/Linux.

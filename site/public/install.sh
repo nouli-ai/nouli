@@ -24,7 +24,7 @@ case "$system:$arch" in
   Darwin:arm64|Darwin:aarch64) target=aarch64-apple-darwin ;;
   Linux:aarch64|Linux:arm64) target=aarch64-unknown-linux-gnu ;;
   Linux:x86_64|Linux:amd64) target=x86_64-unknown-linux-gnu ;;
-  *) fail "unsupported platform $system/$arch; see https://github.com/standing-desks/nouli/releases" ;;
+  *) fail "unsupported platform $system/$arch; see https://github.com/nouli-ai/nouli/releases" ;;
 esac
 if [ "$system" = Linux ]; then
   libc=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)
@@ -34,7 +34,7 @@ if [ "$system" = Linux ]; then
   ' || fail 'GNU/Linux with system glibc 2.38 or newer is required (Ubuntu 24.04 is supported)'
 fi
 
-releases=https://github.com/standing-desks/nouli/releases
+releases=https://github.com/nouli-ai/nouli/releases
 version=${NOULI_VERSION:-latest}
 if [ "$version" = latest ]; then
   release_url=$(curl -fsSL --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 30 \
