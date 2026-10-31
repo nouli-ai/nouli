@@ -11,11 +11,11 @@ brew install nouli-ai/tap/nouli
 
 On Linux, or on macOS without Homebrew: `curl -fsSL https://nouli.ai/install.sh | sh`. Then run `nouli connect` to choose a service, authenticate and select a model. You can also [write the configuration yourself](docs/configuration.md).
 
-[![CI](https://img.shields.io/github/actions/workflow/status/nouli-ai/nouli/ci.yml?branch=main&style=flat-square)](https://github.com/nouli-ai/nouli/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/nouli-ai/nouli?include_prereleases&sort=semver&style=flat-square)](https://github.com/nouli-ai/nouli/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/nouli-ai/nouli/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/nouli-ai/nouli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nouli-ai/nouli?include_prereleases&sort=semver&style=flat-square&color=blue&logo=github)](https://github.com/nouli-ai/nouli/releases)
 [![Total downloads across all release assets](https://img.shields.io/github/downloads/nouli-ai/nouli/total?style=flat-square&color=blueviolet)](https://github.com/nouli-ai/nouli/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-0b6e63?style=flat-square&labelColor=1d2a28)](LICENSE)
-[![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-0b6e63?style=flat-square&labelColor=1d2a28)](rust-toolchain.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-dea584?style=flat-square&logo=rust&logoColor=white)](rust-toolchain.toml)
 
 ### Give this to your agent
 
