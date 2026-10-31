@@ -194,6 +194,12 @@ fn config(error: &ConfigError) -> ErrorReport {
 fn limit(error: &crate::limits::LimitError) -> ErrorReport {
     use crate::limits::LimitError;
     match error {
+        LimitError::Codec(crate::codec::CodecError::ImageReferenceConflict) => ErrorReport {
+            category: Category::Input,
+            code: "image_reference_conflict".into(),
+            message: crate::codec::CodecError::ImageReferenceConflict.to_string(),
+            retryable: false,
+        },
         LimitError::TotalCapacity | LimitError::QuestionCapacity => {
             message(Category::Capacity, "context_capacity")
         }

@@ -48,6 +48,10 @@ pub enum CodecError {
     Kind,
     #[error("serialized value does not match the contract")]
     Shape,
+    #[error(
+        "saved images share a reference but contain different bytes; choose one source or use distinct image references"
+    )]
+    ImageReferenceConflict,
     #[error("value cannot be represented losslessly as TOON")]
     Representation,
     #[error(transparent)]

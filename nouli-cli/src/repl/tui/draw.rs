@@ -26,7 +26,7 @@ const LIST_ROWS: usize = 8;
 const TRANSCRIPT_ROWS: u16 = 3;
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 /// The status line's key hints, most useful first.
-const HINTS: [&str; 3] = ["Tab question", "↑↓ fields", "/help"];
+const HINTS: [&str; 4] = ["Tab question", "@ reference", "↑↓ fields", "/help"];
 
 /// The view's styles. Without color, emphasis is bold alone.
 struct Theme {
@@ -163,6 +163,11 @@ fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         &mut app.scroll,
     );
     frame.render_widget(Paragraph::new(rows), top);
+    if app.references.picker.as_ref().is_some_and(|p| p.expanded)
+        || app.references.inspected.is_some()
+    {
+        draw_references(frame, top, app, theme);
+    }
     let list = list(app, usize::from(top.height), theme);
     if !list.is_empty() {
         let height = u16::try_from(list.len())
@@ -188,6 +193,12 @@ fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         } else if row >= first + shown {
             first = row + 1 - shown;
         }
+        if app.references.picker.as_ref().is_some_and(|p| !p.expanded) {
+            let menu = reference_menu(app, theme)
+                .len()
+                .min(shown.saturating_sub(1));
+            first = first.max((row + menu + 1).saturating_sub(shown));
+        }
     }
     app.composer_top = first;
     let window: Vec<_> = lines.into_iter().skip(first).take(shown).collect();
@@ -204,6 +215,7 @@ struct Rows {
     lines: Vec<Line<'static>>,
     cursor: Option<(usize, usize)>,
     width: usize,
+    menu: Vec<Line<'static>>,
 }
 
 impl Rows {
@@ -227,6 +239,9 @@ impl Rows {
         style: Style,
         cursor: Option<usize>,
     ) {
+        let (text, position) = render::image_label_projection(text, cursor.unwrap_or(0));
+        let text = text.as_str();
+        let cursor = cursor.map(|_| position);
         let indent = gutter.width();
         let room = self.width.saturating_sub(indent).max(1);
         let first = self.lines.len();
@@ -234,6 +249,7 @@ impl Rows {
             self.lines.push(Line::from(vec![gutter, placeholder]));
             if cursor.is_some() {
                 self.cursor = Some((indent, first));
+                self.lines.append(&mut self.menu);
             }
             return;
         }
@@ -260,6 +276,7 @@ impl Rows {
             self.lines.push(Line::from(" ".repeat(indent)));
             (indent, first + row + 1)
         });
+        self.lines.append(&mut self.menu);
     }
 }
 
@@ -275,7 +292,7 @@ fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
                 format!(
                     "{}: {}  · {} {turns}",
                     render::clean(&entry.label),
-                    render::clean(&entry.first),
+                    render::clean(&render::image_labels(&entry.first)),
                     entry.turns
                 )
             })
@@ -306,6 +323,286 @@ fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
         .collect()
 }
 
+fn reference_kind(entry: &nouli_core::storage::decisions::SavedDecision) -> Kind {
+    match entry.question.answer_space {
+        nouli_core::decision::AnswerSpace::Noul => Kind::Noul,
+        nouli_core::decision::AnswerSpace::Choice { .. } => Kind::Choice,
+        nouli_core::decision::AnswerSpace::Score { .. } => Kind::Score,
+    }
+}
+
+fn reference_row(
+    app: &App,
+    entry: &nouli_core::storage::decisions::SavedDecision,
+    selected: bool,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let kind = reference_kind(entry);
+    let prompt = render::clean(&render::image_labels(&entry.question.prompt))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let latest = app
+        .latest_question
+        .as_ref()
+        .is_some_and(|q| q.turn == entry.source.turn && q.question.id == entry.source.question);
+    let answer = render::clean(&render::image_labels(&super::references::answer(entry)));
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!(" {} {prompt}", if selected { "›" } else { " " }),
+            theme.kind(kind, selected),
+        )),
+        Line::from(vec![
+            Span::styled(format!("   {answer}"), theme.kind(kind, selected)),
+            Span::styled(
+                format!(
+                    " · {} / {}{}",
+                    render::clean(&entry.session_name),
+                    entry.number,
+                    if latest { " · included" } else { "" }
+                ),
+                theme.dim,
+            ),
+        ]),
+    ];
+    if app
+        .references
+        .picker
+        .as_ref()
+        .is_some_and(|p| p.query.trim_start().starts_with("q_"))
+    {
+        lines.push(Line::from(Span::styled(
+            format!("   {}", render::clean(&entry.source.question)),
+            theme.dim,
+        )));
+    }
+    lines
+}
+
+fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
+    let Some(picker) = &app.references.picker else {
+        return vec![];
+    };
+    if picker.expanded {
+        return vec![];
+    }
+    let mut rows = vec![Line::from(Span::styled(
+        format!(
+            "  Saved answers · all local sessions · {} matches",
+            picker.matches.len()
+        ),
+        theme.dim,
+    ))];
+    if picker.matches.is_empty() {
+        rows.push(Line::from(Span::styled(
+            "  No saved question found · Esc keeps the text",
+            theme.dim,
+        )));
+    }
+    for (i, &index) in picker
+        .matches
+        .iter()
+        .take(super::references::COMPACT)
+        .enumerate()
+    {
+        rows.extend(reference_row(
+            app,
+            &app.references.catalog[index],
+            i == picker.choice,
+            theme,
+        ));
+    }
+    let browse = picker.choice == picker.matches.len().min(super::references::COMPACT);
+    rows.push(Line::from(Span::styled(
+        format!(" {} Browse history…", if browse { "›" } else { " " }),
+        if browse { theme.accent } else { theme.dim },
+    )));
+    rows
+}
+
+fn draw_references(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    let title = if app.references.inspected.is_some() {
+        " Reference source · Ctrl-O · Esc closes "
+    } else {
+        " Saved answers · all local sessions "
+    };
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .border_style(theme.dim)
+        .title(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if let Some(index) = app.references.inspected {
+        if let Some(binding) = app.references.bindings.get(index) {
+            let value = &binding.record.value.value()["nouli_decision_reference"];
+            let source = &value["source"];
+            let mut lines = vec![
+                Line::from(render::clean(&binding.label)),
+                Line::from(format!(
+                    "Question: {}",
+                    render::clean(source["question"].as_str().unwrap_or(""))
+                )),
+                Line::from(format!("Turn: {}", source["turn"].as_str().unwrap_or(""))),
+                Line::from(format!(
+                    "Session: {}",
+                    source["session"].as_str().unwrap_or("")
+                )),
+                Line::from(format!(
+                    "Model: {}",
+                    render::clean(value["provider"]["model"].as_str().unwrap_or(""))
+                )),
+                Line::from("Backspace in the form removes the reference."),
+            ];
+            if let (Ok(question), Ok(outcome)) = (
+                serde_json::from_value::<nouli_core::decision::Question>(value["question"].clone()),
+                serde_json::from_value::<nouli_core::outcome::QuestionOutcome>(
+                    value["outcome"].clone(),
+                ),
+            ) {
+                lines.insert(
+                    1,
+                    Line::from(render::clean(&render::image_labels(&question.prompt))),
+                );
+                lines.insert(
+                    2,
+                    Line::from(render::clean(&render::image_labels(
+                        &super::references::describe_answer(&question, &outcome),
+                    ))),
+                );
+            }
+            if let Some(images) = value["images"].as_array() {
+                let names = images
+                    .iter()
+                    .filter_map(|image| image["record"]["value"]["nouli_image"]["name"].as_str())
+                    .map(render::clean)
+                    .collect::<Vec<_>>();
+                if !names.is_empty() {
+                    lines.push(Line::from(format!("Images: {}", names.join(", "))));
+                }
+            }
+            frame.render_widget(
+                Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }),
+                inner,
+            );
+        }
+        return;
+    }
+    let Some(picker) = &app.references.picker else {
+        return;
+    };
+    let (list_area, preview_area) = if inner.width >= 80 {
+        let [left, right] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(inner);
+        (left, Some(right))
+    } else {
+        (inner, None)
+    };
+    let size = (usize::from(list_area.height) / 4).max(1);
+    let first = picker.choice.saturating_sub(size - 1);
+    let mut lines = Vec::new();
+    if picker.matches.is_empty() {
+        lines.push(Line::from(
+            "No saved question found · Esc returns to the draft",
+        ));
+    }
+    for (i, index) in picker.matches.iter().enumerate().skip(first).take(size) {
+        lines.extend(reference_row(
+            app,
+            &app.references.catalog[*index],
+            i == picker.choice,
+            theme,
+        ));
+        lines.push(Line::from(""));
+    }
+    frame.render_widget(Paragraph::new(lines), list_area);
+    if let Some(preview_area) = preview_area
+        && let Some(entry) = app.references.selected()
+    {
+        let kind = reference_kind(entry);
+        let mut lines = vec![
+            Line::from(Span::styled(
+                render::clean(&render::image_labels(&entry.question.prompt)),
+                theme.kind(kind, true),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                render::clean(&render::image_labels(&super::references::answer(entry))),
+                theme.kind(kind, true),
+            )),
+        ];
+        match &entry.outcome {
+            nouli_core::outcome::QuestionOutcome::Answered {
+                answer: nouli_core::outcome::Answer::Choice { distribution, .. },
+                ..
+            } => {
+                if let nouli_core::decision::AnswerSpace::Choice { options } =
+                    &entry.question.answer_space
+                {
+                    for option in options {
+                        if let Some(p) = distribution.iter().find(|p| p.option_id == option.id) {
+                            lines.push(Line::from(format!(
+                                "{}  {:.2}",
+                                render::image_labels(&render::clean(&option.description)),
+                                p.probability
+                            )));
+                        }
+                    }
+                }
+            }
+            nouli_core::outcome::QuestionOutcome::Answered {
+                answer: nouli_core::outcome::Answer::Score { probabilities, .. },
+                ..
+            } => {
+                if let nouli_core::decision::AnswerSpace::Score { levels } =
+                    &entry.question.answer_space
+                {
+                    for (level, p) in levels.iter().zip(probabilities) {
+                        let label = match level {
+                            nouli_core::decision::Criterion::Text(s) => s,
+                            nouli_core::decision::Criterion::Detailed { description, .. } => {
+                                description
+                            }
+                        };
+                        lines.push(Line::from(format!(
+                            "{}  {p:.2}",
+                            render::image_labels(&render::clean(label))
+                        )));
+                    }
+                }
+            }
+            _ => {}
+        }
+        lines.extend([
+            Line::from(""),
+            Line::from(format!(
+                "Question {}",
+                render::clean(&entry.source.question)
+            )),
+            Line::from(format!("Turn {}", entry.source.turn)),
+            Line::from(format!(
+                "{} · {}",
+                render::clean(&entry.provider.provider),
+                render::clean(&entry.provider.model)
+            )),
+        ]);
+        let block = Block::new()
+            .borders(Borders::LEFT)
+            .padding(Padding::left(1))
+            .border_style(theme.dim);
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(ratatui::widgets::Wrap { trim: false }),
+            preview_area,
+        );
+    }
+}
+
 type Composer = (Vec<Line<'static>>, Option<(usize, usize)>);
 
 /// The form as lines, with the cursor's column and row when it has the keys.
@@ -327,6 +624,7 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
         lines: Vec::new(),
         cursor: None,
         width,
+        menu: reference_menu(app, theme),
     };
 
     let mut heading = vec![Span::styled("Context", title(Section::State))];
@@ -334,7 +632,19 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     if queued > 0 {
         heading.push(Span::styled(format!(" · {queued} queued"), theme.dim));
     }
+    if app.latest_question.is_some() {
+        heading.push(Span::styled(" · latest question included", theme.dim));
+    }
     rows.rule(heading, theme);
+    if let Some(latest) = &app.latest_question {
+        rows.push(
+            Span::styled("  ↳ ", theme.dim),
+            &render::clean(&latest.question.prompt),
+            none(),
+            theme.dim,
+            None,
+        );
+    }
     for (index, fact) in queue.facts.iter().enumerate() {
         let gutter = Span::styled("  + ", theme.dim);
 
@@ -454,6 +764,7 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     }
     rows.lines.push(Line::from(Span::styled(
         match form.row {
+            _ if app.references.picker.is_some() => "  Enter inserts reference · Esc closes",
             Row::Option(_) if app.option_enter => "  Press Enter again to send",
             Row::Option(_) => "  Enter next item · Enter twice to send",
             _ => "  Press Enter to send",
@@ -629,6 +940,10 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Runnin
             let style = if status.error { theme.error } else { theme.dim };
             Line::from(Span::styled(format!(" {}", status.text), style))
         }
+        (None, _) if app.references.picker.is_some() => Line::from(Span::styled(
+            " ↑↓ choose · Enter insert · Esc close · Tab field · Shift-Tab type",
+            theme.dim,
+        )),
         (None, None) if app.sessions.is_some() => Line::from(Span::styled(
             " ↑↓ choose · Enter resumes the session · Esc closes",
             theme.dim,
@@ -656,9 +971,18 @@ fn hints(width: usize) -> String {
 
 fn focused_hints(width: usize, row: Row) -> String {
     match row {
-        Row::Question => fit_hints(width, &["Tab next field", "↑↓ fields", "/help"]),
-        Row::Option(_) => fit_hints(width, &["Tab next item", "↑↓ fields", "/help"]),
-        Row::Fact(_) => fit_hints(width, &["↑↓ fields", "Tab question", "/help"]),
+        Row::Question => fit_hints(
+            width,
+            &["Tab next field", "@ reference", "↑↓ fields", "/help"],
+        ),
+        Row::Option(_) => fit_hints(
+            width,
+            &["Tab next item", "@ reference", "↑↓ fields", "/help"],
+        ),
+        Row::Fact(_) => fit_hints(
+            width,
+            &["↑↓ fields", "@ reference", "Tab question", "/help"],
+        ),
         _ => hints(width),
     }
 }
@@ -737,6 +1061,31 @@ mod tests {
     }
 
     #[test]
+    fn latest_context_is_visible_and_image_metadata_is_hidden() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        app.latest_question = Some(crate::repl::tui::tests::previous(Kind::Noul));
+        let reference = format!("[image:{}]", nouli_core::identity::Id::generate());
+        app.form.input = format!("holiday photo.png {reference}");
+        app.form.cursor = app.form.input.len();
+        let screen = shown(&mut app, 140, 24).join("\n");
+        assert!(
+            screen.contains("Context · latest question included"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("↳ Which destination suits this trip?"),
+            "{screen}"
+        );
+        assert!(screen.contains("holiday photo.png"), "{screen}");
+        assert!(!screen.contains("[image:"), "{screen}");
+        assert!(
+            app.form.input.contains(&reference),
+            "native media reference stays intact"
+        );
+    }
+
+    #[test]
     fn a_question_a_failed_turn_left_waits_in_state() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = app(&settings);
@@ -768,11 +1117,68 @@ mod tests {
     }
 
     #[test]
+    fn reference_suggestions_stay_visible_below_a_scrolled_field() {
+        use nouli_core::{
+            history::FinalizedTurn,
+            storage::decisions::{DecisionSource, SavedDecision},
+        };
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/contracts/history.json"))
+                .unwrap();
+        let turn: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
+        app.references.catalog = vec![SavedDecision {
+            source: DecisionSource {
+                session: turn.session,
+                turn: turn.id,
+                question: turn.request.questions[0].id.clone(),
+            },
+            session_name: "other-project".into(),
+            number: 1,
+            sequence: 1,
+            question: turn.request.questions[0].clone(),
+            outcome: turn.outcome.outcomes[0].clone(),
+            provider: turn.outcome.provider,
+        }];
+        for number in 0..12 {
+            app.repl.queue.facts.push(format!("fact {number}"));
+        }
+        app.form.question = "@Which".into();
+        app.form.row = Row::Question;
+        app.form.cursor = 6;
+        app.references.picker = Some(super::super::references::Picker {
+            row: Row::Question,
+            range: 0..6,
+            query: "Which".into(),
+            matches: vec![0],
+            choice: 0,
+            expanded: false,
+        });
+        let screen = shown(&mut app, 80, 20).join("\n");
+        assert!(
+            screen.contains("Saved answers · all local sessions"),
+            "{screen}"
+        );
+        assert!(screen.contains("Which route?"), "{screen}");
+        assert!(screen.contains("Browse history"), "{screen}");
+        assert!(screen.contains("other-project"), "{screen}");
+        app.status = Some(crate::repl::tui::Status::error(
+            "This question was refused. Choose a saved answer.",
+        ));
+        let screen = shown(&mut app, 80, 20).join("\n");
+        assert!(
+            screen.contains("This question was refused"),
+            "picker hints must not hide errors: {screen}"
+        );
+    }
+
+    #[test]
     fn the_status_line_leaves_out_the_key_hints_that_do_not_fit() {
         let all = hints(200);
-        assert_eq!(all, " Tab question · ↑↓ fields · /help");
+        assert_eq!(all, " Tab question · @ reference · ↑↓ fields · /help");
         let narrow = hints(all.width() - 1);
-        assert_eq!(narrow, " Tab question · ↑↓ fields");
+        assert_eq!(narrow, " Tab question · @ reference · ↑↓ fields");
         assert_eq!(hints(13), " Tab question");
         assert_eq!(hints(12), "");
     }
@@ -895,6 +1301,7 @@ mod tests {
             lines: Vec::new(),
             cursor: None,
             width: 14,
+            menu: vec![],
         };
         let theme = Theme::new(false);
         rows.push(
@@ -915,6 +1322,7 @@ mod tests {
             lines: Vec::new(),
             cursor: None,
             width: 8,
+            menu: vec![],
         };
         rows.push(Span::raw("  › "), "abcd", Span::raw(""), theme.dim, Some(4));
         assert_eq!((rows.lines.len(), rows.cursor), (2, Some((4, 1))));

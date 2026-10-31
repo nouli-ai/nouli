@@ -87,6 +87,8 @@ A turn that fails prints its error and keeps the queue.
 In a terminal, the form asks for ordinary text:
 
 - **Context** holds the facts for the next question. Enter sends when a question is ready, including a reused question. Before a question is ready, Enter queues the context.
+
+When saved history is available, Context shows **latest question included** and previews that question. The next TUI request requires its saved question and answer, its used image inputs, and your new/replacement evidence. This also applies to a fresh Yes/No follow-up. Including prior history does not reuse a Yes/No prompt. New independent sessions have no preceding question; branches can show inherited history. If required context cannot fit, the request fails explicitly and keeps your draft.
 - **Question** holds the question exactly as you write it. There is no ID, colon, bracket, quoting, or option-label syntax to remember.
 - Choose **Yes / No**, **Choose one**, or **Score** with Shift-Tab from any field. Choices show Options; scores show Levels, lowest first. Type one per row or paste a list to fill several at once. Each choice needs at least two options; each score needs at least two levels.
 
@@ -121,9 +123,39 @@ The top line shows `nouli`, its version, and the session. Mouse capture is disab
 
 Focus the destination with arrows or Tab, then drag files from Finder or another file manager into the terminal. Most terminals paste shell-escaped paths; quoted paths, spaces, Unicode, `file://` URLs, and multiple files work. UTF-8 files insert their actual text. PDF files insert extracted text and require Poppler's `pdftotext` on PATH (`brew install poppler` on macOS). Scanned PDFs with no text need OCR or pages exported as images. Other binary formats report an error and leave the form available.
 
-PNG, JPEG, GIF, WebP, BMP, TIFF, and ICO images appear as readable references in the focused context, question, option, or score level. Animated images use their first frame. The image bytes are saved as session evidence and sent through the provider's image format, so later turns do not depend on the original file path. Providers that only support images in shared state receive labelled images there. Choose a model with image support; provider limits still apply. For Jev, Nouli sends an upright still image scaled or padded to its accepted 280–1568 pixel dimensions, while saving the original. Image context uses a separate pixel-based estimate for Jev and direct OpenAI; repeated image references count separately. These estimates are approximate. Other routed models retain their encoded-byte capacity estimate where required by the provider. Each file is capped at 16 MiB.
+PNG, JPEG, GIF, WebP, BMP, TIFF, and ICO images appear by filename in the focused context, question, option, or score level. Internal image references stay in saved data and native provider input; they are hidden from the TUI. Arrow movement and deletion treat an imported image as one attachment. Animated images use their first frame. The image bytes are saved as session evidence and sent through the provider's image format, so later turns do not depend on the original file path. Providers that only support images in shared state receive labelled images there. Choose a model with image support; provider limits still apply. For Jev, Nouli sends an upright still image scaled or padded to its accepted 280–1568 pixel dimensions, while saving the original. Image context uses a separate pixel-based estimate for Jev and direct OpenAI; repeated image references count separately. These estimates are approximate. Other routed models retain their encoded-byte capacity estimate where required by the provider. Each file is capped at 16 MiB.
 
 Pasting never submits. Context and question fields preserve paragraphs and indentation; Options split pasted lines into individual items. The alternate-screen transcript disappears when the view closes, while the session retains its saved turns. Scripts and `TERM=dumb` keep the line syntax documented above.
+
+## Reference earlier answers in the TUI
+
+Type `@` at a word boundary in Context, Question, an option, or a score level.
+Search by question wording, question ID, session name, or turn ID. Suggestions
+cover **all saved decisions in the selected local store**, including other
+sessions, workspaces, branches, and workflow decisions. The default store is
+shared across directories; an explicit `--store` searches that store. Independent
+sessions remain separate in the graph and retain their own active facts.
+
+Each result shows its answer, source session and saved turn. Repeated questions
+remain distinct answers, even when they share an ID. Use Up/Down and Enter to
+insert one; the first Enter only inserts the reference. Choose **Browse history**
+for a larger list with answer distributions and source IDs. Ctrl-O in a field
+with references inspects the reference nearest the cursor. Backspace/Delete
+removes a whole reference. Removed draft references add no new source evidence;
+previously saved history still follows the usual context policy.
+
+Tab closes suggestions and moves to the next field. Shift-Tab closes them and
+changes the answer type left to right. Esc closes them and leaves ordinary
+editable text. Email addresses stay literal. Ctrl-S/F5 waits for you to select
+or dismiss the open search before sending.
+
+A reference retains its exact question, saved answer, provider, used image
+inputs and explicit reference dependencies. It never resolves to a newer answer
+later or replaces the current draft's type, options or levels. Saved source turns
+remain immutable. The latest answer is still included automatically; choosing
+it does not duplicate its answer in context. Required evidence that cannot fit
+produces an error and preserves your draft. Internal binding markers remain in
+saved data and structured exports while human output shows the readable label.
 
 ## Output
 

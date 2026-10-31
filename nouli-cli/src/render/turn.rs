@@ -151,7 +151,10 @@ fn marker(
         let tail = format!(" {probability:.2}");
         let label = label.map(|label| {
             let spent = used + "   → was ".width() + tail.width();
-            fit(&clean(label), layout.columns.saturating_sub(spent).max(1))
+            fit(
+                &clean(&super::image_labels(label)),
+                layout.columns.saturating_sub(spent).max(1),
+            )
         });
         match label {
             Some(label) => format!("   → was {label}{tail}"),
@@ -190,7 +193,10 @@ fn choice_rows(
         };
         let body = format!(
             "{} {} {}",
-            pad(&clean(&option.description), layout.label_columns),
+            pad(
+                &clean(&super::image_labels(&option.description)),
+                layout.label_columns
+            ),
             bar(
                 chance(distribution, &option.id).unwrap_or(0.0),
                 layout.bar_cells
@@ -366,7 +372,10 @@ fn question_rows(
                 .iter()
                 .zip(probabilities)
                 .map(|(level, probability)| {
-                    format!("{} {probability:.2}", clean(level_label(level)))
+                    format!(
+                        "{} {probability:.2}",
+                        clean(&super::image_labels(level_label(level)))
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join(" · ");

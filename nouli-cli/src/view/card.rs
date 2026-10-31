@@ -1,5 +1,5 @@
 //! Fixed-width decision cards, wrapping by terminal cells and grapheme boundaries.
-use crate::render::clean;
+use crate::render::{clean, image_labels};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -61,7 +61,7 @@ pub(super) fn selected(lines: &mut Vec<Row>, value: &str) {
 }
 
 fn append(lines: &mut Vec<Row>, prefix: &str, value: &str, highlighted: bool) {
-    for (index, line) in wrap(&clean(value), TEXT - prefix.width())
+    for (index, line) in wrap(&clean(&image_labels(value)), TEXT - prefix.width())
         .into_iter()
         .enumerate()
     {
@@ -114,7 +114,10 @@ pub(super) fn table(lines: &mut Vec<Row>, heading: &str, entries: &[(String, Opt
             continue;
         }
         let label_width = TEXT - 3 - probability_width;
-        for (index, label) in wrap(&clean(label), label_width).into_iter().enumerate() {
+        for (index, label) in wrap(&clean(&image_labels(label)), label_width)
+            .into_iter()
+            .enumerate()
+        {
             let value = if index == 0 { probability.as_str() } else { "" };
             let prefix = if index == 0 && *highlighted {
                 "▶ "

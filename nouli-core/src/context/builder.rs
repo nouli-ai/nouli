@@ -482,21 +482,6 @@ impl ContextBuilder {
             }
         }
         let live = data(&(input.request, input.updates))?;
-        for entry in &mut entries {
-            let value = entry.value.value();
-            if entry.kind == EntryKind::Context
-                && value["record"]["key"]
-                    .as_str()
-                    .is_some_and(|key| key.starts_with("image:"))
-                && value["record"]["value"]["nouli_image"]["reference"]
-                    .as_str()
-                    .is_some_and(|reference| {
-                        !reference.is_empty() && mentions(live.value(), reference)
-                    })
-            {
-                entry.protected = true;
-            }
-        }
         for required in input.required {
             let entry = entries
                 .iter_mut()
@@ -514,6 +499,139 @@ impl ContextBuilder {
                 )?;
             }
             entry.protected = true;
+        }
+        // Required historical decisions retain any image payload their saved
+        // questions reference, not just an otherwise unusable filename/token.
+        let protected_turns: HashSet<_> = entries
+            .iter()
+            .filter(|entry| entry.protected && entry.kind == EntryKind::Decision)
+            .map(|entry| entry.id)
+            .collect();
+        let prior_input_records: HashSet<_> = input
+            .history
+            .iter()
+            .filter(|turn| protected_turns.contains(&turn.id))
+            .flat_map(|turn| &turn.manifest.records)
+            .filter(|record| record.representation != Representation::Omitted)
+            .map(|record| record.record)
+            .collect();
+        let linked_images: Vec<_> = entries
+            .iter()
+            .filter(|entry| {
+                let value = entry.value.value();
+                entry.kind == EntryKind::Context
+                    && value["record"]["key"]
+                        .as_str()
+                        .is_some_and(|key| key.starts_with("image:"))
+                    && value["record"]["value"]["nouli_image"]["reference"]
+                        .as_str()
+                        .is_some_and(|reference| {
+                            !reference.is_empty()
+                                && (prior_input_records.contains(&entry.id)
+                                    || mentions(live.value(), reference)
+                                    || entries.iter().any(|prior| {
+                                        prior.protected
+                                            && prior.kind == EntryKind::Decision
+                                            && mentions(prior.value.value(), reference)
+                                    }))
+                        })
+            })
+            .map(|entry| entry.id)
+            .collect();
+        for entry in &mut entries {
+            if linked_images.contains(&entry.id) {
+                entry.protected = true;
+            }
+        }
+        // A saved-answer reference is a dependency, not session ancestry. Keep
+        // it (and its native image snapshot) when used by the live draft or a
+        // protected saved turn. Walk to a fixed point for references to turns
+        // that themselves used references. Never resurrect omitted inputs.
+        loop {
+            let protected: HashSet<_> = entries
+                .iter()
+                .filter(|e| e.protected && e.kind == EntryKind::Decision)
+                .map(|e| e.id)
+                .collect();
+            let used: HashSet<_> = input
+                .history
+                .iter()
+                .filter(|t| protected.contains(&t.id))
+                .flat_map(|t| &t.manifest.records)
+                .filter(|r| r.representation != Representation::Omitted)
+                .map(|r| r.record)
+                .collect();
+            let mut protect = HashSet::new();
+            for entry in &entries {
+                let record = &entry.value.value()["record"];
+                if let Some(reference) = record["value"]["nouli_decision_reference"].as_object() {
+                    let mentioned = reference
+                        .get("reference")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|r| mentions(live.value(), r));
+                    if entry.protected || used.contains(&entry.id) || mentioned {
+                        protect.insert(entry.id);
+                        if let Some(turn) = reference
+                            .get("source")
+                            .and_then(|s| s.get("turn"))
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(|s| Id::try_from(s.to_owned()).ok())
+                        {
+                            protect.insert(turn);
+                        }
+                    }
+                } else if record["key"]
+                    .as_str()
+                    .is_some_and(|k| k.starts_with("image:"))
+                    && used.contains(&entry.id)
+                {
+                    protect.insert(entry.id);
+                }
+            }
+            let mut changed = false;
+            for entry in &mut entries {
+                if protect.contains(&entry.id) && !entry.protected {
+                    entry.protected = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        // Within existing ancestry the source decision is already present and
+        // now protected. Keep only the explicit binding alongside that source,
+        // rather than sending the same answer and images a second time.
+        let decisions: HashSet<_> = entries
+            .iter()
+            .filter(|e| e.protected && e.kind == EntryKind::Decision)
+            .map(|e| e.id.to_string())
+            .collect();
+        for entry in &mut entries {
+            if !entry.protected {
+                continue;
+            }
+            if input
+                .required
+                .iter()
+                .any(|required| required.record == entry.id && required.pointer.is_some())
+            {
+                continue;
+            }
+            let source=entry.value.value()["record"]["value"]["nouli_decision_reference"]["source"]["turn"].as_str();
+            if source.is_some_and(|s| decisions.contains(s)) {
+                let mut value = entry.value.value().clone();
+                if let Some(reference) =
+                    value["record"]["value"]["nouli_decision_reference"].as_object_mut()
+                {
+                    reference.remove("question");
+                    reference.remove("outcome");
+                    reference.remove("images");
+                    reference.remove("input_references");
+                    reference.insert("included_in_ancestry".into(), serde_json::Value::Bool(true));
+                }
+                entry.value = Data::new(value)?;
+            }
         }
         // A replaced fact is evicted from model context so the model sees only
         // the current text. The ledger keeps it, and an explicit requirement
@@ -613,6 +731,127 @@ mod tests {
             reserved_output_tokens: 128,
             capabilities: None,
         }
+    }
+    #[test]
+    fn selected_answers_are_required_across_sessions_and_followups_and_deduplicate_ancestry() {
+        let mut history = history();
+        let original = history[0].clone();
+        let sources = [SourcePoint {
+            session: original.session,
+            frontier: vec![original.id],
+        }];
+        let id = Id::generate();
+        let reference = format!("[decision:{id}]");
+        let mut record=ContextRecord{id,key:format!("decision:{id}"),kind:ContextKind::Evidence,value:Data::new(serde_json::json!({"nouli_decision_reference":{
+            "source":{"session":original.session,"turn":original.id,"question":original.request.questions[0].id},
+            "reference":reference,"question":original.request.questions[0],"outcome":original.outcome.outcomes[0],"images":[]
+        }})).unwrap()};
+        let required = [RequiredItem {
+            record: id,
+            pointer: None,
+        }];
+        let updates = [ContextUpdate::Append {
+            record: record.clone(),
+        }];
+        let plan = ContextBuilder::build(
+            input(&history, &sources, &original.request, &updates, &required),
+            &limits(100_000),
+            &ByteCounter,
+            &FullHistory,
+        )
+        .unwrap();
+        assert!(
+            plan.entries
+                .iter()
+                .find(|e| e.id == original.id)
+                .unwrap()
+                .protected
+        );
+        let binding = &plan
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap()
+            .value
+            .value()["record"]["value"]["nouli_decision_reference"];
+        assert_eq!(binding["included_in_ancestry"], true);
+        assert!(
+            binding.get("outcome").is_none(),
+            "the already-included answer is not duplicated"
+        );
+        let pointed = [RequiredItem {
+            record: id,
+            pointer: Some("/record/value/nouli_decision_reference/outcome".into()),
+        }];
+        let pointed_plan = ContextBuilder::build(
+            input(&history, &sources, &original.request, &updates, &pointed),
+            &limits(100_000),
+            &ByteCounter,
+            &FullHistory,
+        )
+        .unwrap();
+        assert!(
+            pointed_plan
+                .entries
+                .iter()
+                .find(|e| e.id == id)
+                .unwrap()
+                .value
+                .value()["record"]["value"]["nouli_decision_reference"]["outcome"]
+                .is_object()
+        );
+        // An independent source stays a question-specific snapshot, without
+        // importing or mutating the other session's ancestry or active facts.
+        let mut value = record.value.value().clone();
+        value["nouli_decision_reference"]["source"]["turn"] = serde_json::json!(Id::generate());
+        record.value = Data::new(value).unwrap();
+        let updates = [ContextUpdate::Append {
+            record: record.clone(),
+        }];
+        let plan = ContextBuilder::build(
+            input(&history, &sources, &original.request, &updates, &required),
+            &limits(100_000),
+            &ByteCounter,
+            &FullHistory,
+        )
+        .unwrap();
+        let binding = &plan
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap()
+            .value
+            .value()["record"]["value"]["nouli_decision_reference"];
+        assert!(binding.get("outcome").is_some());
+        // The next fresh question may have no literal token. Its required
+        // preceding decision still retains this used reference dependency.
+        history[0].updates.push(ContextUpdate::Append { record });
+        history[0].manifest.records.push(RecordProjection {
+            record: id,
+            representation: Representation::Full,
+            protected: true,
+        });
+        let required = [RequiredItem {
+            record: original.id,
+            pointer: None,
+        }];
+        let plan = ContextBuilder::build(
+            input(&history, &sources, &original.request, &[], &required),
+            &limits(100_000),
+            &ByteCounter,
+            &FullHistory,
+        )
+        .unwrap();
+        assert!(plan.entries.iter().find(|e| e.id == id).unwrap().protected);
+        assert!(matches!(
+            ContextBuilder::build(
+                input(&history, &sources, &original.request, &[], &required),
+                &limits(129),
+                &ByteCounter,
+                &FullHistory
+            ),
+            Err(BuildError::ProtectedCapacity)
+        ));
     }
     fn input<'a>(
         history: &'a [FinalizedTurn],
@@ -866,6 +1105,42 @@ mod tests {
             ),
             Err(BuildError::ProtectedCapacity)
         ));
+        history[0].request.questions[0].prompt = "Inspect [photo].".into();
+        request.questions[0].prompt = "Does the preceding judgment still hold?".into();
+        let required = [RequiredItem {
+            record: history[0].id,
+            pointer: None,
+        }];
+        assert!(
+            matches!(
+                ContextBuilder::build(
+                    input(&history, &sources, &request, &[], &required),
+                    &limits(4096),
+                    &ByteCounter,
+                    &crate::context::compact::Staged
+                ),
+                Err(BuildError::ProtectedCapacity)
+            ),
+            "a required prior question retains its image evidence"
+        );
+        history[0].request.questions[0].prompt = "Is this diagram useful?".into();
+        history[0].manifest.records.push(RecordProjection {
+            record: id,
+            representation: Representation::Full,
+            protected: false,
+        });
+        assert!(
+            matches!(
+                ContextBuilder::build(
+                    input(&history, &sources, &request, &[], &required),
+                    &limits(4096),
+                    &ByteCounter,
+                    &crate::context::compact::Staged
+                ),
+                Err(BuildError::ProtectedCapacity)
+            ),
+            "images used by the saved question remain available even without a literal reference in its prompt"
+        );
     }
 
     #[test]
