@@ -2,6 +2,23 @@
 
 This is a static site written in plain HTML, CSS, and JavaScript. Keep that structure, using native ES modules and the existing Vite build. See [README.md](README.md) for development commands and recording tools.
 
+## Design thesis and vocabulary
+
+The page is a running machine, not a poster: it computes something visible, reacts to the visitor, and frames that behavior with engineer-grade precision. The spectacle should demonstrate Nouli's competence and help visitors understand decisions.
+
+Apply these principles when changing layout, visuals, or interactions:
+
+- **Generative:** Compute visual behavior from graph data and interaction state. Make the system visible through rendering, layout, and transitions; keep recorded decisions authoritative and browsing independent of live inference.
+- **Reactive:** Give pointer, keyboard, selection, and scroll actions immediate, coherent feedback. Use motion to reveal relationships and state changes, with equivalent access on touch devices and a readable reduced-motion presentation.
+- **Precision:** Use hairline rules, aligned labels, monospace metadata, and tabular numbers where they clarify structure. Labels, probabilities, ancestry, and active states should read like a well-made instrument.
+- **Confidence:** Establish a strong typographic hierarchy, deliberate scale, flat color, and a small number of elements. Give the primary message and action room to lead within the existing paper and teal palette.
+- **Materiality:** Make surfaces and motion feel consistent: paper, ink, depth, and light should follow a coherent treatment. Use texture or physical behavior only where it supports the content and remains legible.
+- **One spectacle, quiet frame:** Give each screen one dominant visual event, usually the decision graph. Keep navigation, controls, surrounding copy, and secondary motion restrained so they support that focal point.
+- **Emergent:** Let graph structure and simple interaction rules reveal the larger decision system. Prefer meaningful relationships that visitors can discover over unrelated visual effects.
+- **Instrumented:** Let visitors operate the demonstration through useful controls, selections, and readouts. Show what changed and connect the visible result to the selected example, variant, or decision.
+
+Combine a strong typographic layout with a continuous visual system: carry a coherent visualization through the story and let it reconfigure with the content. Implement this through Nouli's shared styles and existing build.
+
 ## Pages and content
 
 - Write public pages for end users: explain what they can do, show usable commands, and describe the results. Keep development instructions and implementation details in repository documentation.
