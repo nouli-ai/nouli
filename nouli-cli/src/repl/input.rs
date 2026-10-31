@@ -15,6 +15,7 @@ pub(super) enum Line {
 pub(super) enum Command {
     Help,
     Use(String),
+    Rename(String),
     New(Option<String>),
     Branch(String),
     Blend {
@@ -54,6 +55,7 @@ pub(super) fn parse(line: &str) -> Line {
         "clear" => Command::Clear,
         "quit" | "exit" => Command::Quit,
         "use" => single(argument, Command::Use, "/use SESSION"),
+        "rename" => single(argument, Command::Rename, "/rename NAME"),
         "new" if argument.is_empty() => Command::New(None),
         "new" => single(argument, |name| Command::New(Some(name)), "/new [NAME]"),
         "branch" => single(argument, Command::Branch, "/branch NEW_NAME"),
@@ -124,6 +126,11 @@ mod tests {
         assert_eq!(command("/use travel"), Command::Use("travel".into()));
         assert_eq!(command("/use"), Command::Usage("/use SESSION"));
         assert_eq!(command("/use a b"), Command::Usage("/use SESSION"));
+        assert_eq!(
+            command("/rename winter-trip"),
+            Command::Rename("winter-trip".into())
+        );
+        assert_eq!(command("/rename"), Command::Usage("/rename NAME"));
         assert_eq!(command("/new"), Command::New(None));
         assert_eq!(command("/new trip"), Command::New(Some("trip".into())));
         assert_eq!(command("/new bad name"), Command::Usage("/new [NAME]"));

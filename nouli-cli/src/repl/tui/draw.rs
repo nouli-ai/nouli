@@ -148,8 +148,19 @@ fn draw_model(frame: &mut Frame, area: Rect, app: &App, running: Option<&Running
 fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     let (lines, cursor) = composer(app, usize::from(area.width), theme);
     let tall = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+    let reserved = if app
+        .references
+        .picker
+        .as_ref()
+        .is_some_and(|picker| picker.expanded)
+        || app.references.inspected.is_some()
+    {
+        (area.height / 2).max(TRANSCRIPT_ROWS)
+    } else {
+        TRANSCRIPT_ROWS
+    };
     let height = tall
-        .min(area.height.saturating_sub(TRANSCRIPT_ROWS))
+        .min(area.height.saturating_sub(reserved))
         .max(1)
         .min(area.height);
     let [top, bottom] =
@@ -376,6 +387,17 @@ fn reference_row(
             theme.dim,
         )));
     }
+    if let Some(excerpt) = app
+        .references
+        .picker
+        .as_ref()
+        .and_then(|picker| entry.excerpt(&picker.query))
+    {
+        lines.push(Line::from(Span::styled(
+            format!("   {}", render::clean(&render::image_labels(&excerpt))),
+            theme.dim,
+        )));
+    }
     lines
 }
 
@@ -420,7 +442,7 @@ fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
     rows
 }
 
-fn draw_references(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     if area.height == 0 || area.width == 0 {
         return;
     }
@@ -499,6 +521,13 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .areas(inner);
         (left, Some(right))
+    } else if inner.height >= 6 {
+        let [list, preview] = Layout::vertical([
+            Constraint::Length((inner.height / 3).clamp(2, 6)),
+            Constraint::Min(1),
+        ])
+        .areas(inner);
+        (list, Some(preview))
     } else {
         (inner, None)
     };
@@ -577,6 +606,23 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             }
             _ => {}
         }
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Saved input state · PgUp/PgDn scroll",
+            theme.accent,
+        )));
+        if let Some(preview) = app
+            .references
+            .preview
+            .as_ref()
+            .filter(|preview| preview.source == entry.source)
+        {
+            for line in &preview.lines {
+                lines.push(Line::from(render::clean(&render::image_labels(line))));
+            }
+        } else {
+            lines.push(Line::from("Loading saved state…"));
+        }
         lines.extend([
             Line::from(""),
             Line::from(format!(
@@ -591,15 +637,29 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             )),
         ]);
         let block = Block::new()
-            .borders(Borders::LEFT)
+            .borders(if inner.width >= 80 {
+                Borders::LEFT
+            } else {
+                Borders::TOP
+            })
             .padding(Padding::left(1))
             .border_style(theme.dim);
-        frame.render_widget(
-            Paragraph::new(lines)
-                .block(block)
-                .wrap(ratatui::widgets::Wrap { trim: false }),
-            preview_area,
-        );
+        let visible = block.inner(preview_area);
+        app.references.preview_page = usize::from(visible.height).saturating_sub(1).max(1);
+        let wrapped = lines
+            .iter()
+            .flat_map(|line| wrap_line(line, usize::from(visible.width).max(1)))
+            .collect::<Vec<_>>();
+        app.references.preview_scroll = app
+            .references
+            .preview_scroll
+            .min(wrapped.len().saturating_sub(usize::from(visible.height)));
+        let lines = wrapped
+            .into_iter()
+            .skip(app.references.preview_scroll)
+            .take(usize::from(visible.height))
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines).block(block), preview_area);
     }
 }
 
@@ -941,7 +1001,16 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Runnin
             Line::from(Span::styled(format!(" {}", status.text), style))
         }
         (None, _) if app.references.picker.is_some() => Line::from(Span::styled(
-            " ↑↓ choose · Enter insert · Esc close · Tab field · Shift-Tab type",
+            if app
+                .references
+                .picker
+                .as_ref()
+                .is_some_and(|picker| picker.expanded)
+            {
+                " ↑↓ results · PgUp/PgDn preview · Enter insert · Esc close"
+            } else {
+                " ↑↓ choose · Enter insert · Esc close · Tab field · Shift-Tab type"
+            },
             theme.dim,
         )),
         (None, None) if app.sessions.is_some() => Line::from(Span::styled(
@@ -1140,6 +1209,7 @@ mod tests {
             question: turn.request.questions[0].clone(),
             outcome: turn.outcome.outcomes[0].clone(),
             provider: turn.outcome.provider,
+            text: vec![],
         }];
         for number in 0..12 {
             app.repl.queue.facts.push(format!("fact {number}"));
@@ -1171,6 +1241,34 @@ mod tests {
             screen.contains("This question was refused"),
             "picker hints must not hide errors: {screen}"
         );
+        app.status = None;
+        app.references.picker.as_mut().unwrap().expanded = true;
+        app.references.preview = Some(super::super::references::Preview {
+            source: app.references.catalog[0].source.clone(),
+            lines: vec![
+                "station: Namma metro".into(),
+                "budget: 250".into(),
+                "delay: null".into(),
+            ],
+        });
+        for width in [140, 80, 60] {
+            app.references.preview_scroll = 0;
+            let mut found = false;
+            for _ in 0..5 {
+                let screen = shown(&mut app, width, 24).join("\n");
+                found |= screen.contains("Namma metro") && screen.contains("250");
+                app.reference_key(&crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::PageDown,
+                    crossterm::event::KeyModifiers::NONE,
+                ));
+            }
+            assert!(found, "saved state is inspectable at {width} columns");
+            assert_eq!(
+                app.references.picker.as_ref().unwrap().choice,
+                0,
+                "preview scrolling never chooses another source"
+            );
+        }
     }
 
     #[test]

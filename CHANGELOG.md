@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Search saved conversation text with `@`, including context, structured values, options and answers across local sessions. Show matching excerpts, carry the selected saved state into the next decision, and preview historical input with image filenames and scrolling in Browse history, including narrow terminals and long drafts.
 - Show the latest saved question included in the next TUI request, including Yes/No follow-ups, and retain its answer and used images alongside new evidence during context reduction.
 - Show image filenames in the form, transcript, graph, and session previews. Keep internal image references hidden while preserving native image data; attachment movement and deletion operate on the complete image label.
 - Use Shift-Tab as the only answer-type shortcut, cycling left to right from any field, with a short hint beside the selector. Tab navigates fields and options/levels.
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rename the current session with `/rename NAME`, preserving its history, IDs, model settings, references and unsent draft. Header, graph and later `@` searches use the new name; collisions leave the session unchanged.
 - Reference saved answers with `@` in any TUI field. Search question text or IDs across all sessions in the selected local store, inspect answer versions in Browse history, and insert an exact source without changing the current question type or answer list. References retain their saved results and image inputs, survive follow-ups and session changes, and remain ordinary selectable terminal text.
 - Give new sessions without an explicit name a durable random `scientist-number-noun` name, such as `curie-7-diffraction`, using short lowercase surnames, numbers 1–20, and original spinner-style noun forms. Names are unique within the ledger, including concurrent launches. Bare `/new` now works without a name; explicit names remain available.
 - Drop files into the focused terminal field: UTF-8 files insert their contents, PDFs import text through Poppler's `pdftotext`, and PNG, JPEG, GIF, WebP, BMP, TIFF, and ICO images become saved image evidence. Quoted paths, shell-escaped paths, file URLs, multiple files, and terminals without bracketed drops are supported. Each file is limited to 16 MiB; unsupported files report an error without submitting.

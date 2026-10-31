@@ -730,6 +730,7 @@ impl<'a> App<'a> {
             return Ok(Flow::Continue);
         }
         let session = self.repl.session.id;
+        let session_label = self.repl.session.label.clone();
         let step = self.repl.handle(&line)?;
         match &step {
             Step::Send {
@@ -749,6 +750,8 @@ impl<'a> App<'a> {
         if self.repl.session.id != session {
             self.refresh_model();
             self.refresh_previous_question();
+            self.refresh_graph();
+        } else if self.repl.session.label != session_label {
             self.refresh_graph();
         }
         match step {
@@ -1004,10 +1007,8 @@ impl<'a> App<'a> {
         self.status = None;
     }
 
-    /// Imported images are one editable attachment, even though their hidden
-    /// reference remains in the stored text for provider dispatch.
-    fn edit_form(&mut self, key: &KeyEvent) -> bool {
-        let text = self.form.text(&self.repl.queue.facts);
+    /// Shared attachment spans for editing and @-anchor detection.
+    fn attachment_ranges(&self, text: &str) -> Vec<std::ops::Range<usize>> {
         let mut ranges: Vec<_> = render::image_tags(text)
             .into_iter()
             .map(|tag| {
@@ -1038,6 +1039,13 @@ impl<'a> App<'a> {
                 .map_or(tag.start, str::len);
             start..tag.end
         }));
+        ranges
+    }
+
+    /// Imported files and saved references are edited as complete attachments.
+    fn edit_form(&mut self, key: &KeyEvent) -> bool {
+        let text = self.form.text(&self.repl.queue.facts);
+        let ranges = self.attachment_ranges(text);
         let cursor = self.form.cursor;
         let control = key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT);

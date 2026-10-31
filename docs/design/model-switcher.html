@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Nouli · Model switcher designs</title>
+<style>
+    :root {
+      --paper: #f3f2ec; --card: #fffefa; --ink: #242b25; --muted: #687067;
+      --line: #d7dcd0; --green: #385e40; --green-soft: #e7edde;
+      --terminal: #15191d; --term-ink: #d6dade; --dim: #9ba4ad; --rule: #4b5359;
+      --noul: #a3e635; --choice: #67e8f9; --score: #fda4af; --active: var(--choice);
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.6 var(--sans); }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; color: inherit; }
+    a { color: inherit; text-underline-offset: 4px; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+      outline: 3px solid #617b4f; outline-offset: 4px;
+    }
+    [hidden] { display: none !important; }
+    .wrap { max-width: 1512px; padding: 0 44px; margin: 0 auto; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 0; border-bottom: 1px solid var(--line); }
+    .brand { font: 700 24px var(--mono); letter-spacing: -1.5px; }
+    .brand::before { content: ""; display: inline-block; width: 8px; height: 18px; margin-right: 10px; background: var(--green); }
+    .eyebrow { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.7px; color: var(--muted); }
+    .top-meta { display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 11px; }
+    .pill { border: 1px solid var(--line); padding: 3px 9px; border-radius: 20px; font-size: 10px; white-space: nowrap; }
+    .hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 80px; padding: 44px 0 35px; align-items: end; }
+    h1 { font-size: clamp(34px, 4vw, 56px); line-height: 1.06; font-weight: 600; letter-spacing: -2.3px; margin: 10px 0 0; }
+    h1 span { color: var(--green); }
+    .hero p { margin: 0 0 2px; color: var(--muted); max-width: 485px; font-size: 15px; }
+    .hero strong { color: var(--ink); font-weight: 600; }
+    .designs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+    .design { border: 1px solid var(--line); border-radius: 9px; padding: 18px 20px; text-align: left; background: transparent; transition: background .15s, border-color .15s; }
+    .design:hover { background: #fafaf5; border-color: #a8b6a3; }
+    .design[aria-pressed="true"] { background: var(--card); border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+    .design-top { display: flex; gap: 10px; align-items: center; margin-bottom: 9px; }
+    .design-number { font: 11px var(--mono); color: var(--muted); }
+    .design-name { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
+    .recommend { margin-left: auto; font-size: 9px; color: var(--green); border: 1px solid #c6d6bc; border-radius: 3px; padding: 1px 5px; }
+    .design p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .design-footer { display: flex; justify-content: space-between; margin-top: 14px; font: 10px var(--mono); color: var(--muted); }
+    .design[aria-pressed="true"] .design-footer { color: var(--green); }
+    .lab { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .lab-top { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 20px 22px 17px; }
+    .lab-top h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.4px; }
+    .lab-top p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+    .reset { border: 1px solid var(--line); background: transparent; border-radius: 5px; padding: 6px 11px; font-size: 11px; }
+    .reset:hover { background: var(--green-soft); }
+    .lab-body { display: grid; grid-template-columns: minmax(0, 1fr) 244px; gap: 22px; padding: 0 14px 14px; }
+    .terminal-wrap { min-width: 0; background: var(--terminal); border: 1px solid #080c10; border-radius: 7px; box-shadow: 0 4px 12px #1d2a2110; color: var(--term-ink); }
+    .terminal { font: 11px/1.65 var(--mono); }
+    .term-top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #ffffff10; color: var(--dim); }
+    .term-top strong { font-size: 13px; color: var(--term-ink); letter-spacing: -.7px; }
+    .term-top .session { color: var(--term-ink); }
+    .mock-label { margin-left: auto; font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase; }
+    .term-layout { display: grid; grid-template-columns: minmax(0, 1fr) 215px; min-height: 560px; }
+    .term-main { min-width: 0; display: flex; flex-direction: column; padding: 15px 15px 12px; }
+    .transcript { min-height: 150px; color: var(--dim); font-size: 10px; padding: 2px 2px 15px; }
+    .transcript p { margin: 0 0 6px; }
+    .transcript .prompt { color: var(--term-ink); }
+    .transcript .answer { color: var(--choice); padding-left: 13px; }
+    .transcript .yes-answer { color: var(--noul); padding-left: 13px; }
+    .time { font-size: 9px; margin-right: 8px; color: var(--dim); }
+    .composer { margin-top: auto; }
+    .rule { display: flex; align-items: center; gap: 9px; color: #c4cbd1; white-space: nowrap; margin: 4px 0; }
+    .rule::after { content: ""; height: 1px; background: var(--rule); flex: 1; min-width: 6px; }
+    .rule .subtle { font-size: 9px; font-weight: 400; }
+    .subtle { color: var(--dim); }
+    .included { padding: 0 7px 5px; color: var(--dim); font-size: 10px; }
+    .file-row { padding: 1px 7px 5px; color: #c1c8cd; font-size: 10px; }
+    .types { display: inline-flex; gap: 8px; font-size: 9px; }
+    .type { color: var(--c); opacity: .6; }
+    .type.selected { opacity: 1; font-weight: 700; }
+    .type-hint { margin-left: auto; font-size: 9px; font-weight: 400; }
+    .question-label, .option-label { color: var(--active); }
+    .plain-question { color: #e3e7e9; padding: 4px 7px 8px; font-size: 11px; }
+    .editor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px; padding: 6px 7px; min-height: 36px; background: #ffffff05; border: 1px solid #505b60; border-radius: 3px; }
+    .editor:focus-within { border-color: #819286; }
+    .editor input { flex: 1 1 100px; width: 100px; min-width: 65px; color: #edf0f1; background: transparent; font: inherit; line-height: 1.7; padding: 0; border: 0; outline: 0; box-shadow: none; caret-color: #d7e1cf; }
+    .editor input:focus-visible { outline: 0; }
+    .editor input::placeholder { color: #9ba4ad; }
+    .token { color: #e2e9dd; background: #91ad7c19; border: 1px solid #91ad7c65; padding: 0 5px; border-radius: 2px; font: inherit; line-height: 1.7; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+    .token small { color: #bac5b2; font-size: 9px; }
+    .token:hover { background: #91ad7c2b; }
+    .option-note { color: var(--dim); font-size: 10px; padding: 1px 7px 3px; }
+    .option-list { color: #c7cdd2; display: flex; gap: 9px; flex-wrap: wrap; padding: 0 7px 7px; font-size: 10px; }
+    .send { margin-top: 9px; display: flex; align-items: center; gap: 12px; font-size: 10px; }
+    .send strong { color: var(--active); font-weight: 650; }
+    .term-status { padding: 7px 15px 1px; border-top: 1px solid #ffffff10; color: #bcc6c9; font-size: 10px; }
+    .term-hints { padding: 1px 15px 9px; font-size: 9px; color: var(--dim); }
+    .graph { padding: 13px 12px; border-left: 1px solid var(--rule); min-width: 0; }
+    .graph-title { margin-bottom: 20px; color: var(--dim); font-size: 10px; }
+    .graph-card { border: 1px solid #727d84; padding: 15px 11px 11px; position: relative; margin-bottom: 21px; }
+    .graph-legend { position: absolute; top: -9px; left: 6px; background: var(--terminal); color: #c0c7cc; padding: 0 5px; font-size: 9px; }
+    .graph-question { color: var(--choice); line-height: 1.55; margin-bottom: 15px; font-weight: 650; }
+    .graph-values { font-size: 10px; }
+    .graph-values div { display: flex; justify-content: space-between; gap: 7px; }
+    .graph-values .chosen { color: var(--choice); font-weight: 650; }
+    .graph-arrow { color: #d2d8da; text-align: center; margin-top: -14px; margin-bottom: 14px; }
+    .yes-card .graph-question, .yes-card .chosen { color: var(--noul); }
+    .graph-caption { color: var(--dim); font-size: 9px; line-height: 1.7; }
+    .pick { background: #1c2328; border: 1px solid #657269; border-radius: 3px; margin: 5px 0 9px; overflow: hidden; }
+    .pick-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 8px; color: #c0cbbd; font-size: 9px; border-bottom: 1px solid #ffffff0e; }
+    .pick-list { max-height: 188px; overflow-y: auto; }
+    .pick-row { display: block; width: 100%; border: 0; border-left: 2px solid transparent; border-bottom: 1px solid #ffffff08; padding: 7px 8px; color: #d9e0e1; background: transparent; text-align: left; font: 10px/1.65 var(--mono); }
+    .pick-row[aria-selected="true"] { border-left-color: #b5cd9c; background: #b5cd9c12; }
+    .pick-row:hover { background: #b5cd9c18; }
+    .pick-row strong { font-weight: 650; }
+    .pick-row .result-top { display: flex; justify-content: space-between; gap: 6px; }
+    .kind-tag { color: var(--c); font-size: 9px; white-space: nowrap; }
+    .result-meta { display: flex; gap: 8px; justify-content: space-between; color: #a8b4b8; font-size: 9px; }
+    .result-meta .source-answer { color: var(--c); }
+    .match-id { color: #d7decf; font-size: 9px; overflow-wrap: anywhere; }
+    .pick-foot { padding: 6px 8px; border-top: 1px solid #ffffff10; color: #b1bdb5; font-size: 9px; }
+    .empty { padding: 18px 10px; color: #b9c3c7; font-size: 10px; line-height: 1.8; }
+    .context-refs { padding: 0 6px 5px; }
+    .context-ref { display: flex; align-items: center; gap: 6px; padding: 3px 0; color: #d0d9c9; font-size: 10px; }
+    .context-ref .remove { margin-left: auto; background: transparent; border: 0; color: #afbab0; font: 10px var(--mono); }
+    .bound-summary { padding: 5px 7px; margin-top: 7px; background: #aec28f0a; color: #c3cebc; font-size: 9px; }
+    .history { flex: 1; margin: 0 0 14px; border: 1px solid #66776b; border-radius: 3px; background: #1c2328; overflow: hidden; }
+    .history-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 9px; border-bottom: 1px solid #ffffff10; color: #d8dfd4; font-size: 10px; }
+    .history-body { display: grid; grid-template-columns: 1fr 1fr; min-height: 220px; }
+    .history .pick-list { max-height: 263px; }
+    .history-preview { padding: 11px; border-left: 1px solid #ffffff16; min-width: 0; font-size: 10px; }
+    .preview-type { font-size: 9px; color: var(--c); margin-bottom: 7px; }
+    .preview-title { color: var(--c); font-weight: 650; line-height: 1.6; margin-bottom: 10px; }
+    .preview-values { font-size: 9px; margin-bottom: 12px; }
+    .preview-values div { display: flex; justify-content: space-between; gap: 5px; }
+    .preview-values .winner { color: var(--c); }
+    .preview-note { color: #aeb8bb; font-size: 9px; margin-bottom: 8px; }
+    .preview-id { color: #b3bcb3; font-size: 8px; overflow-wrap: anywhere; }
+    .inspector { border: 1px solid #617163; background: #1e2721; border-radius: 3px; padding: 8px 10px; margin-top: 8px; color: #ccd6c7; font-size: 9px; }
+    .inspector strong { color: #e4eade; }
+    .inspector code { display: block; color: #afbdab; overflow-wrap: anywhere; font: 9px/1.7 var(--mono); }
+    .inspector button { background: none; border: 0; padding: 4px 0 0; color: #c5d3b9; font: inherit; text-decoration: underline; }
+    .guide { padding: 4px 8px 0 0; }
+    .guide-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin-bottom: 13px; }
+    .steps { margin: 0; padding: 0; list-style: none; }
+    .steps li { padding: 0 0 18px 27px; position: relative; color: var(--muted); font-size: 11px; line-height: 1.65; }
+    .steps li::before { position: absolute; left: 0; top: 1px; content: attr(data-step); width: 18px; height: 18px; font: 10px/18px var(--mono); text-align: center; background: #edf0e6; border-radius: 50%; color: var(--green); }
+    .steps strong { display: block; color: var(--ink); margin-bottom: 3px; font-size: 12px; }
+    .guide-note { border-top: 1px solid var(--line); padding: 15px 0; font-size: 11px; color: var(--muted); }
+    .guide-note strong { color: var(--ink); display: block; font-size: 12px; margin-bottom: 5px; }
+    .keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    kbd { font: 10px var(--mono); background: #eeefe7; padding: 3px 5px; border: 1px solid #d9ddcf; border-bottom-width: 2px; border-radius: 3px; }
+    .scenarios { display: flex; flex-wrap: wrap; gap: 7px; padding: 15px 22px; border-top: 1px solid var(--line); align-items: center; }
+    .scenarios .eyebrow { margin-right: 6px; }
+    .scenario { border: 1px solid var(--line); background: transparent; border-radius: 5px; padding: 5px 9px; font-size: 10px; }
+    .scenario[aria-pressed="true"] { color: var(--green); background: var(--green-soft); border-color: #a9bc9a; }
+    .lab-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 22px 15px; color: var(--muted); font-size: 10px; }
+    .status { min-height: 16px; color: var(--green); }
+    .recommendation { margin: 28px 0 36px; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 25px; padding: 22px 25px; border-left: 3px solid var(--green); background: #e9eddf; }
+    .recommendation h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.4px; }
+    .recommendation p { font-size: 13px; line-height: 1.7; margin: 0; color: #4e5b4d; }
+    .section-top { display: flex; justify-content: space-between; gap: 20px; align-items: baseline; margin: 0 0 15px; }
+    .section-top h2 { font-size: 23px; font-weight: 600; letter-spacing: -.6px; margin: 0; }
+    .section-top p { color: var(--muted); font-size: 11px; margin: 0; }
+    .table-wrap { border: 1px solid var(--line); border-radius: 8px; overflow: auto; background: var(--card); }
+    table { border-collapse: collapse; width: 100%; text-align: left; font-size: 12px; min-width: 700px; }
+    th, td { padding: 13px 17px; border-bottom: 1px solid #e3e6da; vertical-align: top; }
+    th { font-size: 10px; background: #eceedf; color: #55614f; font-weight: 650; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 600; width: 23%; }
+    td { width: 25%; color: #5e685a; }
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; margin: 33px 0 36px; }
+    .principle { border-top: 1px solid #bfcbb4; padding-top: 13px; }
+    .principle .num { font: 10px var(--mono); color: var(--muted); }
+    .principle h3 { margin: 7px 0 6px; font-size: 14px; font-weight: 650; }
+    .principle p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.75; }
+    details { background: var(--card); border: 1px solid var(--line); border-radius: 7px; margin: 10px 0; }
+    summary { cursor: pointer; padding: 14px 17px; font-size: 12px; font-weight: 600; }
+    details p { color: var(--muted); font-size: 12px; margin: 0; padding: 0 17px 16px; }
+    details code { font: 11px var(--mono); color: #41533c; }
+    .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 45px; border-top: 1px solid var(--line); margin-top: 38px; padding: 23px 0; }
+    .sources h3 { margin: 0 0 7px; font-size: 12px; }
+    .sources p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
+    .source-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 9px; font-size: 10px; }
+    footer { display: flex; justify-content: space-between; gap: 15px; color: var(--muted); font-size: 10px; padding: 19px 0 25px; border-top: 1px solid var(--line); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    @media (min-width: 1500px) { .terminal { font-size: 12px; } .term-layout { min-height: 580px; grid-template-columns: minmax(0,1fr) 238px; } .pick-row { font-size: 11px; } }
+    @media (max-width: 1200px) { .wrap { padding: 0 28px; } .lab-body { grid-template-columns: minmax(0,1fr) 210px; gap: 15px; } .graph { display: none; } .term-layout { grid-template-columns: 1fr; min-height: 580px; } .hero { gap: 35px; } }
+    @media (max-width: 850px) { .wrap { padding: 0 20px; } .hero { grid-template-columns: 1fr; gap: 20px; padding: 30px 0; } .hero p { max-width: 610px; } .designs { gap: 8px; } .design { padding: 13px; } .design-top { flex-wrap: wrap; gap: 5px 8px; } .design-name { font-size: 14px; } .recommend { margin-left: 0; } .design-footer { font-size: 9px; } .lab-body { grid-template-columns: 1fr; } .guide { padding: 8px 8px 0; } .steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 15px; } .guide-note { display: none; } .keys { display: none; } .recommendation { grid-template-columns: 1fr; gap: 10px; } .term-layout { min-height: 540px; } .principles { gap: 18px; } }
+    @media (max-width: 560px) { .wrap { padding: 0 13px; } .top { padding: 18px 0; } .top-meta span:not(.pill) { display: none; } h1 { font-size: 39px; letter-spacing: -1.7px; } .hero p { font-size: 13px; } .designs { grid-template-columns: 1fr; } .design { padding: 12px 15px; } .design-top { margin-bottom: 3px; flex-wrap: nowrap; } .design-footer { display: none; } .design p { font-size: 11px; } .recommend { margin-left: auto; } .lab-top { padding: 15px; } .lab-top h2 { font-size: 17px; } .lab-body { padding: 0 7px 7px; } .term-main { padding: 10px; } .term-top { padding: 10px; gap: 7px; font-size: 9px; } .mock-label { display: none; } .terminal { font-size: 10px; } .types { font-size: 8px; gap: 5px; } .type-hint { font-size: 8px; } .rule { gap: 5px; } .rule .subtle { font-size: 8px; } .pick-row { font-size: 9px; } .pick-head, .pick-foot, .result-meta { font-size: 8px; } .history-body { grid-template-columns: 1fr; } .history-preview { border-left: 0; border-top: 1px solid #ffffff16; } .history .pick-list { max-height: 165px; } .history-body { min-height: 0; } .steps { gap: 10px; } .steps li { padding-left: 0; padding-top: 25px; font-size: 10px; } .steps strong { font-size: 11px; } .scenarios { padding: 12px; } .lab-bottom { padding: 0 12px 12px; flex-wrap: wrap; } .principles, .sources { grid-template-columns: 1fr; gap: 18px; } .section-top { display: block; } .section-top p { margin-top: 4px; } .recommendation { padding: 18px; } }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+    @media print { body { background: white; } .wrap { padding: 0; } .scenarios, .reset, .keys { display: none; } .lab, .designs, .principles, .recommendation { break-inside: avoid; } .terminal-wrap { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+
+.lab-body{grid-template-columns:minmax(0,1fr) 235px}.term-layout{min-height:575px}.terminal{font-size:12px}.terminal-wrap{position:relative}.term-main{gap:10px}.transcript{min-height:95px}.composer{margin-top:auto}.picker{border:1px solid #758075;border-radius:3px;background:#1b2227;margin:3px 0 8px;overflow:hidden}.picker-header{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 11px;color:#d2dad0;border-bottom:1px solid #ffffff10;font-size:11px}.picker-header strong{font-weight:650}.picker-scope{font-size:9px;color:#b2bdb0}.search-wrap{padding:9px 11px;display:flex;align-items:center;gap:9px;border-bottom:1px solid #ffffff10}.search-wrap span{color:#a9b4ac}.model-search{font:11px/1.6 var(--mono);width:100%;min-width:0;background:transparent;border:0;outline:0;color:#e5e9e6;padding:0}.model-search:focus-visible{outline:0}.search-wrap:focus-within{box-shadow:inset 2px 0 #d8e0d1}.scope-toggle{white-space:nowrap;background:none;border:1px solid #5c675e;border-radius:3px;color:#c8d2c5;font:9px var(--mono);padding:3px 5px}.model-list{max-height:227px;overflow:auto;scrollbar-color:#636f66 #1b2227}.model-row{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;gap:5px;width:100%;background:transparent;border:0;border-left:2px solid transparent;color:#d3dadd;text-align:left;padding:7px 10px;font:11px/1.55 var(--mono)}.model-row:hover{background:#ffffff05}.model-row[aria-selected=true]{background:#d0dcc10d;border-left-color:#ccd7c7}.model-row[aria-disabled=true]{color:#a5afb3}.model-row[aria-disabled=true] .row-id{color:#a5afb3}.model-row .pointer{color:#d2ddc9;font-size:10px}.row-id{color:#e0e5e6;font-weight:600;overflow-wrap:anywhere}.row-caption{display:block;color:#9faeb1;font-size:9px;font-weight:400}.row-tags{display:flex;gap:8px;align-items:center;justify-content:flex-end;color:#a9b9b3;font-size:9px;white-space:nowrap}.current-tag{color:#dbe4d4}.action-row{border-top:1px solid #ffffff0b;color:#c6d0be;font-size:10px}.picker-foot{padding:6px 10px;border-top:1px solid #ffffff12;color:#abb6b2;font-size:9px;display:flex;justify-content:space-between;gap:10px}.picker-message{padding:6px 10px;color:#e4c6aa;font-size:10px;background:#e8c2a609;border-top:1px solid #ffffff10}.model-detail{font-size:10px;line-height:1.7;color:#acb9b7;padding:11px;border-top:1px solid #ffffff12}.model-detail strong{display:block;font-weight:650;color:#e0e7dc;overflow-wrap:anywhere;margin-bottom:4px}.model-detail p{margin:3px 0}.detail-metadata{font-size:9px;display:grid;grid-template-columns:72px 1fr;gap:4px 8px;margin-top:12px}.detail-metadata dt{color:#9da9aa}.detail-metadata dd{margin:0;color:#d0d9d4;overflow-wrap:anywhere}.palette-body{display:block}.surface-palette .picker{position:absolute;z-index:3;top:96px;left:24px;right:24px;box-shadow:0 24px 80px #000b}.surface-palette .term-layout{opacity:.38}.surface-palette .palette-body{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}.surface-palette .model-detail{border-top:0;border-left:1px solid #ffffff15;padding:14px}.surface-palette .model-list{max-height:282px;min-height:240px}.surface-inline .model-detail{display:none}.surface-quick .picker{margin:1px 0 0;border-left:0;border-right:0;border-bottom:0;border-radius:0}.surface-quick .model-list{max-height:165px}.surface-quick .model-detail{display:none}.surface-quick .search-wrap{padding-top:7px;padding-bottom:7px}.quick-caption{padding:7px 10px 0;color:#aab8af;font-size:9px}.mode-name{color:var(--active)}.draft-input{display:block;width:100%;resize:none;border:0;background:none;padding:4px 7px 7px;margin:0;color:#dbe0e2;font:11px/1.65 var(--mono);border-radius:2px;min-height:30px;overflow:hidden}.draft-input:focus-visible{outline:1px solid #737d73;outline-offset:0}.draft-context{color:#c2ccca}.status-switch{border:0;background:none;padding:0;color:#e0e5dd;font:inherit;cursor:pointer;text-align:left;overflow-wrap:anywhere}.status-switch:hover{text-decoration:underline;text-underline-offset:3px}.term-status{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding-bottom:5px}.last-model{margin-left:auto;color:#99a5a9;font-size:9px}.selected-note{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:9px 22px 15px;font-size:11px;color:var(--muted)}.selected-note code{font:10px var(--mono);color:#354c32}.shortcut-buttons{display:flex;gap:6px;flex-wrap:wrap}.shortcut-button{border:1px solid #cdd5c4;background:transparent;padding:5px 8px;border-radius:4px;font-size:10px}.shortcut-button:hover{background:var(--green-soft)}.settings-view{padding:13px 11px;font-size:10px;color:#c7d2ca;line-height:1.8}.settings-view h3{font:650 11px var(--mono);margin:0 0 8px;color:#edf0e9}.settings-view p{margin:6px 0;color:#aeb9b4}.settings-view label{display:flex;align-items:center;gap:9px;margin:7px 0;overflow-wrap:anywhere}.settings-view input[type=checkbox]{accent-color:#8da079}.settings-view .form-label{display:block;font-size:9px;color:#aeb9b4}.settings-view input[type=text],.settings-view input[type=number],.settings-view select{background:#141b1e;border:1px solid #64705f;border-radius:2px;color:#e1e8de;padding:6px 7px;font:10px var(--mono);width:100%;min-width:0}.settings-form{display:grid;grid-template-columns:1fr 1.5fr;gap:9px}.term-button{background:#d2ddc6;border:1px solid #d2ddc6;padding:5px 8px;font:10px var(--mono);color:#1d2c20;border-radius:2px;margin-top:8px}.term-button.secondary{background:none;border-color:#707e6b;color:#d2ddc6;margin-left:5px}.settings-actions{border-top:1px solid #ffffff16;margin-top:12px;padding-top:8px}.setup-command{display:block;font:10px var(--mono);color:#dae4d1;background:#13191c;padding:9px;overflow-wrap:anywhere;margin-top:8px}.chooser-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.workflow-track{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:28px 0 36px}.workflow-step{background:var(--card);padding:18px}.workflow-step span{font:10px var(--mono);color:#7e8b76}.workflow-step h3{font-size:13px;margin:8px 0 5px;font-weight:650}.workflow-step p{font-size:11px;color:var(--muted);margin:0;line-height:1.75}.scope-table td:first-child{width:23%}.pi-note{margin-top:7px;padding:11px 13px;background:#eef0e5;border-radius:5px;font-size:11px;color:#55634f}.pi-note a{font-size:10px}.empty-models{font:10px/1.8 var(--mono);color:#b6c2b8;padding:16px 12px}.message-panel{padding:10px 12px;color:#d7e0d2;font:10px/1.8 var(--mono)}.graph-caption{font-size:9px}.proposed-badge{color:#56674b;font-size:9px}.surface-quick .quick-caption{display:block}.quick-caption{display:none}.picker-view[hidden],.picker[hidden]{display:none}.browser-shortcut-note{font-size:10px;color:var(--muted)}
+@media(min-width:1500px){.model-search,.model-row,.draft-input{font-size:12px}.term-layout{min-height:600px}}
+@media(max-width:1200px){.term-layout{min-height:600px}.surface-palette .picker{left:18px;right:18px;top:80px}.lab-body{grid-template-columns:minmax(0,1fr) 210px}.model-row{font-size:10px}.row-tags{font-size:8px}.last-model{margin-left:0}}
+@media(max-width:850px){.lab-body{grid-template-columns:1fr}.term-layout{min-height:530px}.workflow-track{grid-template-columns:1fr 1fr}.surface-palette .picker{top:85px}.model-row{font-size:11px}.row-caption{font-size:9px}}
+@media(max-width:560px){.terminal{font-size:10px}.term-main{padding:10px}.term-layout{min-height:560px}.picker-header{font-size:10px;padding:8px}.search-wrap{padding:8px}.model-row{font-size:9px;padding:7px 6px;grid-template-columns:11px minmax(0,1fr)}.row-tags{grid-column:2;justify-content:flex-start;font-size:8px;gap:8px;margin-top:1px}.row-caption{font-size:8px}.scope-toggle{font-size:8px}.picker-scope{font-size:8px}.picker-foot{font-size:8px}.surface-palette .picker{left:9px;right:9px;top:70px}.surface-palette .palette-body{display:block}.surface-palette .model-list{max-height:195px;min-height:0}.surface-palette .model-detail{border-left:0;border-top:1px solid #ffffff15;padding:10px;font-size:9px}.detail-metadata{display:none}.draft-input{font-size:10px}.selected-note{padding:7px 12px 12px;display:block}.shortcut-buttons{margin-top:9px}.workflow-step{padding:14px}.workflow-step p{font-size:10px}.settings-form{grid-template-columns:1fr}.surface-quick .model-list{max-height:210px}.term-hints{font-size:8px}.term-status{font-size:9px}.settings-view{font-size:9px}.last-model{font-size:8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <header class="top"><div class="brand">nouli</div><div class="top-meta"><span>Interaction study · 30 Oct 2026</span><span class="pill">Model switcher · proposals</span></div></header>
+ <main>
+  <section class="hero" aria-labelledby="title"><div><div class="eyebrow">A pi-inspired model switcher</div><h1>Another model.<br><span>Same decision.</span></h1></div><p>Search, choose, continue. Three ways to switch the model without losing your draft, references, or place in the session.</p></section>
+  <nav class="designs" aria-label="Model switcher designs">
+   <button class="design" data-design="inline" type="button" aria-pressed="true"><span class="design-top"><span class="design-number">01</span><span class="design-name">Inline picker</span><span class="recommend">Recommended</span></span><p>A short search list above the draft. Familiar, fast, and close to pi.</p><span class="design-footer"><span>Ctrl-L → type → Enter</span><span>↗ Try it</span></span></button>
+   <button class="design" data-design="palette" type="button" aria-pressed="false"><span class="design-top"><span class="design-number">02</span><span class="design-name">Model palette</span></span><p>A focused overlay with provider and compatibility details beside the list.</p><span class="design-footer"><span>More space to compare</span><span>↗ Try it</span></span></button>
+   <button class="design" data-design="quick" type="button" aria-pressed="false"><span class="design-top"><span class="design-number">03</span><span class="design-name">Shortlist first</span></span><p>Your usual models at the bottom. Cycle them or open the complete catalog.</p><span class="design-footer"><span>Fastest repeat switching</span><span>↗ Try it</span></span></button>
+  </nav>
+  <section class="lab" aria-labelledby="lab-title">
+   <div class="lab-top"><div><h2 id="lab-title">01 · Inline picker</h2><p id="lab-subtitle">Search in place. Enter switches the next model; it doesn’t send.</p></div><button class="reset" id="reset" type="button">Reset demo ↺</button></div>
+   <div class="lab-body">
+    <div class="terminal-wrap surface-inline" id="terminal-wrap">
+     <div class="terminal" id="terminal" tabindex="-1" aria-label="Interactive model switcher prototype">
+      <div class="term-top"><strong>nouli</strong><span>0.4.0</span><span class="session">joule-8-solder</span><span class="mock-label">Interactive prototype</span></div>
+      <div class="term-layout"><div class="term-main">
+       <div class="transcript"><p><span class="time">turn 2</span><span class="prompt">Where should I go?</span></p><p class="answer">▶ San Diego <span class="subtle">0.77</span></p><p class="subtle" style="margin-top:10px">Saved with typesafe/jev-1.14.0</p></div>
+       <div id="inline-host"></div>
+       <div class="composer">
+        <div class="rule"><strong>Context</strong><span class="subtle">· latest included</span></div><div class="included">↳ Where should I go?</div>
+        <div class="file-row" id="image-row" hidden>+ forecast.png</div>
+        <label class="sr-only" for="draft-context">Draft context</label><input class="draft-input draft-context" id="draft-context" value="I prefer fewer connections." autocomplete="off">
+        <div class="rule"><strong class="question-label">Question</strong><span class="types"><span class="type" data-kind="noul" style="--c:var(--noul)">Yes / No</span><span class="type selected" data-kind="choice" style="--c:var(--choice)">[Choose one]</span><span class="type" data-kind="score" style="--c:var(--score)">Score</span></span><span class="subtle type-hint">Shift-Tab →</span></div>
+        <label class="sr-only" for="draft-question">Draft question</label><input class="draft-input" id="draft-question" value="Reconsider @Where should I go? · turn 2" autocomplete="off">
+        <div id="options-area"><div class="rule"><strong class="option-label" id="options-title">Options</strong><span class="subtle">· using previous</span></div><label class="sr-only" for="draft-options">Draft options or levels</label><input class="draft-input" id="draft-options" value="San Diego · Siberia · Antarctica" autocomplete="off"></div>
+        <div class="send"><strong id="send-label">Select a model · Enter doesn’t send</strong><span class="subtle" id="send-secondary">Esc returns to draft</span></div>
+       </div>
+      </div><aside class="graph" aria-label="Existing decisions"><div class="graph-title">decisions · Ctrl-G</div><div class="graph-card"><div class="graph-legend">joule-8-solder · turn 2</div><div class="graph-question">Where should I go?</div><div class="graph-values"><div class="chosen"><span>▶ San Diego</span><span>0.77</span></div><div><span>Siberia</span><span>0.12</span></div><div><span>Antarctica</span><span>0.11</span></div></div></div><p class="graph-caption">Saved answers keep their original model provenance.</p></aside></div>
+      <div id="quick-host"></div><div id="palette-host"></div>
+      <div class="term-status"><button type="button" class="status-switch" id="status-model" aria-label="Open model picker">Next typesafe/jev-latest · Draft</button><span class="last-model" id="last-model">last served: typesafe/jev-1.14.0</span></div>
+      <div class="term-hints" id="terminal-hints">Ctrl-L models · Ctrl-P next shortlist · Tab fields · Shift-Tab type</div>
+     </div>
+    </div>
+    <aside class="guide"><div class="guide-label">The interaction</div><ol class="steps" id="steps"></ol><div class="guide-note"><strong id="tradeoff-title"></strong><span id="tradeoff"></span></div><div class="guide-note"><strong>What moves with the switch?</strong>Provider and model change together. Your draft, current answer type, options, references, and saved graph stay in place.</div><div class="keys"><kbd>Ctrl-L</kbd><kbd>↑ ↓</kbd><kbd>Enter</kbd><kbd>Esc</kbd></div></aside>
+   </div>
+   <div class="scenarios" aria-label="Example states"><span class="eyebrow">Try a case</span><button class="scenario" data-case="normal" type="button" aria-pressed="true">Normal draft</button><button class="scenario" data-case="image" type="button" aria-pressed="false">With an image</button><button class="scenario" data-case="auth" type="button" aria-pressed="false">Needs login</button><button class="scenario" data-case="unknown" type="button" aria-pressed="false">Unknown support</button><button class="scenario" data-case="busy" type="button" aria-pressed="false">While asking</button><button class="scenario" data-case="empty" type="button" aria-pressed="false">Model not listed</button><button class="scenario" data-case="switched" type="button" aria-pressed="false">After switching</button></div>
+   <div class="selected-note"><span id="status" class="status" role="status" aria-live="polite">Search a model or provider. Use ↑↓ and Enter, or click a row.</span><div class="shortcut-buttons"><button type="button" class="shortcut-button" id="open-picker">Open · Ctrl-L</button><button type="button" class="shortcut-button" id="previous-model">← Previous · Ctrl-Shift-P</button><button type="button" class="shortcut-button" id="next-model">Next · Ctrl-P →</button><button type="button" class="shortcut-button" id="finish-request" hidden>Finish mock request</button></div></div>
+   <div class="lab-bottom"><span class="browser-shortcut-note">Use buttons for shortcuts your browser reserves.</span><span>Offline prototype · example configuration · no model calls</span></div>
+  </section>
+  <section class="recommendation"><h2>01, with quick cycling.</h2><p>Use the inline picker as the default and add <strong>Ctrl-P / Ctrl-Shift-P</strong> for a global shortlist. It gives you pi’s quick model changes with the current draft always visible. Keep provider setup and default changes behind labelled actions.</p></section>
+  <section aria-labelledby="flow-title"><div class="section-top"><h2 id="flow-title">A switch takes one deliberate action.</h2><p>Highlighting is a preview. Enter applies.</p></div><div class="workflow-track"><article class="workflow-step"><span>01 / SUMMON</span><h3>Ctrl-L or /model</h3><p>Open from any field. The draft waits exactly where you left it.</p></article><article class="workflow-step"><span>02 / FIND</span><h3>Type the model or provider.</h3><p>Search configured and discovered compatible decision models together.</p></article><article class="workflow-step"><span>03 / CHOOSE</span><h3>Enter uses that model.</h3><p>Update this session’s next request. Don’t submit the decision.</p></article><article class="workflow-step"><span>04 / CONTINUE</span><h3>Return to the draft.</h3><p>The status names the next model; saved answers retain their served model.</p></article></div></section>
+  <section aria-labelledby="compare-title"><div class="section-top"><h2 id="compare-title">Choose the amount of UI.</h2><p>Same selection rules, three presentations.</p></div><div class="table-wrap"><table><thead><tr><th></th><th>01 · Inline picker</th><th>02 · Model palette</th><th>03 · Shortlist first</th></tr></thead><tbody><tr><td>Where it opens</td><td>Between the transcript and draft.</td><td>Over the terminal, with a side-by-side detail view.</td><td>Just above the model status line.</td></tr><tr><td>What comes first</td><td>Search across model IDs and provider names.</td><td>Search plus provider and capability details.</td><td>Your shortlist; expand to every known model.</td></tr><tr><td>Best when</td><td>You want the closest pi-style everyday flow.</td><td>You switch providers and need room to inspect.</td><td>You mostly alternate between two or three models.</td></tr><tr><td>Tradeoff</td><td>Details need a secondary view.</td><td>Takes attention away from the draft.</td><td>Needs shortlist setup; unfamiliar models take another step.</td></tr></tbody></table></div></section>
+  <section class="principles"><article class="principle"><span class="num">01 / SCOPE</span><h3>Session choice. Global shortlist.</h3><p>Enter remembers the selected pair for the current session, including reopening it. The catalog and shortlist are shared across workspaces using the same configuration. “Set default for new sessions” is a separate explicit action.</p></article><article class="principle"><span class="num">02 / IDENTITY</span><h3>Always name the provider.</h3><p>The same model can appear through different routes. Display provider + exact model ID; select them together. Never keep a new model paired with the previous provider by accident.</p></article><article class="principle"><span class="num">03 / HISTORY</span><h3>Change the next decision.</h3><p>Switching doesn’t re-ask an earlier question or change a saved answer. During a request, the frozen model finishes its work; your selection is clearly labelled for the next request.</p></article></section>
+  <section aria-labelledby="details-title"><div class="section-top"><h2 id="details-title">The small decisions worth agreeing on.</h2><p>These rules apply to all three proposals.</p></div>
+   <details open><summary>Keep Nouli’s keys predictable</summary><p>Ctrl-L and <code>/model</code> open the picker. Ctrl-P and Ctrl-Shift-P cycle the configured shortlist. Enter selects and returns to the draft; Esc cancels. Tab closes without selection and moves to the next form field. Shift-Tab closes and cycles Yes/No → Choose one → Score. Ctrl-S remains Send in the form and never saves a model preference or sends while a picker is open. Every normal letter types into search.</p></details>
+   <details><summary>Images, missing credentials, and unknown capabilities</summary><p>Show known image support when a draft includes an image, including images from required @ references. A known text-only model explains why it can’t handle the draft. Unknown support is labelled, without inventing a capability claim; ordinary send validation and provider responses still apply. A missing credential names the provider and offers its setup command, keeping the existing model until setup succeeds. “Configured” never promises a live service is reachable.</p></details>
+   <details><summary>Where the catalog comes from</summary><p>Combine compatible model IDs from configured providers, Nouli’s dated capability snapshot, previously served models, and provider discovery where a protocol supports it. Keep exact-ID entry available because the model settings tables are not an allowlist. Don’t assume every model available in pi supports Nouli’s typed decision protocols. The rows here are illustrative examples from repository fixtures, not an inventory of your account or a claim of current availability.</p></details>
+   <details><summary>Default changes should be visible</summary><p>Ordinary selection affects this session. The separate Defaults &amp; shortlist view offers an explicit “Set default for new sessions” action and global shortlist membership. Changing the default doesn’t rewrite existing sessions or their saved answers. A picker selection is an explicit live override of the model selected at launch. The prototype simulates these settings only in page memory.</p></details>
+   <details><summary>A switch can still reveal a smaller context window</summary><p>Preserve the draft, then validate its required evidence against the newly selected model when sending. If it can’t fit, name the problem and keep the draft for correction or another model choice. Don’t silently drop selected @ answers, images, or the latest question. Show only limits Nouli actually knows; avoid unverified prices or speed rankings.</p></details>
+  </section>
+  <section class="sources"><div><h3>What comes from pi</h3><p>Pi documents Ctrl-L for model selection and Ctrl-P / Ctrl-Shift-P for scoped cycling. Its selector supports search, Enter selection, cancellation, scope switching, and a separate default-saving action. Nouli’s key and scope choices above are proposals adapted to its existing form.</p><div class="source-links"><a href="https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md#models-and-thinking" target="_blank" rel="noreferrer">Pi keybindings ↗</a><a href="https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/components/model-selector.ts" target="_blank" rel="noreferrer">Pi selector source ↗</a></div></div><div><h3>What exists in Nouli today</h3><p>Nouli resolves provider and model, shows selected/served model status, freezes accepted requests, and stores provider credentials centrally. This HTML explores a new interactive switcher. The model list and credential states are example data; it does not change your app, settings, or sessions.</p><div class="source-links"><a href="../configuration.md">Provider + model configuration ↗</a><a href="../adr/0010-consistent-tab-navigation-and-list-entry.md">Existing Tab / Shift-Tab rules ↗</a><a href="../../fixtures/config/providers.toml">Example model configuration ↗</a><a href="../../fixtures/capabilities/models.json">Dated capability snapshot ↗</a></div></div></section>
+ </main><footer><span>nouli / Interaction study 03</span><span>Design proposals · search, select, continue</span></footer>
+</div>
+<div hidden id="picker-pool"><section id="picker" class="picker" aria-label="Choose model">
+ <div class="picker-view" id="catalog-view"><div class="picker-header"><strong id="picker-title">Choose model</strong><span class="picker-scope">this session</span></div><div class="search-wrap"><span aria-hidden="true">⌕</span><label class="sr-only" for="model-search">Search models or providers</label><input id="model-search" class="model-search" type="text" role="combobox" aria-controls="model-list" aria-expanded="true" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Search models or providers…"><button class="scope-toggle" id="scope-toggle" type="button" aria-pressed="false">All models</button></div><div class="quick-caption">Shortlist · Ctrl-P next · Ctrl-Shift-P previous</div><div class="palette-body"><div class="model-list" id="model-list" role="listbox" aria-label="Models and picker actions"></div><div class="model-detail" id="model-detail"></div></div><div class="picker-message" id="picker-message" role="status" hidden></div><div class="picker-foot"><span>↑↓ choose · Enter use · Esc cancel</span><span id="picker-count">6 models</span></div></div>
+ <div class="picker-view settings-view" id="preferences-view" hidden><h3>Defaults &amp; shortlist</h3><p>Default for new sessions: <strong id="default-model"></strong></p><div id="favorite-options"></div><div class="settings-actions"><p id="default-target"></p><button type="button" class="term-button" id="set-default">Set default for new sessions</button><button type="button" class="term-button secondary" id="preferences-done">Done</button></div></div>
+ <div class="picker-view settings-view" id="custom-view" hidden><h3>Use an exact model ID</h3><p>Use a configured provider. An unknown model needs explicit context limits.</p><div class="settings-form"><label class="form-label" for="custom-provider">Provider<select id="custom-provider"><option>typesafe</option><option>openai</option><option>router</option><option>local</option><option>custom</option></select></label><label class="form-label" for="custom-model">Exact model ID<input type="text" id="custom-model" autocomplete="off" placeholder="your-model-id"></label><label class="form-label" for="custom-budget">Context budget (tokens)<input id="custom-budget" type="number" min="1" step="1" placeholder="e.g. 8192"></label></div><p id="custom-note" role="status">The prototype won’t call a provider or verify availability.</p><button type="button" class="term-button" id="use-custom">Use this model</button><button type="button" class="term-button secondary" id="custom-back">Back</button></div>
+ <div class="picker-view settings-view" id="setup-view" hidden><h3>Set up this provider</h3><p id="setup-description"></p><code class="setup-command" id="setup-command"></code><p>Run this in another terminal, then reopen the picker. The demo does not run it.</p><button type="button" class="term-button secondary" id="setup-back">Back to models</button></div>
+</section></div>
+
+<script>
+(() => {
+ 'use strict';
+ const $=id=>document.getElementById(id);
+ const safe=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const catalog=[
+  {key:'jev',provider:'typesafe',id:'jev-latest',name:'Jev · latest alias',image:true,configured:true,note:'Alias; the served version is recorded with the saved answer.'},
+  {key:'luna',provider:'openai',id:'gpt-6-luna',name:'Direct Decisions',image:true,configured:true,note:'Direct provider route. Existing required references and images stay in the draft.'},
+  {key:'pinned',provider:'typesafe',id:'jev-1.14.0',name:'Jev · pinned version',image:true,configured:true,note:'An explicit model ID rather than a moving alias.'},
+  {key:'routed',provider:'router',id:'openai/gpt-6-luna-decisions',name:'Routed Decisions',image:true,configured:false,note:'Example missing credential. Setup does not change the active model.'},
+  {key:'local',provider:'local',id:'english',name:'Local Laya profile',image:null,configured:true,note:'Image support is not declared in the example local configuration.'},
+  {key:'custom',provider:'custom',id:'custom-decision-model',name:'Custom Decisions endpoint',image:null,configured:true,note:'Custom endpoint with its own configured limits. Capabilities are unknown.'}
+ ];
+ const designs={
+  inline:{title:'01 · Inline picker',subtitle:'Search in place. Enter switches the next model; it doesn’t send.',steps:[['Open without leaving the draft','Ctrl-L or /model opens a compact search above the composer.'],['Find the model and route','Type freely. Each row shows the exact model ID and provider name.'],['Enter and carry on','Return to the same field with the next model visible in the status line.']],tradeoffTitle:'Closest to pi',tradeoff:'A small interruption, with the draft still visible. Keep deeper configuration in a secondary view.'},
+  palette:{title:'02 · Model palette',subtitle:'A focused overlay with room to inspect the provider and capability state.',steps:[['Open the palette','Ctrl-L brings the list forward while your draft stays behind it.'],['Inspect the highlighted model','See the route and image-support state beside the list before choosing.'],['Apply to the next request','Enter changes this session’s selection. Esc returns without switching.']],tradeoffTitle:'More room to compare',tradeoff:'Useful across providers and custom models. It temporarily covers more of the terminal.'},
+  quick:{title:'03 · Shortlist first',subtitle:'A compact footer chooser for the models you use most.',steps:[['Start with your shortlist','Ctrl-L shows the models you chose globally, beside the model status.'],['Cycle without searching','Ctrl-P and Ctrl-Shift-P move between configured shortlist models.'],['Expand when needed','Browse all models for another route, then return to the same draft.']],tradeoffTitle:'Fast repeat switching',tradeoff:'Best for two or three familiar models. Shortlist membership should be explicit, shared, and easy to change.'}
+ };
+ const state={design:'inline',case:'normal',model:catalog[0],globalDefault:catalog[0],favorites:new Set(['jev','luna','pinned']),scope:'all',query:'',choice:0,open:true,view:'catalog',hasImage:false,asking:false,inFlight:catalog[0],mode:'choice',origin:'draft-question',message:'',defaultTarget:catalog[0]};
+ const search=$('model-search');
+ function full(model){return model.provider+'/'+model.id;}
+ function announce(message){$('status').textContent=message;}
+ function filtered(){const words=state.query.trim().toLowerCase().split(/\s+/).filter(Boolean);return catalog.filter(m=>(state.scope!=='favorites'||state.favorites.has(m.key))&&words.every(w=>(m.provider+' '+m.id+' '+m.name).toLowerCase().includes(w)));}
+ function rows(){const models=filtered();const result=models.map(model=>({type:'model',model}));if(!models.length)result.push({type:'custom'});if(state.design==='quick'&&state.scope==='favorites')result.push({type:'all'});result.push({type:'preferences'});return result;}
+ function activeModel(){return rows()[state.choice]?.model||state.model;}
+ function renderMode(){const labels={noul:'Yes / No',choice:'Choose one',score:'Score'},colors={noul:'#a3e635',choice:'#67e8f9',score:'#fda4af'};document.documentElement.style.setProperty('--active',colors[state.mode]);document.querySelectorAll('[data-kind]').forEach(el=>{const active=el.dataset.kind===state.mode;el.classList.toggle('selected',active);el.textContent=active?'['+labels[el.dataset.kind]+']':labels[el.dataset.kind];});$('options-area').hidden=state.mode==='noul';$('options-title').textContent=state.mode==='score'?'Levels':'Options';}
+ function renderStatus(){
+  $('status-model').textContent=state.asking?'Asking '+full(state.inFlight)+' · next: '+full(state.model):'Next '+full(state.model)+' · Draft';
+  $('last-model').textContent='last served: typesafe/jev-1.14.0';
+  $('send-label').textContent=state.open?'Select a model · Enter doesn’t send':state.asking?'Current request continues':'Press Enter to send';
+  $('send-secondary').textContent=state.open?'Esc returns to draft':state.asking?'Selection applies to the next request':'Ctrl-S / F5';
+  $('finish-request').hidden=!state.asking;
+  $('image-row').hidden=!state.hasImage;
+  $('terminal-hints').textContent=state.open?'↑↓ choose · Enter use · Esc cancel · Tab fields · Shift-Tab type':'Ctrl-L models · Ctrl-P next shortlist · Tab fields · Shift-Tab type';
+ }
+ function renderDetail(){const model=activeModel();const capability=model.image===true?'Text + images · dated snapshot':'Image support unknown';$('model-detail').innerHTML=`<strong>${safe(model.id)}</strong><p>${safe(model.note)}</p><dl class="detail-metadata"><dt>Provider</dt><dd>${safe(model.provider)}</dd><dt>Setup</dt><dd>${model.configured?'Configured in this demo':'Credential needed'}</dd><dt>Input</dt><dd>${capability}</dd><dt>Applies to</dt><dd>${state.asking?'Next request after the active one':'This session’s next requests'}</dd></dl>`;}
+ function renderList(){
+  const items=rows();state.choice=Math.min(state.choice,Math.max(0,items.length-1));const models=filtered();
+  $('model-list').innerHTML=(models.length?'':'<div class="empty-models">No matching configured model.<br>You can enter an exact ID below.</div>')+items.map((row,i)=>{
+   const selected=i===state.choice;
+   if(row.type!=='model'){const label={custom:'Use exact model ID…',all:'Browse all models…',preferences:'Defaults & shortlist…'}[row.type];return `<button type="button" class="model-row action-row" role="option" aria-selected="${selected}" id="model-option-${i}" data-row="${i}"><span class="pointer">${selected?'›':' '}</span><span>${label}</span></button>`;}
+   const m=row.model,current=full(m)===full(state.model);const tags=!m.configured?'Needs login':state.hasImage?(m.image===true?'Images':'Image support unknown'):'Configured';
+   return `<button type="button" class="model-row" role="option" aria-selected="${selected}" aria-disabled="${!m.configured}" id="model-option-${i}" data-row="${i}"><span class="pointer">${selected?'›':' '}</span><span><span class="row-id">${safe(m.id)}</span><span class="row-caption">${safe(m.provider)} · ${safe(m.name)}</span></span><span class="row-tags">${current?'<span class="current-tag">✓ selected</span>':''}<span>${tags}</span></span></button>`;
+  }).join('');
+  search.setAttribute('aria-activedescendant','model-option-'+state.choice);search.setAttribute('aria-expanded',String(state.open));
+  $('picker-count').textContent=models.length+(models.length===1?' model':' models');
+  $('picker-title').textContent=state.design==='quick'&&state.scope==='favorites'?'Your shortlist':'Choose model';
+  $('scope-toggle').textContent=state.scope==='all'?'All models':'Shortlist';$('scope-toggle').setAttribute('aria-pressed',String(state.scope==='favorites'));
+  $('picker-message').hidden=!state.message;$('picker-message').textContent=state.message;
+  renderDetail();
+ }
+ function renderViews(){for(const name of ['catalog','preferences','custom','setup'])$(name+'-view').hidden=name!==state.view;$('picker').hidden=!state.open;renderStatus();}
+ function layout(){
+  const d=designs[state.design];$('lab-title').textContent=d.title;$('lab-subtitle').textContent=d.subtitle;
+  document.querySelectorAll('[data-design]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.design===state.design)));
+  document.querySelectorAll('[data-case]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.case===state.case)));
+  $('steps').innerHTML=d.steps.map(([title,text],i)=>`<li data-step="${i+1}"><strong>${title}</strong>${text}</li>`).join('');$('tradeoff-title').textContent=d.tradeoffTitle;$('tradeoff').textContent=d.tradeoff;
+  $('terminal-wrap').className='terminal-wrap surface-'+state.design;$(state.design==='inline'?'inline-host':state.design==='quick'?'quick-host':'palette-host').append($('picker'));
+  search.value=state.query;renderMode();renderList();renderViews();
+ }
+ function open(){if(document.activeElement?.classList.contains('draft-input'))state.origin=document.activeElement.id;state.open=true;state.view='catalog';state.message='';renderViews();renderList();search.focus();}
+ function close(message){state.open=false;state.message='';renderViews();$(state.origin)?.focus();if(message)announce(message);}
+ function apply(model){
+  if(!model.configured){state.view='setup';$('setup-description').textContent=full(model)+' needs a provider credential. Your current selection stays '+full(state.model)+'.';$('setup-command').textContent='nouli auth login '+model.provider;renderViews();announce('Setup is required. The current model and draft are unchanged.');return;}
+  state.model=model;state.open=false;state.message='';renderViews();$(state.origin)?.focus();announce(state.asking?'Next model: '+full(model)+'. The in-flight request keeps '+full(state.inFlight)+'.':full(model)+' selected for this session. Your draft and references stay in place.'+(state.hasImage&&model.image===null?' Image support is unknown; normal send validation still applies.':''));
+ }
+ function showPreferences(){state.defaultTarget=activeModel();state.view='preferences';$('default-model').textContent=full(state.globalDefault);$('default-target').textContent='Set '+full(state.defaultTarget)+' as the default for new sessions.';renderFavorites();renderViews();}
+ function renderFavorites(){$('favorite-options').innerHTML=catalog.map(m=>`<label><input type="checkbox" data-favorite="${m.key}" ${state.favorites.has(m.key)?'checked':''}><span>${safe(full(m))}</span></label>`).join('');}
+ function choose(index){state.choice=index;const row=rows()[index];if(!row)return;if(row.type==='model')apply(row.model);else if(row.type==='preferences')showPreferences();else if(row.type==='all'){state.scope='all';state.choice=0;renderList();search.focus();}else{state.view='custom';$('custom-model').value=state.query.trim();$('custom-budget').value='';$('custom-note').textContent='The prototype won’t call a provider or verify availability.';renderViews();$('custom-model').focus();}}
+ function cycle(direction){const available=catalog.filter(m=>state.favorites.has(m.key)&&m.configured&&(!state.hasImage||m.image===true));if(!available.length){announce('No configured shortlist model matches this draft. Open the full picker.');return;}const index=available.findIndex(m=>full(m)===full(state.model));const next=index<0?(direction>0?0:available.length-1):(index+direction+available.length)%available.length;apply(available[next]);}
+ function example(name,focus=false){state.case=name;state.model=catalog[0];state.inFlight=catalog[0];state.mode='choice';state.asking=name==='busy';state.hasImage=['image','unknown','busy'].includes(name);state.query=({auth:'router',unknown:'local',empty:'unlisted-fast-model'})[name]||'';state.scope=state.design==='quick'&&!['auth','unknown','empty'].includes(name)?'favorites':'all';state.choice=0;state.view='catalog';state.open=name!=='switched';state.message='';if(name==='switched')state.model=catalog[1];layout();announce(({image:'The image stays attached. Known image support is shown beside each model.',auth:'Choose the route to see setup guidance; no model switch happens without its credential.',unknown:'Unknown capabilities stay labelled. Selecting a model never removes the image.',busy:'The active request is frozen. Choose a model for the next decision.',empty:'Configured entries are not an allowlist. Try the exact-ID action.',switched:'The next-model status updates immediately. The prior served model stays in history.'})[name]||'Search a model or provider. Use ↑↓ and Enter, or click a row.');if(focus&&state.open)search.focus();}
+ document.querySelectorAll('[data-design]').forEach(b=>b.addEventListener('click',()=>{state.design=b.dataset.design;example(state.case);try{const url=new URL(location.href);url.searchParams.set('design',state.design);history.replaceState(null,'',url);}catch{}}));
+ document.querySelectorAll('[data-case]').forEach(b=>b.addEventListener('click',()=>example(b.dataset.case,true)));
+ $('reset').addEventListener('click',()=>{state.globalDefault=catalog[0];state.favorites=new Set(['jev','luna','pinned']);example('normal',true);});
+ $('status-model').addEventListener('click',open);$('open-picker').addEventListener('click',open);$('next-model').addEventListener('click',()=>cycle(1));$('previous-model').addEventListener('click',()=>cycle(-1));
+ $('finish-request').addEventListener('click',()=>{state.asking=false;renderStatus();announce('Mock request finished with '+full(state.inFlight)+'. Next request uses '+full(state.model)+'.');});
+ $('scope-toggle').addEventListener('click',()=>{state.scope=state.scope==='all'?'favorites':'all';state.choice=0;renderList();search.focus();});
+ search.addEventListener('input',()=>{state.query=search.value;state.choice=0;state.message='';renderList();});
+ $('model-list').addEventListener('click',event=>{const row=event.target.closest('[data-row]');if(row)choose(Number(row.dataset.row));});
+ $('favorite-options').addEventListener('change',event=>{const key=event.target.dataset.favorite;if(!key)return;if(event.target.checked)state.favorites.add(key);else state.favorites.delete(key);announce('Shortlist updated in the demo. It is shared across workspaces using this configuration.');});
+ $('preferences-done').addEventListener('click',()=>{state.view='catalog';state.choice=0;renderViews();renderList();search.focus();});
+ $('set-default').addEventListener('click',()=>{if(!state.defaultTarget.configured){announce('Set up this provider before making it the default.');return;}state.globalDefault=state.defaultTarget;$('default-model').textContent=full(state.globalDefault);announce('Default for new sessions set to '+full(state.globalDefault)+'. Existing sessions keep their own selection.');});
+ $('custom-back').addEventListener('click',()=>{state.view='catalog';renderViews();search.focus();});$('setup-back').addEventListener('click',()=>{state.view='catalog';renderViews();search.focus();});
+ $('use-custom').addEventListener('click',()=>{const id=$('custom-model').value.trim(),budget=Number($('custom-budget').value);if(!id||!Number.isSafeInteger(budget)||budget<=0){$('custom-note').textContent='Enter the exact ID and a positive whole-number context budget.';return;}const provider=$('custom-provider').value;apply({key:'manual',provider,id,name:'Explicit model ID',image:null,configured:provider!=='router',note:'Example explicit model with a '+budget+' token context budget.'});});
+ $('terminal').addEventListener('keydown',event=>{
+  const control=event.ctrlKey||event.metaKey;
+  if(control&&event.key.toLowerCase()==='l'){event.preventDefault();open();return;}
+  if(control&&event.key.toLowerCase()==='p'){event.preventDefault();cycle(event.shiftKey?-1:1);return;}
+  if(event.key==='Tab'&&event.shiftKey){event.preventDefault();state.mode=({noul:'choice',choice:'score',score:'noul'})[state.mode];renderMode();close('Answer type changed. The selected model, references, and draft text stay intact.');return;}
+  if(state.open){
+   if(event.key==='Escape'){event.preventDefault();if(state.view==='catalog')close('Picker cancelled. The selected model and draft are unchanged.');else{state.view='catalog';renderViews();search.focus();}return;}
+   if(control&&event.key.toLowerCase()==='s'){event.preventDefault();state.message='Enter selects a model; Esc returns to the draft. Nothing was sent or saved.';renderList();announce(state.message);return;}
+   if(event.key==='Tab'){event.preventDefault();const fields=['draft-context','draft-question',...(state.mode==='noul'?[]:['draft-options'])];const next=fields[(fields.indexOf(state.origin)+1)%fields.length];close('Tab returned to the next form field without selecting a model.');$(next).focus();return;}
+   if(state.view==='catalog'&&event.target===search){const list=rows();if(['ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();state.choice=(state.choice+(event.key==='ArrowDown'?1:-1)+list.length)%list.length;state.message='';renderList();$('model-option-'+state.choice)?.scrollIntoView({block:'nearest'});}else if(event.key==='Enter'){event.preventDefault();choose(state.choice);}}
+  }else if(control&&event.key.toLowerCase()==='s'){event.preventDefault();announce('Prototype only. This would send the draft using '+full(state.model)+'. No request was made.');}
+ });
+ const requested=new URLSearchParams(location.search).get('design');if(Object.hasOwn(designs,requested))state.design=requested;
+ example('normal');
+})();
+</script>
+
+</body>
+</html>

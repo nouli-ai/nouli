@@ -733,6 +733,87 @@ mod tests {
         }
     }
     #[test]
+    fn an_ancestry_reference_keeps_its_saved_state_after_a_fact_is_replaced() {
+        let mut history = history();
+        let old = ContextRecord {
+            id: Id::generate(),
+            key: format!("{}metro", crate::context::facts::KEY_PREFIX),
+            kind: ContextKind::Evidence,
+            value: Data::new(serde_json::json!("Namma metro was preferred")).unwrap(),
+        };
+        history[0].updates.push(ContextUpdate::Append {
+            record: old.clone(),
+        });
+        history[0].manifest.records.push(RecordProjection {
+            record: old.id,
+            representation: Representation::Full,
+            protected: false,
+        });
+        let source = &history[0];
+        let sources = [SourcePoint {
+            session: source.session,
+            frontier: vec![source.id],
+        }];
+        let current = ContextRecord {
+            id: Id::generate(),
+            key: old.key.clone(),
+            kind: ContextKind::Evidence,
+            value: Data::new(serde_json::json!("Now prefer driving")).unwrap(),
+        };
+        let id = Id::generate();
+        let snapshot=ContextRecord{id,key:format!("decision:{id}"),kind:ContextKind::Evidence,value:Data::new(serde_json::json!({"nouli_decision_reference":{
+            "source":{"session":source.session,"turn":source.id,"question":source.request.questions[0].id},
+            "reference":format!("[decision:{id}]"),"question":source.request.questions[0],"outcome":source.outcome.outcomes[0],"images":[],
+            "input_state":{"records":[{"value":{"record":old}}]}
+        }})).unwrap()};
+        let updates = [
+            ContextUpdate::Supersede {
+                targets: vec![old.id],
+                replacement: current.clone(),
+                pinned: None,
+            },
+            ContextUpdate::Append { record: snapshot },
+        ];
+        let required = [
+            RequiredItem {
+                record: id,
+                pointer: None,
+            },
+            RequiredItem {
+                record: current.id,
+                pointer: None,
+            },
+        ];
+        let plan = ContextBuilder::build(
+            input(&history, &sources, &source.request, &updates, &required),
+            &limits(100_000),
+            &ByteCounter,
+            &FullHistory,
+        )
+        .unwrap();
+        assert_eq!(
+            plan.entries
+                .iter()
+                .find(|e| e.id == old.id)
+                .unwrap()
+                .representation,
+            Representation::Omitted
+        );
+        let reference = &plan
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap()
+            .value
+            .value()["record"]["value"]["nouli_decision_reference"];
+        assert_eq!(reference["included_in_ancestry"], true);
+        assert!(reference["input_state"].to_string().contains("Namma metro"));
+        assert!(
+            plan.manifest.context_toon.contains("Namma metro")
+                && plan.manifest.context_toon.contains("Now prefer driving")
+        );
+    }
+    #[test]
     fn selected_answers_are_required_across_sessions_and_followups_and_deduplicate_ancestry() {
         let mut history = history();
         let original = history[0].clone();
