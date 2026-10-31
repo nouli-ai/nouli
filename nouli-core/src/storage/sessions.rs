@@ -190,6 +190,22 @@ impl Ledger {
     pub fn session(&self, selector: &SessionSelector) -> Result<Session, SessionError> {
         read_session(&self.connection, selector)
     }
+
+    /// Change only the human selector and record the rename atomically.
+    /// Keep identity, ancestry, defaults and the accepted-writer revision fixed.
+    pub fn rename_session(&mut self, id: Id, name: SessionName) -> Result<Session, SessionError> {
+        self.transaction("rename session",|transaction|{
+            let mut session=read_session(transaction,&SessionSelector::Id(id))?;
+            if session.name.as_ref()==Some(&name){return Ok(session);}
+            let event=HistoryEvent::SessionRenamed{session:id,previous_name:session.name.clone(),name:name.clone()};
+            transaction.execute("UPDATE sessions SET name=?2 WHERE id=?1",params![id.to_string(),name.as_str()])
+                .map_err(|error|creation_error(sql_error("rename session",error),true))?;
+            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![id.to_string(),Ledger::encode_payload(&event)?])
+                .map_err(|error|sql_error("record session rename",error))?;
+            session.name=Some(name);
+            Ok(session)
+        })
+    }
     pub fn list_sessions(&self) -> Result<Vec<Session>, SessionError> {
         let mut statement = self
             .connection
@@ -217,6 +233,128 @@ impl Ledger {
 mod tests {
     use super::*;
     use crate::storage::OpenMode;
+
+    #[test]
+    fn rename_is_durable_atomic_and_keeps_accepted_work_and_history_by_id() {
+        use crate::{history::FinalizedTurn, storage::turns::AttemptInput};
+        let root = std::env::temp_dir().join(format!("nouli-rename-{}", Id::generate()));
+        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let old = SessionName::try_from("old-name".to_owned()).unwrap();
+        let new = SessionName::try_from("new-name".to_owned()).unwrap();
+        let session = ledger
+            .create_session(
+                Some(old.clone()),
+                ModelSelection {
+                    provider: Some("kept".into()),
+                    model: Some("same".into()),
+                },
+            )
+            .unwrap();
+        let taken = ledger
+            .create_session(
+                Some("taken".to_owned().try_into().unwrap()),
+                ModelSelection::default(),
+            )
+            .unwrap();
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
+        let template: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
+        let input = || AttemptInput {
+            request: template.request.clone(),
+            updates: vec![],
+            standing: Default::default(),
+            manifest: template.manifest.clone(),
+            request_id: None,
+        };
+        let guard = ledger.session_guard(session.id).unwrap();
+        let first = ledger.prepare_attempt(&guard, input()).unwrap();
+        let first = ledger
+            .finalize_attempt(&guard, first.id, template.outcome.clone())
+            .unwrap();
+        let pending = ledger.prepare_attempt(&guard, input()).unwrap();
+        let before = ledger.session(&SessionSelector::Id(session.id)).unwrap();
+        let renamed = ledger.rename_session(session.id, new.clone()).unwrap();
+        assert_eq!(renamed.id, before.id);
+        assert_eq!(renamed.frontier, before.frontier);
+        assert_eq!(renamed.defaults, before.defaults);
+        assert_eq!(renamed.revision, before.revision);
+        assert_eq!(ledger.turn(first.id).unwrap(), first);
+        assert!(matches!(
+            ledger.session(&SessionSelector::Name(old)),
+            Err(SessionError::UnknownSession)
+        ));
+        assert_eq!(
+            ledger.session(&SessionSelector::Name(new.clone())).unwrap(),
+            renamed
+        );
+        let count = |ledger: &Ledger| {
+            ledger
+                .connection
+                .query_row(
+                    "SELECT count(*) FROM session_events WHERE session_id=?1",
+                    [session.id.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+        };
+        let events = count(&ledger);
+        assert_eq!(
+            ledger.rename_session(session.id, new.clone()).unwrap(),
+            renamed
+        );
+        assert_eq!(count(&ledger), events, "same-name rename is a no-op");
+        assert!(matches!(
+            ledger.rename_session(session.id, taken.name.unwrap()),
+            Err(SessionError::NameCollision)
+        ));
+        assert_eq!(count(&ledger), events);
+        assert_eq!(
+            ledger.session(&SessionSelector::Id(session.id)).unwrap(),
+            renamed
+        );
+        let payload:String=ledger.connection.query_row("SELECT payload_toon FROM session_events WHERE session_id=?1 ORDER BY sequence DESC LIMIT 1",[session.id.to_string()],|row|row.get(0)).unwrap();
+        assert!(
+            matches!(Ledger::decode_payload::<HistoryEvent>(&payload).unwrap(),HistoryEvent::SessionRenamed{session:renamed_id,..} if renamed_id==session.id)
+        );
+        ledger.connection.execute_batch("CREATE TEMP TRIGGER reject_rename_event BEFORE INSERT ON session_events BEGIN SELECT RAISE(ABORT,'injected failure'); END;").unwrap();
+        assert!(
+            ledger
+                .rename_session(session.id, "rollback".to_owned().try_into().unwrap())
+                .is_err()
+        );
+        assert_eq!(
+            ledger.session(&SessionSelector::Id(session.id)).unwrap(),
+            renamed
+        );
+        ledger
+            .connection
+            .execute_batch("DROP TRIGGER reject_rename_event;")
+            .unwrap();
+        ledger
+            .finalize_attempt(&guard, pending.id, template.outcome)
+            .unwrap();
+        assert_eq!(ledger.turn(first.id).unwrap(), first);
+        assert!(matches!(
+            ledger.rename_session(Id::generate(), new.clone()),
+            Err(SessionError::UnknownSession)
+        ));
+        drop(guard);
+        drop(ledger);
+        let mut reopened = Ledger::open(&root, OpenMode::ReadOnlyExisting).unwrap();
+        assert_eq!(
+            reopened
+                .session(&SessionSelector::Name(new.clone()))
+                .unwrap()
+                .id,
+            session.id
+        );
+        assert!(matches!(
+            reopened.rename_session(session.id, new),
+            Err(SessionError::Storage(StorageError::ReadOnly))
+        ));
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn catalog_reopens_case_sensitive_names_and_unknown_selection_never_creates() {

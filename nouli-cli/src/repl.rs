@@ -96,7 +96,7 @@ struct Current {
     label: String,
 }
 
-const HELP: [(&str, &str); 13] = [
+const HELP: [(&str, &str); 14] = [
     ("plain text", "queue a fact for the next question"),
     (
         "?id: prompt [a, b]",
@@ -111,6 +111,7 @@ const HELP: [(&str, &str); 13] = [
         "start a session; name is automatic if omitted",
     ),
     ("/use NAME", "switch session"),
+    ("/rename NAME", "rename the current session"),
     ("/branch NAME", "a new session from here"),
     ("/blend A B as NAME", "combine histories into a new session"),
     ("/view", "the sessions and how they connect"),
@@ -318,6 +319,7 @@ impl<W: Write> Repl<'_, W> {
             Command::View => self.view()?,
             Command::Context => self.context()?,
             Command::Use(name) => self.use_session(&name)?,
+            Command::Rename(name) => self.rename_session(&name)?,
             Command::New(name) => self.new_session(name.as_deref())?,
             Command::Branch(name) => self.branch(&name)?,
             Command::Blend { sources, name } => self.blend(&sources, &name)?,
@@ -549,6 +551,30 @@ impl<W: Write> Repl<'_, W> {
                 let _ = self.fail(&error.message);
                 None
             }
+        }
+    }
+
+    fn rename_session(&mut self, name: &str) -> io::Result<()> {
+        let name=match SessionName::try_from(name.to_owned()) {
+            Ok(name)=>name,
+            Err(_)=>return self.fail("Use a session name of up to 64 letters, digits, dots, underscores or hyphens, starting with a letter."),
+        };
+        let renamed = Ledger::open(&self.settings.store, OpenMode::ReadWriteCreate)
+            .map_err(|error| error.report())
+            .and_then(|mut ledger| {
+                ledger
+                    .rename_session(self.session.id, name)
+                    .map_err(|error| error.report())
+            });
+        match renamed {
+            Ok(session) => {
+                self.switch(&session);
+                self.dim(&format!(
+                    "  renamed to {}",
+                    render::clean(&self.session.label)
+                ))
+            }
+            Err(error) => self.fail(&error.message),
         }
     }
 

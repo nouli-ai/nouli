@@ -147,6 +147,8 @@ The lines above are typed into the view's input row and appear in its transcript
 
 Type `@` in any field to reference an exact saved answer. Search question wording or IDs across **all sessions in your local store**, including decisions from other workspaces and workflows. Suggestions show the source session and turn; **Browse history** adds full answer previews. Enter inserts the reference, Ctrl-O inspects it, and the current draft keeps its type and answer list. Selected results and their saved image inputs remain available in subsequent decisions.
 
+`@` also searches the plain text of saved conversations: context, structured values, options and answers. Matching excerpts explain the results. **Browse history** shows the selected answer's saved input state; PgUp/PgDn scroll it. Use `/rename NAME` to give the current session a new name while keeping its history and draft.
+
 ## Can a script or an agent drive it?
 
 Everything you can do at the prompt is also a command. The `pick` session continues from a script, and each command adds the latest sensor report and asks the next question:

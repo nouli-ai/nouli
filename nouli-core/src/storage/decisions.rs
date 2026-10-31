@@ -1,4 +1,5 @@
 //! Store-wide discovery and fixed, question-specific saved-answer evidence.
+mod text;
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,9 @@ pub struct SavedDecision {
     pub question: Question,
     pub outcome: QuestionOutcome,
     pub provider: ProviderIdentity,
+    /// Readable conversational text only; never encoded image payloads.
+    #[serde(default)]
+    pub text: Vec<String>,
 }
 
 impl SavedDecision {
@@ -42,13 +46,67 @@ impl SavedDecision {
 
     pub fn matches(&self, query: &str) -> bool {
         let searchable = format!(
-            "{} {} {} {}",
-            self.question.prompt, self.source.question, self.session_name, self.source.turn
+            "{} {} {} {} {}",
+            visible_text(&self.question.prompt),
+            self.source.question,
+            self.session_name,
+            self.source.turn,
+            self.text.join("\n")
         )
         .to_lowercase();
         query
             .split_whitespace()
             .all(|word| searchable.contains(&word.to_lowercase()))
+    }
+
+    /// A short contextual match when the question title alone does not explain
+    /// why this saved answer was found. Keep Unicode boundaries intact.
+    pub fn excerpt(&self, query: &str) -> Option<String> {
+        let words = query
+            .split_whitespace()
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>();
+        if words.is_empty()
+            || words
+                .iter()
+                .all(|word| self.question.prompt.to_lowercase().contains(word))
+        {
+            return None;
+        }
+        let line = self
+            .text
+            .iter()
+            .find(|line| words.iter().any(|word| line.to_lowercase().contains(word)))?;
+        let line = visible_text(line);
+        let lower = line.to_lowercase();
+        let byte = words
+            .iter()
+            .filter_map(|word| lower.find(word))
+            .min()
+            .unwrap_or(0);
+        let mut lowered = 0;
+        let mut at = 0;
+        for (index, ch) in line.chars().enumerate() {
+            let size = ch.to_lowercase().map(char::len_utf8).sum::<usize>();
+            if lowered + size > byte {
+                at = index;
+                break;
+            }
+            lowered += size;
+            at = index + 1;
+        }
+        let start = at.saturating_sub(24);
+        let shown = line.chars().skip(start).take(100).collect::<String>();
+        Some(format!(
+            "{}{}{}",
+            if start > 0 { "…" } else { "" },
+            shown,
+            if line.chars().count() > start + 100 {
+                "…"
+            } else {
+                ""
+            }
+        ))
     }
 }
 
@@ -68,7 +126,7 @@ pub enum DecisionError {
     Refused,
 }
 
-fn short_label(prompt: &str) -> String {
+fn visible_text(prompt: &str) -> String {
     let mut prompt = prompt.to_owned();
     for prefix in ["[image:", "[decision:"] {
         let mut offset = 0;
@@ -95,7 +153,11 @@ fn short_label(prompt: &str) -> String {
         .chars()
         .filter(|c| !c.is_control() || c.is_whitespace())
         .collect::<String>();
-    let prompt = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+    prompt.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn short_label(prompt: &str) -> String {
+    let prompt = visible_text(prompt);
     let mut label = prompt.chars().take(44).collect::<String>();
     if prompt.chars().count() > 44 {
         label.push('…');
@@ -156,6 +218,7 @@ impl Ledger {
                     question: question.clone(),
                     outcome: outcome.clone(),
                     provider: turn.outcome.provider.clone(),
+                    text: text::conversation(&turn, question, outcome),
                 });
             }
         }
@@ -190,6 +253,22 @@ impl Ledger {
         record.value = Data::new(value)?;
         Ok(record)
     }
+
+    /// The immutable input state actually sent for this saved answer. Read it
+    /// only for the selected preview, rather than caching every full history.
+    pub fn decision_state(&self, source: &DecisionSource) -> Result<Vec<String>, DecisionError> {
+        let turn = self.turn(source.turn)?;
+        if turn.session != source.session
+            || !turn
+                .request
+                .questions
+                .iter()
+                .any(|q| q.id == source.question)
+        {
+            return Err(DecisionError::Missing);
+        }
+        text::state(&turn)
+    }
 }
 
 fn reference_record(
@@ -219,28 +298,6 @@ fn reference_record(
     // turns and other references, even when their original files are gone.
     let evidence = media::Evidence::read(&turn.manifest.context_toon)?;
     let input = codec::decode_value(evidence.text.as_bytes(), codec::InputFormat::Toon)?;
-    let records = input.get("records").and_then(serde_json::Value::as_array);
-    let references = records
-        .into_iter()
-        .flatten()
-        .filter(|entry| entry["value"]["record"]["value"]["nouli_decision_reference"].is_object())
-        .cloned()
-        .collect::<Vec<_>>();
-    let referenced_turns = references
-        .iter()
-        .filter_map(|entry| {
-            entry["value"]["record"]["value"]["nouli_decision_reference"]["source"]["turn"].as_str()
-        })
-        .collect::<HashSet<_>>();
-    let inputs = references
-        .iter()
-        .chain(records.into_iter().flatten().filter(|entry| {
-            entry["id"]
-                .as_str()
-                .is_some_and(|id| referenced_turns.contains(id))
-        }))
-        .cloned()
-        .collect::<Vec<_>>();
     let images = evidence.images;
     let images = images
         .into_iter()
@@ -258,7 +315,7 @@ fn reference_record(
         value: Data::new(serde_json::json!({"nouli_decision_reference":{
             "source":source,"reference":format!("[decision:{id}]"),
             "question":question,"outcome":outcome,"provider":turn.outcome.provider,
-            "images":images,"input_references":inputs
+            "images":images,"input_state":input
         }}))?,
     })
 }
@@ -335,6 +392,23 @@ mod tests {
             catalog.iter().filter(|e| e.source.question == *q).count(),
             4
         );
+        let entry = catalog
+            .iter()
+            .find(|entry| entry.source.question == *q)
+            .unwrap();
+        assert!(
+            entry.matches("supplied evidence"),
+            "context text is searchable even when absent from the question"
+        );
+        assert!(
+            entry.matches("delay") && entry.matches("null"),
+            "structured state remains searchable"
+        );
+        assert!(
+            entry.matches("Rail"),
+            "answer labels are conversational text too"
+        );
+        assert!(entry.excerpt("supplied").unwrap().contains("supplied"));
         assert!(
             catalog
                 .iter()
@@ -391,6 +465,14 @@ mod tests {
             serde_json::to_value(&turn.outcome.outcomes[0]).unwrap()
         );
         assert_eq!(value["source"]["turn"], turn.id.to_string());
+        assert_eq!(
+            value["input_state"],
+            codec::decode_value(
+                turn.manifest.context_toon.as_bytes(),
+                codec::InputFormat::Toon
+            )
+            .unwrap()
+        );
         assert_eq!(turn, before);
         let mut invalid = source.clone();
         invalid.session = Id::generate();

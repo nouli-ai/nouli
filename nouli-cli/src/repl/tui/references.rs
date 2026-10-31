@@ -6,7 +6,10 @@ use nouli_core::{
     context::{ContextRecord, ContextUpdate},
     identity::Id,
     outcome::{Answer, QuestionOutcome},
-    storage::{Ledger, decisions::SavedDecision},
+    storage::{
+        Ledger,
+        decisions::{DecisionSource, SavedDecision},
+    },
 };
 use std::{collections::HashSet, ops::Range};
 
@@ -19,7 +22,15 @@ pub(super) struct References {
     pub picker: Option<Picker>,
     pub bindings: Vec<Binding>,
     pub inspected: Option<usize>,
+    pub preview: Option<Preview>,
+    pub preview_scroll: usize,
+    pub preview_page: usize,
     dismissed: Option<(Row, usize)>,
+}
+
+pub(super) struct Preview {
+    pub source: DecisionSource,
+    pub lines: Vec<String>,
 }
 
 pub(super) struct Picker {
@@ -54,6 +65,8 @@ impl References {
             self.dismissed = Some((picker.row, picker.range.start));
         }
         self.inspected = None;
+        self.preview = None;
+        self.preview_scroll = 0;
     }
 
     pub fn refresh(&mut self, ledger: &Ledger) -> Result<(), String> {
@@ -63,6 +76,23 @@ impl References {
         self.known.extend(ids);
         self.catalog.extend(entries);
         self.catalog.sort_by_key(|e| std::cmp::Reverse(e.sequence));
+        let names = ledger
+            .list_sessions()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|s| {
+                (
+                    s.id,
+                    s.name
+                        .map_or_else(|| s.id.to_string(), |name| name.as_str().to_owned()),
+                )
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        for entry in &mut self.catalog {
+            if let Some(name) = names.get(&entry.source.session) {
+                entry.session_name = name.clone();
+            }
+        }
         Ok(())
     }
 
@@ -84,7 +114,7 @@ fn query(text: &str, cursor: usize) -> Option<(Range<usize>, String)> {
         return None;
     }
     let query = &before[start + 1..];
-    if query.contains(['\n', '[', ']']) {
+    if query.contains('\n') {
         return None;
     }
     Some((start..cursor, query.to_owned()))
@@ -151,12 +181,12 @@ impl App<'_> {
         if self.references.dismissed == Some((self.form.row, range.start)) {
             return;
         }
-        // A rendered binding contains an @ label too. Its entire span is atomic.
+        // Ignore @ characters belonging to an existing atomic attachment,
+        // including an inner @ in its label followed by more ordinary text.
         if self
-            .references
-            .bindings
+            .attachment_ranges(text)
             .iter()
-            .any(|b| text[range.start..].starts_with(&format!("{} {}", b.label, b.reference)))
+            .any(|attachment| attachment.contains(&range.start))
         {
             self.references.picker = None;
             return;
@@ -198,6 +228,47 @@ impl App<'_> {
             expanded,
         });
         self.hidden = true;
+        self.refresh_reference_preview();
+    }
+
+    fn refresh_reference_preview(&mut self) {
+        let source = self
+            .references
+            .picker
+            .as_ref()
+            .filter(|picker| picker.expanded)
+            .and_then(|_| self.references.selected())
+            .map(|entry| entry.source.clone());
+        let Some(source) = source else {
+            self.references.preview = None;
+            self.references.preview_scroll = 0;
+            return;
+        };
+        if self
+            .references
+            .preview
+            .as_ref()
+            .is_some_and(|preview| preview.source == source)
+        {
+            return;
+        }
+        let lines = self
+            .repl
+            .ledger()
+            .map_err(|error| error.message)
+            .and_then(|ledger| {
+                ledger
+                    .decision_state(&source)
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap_or_else(|message| {
+                vec![format!(
+                    "Cannot read saved state: {}",
+                    render::clean(&message)
+                )]
+            });
+        self.references.preview = Some(Preview { source, lines });
+        self.references.preview_scroll = 0;
     }
 
     /// Return true only for keys the picker consumes. Tab/Shift-Tab remain
@@ -255,9 +326,17 @@ impl App<'_> {
         match key.code {
             KeyCode::Up => picker.choice = picker.choice.saturating_sub(1),
             KeyCode::Down => picker.choice = (picker.choice + 1).min(limit.saturating_sub(1)),
-            KeyCode::PageUp if picker.expanded => picker.choice = picker.choice.saturating_sub(5),
+            KeyCode::PageUp if picker.expanded => {
+                self.references.preview_scroll = self
+                    .references
+                    .preview_scroll
+                    .saturating_sub(self.references.preview_page.max(1))
+            }
             KeyCode::PageDown if picker.expanded => {
-                picker.choice = (picker.choice + 5).min(limit.saturating_sub(1))
+                self.references.preview_scroll = self
+                    .references
+                    .preview_scroll
+                    .saturating_add(self.references.preview_page.max(1));
             }
             KeyCode::Enter => {
                 if !picker.expanded && picker.choice == picker.matches.len().min(COMPACT) {
@@ -284,6 +363,7 @@ impl App<'_> {
             }
             _ => return false,
         }
+        self.refresh_reference_preview();
         true
     }
 
@@ -303,6 +383,9 @@ impl App<'_> {
         let existing = self.references.bindings.iter().position(|b| {
             b.record.value.value()["nouli_decision_reference"]["source"]
                 == serde_json::to_value(&entry.source).expect("source IDs serialize")
+                && b.record.value.value()["nouli_decision_reference"]
+                    .get("input_state")
+                    .is_some()
         });
         let binding = if let Some(i) = existing {
             i
@@ -439,6 +522,54 @@ mod tests {
         assert!(query("me@example.com", 14).is_none());
         assert_eq!(query("@旅行", 7), Some((0..7, "旅行".into())));
         assert!(query("@old\nnew", 8).is_none());
+        let literal = "@Rail [late]";
+        assert_eq!(
+            query(literal, literal.len()),
+            Some((0..literal.len(), "Rail [late]".into()))
+        );
+    }
+
+    #[test]
+    fn at_signs_inside_attachments_never_reopen_search_after_appending_text() {
+        use crate::settings::Settings;
+        use nouli_core::{context::ContextKind, data::Data, media::Image};
+        let settings = Settings::for_test(
+            std::env::temp_dir().join(format!("nouli-at-attachments-{}", Id::generate())),
+        );
+        let mut app = super::super::tests::app(&settings);
+        app.form.row = Row::Question;
+        for name in ["@photo.png", "my @photo.png"] {
+            let reference = format!("[image:{}]", Id::generate());
+            app.images = vec![Image {
+                reference: reference.clone(),
+                name: name.into(),
+                format: "png".into(),
+                data_base64: String::new(),
+            }];
+            app.form.question = format!("{name} {reference} more ordinary text");
+            app.form.cursor = app.form.question.len();
+            app.sync_references();
+            assert!(app.references.picker.is_none());
+            assert!(app.status.is_none());
+        }
+        let id = Id::generate();
+        let reference = format!("[decision:{id}]");
+        let label = "@Question about @old · source / 1";
+        app.references.bindings = vec![Binding {
+            record: ContextRecord {
+                id,
+                key: format!("decision:{id}"),
+                kind: ContextKind::Evidence,
+                value: Data::new(serde_json::json!({})).unwrap(),
+            },
+            reference: reference.clone(),
+            label: label.into(),
+        }];
+        app.form.question = format!("{label} {reference} more ordinary text");
+        app.form.cursor = app.form.question.len();
+        app.sync_references();
+        assert!(app.references.picker.is_none());
+        assert!(app.status.is_none());
     }
 
     #[test]
@@ -503,6 +634,22 @@ mod tests {
         }
         assert_eq!(app.references.picker.as_ref().unwrap().matches.len(), 1);
         assert_eq!(app.references.selected().unwrap().source.session, source.id);
+        ledger
+            .rename_session(source.id, "renamed-source".to_owned().try_into().unwrap())
+            .unwrap();
+        app.references.refresh(&ledger).unwrap();
+        assert!(
+            app.references
+                .catalog
+                .iter()
+                .all(|entry| entry.session_name == "renamed-source")
+        );
+        assert!(
+            app.references
+                .catalog
+                .iter()
+                .all(|entry| entry.matches("renamed-source"))
+        );
         press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(app.references.picker.as_ref().unwrap().expanded);

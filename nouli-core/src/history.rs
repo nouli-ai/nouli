@@ -195,6 +195,11 @@ pub enum HistoryEvent {
         session: Id,
         sources: Vec<SourcePoint>,
     },
+    SessionRenamed {
+        session: Id,
+        previous_name: Option<SessionName>,
+        name: SessionName,
+    },
     AttemptRecorded {
         attempt: AttemptRecord,
     },

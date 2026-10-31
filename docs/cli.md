@@ -74,6 +74,7 @@ trip › ?rebook: How should I get to the meeting now? [Take the train, Take a t
 | `/clear` | Empties the queue. |
 | `/facts` | Shows the session's facts, then what is queued. |
 | `/new [NAME]`, `/use SESSION` | Start a session with an optional name, or switch to one. |
+| `/rename NAME` | Rename the current session; keep its ID, history and queued draft. |
 | `/branch NAME` | A new session from the current head. |
 | `/blend A B [...] as NAME` | A new session from several. |
 | `/view` | The sessions, with turn counts and where each came from; `●` marks the current one. |
@@ -130,16 +131,24 @@ Pasting never submits. Context and question fields preserve paragraphs and inden
 ## Reference earlier answers in the TUI
 
 Type `@` at a word boundary in Context, Question, an option, or a score level.
-Search by question wording, question ID, session name, or turn ID. Suggestions
+Search ordinary words from saved conversations: context, structured values,
+questions, criteria, options/levels and saved answers. Question IDs, session
+names and turn IDs remain searchable too. Suggestions
 cover **all saved decisions in the selected local store**, including other
 sessions, workspaces, branches, and workflow decisions. The default store is
 shared across directories; an explicit `--store` searches that store. Independent
 sessions remain separate in the graph and retain their own active facts.
 
-Each result shows its answer, source session and saved turn. Repeated questions
+Each result shows its answer, source session and saved turn, with a matching
+excerpt when the words come from elsewhere in the conversation. Repeated questions
 remain distinct answers, even when they share an ID. Use Up/Down and Enter to
 insert one; the first Enter only inserts the reference. Choose **Browse history**
-for a larger list with answer distributions and source IDs. Ctrl-O in a field
+for a larger list with answer distributions and the actual saved input state,
+including structured values and image filenames. PgUp/PgDn scroll the preview;
+Up/Down choose results. Narrow terminals stack the preview below the list.
+The preview reads the selected turn's input manifest, preserving historical
+values after later replacements. Encoded image bytes are not shown or searched.
+Ctrl-O in a field
 with references inspects the reference nearest the cursor. Backspace/Delete
 removes a whole reference. Removed draft references add no new source evidence;
 previously saved history still follows the usual context policy.
@@ -149,8 +158,8 @@ changes the answer type left to right. Esc closes them and leaves ordinary
 editable text. Email addresses stay literal. Ctrl-S/F5 waits for you to select
 or dismiss the open search before sending.
 
-A reference retains its exact question, saved answer, provider, used image
-inputs and explicit reference dependencies. It never resolves to a newer answer
+A reference retains its exact question, saved answer, provider, saved input
+state and native image inputs. It never resolves to a newer answer
 later or replaces the current draft's type, options or levels. Saved source turns
 remain immutable. The latest answer is still included automatically; choosing
 it does not duplicate its answer in context. Required evidence that cannot fit
