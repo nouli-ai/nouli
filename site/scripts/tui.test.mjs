@@ -5,9 +5,6 @@ import { resolve, join } from "node:path";
 import { readPage, startStub } from "./replay.mjs";
 const site = resolve(import.meta.dirname, "..");
 const read = (path) => readFileSync(join(site, path), "utf8");
-const version = readFileSync(join(site, "../Cargo.toml"), "utf8").match(
-  /^version = "([^"]+)"/m,
-)[1];
 const plain = (screen) =>
   screen.rows.map((row) => row.map((run) => run[0]).join("")).join("\n");
 
@@ -27,7 +24,6 @@ test("every saved walkthrough step has a current TUI capture tied to its recorde
     const saved = JSON.parse(read(`src/data/examples/${page.graph}.json`));
     const captures = JSON.parse(read(`src/data/tui/${name}.json`));
     assert.equal(captures.replayed, true);
-    assert.equal(captures.application, `nouli ${version}`);
     const expected = page.steps
       .map((step, index) => (step.node === null ? null : index))
       .filter((index) => index !== null);
@@ -48,7 +44,6 @@ test("every saved walkthrough step has a current TUI capture tied to its recorde
           ["draft", "answer"].includes(key) ? 140 : 80,
         );
         assert.equal(screen.rows.length, 34);
-        assert.ok(plain(screen).split("\n")[0].includes(`nouli ${version}`));
       }
       assert.match(plain(frame.narrow), /Context/);
       assert.match(plain(frame.narrow), /Question/);

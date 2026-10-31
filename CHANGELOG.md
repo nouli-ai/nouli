@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-30
+
 ### Changed
 
 - Configure any compatible service through `system-one` or `openai-decisions`, explicit HTTP bindings, headers, image formats and optional limits. Remove provider/model recognition and the bundled capacity catalog; omitted budgets use 8,192 estimated tokens, clamped to a configured window. This replaces the `typesafe` and `openrouter-decisions` protocol names. Older frozen runs require a fresh store and are preserved untouched.
