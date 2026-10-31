@@ -1,6 +1,6 @@
 # Nouli website
 
-The site published to GitHub Pages: a home page, a user guide, and the example walkthroughs. It is plain HTML, CSS, and JavaScript, built with [Vite](https://vite.dev/).
+The site published at [nouli.ai](https://nouli.ai/) through GitHub Pages: a home page, a user guide, and the example walkthroughs. It is plain HTML, CSS, and JavaScript, built with [Vite](https://vite.dev/).
 
 ## Develop
 
@@ -27,6 +27,33 @@ Building the site requires no release lookup.
 - `index.html`, `guide/`, `examples/`: one HTML page per route. Vite picks up every directory under `examples/` as a page.
 - `src/figure.js`: the decision graph and readout used on the home page and in walkthroughs.
 - `src/data/`: graph data generated from real Nouli sessions. Don't edit it by hand.
+
+## Search and answer engines
+
+Keep the product definition, installation commands, and example explanations in
+the HTML so they remain readable without JavaScript. The home page describes
+Nouli beside its headline; its SoftwareApplication JSON-LD uses the same
+description and links to the repository, license, and guide. Preserve that
+visible definition when changing the opening layout. Structured data describes
+the software; it does not promise a rich result or an AI citation.
+
+Every published route has a description. The Vite build adds a canonical URL
+under https://nouli.ai/ and emits sitemap.xml from the same page list used to
+build the site, including newly added examples. The build
+fails if a published page has no description. The sitemap can be submitted in
+Search Console after deployment; generating it does not submit it.
+
+The existing [llms.txt](public/llms.txt) remains an agent usage reference, not an
+indexing requirement. Follow
+[Google's guidance for generative AI search](https://developers.google.com/search/docs/fundamentals/ai-optimization-guide):
+use crawlable, helpful text and keep metadata consistent with visible content.
+
+The custom domain is recorded in [public/CNAME](public/CNAME). The build copies
+[public/robots.txt](public/robots.txt) to https://nouli.ai/robots.txt, where it
+allows crawling and advertises the sitemap. Crawl rules are scoped to the host
+root; a /nouli/robots.txt on the GitHub alias would not control crawling. See
+[robots.txt scope](https://developers.google.com/crawling/docs/robots-txt/robots-txt-spec).
+Local build and browser checks do not verify indexing or search visibility.
 
 ## Graph data
 

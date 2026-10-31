@@ -3,8 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nouli · decision graph</title>
-<meta name="description" content="Nouli is a decision graph: it runs decision models over many turns and feeds earlier decisions into later ones, keeping every fact, question, and answer in a ledger.">
+<title>Nouli · a ledger-backed decision network</title>
+<meta name="description" content="Nouli is a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Nouli">
+<meta property="og:title" content="Nouli · a ledger-backed decision network">
+<meta property="og:description" content="Nouli is a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use.">
+<meta property="og:url" content="https://nouli.ai/">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "@id": "https://nouli.ai/#software",
+  "name": "Nouli",
+  "url": "https://nouli.ai/",
+  "description": "Nouli is a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux",
+  "license": "https://github.com/standing-desks/nouli/blob/main/LICENSE",
+  "sameAs": "https://github.com/standing-desks/nouli",
+  "publisher": {
+    "@type": "Organization",
+    "name": "Nouli",
+    "url": "https://nouli.ai/",
+    "logo": "https://nouli.ai/brand/bee.svg"
+  },
+  "softwareHelp": {
+    "@type": "CreativeWork",
+    "url": "https://nouli.ai/guide/"
+  }
+}
+</script>
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -14,8 +44,17 @@
 <body>
 <header class="top"><a class="mark" href="./"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 
-<h1 class="display">Every answer<br><span>remembers.</span></h1>
-<div class="sub"><p><strong>Nouli is a decision graph.</strong> It runs decision models over many turns and feeds earlier decisions into later ones: each turn adds facts and a new question, and the model answers it with the whole history in view.</p></div>
+<main>
+<section class="hero" aria-labelledby="home-title">
+  <h1 class="display" id="home-title">Every decision<br><span>has a history.</span></h1>
+  <div class="sub">
+    <h2>What is Nouli?</h2>
+    <p>Nouli is a <strong>ledger-backed decision network</strong> that records AI decisions and connects them to the facts and earlier answers they use.</p>
+    <p>Use the terminal app, CLI, or Rust library to ask yes/no, choice, and score questions.</p>
+    <p><a href="guide/#branch">Branch histories</a> to explore alternatives. <a href="guide/#branch">Blend them</a> to bring earlier decisions together.</p>
+    <p class="org"><a href="https://nouli.ai/"><img src="/brand/bee.svg" alt="" width="14" height="16">From Nouli · nouli.ai ↗</a></p>
+  </div>
+</section>
 
 <section class="install" aria-label="Install">
   <div class="shell"><span class="os">macOS</span><span class="dollar" aria-hidden="true">$</span><code>brew install standing-desks/tap/nouli</code><button class="copy" type="button" data-copy="brew install standing-desks/tap/nouli" aria-label="Copy the Homebrew install command">copy</button></div>
@@ -23,11 +62,7 @@
   <p class="meta"><a data-latest-release href="https://github.com/standing-desks/nouli/releases/latest">latest release</a><span>Apple silicon macOS · Linux ARM64 and x86_64</span><a href="guide/#install">other ways to install</a></p>
 </section>
 
-<section class="cli-replay" id="cli-replay" aria-labelledby="replay-title">
-  <div class="replay-head">
-    <h2 id="replay-title">Open a session.<br><span>Ask as you go.</span></h2>
-    <p class="thesis">A session keeps <b>every fact, question and answer.</b> Add a turn and the model answers its new question with all of it in view. <b>Branch</b> to try something else. <b>Blend</b> to put separate histories together.</p>
-  </div>
+<section class="cli-replay" id="cli-replay" aria-label="Recorded Nouli TUI session">
   <div class="bench" data-bench>
   <div class="term" data-cli-replay>
     <span class="term-mark" hidden aria-hidden="true"></span>
@@ -107,6 +142,7 @@ plan › How ready is the workshop?                                             
   </ol>
 </section>
 
+</main>
 <footer class="site"><span>MIT</span><a href="guide/">guide</a><a href="https://github.com/standing-desks/nouli">standing-desks/nouli</a></footer>
 <script type="module" src="/src/home.js"></script>
 </body>

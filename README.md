@@ -1,7 +1,9 @@
 <h1><img src=".github/readme/hero.svg" width="100%"
-  alt="Nouli. Every answer remembers. The README's recall example as a line map: three source sessions, recall-stock (can every jar be matched to a lot? P(yes) 0.07), recall-scope (match the product and both lot-code conditions, 1.00) and recall-customers (contact Summit first, 1.00; then, with 12 boxes sold, escalate them, 0.98). In layer 1, recall-stock-plan blends scope and stock (quarantine matching jars and hold unreadable codes, 1.00) and recall-outreach-updated blends scope and the customers update (escalate reported sales to the recall lead, 1.00). In layer 2, recall-response-updated blends those two blends: coordinate warehouse holds and escalation of sales to end customers, 1.00. It is built on 6 earlier decisions, 2 directly and 4 behind them."></h1>
+  alt="Nouli. Every decision has a history. The README's recall example as a line map: three source sessions, recall-stock (can every jar be matched to a lot? P(yes) 0.07), recall-scope (match the product and both lot-code conditions, 1.00) and recall-customers (contact Summit first, 1.00; then, with 12 boxes sold, escalate them, 0.98). In layer 1, recall-stock-plan blends scope and stock (quarantine matching jars and hold unreadable codes, 1.00) and recall-outreach-updated blends scope and the customers update (escalate reported sales to the recall lead, 1.00). In layer 2, recall-response-updated blends those two blends: coordinate warehouse holds and escalation of sales to end customers, 1.00. It is built on 6 earlier decisions, 2 directly and 4 behind them."></h1>
 
-**Nouli is a decision graph: it runs decision models over many turns and feeds earlier decisions into later ones.**
+**Nouli is a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use.**
+
+[Website: nouli.ai](https://nouli.ai/) · [User guide](https://nouli.ai/guide/) · [Examples](https://nouli.ai/examples/)
 
 ```sh
 brew install standing-desks/tap/nouli
@@ -20,7 +22,7 @@ On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.githu
 ```text
 Install Nouli, a CLI that runs decision models over many turns:
   curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh
-Read https://standing-desks.github.io/nouli/llms.txt for the commands.
+Read https://nouli.ai/llms.txt for the commands.
 Help me define a provider in ~/.nouli/config.toml, then run
 `nouli auth login typesafe` and let me type the key myself.
 Ask each decision as one -q question per command, add only new facts
@@ -98,11 +100,11 @@ flowchart TD
   class t6 latest
 ```
 
-The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/) goes through every step, and more [examples](https://standing-desks.github.io/nouli/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning. Each one shows its steps at the prompt or as commands.
+The [recall walkthrough](https://nouli.ai/examples/recall/) goes through every step, and more [examples](https://nouli.ai/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning. Each one shows its steps at the prompt or as commands.
 
 ## What does a session look like?
 
-`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. Bare `nouli` and `/new` create a session with a unique name like `curie-7-diffraction`; explicit names still work. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Drag the divider to resize the graph at any time; Ctrl-G focuses it for keyboard scrolling. Use the terminal’s selection modifier to copy text (Option-drag in iTerm2), and arrows to move between fields. Referenced answers connect to the question using them, including across sessions and after reopening. Context previews the latest included question and answer history. Images display their filenames. Use `@` to find a file under the launch folder, or drop a file into the focused field. DOCX/PPTX text and tables, spreadsheets, CSV/TSV and SVG images are supported; PDF text needs Poppler and legacy DOC/PPT needs LibreOffice. Select a file to review it before sending; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. The [simple meeting example](https://standing-desks.github.io/nouli/examples/meeting/) shows three turns in one session. This current TUI capture replays its recorded travel answer:
+`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. Bare `nouli` and `/new` create a session with a unique name like `curie-7-diffraction`; explicit names still work. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Drag the divider to resize the graph at any time; Ctrl-G focuses it for keyboard scrolling. Use the terminal’s selection modifier to copy text (Option-drag in iTerm2), and arrows to move between fields. Referenced answers connect to the question using them, including across sessions and after reopening. Context previews the latest included question and answer history. Images display their filenames. Use `@` to find a file under the launch folder, or drop a file into the focused field. DOCX/PPTX text and tables, spreadsheets, CSV/TSV and SVG images are supported; PDF text needs Poppler and legacy DOC/PPT needs LibreOffice. Select a file to review it before sending; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. The [simple meeting example](https://nouli.ai/examples/meeting/) shows three turns in one session. This current TUI capture replays its recorded travel answer:
 
 ```text
  nouli 0.4.0 · travel

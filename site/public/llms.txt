@@ -1,6 +1,8 @@
 # Nouli
 
-> Nouli is a decision graph: a CLI and Rust library that runs decision models over many turns and feeds earlier decisions into later ones. A decision model returns a probability for each answer to a question with a fixed set of answers. Nouli keeps every fact, question, and answer of a session in a ledger, so each turn sends only what is new.
+> Nouli is a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use. Its terminal app, CLI, and Rust library run decision models that return probabilities for a fixed set of answers. Nouli keeps the facts, questions, and answers of a session in a ledger, so each turn sends only what is new.
+
+Website: https://nouli.ai/
 
 Install with `curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh` (Linux, or macOS without Homebrew) or `brew install standing-desks/tap/nouli` (macOS). Define a provider in `~/.nouli/config.toml`, then run `nouli auth login PROVIDER`, which reads the key without echo; let the person type it.
 
@@ -36,6 +38,6 @@ navigation. Native text selection uses the host terminal's modifier.
 
 ## Optional
 
-- [User guide](https://standing-desks.github.io/nouli/guide/): a walkthrough of setup, sessions, branching, and blending
+- [User guide](https://nouli.ai/guide/): a walkthrough of setup, sessions, branching, and blending
 - [Rust library](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/embedding.md): embedding Nouli in an application
-- [Examples](https://standing-desks.github.io/nouli/examples/): recorded walkthroughs, including the food recall decision graph
+- [Examples](https://nouli.ai/examples/): recorded walkthroughs, including the food recall decision graph

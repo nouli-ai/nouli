@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Present Nouli as a ledger-backed decision network with "Every decision has a history" across the website, guide, agent reference, and README. Link the Nouli brand to nouli.ai.
+- Bring the website's TUI higher with a smaller headline, a compact product explanation beside it, and no second introduction above the replay.
+- Add page descriptions, canonical URLs, and an automatically generated sitemap to help readers and search engines find Nouli's guide and recorded examples.
 - Keep the TUI's bee greeter at the top of the transcript, so output scrolls it away instead of replacing it; scrolling back reveals it again.
 
 ## [0.4.2] - 2026-10-30
