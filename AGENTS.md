@@ -55,6 +55,7 @@ After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claud
 ## Changelog and Releases
 
 - Record notable user-facing changes in `CHANGELOG.md` under `## [Unreleased]`, using the applicable `Added`, `Changed`, `Fixed`, or `Removed` subsection. Describe the resulting behavior for users.
+- Only record changes that affect users' experience of the product: using the `nouli` CLI or `nouli-core` library, or installing, updating, or uninstalling them, including the commands and URLs they use to do so. Leave out other changes, such as to the website, documentation, or CI. When one of those accompanies a product change, record only the product change.
 - When preparing a release, move its finished entries into one dated section, `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD`, and leave `[Unreleased]` above it. Preserve earlier release entries.
 - Match the release section and `vMAJOR.MINOR.PATCH` tag to the workspace version and lockfile. Release notes are extracted from that section; missing, empty, or duplicate sections fail the release.
 - Follow [the release workflow](.github/workflows/release.yml) for version-tag builds and draft verification. Correct a published release with a new patch version; preserve published assets and existing release tags.
