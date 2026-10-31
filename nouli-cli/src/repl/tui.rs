@@ -53,10 +53,10 @@ use tokio_util::sync::CancellationToken;
 const KEYS: [(&str, &str); 14] = [
     (
         "Mouse drag",
-        "resize the divider; Option-drag selects text in iTerm2",
+        "select text normally; Ctrl-G enables divider dragging and mouse scrolling",
     ),
     (
-        "F6 / select text",
+        "F6 / hold view",
         "hold the view for native drag-selection and terminal Copy; Esc or F6 resumes",
     ),
     ("Tab", "next field or option"),
@@ -79,7 +79,7 @@ const KEYS: [(&str, &str); 14] = [
     ("PgUp, PgDn", "scroll the transcript"),
     (
         "Ctrl-G",
-        "focus decisions for keyboard scrolling; Esc returns",
+        "focus decisions for scrolling and divider dragging; Esc returns to text selection",
     ),
     ("Ctrl-C", "cancel, clear input, or quit"),
     ("/sessions", "resume an earlier session"),
@@ -146,7 +146,7 @@ impl Screen {
             terminal,
             entered: true,
         };
-        execute!(io::stdout(), EnableBracketedPaste, EnableMouseCapture)?;
+        execute!(io::stdout(), EnableBracketedPaste, DisableMouseCapture)?;
         Ok(screen)
     }
 
@@ -446,7 +446,7 @@ impl<'a> App<'a> {
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut running: Option<Running<'a>> = None;
-        let mut mouse_capture = true;
+        let mut mouse_capture = false;
         loop {
             if let Some(command) = self.pending_setup.take() {
                 drop(events);
@@ -454,8 +454,8 @@ impl<'a> App<'a> {
                 ratatui::try_restore()?;
                 let result = self.setup_command(&command);
                 *terminal = ratatui::try_init()?;
-                execute!(io::stdout(), EnableBracketedPaste, EnableMouseCapture)?;
-                mouse_capture = true;
+                execute!(io::stdout(), EnableBracketedPaste, DisableMouseCapture)?;
+                mouse_capture = false;
                 events = EventStream::new();
                 self.status = Some(match result {
                     Ok(()) => Status::info("connection settings updated"),
@@ -467,7 +467,7 @@ impl<'a> App<'a> {
                 terminal.draw(|frame| draw::screen(frame, self, running.as_ref()))?;
                 self.selection.did_draw();
             }
-            let capture = !self.selection.active;
+            let capture = self.captures_mouse();
             if capture != mouse_capture {
                 if capture {
                     execute!(io::stdout(), EnableMouseCapture)?;

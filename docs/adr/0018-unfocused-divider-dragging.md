@@ -5,6 +5,8 @@ date: 2026-10-30
 
 # Resize the graph without changing keyboard focus
 
+Default mouse capture is superseded by [ADR 0021](0021-default-native-text-selection.md).
+
 Lifetime-wide reporting is superseded during explicit text selection by
 [ADR 0020](0020-native-terminal-copy-mode.md). Normal divider dragging is unchanged.
 

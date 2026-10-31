@@ -1,4 +1,4 @@
-//! Divider dragging and a temporary native terminal text-selection mode.
+//! Native terminal selection by default; mouse reporting only for graph focus.
 use super::App;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
@@ -26,6 +26,10 @@ impl Selection {
 }
 
 impl App<'_> {
+    pub(super) fn captures_mouse(&self) -> bool {
+        self.graph_focused && !self.selection.active
+    }
+
     pub(super) fn select_text(&mut self, active: bool) {
         self.selection.set_active(active);
         self.graph.dragging = false;
@@ -33,7 +37,7 @@ impl App<'_> {
     }
 
     pub(super) fn graph_mouse(&mut self, event: MouseEvent) {
-        if self.selection.active {
+        if !self.captures_mouse() {
             return;
         }
         if matches!(event.kind, MouseEventKind::Down(MouseButton::Left))
@@ -93,6 +97,25 @@ mod tests {
     use crossterm::event::KeyModifiers;
     use crossterm::event::{Event, KeyCode, KeyEvent};
     use ratatui::layout::Rect;
+
+    #[test]
+    fn mouse_capture_follows_graph_focus_and_copy_mode() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = super::super::tests::app(&settings);
+        let mut running = None;
+        let mut press = |code, modifiers| {
+            app.event(Event::Key(KeyEvent::new(code, modifiers)), &mut running)
+                .unwrap();
+            app.captures_mouse()
+        };
+        assert!(!press(KeyCode::Null, KeyModifiers::NONE));
+        assert!(press(KeyCode::Char('g'), KeyModifiers::CONTROL));
+        assert!(!press(KeyCode::F(6), KeyModifiers::NONE));
+        assert!(press(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!press(KeyCode::Tab, KeyModifiers::NONE));
+        assert!(press(KeyCode::Char('g'), KeyModifiers::CONTROL));
+        assert!(!press(KeyCode::Esc, KeyModifiers::NONE));
+    }
 
     #[test]
     fn selection_holds_the_view_until_resumed() {
@@ -201,6 +224,7 @@ mod tests {
     fn header_selection_click_and_resize_preserve_divider_width() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = super::super::tests::app(&settings);
+        app.graph_focused = true;
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 30)).unwrap();
         terminal
@@ -226,7 +250,7 @@ mod tests {
         assert_eq!(app.graph.preferred_width, Some(70));
     }
     #[test]
-    fn divider_drag_works_without_graph_focus_and_clamps_both_panes() {
+    fn divider_drag_requires_graph_focus_and_clamps_both_panes() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = super::super::tests::app(&settings);
         app.graph.body = Rect::new(0, 1, 200, 30);
@@ -239,8 +263,8 @@ mod tests {
         };
         app.graph_mouse(event(MouseEventKind::Down(MouseButton::Left), 120));
         app.graph_mouse(event(MouseEventKind::Drag(MouseButton::Left), 80));
-        assert_eq!(app.graph.preferred_width, Some(120));
-        assert!(!app.graph_focused, "resizing does not move keyboard focus");
+        assert_eq!(app.graph.preferred_width, None);
+        assert!(!app.graph.dragging);
         app.graph_focused = true;
         app.graph_mouse(event(MouseEventKind::Down(MouseButton::Left), 120));
         app.graph_mouse(event(MouseEventKind::Drag(MouseButton::Left), 80));

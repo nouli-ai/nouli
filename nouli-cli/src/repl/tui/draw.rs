@@ -126,22 +126,25 @@ pub(super) fn screen(frame: &mut Frame, app: &mut App, running: Option<&Running>
 fn draw_header(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     let action = if app.selection.active {
         " resume · Esc/F6 "
-    } else {
+    } else if app.graph_focused {
         " select text · F6 "
+    } else {
+        " hold view · F6 "
     };
     let width = u16::try_from(action.width()).unwrap_or(u16::MAX);
-    app.selection.button = (area.width >= width + 20).then(|| Rect {
+    let action_area = (area.width >= width + 20).then(|| Rect {
         x: area.right() - width,
         width,
         ..area
     });
+    app.selection.button = action_area.filter(|_| app.captures_mouse());
     let title_area = Rect {
         width: area
             .width
-            .saturating_sub(app.selection.button.map_or(0, |area| area.width)),
+            .saturating_sub(action_area.map_or(0, |area| area.width)),
         ..area
     };
-    if let Some(button) = app.selection.button {
+    if let Some(button) = action_area {
         frame.render_widget(Paragraph::new(Span::styled(action, theme.accent)), button);
     }
     let label = render::clean(&app.repl.session.label);
@@ -1014,8 +1017,10 @@ fn draw_graph(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         .title(Line::from(vec![
             Span::styled(" decisions", title),
             Span::styled(
-                if app.graph.divider.is_some() {
+                if app.graph.divider.is_some() && app.graph_focused {
                     " · drag divider · Ctrl-G"
+                } else if app.graph.divider.is_some() {
+                    " · Ctrl-G to resize"
                 } else {
                     " · Ctrl-G"
                 },
@@ -1188,9 +1193,16 @@ mod tests {
         let mut app = app(&settings);
         for width in [24, 40, 80, 160] {
             app.select_text(false);
+            app.graph_focused = false;
             let normal = shown(&mut app, width, 24);
+            assert!(app.selection.button.is_none());
             if width >= 40 {
-                assert!(normal[0].contains("select text"));
+                assert!(normal[0].contains("hold view"));
+            }
+            app.graph_focused = true;
+            let focused = shown(&mut app, width, 24);
+            if width >= 40 {
+                assert!(focused[0].contains("select text"));
                 assert!(app.selection.button.is_some());
             } else {
                 assert!(app.selection.button.is_none());
@@ -1481,7 +1493,10 @@ mod tests {
             "{screen}"
         );
         assert!(!screen.contains("Options"), "{screen}");
-        assert!(screen.contains("│ decisions · drag divider"), "{screen}");
+        assert!(
+            screen.contains("│ decisions · Ctrl-G to resize"),
+            "{screen}"
+        );
         app.form.kind = Kind::Score;
         app.form.options = vec!["low".into(), "high".into()];
         let screen = shown(&mut app, 140, 20).join("\n");
