@@ -16,6 +16,12 @@ npm run preview  # serves dist/
 
 Pushing changes under `site/` to `main` builds and deploys the site through [the Pages workflow](../.github/workflows/pages.yml). CI builds it on every pull request that touches `site/`.
 
+The version beneath the home-page install commands is fetched from GitHub's
+`releases/latest` API when the page is viewed, using the same approach as
+Handshake. It does not read the workspace version. Offline, without JavaScript,
+or if the request fails or exceeds ten seconds, the link reads “latest release”.
+Building the site requires no release lookup.
+
 ## Layout
 
 - `index.html`, `guide/`, `examples/`: one HTML page per route. Vite picks up every directory under `examples/` as a page.
@@ -67,9 +73,46 @@ node scripts/replay.mjs --example recall --nouli ../target/debug/nouli --check  
 
 The page's commands run through `sh`. A page may print apostrophes inside single-quoted text without escaping them; the script escapes those before running so the command still works. The commands call `nouli`, so `--nouli` names the binary they use.
 
+## Home-page CLI replay
+
+The home page shows the real full-screen app on a teal bench. `src/cli-replay.js`
+renders `src/data/cli/tui.json` as selectable text at 3× speed, in the
+app's own recorded colors (`src/term-colors.js`). It starts
+once visible; reduced-motion visitors get the finished session. Clicking the
+terminal never pauses it; press Space to pause or resume, and Enter to restart.
+
+The recording runs a five-turn workshop session: a yes/no question, two
+branches, a blend and a score. Its right-hand pane is the app's own decision
+graph. Beneath the terminal, `src/home.js` draws the same session from
+`src/data/cli/graph.json` with the instrument figure (`src/figure.js`): x/y
+rulers, a crosshair on the selected turn, and its readout. The figure follows
+the replay as each answer arrives. Clicking a box in the TUI's graph pane
+lightens that box and selects the same turn in the figure without pausing.
+Screens 700 px wide or less load `tui-narrow.json`, a 64-column recording of
+the transcript only.
+
+Re-record both after TUI changes. The recorder drives the app in a PTY and
+answers from the saved answers in `graph.json` through a local stub, so it uses
+no credentials or provider calls. It needs Python with `pyte`:
+
+```sh
+node scripts/record-cli-replay.mjs --nouli ../target/release/nouli --python /path/to/python
+node scripts/record-cli-replay.mjs --nouli ../target/release/nouli --python /path/to/python --columns 64
+npm test
+```
+
+The wide recording also refreshes `graph.json` from its own store, so the turn
+IDs shown in the graph pane match the figure. `provenance.json` records each
+recording's binary, size and timing. The illustrative answers come from saved
+live TypeSafe runs; the score turn was answered live once.
+
+Replay updates use a fixed 60 Hz clock, with cursor positions interpolated on
+each display frame. Hidden tabs pause playback, and stalled frames catch up by
+at most 100 ms. Text scrambling also keeps a 60 Hz cadence on faster displays.
+
 ## Current TUI captures
 
-The home page, guide and walkthroughs display real 140-column and 80-column PTY
+The guide and walkthroughs display real 140-column and 80-column PTY
 captures of the current full-screen app. Form, Answer and Decisions show the
 actual before-send form, saved result, and narrow graph focus. Static text
 fallbacks keep walkthrough captures readable without JavaScript.

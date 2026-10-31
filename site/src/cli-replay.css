@@ -1,0 +1,36 @@
+.cli-replay { padding:56px 28px 56px; }
+.replay-head { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:48px; align-items:end; margin-bottom:28px; }
+.cli-replay h2 { font-size:clamp(30px, 3.4vw, 52px); }
+.replay-head .thesis { font-weight:300; font-stretch:87%; font-size:clamp(20px, 2.1vw, 30px); line-height:1.15; letter-spacing:-0.01em; max-width:34ch; }
+.replay-head .thesis b { font-weight:800; }
+
+/* The bench: a teal surface with ruler ticks on its edges, the terminal on top
+   and the session's graph beneath it. */
+.bench { position:relative; display:grid; grid-template-columns:minmax(0, 1fr); gap:28px; padding:30px 30px 30px 34px; background:var(--teal); color:var(--on-teal); }
+.bench::before, .bench::after { content:""; position:absolute; pointer-events:none; opacity:.55; }
+.bench::before { left:34px; right:30px; top:9px; height:12px; background:repeating-linear-gradient(90deg, var(--on-teal) 0 1px, transparent 1px 10px) top/100% 6px no-repeat, repeating-linear-gradient(90deg, var(--on-teal) 0 1px, transparent 1px 100px) top/100% 12px no-repeat; }
+.bench::after { top:30px; bottom:30px; left:9px; width:12px; background:repeating-linear-gradient(0deg, var(--on-teal) 0 1px, transparent 1px 10px) left/6px 100% no-repeat, repeating-linear-gradient(0deg, var(--on-teal) 0 1px, transparent 1px 100px) left/12px 100% no-repeat; }
+
+.bench .term { position:relative; container-type:inline-size; font-family:var(--term); font-stretch:100%; box-shadow:0 10px 0 #0003; }
+.cli-replay-screen { display:block; position:relative; margin:0; padding:0; height:auto; overflow:visible; background:#15191d; color:#d1d5db; border:0; font:1em/1.35 var(--term); font-stretch:100%; white-space:pre; }
+.cli-replay-screen > code { font:inherit; font-stretch:100%; }
+.cli-replay-row { display:block; height:1.35em; }
+.cli-replay-cursor { position:absolute; width:1ch; height:1.35em; background:#d1d5db; mix-blend-mode:difference; pointer-events:none; }
+.cli-replay-screen:focus-visible { outline:2px solid #d1d5db; outline-offset:-2px; }
+/* Before the script sizes it, fit the static screen to the bench width. */
+.bench .term:not([style]) { font-size:calc(100cqw / 134.9); }
+
+/* The selected box in the TUI's graph pane: a light background where the app drew it. */
+.term-mark { position:absolute; z-index:1; background:#ffffff26; pointer-events:none; }
+.bench .term[data-hover="true"] { cursor:pointer; }
+
+/* The previous version's graph, drawn from the same session, below the terminal. */
+.bench .fig { border-top:1px solid var(--on-teal-dim); }
+
+@media (max-width: 960px) {
+  .replay-head { grid-template-columns:minmax(0, 1fr); gap:20px; }
+  .cli-replay { padding-top:40px; }
+  .bench { padding:24px 16px 20px 22px; }
+  .bench::after { display:none; }
+}
+@media (max-width: 560px) { .cli-replay { padding-left:16px; padding-right:16px; } }
