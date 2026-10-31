@@ -269,7 +269,7 @@ export function answer(entry, id, asked) {
   return { type: "score", score: value, probabilities: Object.fromEntries(levels.map((p, i) => [String(i), p])), ...out };
 }
 
-export function startStub(recorded) {
+export function startStub(recorded, { tui = false } = {}) {
   const failures = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -281,14 +281,25 @@ export function startStub(recorded) {
       };
       if (request.method !== "POST" || request.url !== "/v1/systemone") return reply(404, { error: "unknown route" });
       const asked = JSON.parse(body).questions;
-      const entry = match(recorded, asked);
+      let aliases = Object.fromEntries(Object.keys(asked).map((id) => [id, id]));
+      let entry = match(recorded, asked);
+      // The form assigns IDs. Match the same recorded wording/types/labels,
+      // then return the original probabilities under the form's actual IDs.
+      if (!entry && tui) {
+        for (const candidate of recorded.filter((r) => !r.used && r.node)) {
+          const pairs = Object.entries(asked).map(([id, q]) => [id, candidate.node.questions.find((saved) => sameQuestion(saved, q))?.id]);
+          if (pairs.some(([, id]) => !id) || new Set(pairs.map(([, id]) => id)).size !== candidate.node.questions.length) continue;
+          const canonical = Object.fromEntries(pairs.map(([actual, id]) => [id, asked[actual]]));
+          if (match([candidate], canonical)) { entry = candidate; aliases = Object.fromEntries(pairs); break; }
+        }
+      }
       if (!entry) {
-        const summary = Object.entries(asked).map(([id, q]) => `${id}: ${promptOf(q)}`).join("; ");
+        const summary = Object.entries(asked).map(([id, q]) => `${id} (${q.type}): ${promptOf(q)} ${JSON.stringify(q.criteria ?? [])}`).join("; ");
         failures.push(`no recorded result matches this call: ${summary}`);
         return reply(500, { error: "no recording" });
       }
       entry.used = true;
-      const answers = Object.fromEntries(Object.entries(asked).map(([id, q]) => [id, answer(entry, id, q)]));
+      const answers = Object.fromEntries(Object.entries(asked).map(([id, q]) => [id, answer(entry, aliases[id], q)]));
       reply(200, { model: MODEL, answers, usage: { input_tokens: 100, output_tokens: 20 } });
     });
   });

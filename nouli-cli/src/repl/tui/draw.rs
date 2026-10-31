@@ -981,10 +981,10 @@ fn draw_graph(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         .title(Line::from(vec![
             Span::styled(" decisions", title),
             Span::styled(
-                if app.graph_focused && app.graph.divider.is_some() {
-                    " · drag divider"
+                if app.graph.divider.is_some() {
+                    " · drag divider · Ctrl-G"
                 } else {
-                    " · Ctrl-G resize"
+                    " · Ctrl-G"
                 },
                 theme.dim,
             ),
@@ -1073,9 +1073,9 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App, running: Option<&Runnin
         )),
         (None, None) if app.graph_focused => Line::from(Span::styled(
             if app.graph.divider.is_some() {
-                " drag divider to resize · arrows / wheel scroll · Esc selects text"
+                " drag divider to resize · arrows / wheel scroll · Esc returns to form"
             } else {
-                " arrows / wheel scroll · Esc selects text"
+                " arrows / wheel scroll · Esc returns to form"
             },
             theme.dim,
         )),
@@ -1390,7 +1390,7 @@ mod tests {
             "{screen}"
         );
         assert!(!screen.contains("Options"), "{screen}");
-        assert!(screen.contains("│ decisions · Ctrl-G"), "{screen}");
+        assert!(screen.contains("│ decisions · drag divider"), "{screen}");
         app.form.kind = Kind::Score;
         app.form.options = vec!["low".into(), "high".into()];
         let screen = shown(&mut app, 140, 20).join("\n");

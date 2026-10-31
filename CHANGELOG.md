@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Resize the graph by pressing Ctrl-G and dragging its divider; Esc returns to normal terminal text selection. Keep the chosen width through session changes and clamp it when the terminal shrinks.
+- Refresh the Pages home page, guide and walkthroughs with captures of the current full-screen TUI. Add a simple three-turn meeting example alongside the complex multi-session examples, preserving recorded model answers.
+- Resize the graph by dragging its divider at any time, including while editing a field. Ctrl-G remains keyboard navigation; use the terminal’s selection modifier for native text selection. Keep the chosen width through session changes and clamp it when the terminal shrinks.
 - Connect referenced answers to the questions that use them in the TUI and `nouli view`, including after reopening a destination session. Load the exact saved source history without blending sessions; separate question cards where necessary and mark reference edges with dashed arrows in Mermaid.
 - Search saved conversation text with `@`, including context, structured values, options and answers across local sessions. Show matching excerpts, carry the selected saved state into the next decision, and preview historical input with image filenames and scrolling in Browse history, including narrow terminals and long drafts.
 - Show the latest saved question included in the next TUI request, including Yes/No follow-ups, and retain its answer and used images alongside new evidence during context reduction.
@@ -17,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use Shift-Tab as the only answer-type shortcut, cycling left to right from any field, with a short hint beside the selector. Tab navigates fields and options/levels.
 - In Options/Levels, Enter adds the next row; a second consecutive Enter sends. Typing, pasting, or navigation continues editing without sending.
 - Simplify the terminal view with a `nouli` header, plain question text, hidden generated question IDs, one-line reuse notices, shorter key hints, and one model name. Enter sends from Context/Question when ready; in Options/Levels, Enter adds a row and a second Enter sends. Tab moves between fields and list items.
-- Let mouse drag select terminal text while editing the form. Navigate form fields with the keyboard; mouse capture is limited to graph focus.
+- Use the terminal’s selection modifier for native text selection (Option-drag in iTerm2). Navigate form fields with the keyboard; mouse reporting lets the divider resize without changing focus.
 - Use Citrus accents for answer types: lime for Yes/No, cyan for Choose one, and rose for Score, including results and decision cards. Color-free output keeps text emphasis.
 - Keep the selected answer type after sending. In the terminal form, leaving a choice's options or a score's levels empty reuses the latest matching question's exact list and rubric, with a visible notice. Leave its question empty too to ask it again with new context. Enter a new list to replace it. Yes/No questions stay fresh, and earlier answers remain in history.
 - Ask questions in plain text in the full-screen form, with automatic IDs and literal punctuation. Shift-Tab cycles answer types left to right from any field; Tab navigates fields and moves through options/levels, adding a row after the last filled item. Ctrl-S / F5 submits from any field, including context still being edited.

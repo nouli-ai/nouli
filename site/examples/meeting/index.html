@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A meeting trip · Nouli</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body data-graph="meeting" data-view="tui">
+    <header class="top">
+      <a class="mark" href="../../">NOULI</a>
+      <nav>
+        <a href="../../guide/#interactive">interactive</a
+        ><a href="../../guide/">guide</a
+        ><a href="../" aria-current="page">examples</a
+        ><a href="https://github.com/standing-desks/nouli">github</a>
+      </nav>
+    </header>
+    <main class="walk">
+      <article class="story prose">
+        <p class="crumb"><a href="../">Examples</a> / Simple</p>
+        <h1 class="display small">A meeting trip</h1>
+        <p class="lede">
+          One session, two travel options, and one changed fact. Start with a
+          choice, check a yes/no question, then revise the plan using the same
+          options.
+        </p>
+        <p>
+          <a href="../../guide/#provider">Configure a provider</a>, then open
+          <code>nouli open travel</code>. Type plain text in the form. These
+          screens replay the saved Jev 1.14 answers from the home-page travel
+          recording; your live answers and probabilities may differ.
+        </p>
+        <div class="cmd-only">
+          <p>For the shell version, choose a fresh session prefix:</p>
+          <pre><code>example=meeting</code></pre>
+        </div>
+        <div class="views" role="group" aria-label="Show the steps as">
+          <span>show the steps as</span
+          ><button type="button" data-view="tui" aria-pressed="true">
+            interactive</button
+          ><button type="button" data-view="commands" aria-pressed="false">
+            commands
+          </button>
+          <p class="tui-only">
+            Add context, press Tab for the question, use Shift-Tab to choose the
+            answer type, then enter options and send. Use Form, Answer and
+            Decisions below to inspect the captured screens.
+          </p>
+        </div>
+        <section class="step" id="step-1" data-node="0">
+          <h2><span class="num">01</span>Choose the cheaper trip</h2>
+          <p>
+            Put the travel facts in Context. Press Tab, write the question, and
+            use Shift-Tab for Choose one. Enter the two options on separate
+            rows. Enter adds another option; a second consecutive Enter or
+            Ctrl-S sends.
+          </p>
+          <div class="tui-snapshot" data-capture="meeting" data-step="0">
+            <pre
+              class="tui-static"
+              aria-label="Captured current Nouli TUI"
+            ><code> nouli 0.4.0 · travel
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
+taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
+arrives on time.
+travel › How should I travel to the meeting?
+  turn 1 · 1 fact · 1 question
+   ▶ Take the train                   ████████████████████ 1.00
+     Take a taxi                                           0.00
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ How should I travel to the meeting?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    How should I travel to the meeting?
+── Options · using previous 2 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre>
+          </div>
+          <pre><code>nouli --format text new &quot;$example-travel&quot; \
+  &#x27;The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.&#x27; \
+  -q &#x27;transport: How should I travel to the meeting? [Take the train, Take a taxi]&#x27;</code></pre>
+          <p class="caption">Output</p>
+          <pre class="out"><code>  turn 1 · 1 fact · 1 question
+  transport   ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
+  typesafe/jev-1.14.0 · session 01a18fdc-8d7d-70fa-9388-290a9067c6be · turn 01a18fdc-8d81-77bc-8f5d-178ec51987fb</code></pre>
+        </section>
+        <section class="step" id="step-2" data-node="1">
+          <h2><span class="num">02</span>Add the cancellation</h2>
+          <p>
+            Add the cancellation in Context, then Tab to a fresh question. Use
+            Shift-Tab to return to Yes / No. The earlier answer stays in
+            context; this question asks whether the train still gets you there.
+          </p>
+          <div class="tui-snapshot" data-capture="meeting" data-step="1">
+            <pre
+              class="tui-static"
+              aria-label="Captured current Nouli TUI"
+            ><code> nouli 0.4.0 · travel
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
+taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
+arrives on time.
+travel › How should I travel to the meeting?
+  turn 1 · 1 fact · 1 question
+   ▶ Take the train                   ████████████████████ 1.00
+     Take a taxi                                           0.00
+travel › The train has been cancelled. The taxi is still available at 70 USD.
+travel › Will the train get me to the meeting on time?
+  turn 2 · 1 fact · 1 question
+     yes                              █▊                   0.09
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ Will the train get me to the meeting on time?
+  › Add context or drop a file
+── Question · [Yes / No] Choose one Score · Shift-Tab → ────────────────────────
+    Ask a question
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre>
+          </div>
+          <pre><code>nouli --format text add &quot;$example-travel&quot; \
+  &#x27;The train has been cancelled. The taxi is still available at 70 USD.&#x27; \
+  -q &#x27;on_time: Will the train get me to the meeting on time?&#x27;</code></pre>
+          <p class="caption">Output</p>
+          <pre class="out"><code>  turn 2 · 1 fact · 1 question
+  on_time       yes                              █▊                   0.09
+  typesafe/jev-1.14.0 · session 01a18fdc-8d7d-70fa-9388-290a9067c6be · turn 01a18fdc-8d8e-705f-a85f-e224d1f0d69b</code></pre>
+        </section>
+        <section class="step" id="step-3" data-node="2">
+          <h2><span class="num">03</span>Reconsider with the same options</h2>
+          <p>
+            Switch back to Choose one and write the follow-up. Enter Take the
+            train and Take a taxi as the two options again after changing back
+            from Yes / No. The recorded answer moves to the taxi.
+          </p>
+          <div class="tui-snapshot" data-capture="meeting" data-step="2">
+            <pre
+              class="tui-static"
+              aria-label="Captured current Nouli TUI"
+            ><code> nouli 0.4.0 · travel
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
+taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
+arrives on time.
+travel › How should I travel to the meeting?
+  turn 1 · 1 fact · 1 question
+   ▶ Take the train                   ████████████████████ 1.00
+     Take a taxi                                           0.00
+travel › The train has been cancelled. The taxi is still available at 70 USD.
+travel › Will the train get me to the meeting on time?
+  turn 2 · 1 fact · 1 question
+     yes                              █▊                   0.09
+travel › How should I travel to the meeting now?
+  turn 3 · 0 facts · 1 question
+     Take the train                                        0.00
+   ▶ Take a taxi                      ████████████████████ 1.00
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ How should I travel to the meeting now?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    How should I travel to the meeting now?
+── Options · using previous 2 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre>
+          </div>
+          <pre><code>nouli --format text ask &quot;$example-travel&quot; \
+  -q &#x27;rebook: How should I travel to the meeting now? [Take the train, Take a taxi]&#x27;</code></pre>
+          <p class="caption">Output</p>
+          <pre class="out"><code>  turn 3 · 0 facts · 1 question
+  rebook        Take the train                                        0.00
+              ▶ Take a taxi                      ████████████████████ 1.00
+  typesafe/jev-1.14.0 · session 01a18fdc-8d7d-70fa-9388-290a9067c6be · turn 01a18fdc-8d9b-7449-80e2-b242cbdd3859</code></pre>
+        </section>
+        <h2>Go further</h2>
+        <p>
+          For a complex workflow, follow the
+          <a href="../recall/">food-recall response</a> across several sessions,
+          or the <a href="../robot-picking/">robot-picking episode</a> through
+          repeated sensor updates. Use <code>@</code> to find local files or
+          exact saved answers when preparing your own next decision.
+        </p>
+      </article>
+      <aside
+        class="instrument"
+        id="figure"
+        aria-label="Recorded decision graph"
+      ></aside>
+    </main>
+    <footer class="site">
+      <span>MIT</span><a href="../../guide/">guide</a><a href="../">examples</a>
+    </footer>
+    <script type="module" src="/src/example.js"></script>
+  </body>
+</html>

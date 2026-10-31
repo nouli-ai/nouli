@@ -2,11 +2,10 @@
 import hero from "./data/hero.json";
 import { Figure } from "./figure.js";
 import { copyButtons } from "./copy.js";
-import { playTranscript } from "./repl.js";
-import session from "./data/repl-session.txt?raw";
+import { playCaptures } from "./tui.js";
 
 copyButtons();
-playTranscript(document.getElementById("screen"), session, document.getElementById("replay"));
+playCaptures(document.getElementById("screen"), "meeting", document.getElementById("replay"));
 
 const POSITIONS = [{ x: 0, y: 0 }, { x: 290, y: 0 }, { x: 0, y: 170 }, { x: 0, y: 340 }, { x: 145, y: 510 }, { x: 145, y: 680 }];
 const PLAN = 5;

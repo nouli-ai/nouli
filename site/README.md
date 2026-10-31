@@ -67,16 +67,35 @@ node scripts/replay.mjs --example recall --nouli ../target/debug/nouli --check  
 
 The page's commands run through `sh`. A page may print apostrophes inside single-quoted text without escaping them; the script escapes those before running so the command still works. The commands call `nouli`, so `--nouli` names the binary they use.
 
-## Interactive view of walkthroughs
+## Current TUI captures
 
-Walkthroughs show their steps as interactive lines by default, with a toggle for the commands. `scripts/repl-view.mjs` turns each step's command into what you would type in `nouli open`: `/new`, `/blend A B as NAME`, `/use`, the facts, and then the question, which sends the turn. It runs them all in one `nouli open` session against the offline stub and writes each step's part of the transcript into a `<pre class="repl">` block. Session names drop the `$example-` prefix. A `whatif` step shows its command instead. The script fails if any turn prints differently from the step's recorded output. Run it after replaying a walkthrough:
+The home page, guide and walkthroughs display real 140-column and 80-column PTY
+captures of the current full-screen app. Form, Answer and Decisions show the
+actual before-send form, saved result, and narrow graph focus. Static text
+fallbacks keep walkthrough captures readable without JavaScript.
+
+`capture-tui.py` needs Python with `pyte` (a recording-only dependency). With a
+current release build and that interpreter, run from `site/`:
 
 ```sh
-node scripts/repl-view.mjs --example all --nouli ../target/debug/nouli
-node scripts/repl-view.mjs --example all --nouli ../target/debug/nouli --check  # compare, write nothing
+node scripts/tui-capture.mjs --example all --nouli ../target/release/nouli --python /path/to/python
+npm test
+npm run build
 ```
 
-The home page's terminal plays `src/data/repl-session.txt`, a session recorded with live model calls through `nouli open`. Record a new one with real facts and questions and paste the output there.
+Each walkthrough runs in a temporary HOME/store against the existing offline
+recordings in `src/data/examples/`. The stub maps generated form IDs to the
+same recorded prompts, types and answer labels, preserving recorded answers and
+probabilities; unmatched calls fail the capture. No provider credentials or
+live calls are used. Existing graph recordings remain unchanged. The simple
+meeting example reuses three travel answers from `src/data/hero.json`, replayed
+through the CLI export tools before its TUI capture.
+
+Capture data lives in `src/data/tui/`; `src/tui.js` renders its terminal cells
+with selectable text, native horizontal scrolling and responsive wide/narrow
+screens. `npm test` checks coverage, form fields, type colors and the absence of
+obsolete prompt-based captures. Browser validation should exercise all three
+views, graph navigation, command toggles, mobile layouts and reduced motion.
 
 ## Walkthroughs
 

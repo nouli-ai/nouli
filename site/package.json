@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test scripts/install.test.mjs scripts/readme-hero.test.mjs",
+    "test": "node --test scripts/install.test.mjs scripts/readme-hero.test.mjs scripts/tui.test.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

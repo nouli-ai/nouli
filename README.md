@@ -101,40 +101,43 @@ The [recall walkthrough](https://standing-desks.github.io/nouli/examples/recall/
 
 ## What does a session look like?
 
-`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. Bare `nouli` and `/new` create a session with a unique name like `curie-7-diffraction`; explicit names still work. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Mouse drag selects terminal text, and arrows move between fields. Press Ctrl-G and drag the divider to resize the graph; Esc returns to text selection. Referenced answers connect to the question using them, including across sessions and after reopening. Context previews the latest included question and answer history. Images display their filenames. Use `@` to find a file under the launch folder, or drop a file into the focused field. DOCX/PPTX text and tables, spreadsheets, CSV/TSV and SVG images are supported; PDF text needs Poppler and legacy DOC/PPT needs LibreOffice. Select a file to review it before sending; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. In this session, from the [robot-picking walkthrough](https://standing-desks.github.io/nouli/examples/robot-picking/), a warehouse arm picks a shampoo bottle in a polybag:
+`nouli open catalog` opens a session full screen. Add context, write a plain-text question, choose an answer type, and press Enter to send. Bare `nouli` and `/new` create a session with a unique name like `curie-7-diffraction`; explicit names still work. The simple `nouli` header shows the session; generated question IDs stay out of the transcript. No bracket syntax is needed in the form. Drag the divider to resize the graph at any time; Ctrl-G focuses it for keyboard scrolling. Use the terminal’s selection modifier to copy text (Option-drag in iTerm2), and arrows to move between fields. Referenced answers connect to the question using them, including across sessions and after reopening. Context previews the latest included question and answer history. Images display their filenames. Use `@` to find a file under the launch folder, or drop a file into the focused field. DOCX/PPTX text and tables, spreadsheets, CSV/TSV and SVG images are supported; PDF text needs Poppler and legacy DOC/PPT needs LibreOffice. Select a file to review it before sending; paste a list into Options to fill several options at once. The same session can also be driven through commands and piped input. The [simple meeting example](https://standing-desks.github.io/nouli/examples/meeting/) shows three turns in one session. This current TUI capture replays its recorded travel answer:
 
 ```text
-$ nouli open catalog
-new session "catalog" · /help for commands
+ nouli 0.4.0 · travel
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
+taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
+arrives on time.
+travel › How should I travel to the meeting?
+  turn 1 · 1 fact · 1 question
+   ▶ Take the train                   ████████████████████ 1.00
+     Take a taxi                                           0.00
 
-catalog › Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.
-catalog › ?grasp: Which grasp should the arm prefer for this item? [Suction on the flat label area of the bottle, Suction on any flat bag surface, A two-finger pinch on the bottle neck]
-  turn 1 · 1 fact · 1 question
-  grasp       ▶ Suction on the flat label area … ███████████████████▊ 0.99
-                Suction on any flat bag surface                       0.00
-                A two-finger pinch on the bottl… ▎                    0.01
-catalog › /new policy
-  new session "policy"
-policy › Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.
-policy › ?overweight: May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?
-  turn 1 · 1 fact · 1 question
-  overweight    yes                              ▋                    0.03
-policy › /blend catalog policy as pick
-  new session "pick" from catalog + policy
-pick › Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.
-pick › ?action: What should the arm do first? [Nudge the covering item aside to expose the target's label, Attempt suction on the visible bag film, Request remote assistance now]
-  turn 1 · 1 fact · 1 question
-  action      ▶ Nudge the covering item aside t… ████████████████▊    0.84
-                Attempt suction on the visible … ▋                    0.03
-                Request remote assistance now    ██▋                  0.13
-pick › Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.
-pick › ?next: What should the arm do next? [Try a two-finger pinch on the bottle neck, Retry suction on the same spot, Stop and request remote assistance]
-  turn 2 · 1 fact · 1 question
-  next        ▶ Try a two-finger pinch on the b… ██████████████▋      0.73
-                Retry suction on the same spot   █████                0.25
-                Stop and request remote assista… ▍                    0.02
-pick › /quit
-  bye
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ How should I travel to the meeting?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    How should I travel to the meeting?
+── Options · using previous 2 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help
 ```
 
 - **Facts wait for a question.** Plain lines are facts. A `?` line sends them with the question as one turn.

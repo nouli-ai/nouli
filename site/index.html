@@ -33,13 +33,46 @@
   <div class="repl-side">
     <p class="kicker">interactive mode</p>
     <h2 id="repl-title">Open a session.<br><span>Ask as you go.</span></h2>
-    <p>Type facts as you learn them. Start a line with <code>?</code> to ask a question, and the model answers right away with everything the session knows. Each question is asked once, so earlier answers stay as they were and later questions build on them. Correct a fact with <code>/replace</code>, or try a <code>/whatif</code> without saving it.</p>
-    <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open catalog</code><button class="copy" type="button" data-copy="nouli open catalog" aria-label="Copy the command that opens a session">copy</button></div>
-    <a class="more" href="guide/#interactive">interactive mode in the guide →</a>
+    <p>Add context, write a plain-text question, and choose Yes / No, Choose one or Score. Shift-Tab changes the type; Tab moves fields. Press Enter to send from Context or Question. In Options/Levels, Enter adds an item and a second Enter sends. Add new information to reconsider a choice using the same options.</p>
+    <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open travel</code><button class="copy" type="button" data-copy="nouli open travel" aria-label="Copy the command that opens a session">copy</button></div>
+    <a class="more" href="examples/meeting/">start with a three-turn example →</a>
   </div>
   <div class="term">
-    <div class="term-bar"><span>nouli open catalog</span><button class="replay" type="button" id="replay">replay</button></div>
-    <pre class="screen" id="screen" tabindex="0" aria-label="A recorded interactive session"></pre>
+    <div class="term-bar"><span>nouli open travel</span><button class="replay" type="button" id="replay">replay</button></div>
+    <div id="screen" class="tui-snapshot" aria-label="Captured current Nouli TUI"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · travel
+travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
+taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
+arrives on time.
+travel › How should I travel to the meeting?
+  turn 1 · 1 fact · 1 question
+   ▶ Take the train                   ████████████████████ 1.00
+     Take a taxi                                           0.00
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+── Context · latest question included ──────────────────────────────────────────
+  ↳ How should I travel to the meeting?
+  › Add context or drop a file
+── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+    How should I travel to the meeting?
+── Options · using previous 2 ──────────────────────────────────────────────────
+  Press Enter to send
+ typesafe/jev-1.14.0 · Ready
+ Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
   </div>
 </section>
 
@@ -48,6 +81,7 @@
 <table class="index">
   <thead><tr><th>example</th><th>what it shows</th><th class="n">turns</th></tr></thead>
   <tbody>
+    <tr><td class="t"><a href="examples/meeting/">A meeting trip · simple</a></td><td>One session, a choice, a cancellation, and a follow-up</td><td class="n">03</td></tr>
     <tr><td class="t"><a href="examples/recall/">Food recall response</a></td><td>A customer's reply changes the recall plan</td><td class="n">09</td></tr>
     <tr><td class="t"><a href="examples/robot-picking/">Robotic picking exceptions</a></td><td>A picking arm decides when to ask a person</td><td class="n">07</td></tr>
     <tr><td class="t"><a href="examples/seed-investment/">Seed investment decision</a></td><td>Reference calls change a fund's recommendation</td><td class="n">08</td></tr>
@@ -66,8 +100,8 @@
       <p>On Linux, use the <a href="guide/#install">download installer</a>.</p></li>
     <li><b>Add a provider.</b> Define one in <code>~/.nouli/config.toml</code> (<a href="guide/#provider">how</a>), then log in once:
       <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli auth login typesafe</code><button class="copy" type="button" data-copy="nouli auth login typesafe" aria-label="Copy the login command">copy</button></div></li>
-    <li><b>Open a session.</b> Type a fact, then ask with <code>?</code>:
-      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open catalog</code><button class="copy" type="button" data-copy="nouli open catalog" aria-label="Copy the command that opens a session">copy</button></div></li>
+    <li><b>Open a session.</b> Add context and a plain question in the form:
+      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open travel</code><button class="copy" type="button" data-copy="nouli open travel" aria-label="Copy the command that opens a session">copy</button></div></li>
   </ol>
 </section>
 

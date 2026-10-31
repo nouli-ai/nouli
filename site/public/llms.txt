@@ -9,9 +9,22 @@ Rules for driving Nouli from an agent:
 - `nouli new NAME [FACT...] -q Q` starts a session; `--from A --from B` blends sessions, so their history is in view.
 - `nouli add SESSION [FACT...] -q Q` adds facts and asks one question; `nouli ask SESSION -q Q` asks without new facts; `nouli whatif SESSION [FACT...] -q Q` asks and saves nothing.
 - Each command asks exactly one `-q` question, in one call. A question is one line: `id: prompt [a, b]` for a choice, `id: prompt <low, high>` for an ordered score, `id: prompt` for yes/no.
-- Each question is asked once; to decide again, ask a new question. Earlier answers stay as they were.
+- A later turn can revisit a question with new information. Earlier saved answers stay unchanged.
 - Add `--json` to any command for a version-1 report. `--input FILE` takes a complete request instead of facts and `-q`. `--request-id KEY` replays a completed turn instead of calling the model again.
 - `nouli facts SESSION`, `nouli context SESSION`, and `nouli view SESSION` show the numbered facts, what reached the model, and the decision graph.
+
+## Full-screen TUI
+
+`nouli` starts a named session; `nouli open NAME` resumes or creates one.
+Type plain text in Context and Question. Shift-Tab cycles Yes/No, Choose one
+and Score. Tab moves fields and options. Enter sends from Context/Question;
+in Options/Levels, Enter adds an item and a second consecutive Enter sends.
+Ctrl-S/F5 sends from any field. Empty options/levels reuse the prior list with
+a visible notice; Yes/No questions remain fresh. `@` finds local files under
+the launch directory and saved answers across the selected local ledger.
+Selection snapshots inputs without sending. `/rename NAME` renames the current
+session. Drag the graph divider at any time; Ctrl-G focuses graph keyboard
+navigation. Native text selection uses the host terminal's modifier.
 
 ## Docs
 
