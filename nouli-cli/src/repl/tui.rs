@@ -6,6 +6,7 @@ mod ansi;
 pub(crate) mod attachments;
 mod draw;
 mod form;
+mod greeter;
 mod mouse;
 mod references;
 mod sessions;
