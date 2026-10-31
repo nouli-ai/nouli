@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
@@ -6,11 +6,7 @@ const examples = readdirSync(resolve(import.meta.dirname, "examples"), { withFil
   .filter((d) => d.isDirectory())
   .map((d) => [`examples/${d.name}`, resolve(import.meta.dirname, "examples", d.name, "index.html")]);
 
-// The release the install commands fetch, from the workspace manifest.
-const version = readFileSync(resolve(import.meta.dirname, "../Cargo.toml"), "utf8").match(/^version = "([^"]+)"/m)[1];
-
 export default defineConfig({
-  plugins: [{ name: "nouli-version", transformIndexHtml: (html) => html.replaceAll("%NOULI_VERSION%", version) }],
   // Relative URLs let the same build work at any GitHub Pages path.
   base: "./",
   build: {

@@ -183,21 +183,24 @@ fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         Layout::vertical([Constraint::Min(0), Constraint::Length(height)]).areas(area);
     app.page = usize::from(top.height).max(1);
     app.transcript_width = usize::from(top.width).max(1);
+    // Short terminals skip the bee and keep all the space for output.
+    let greeter = if top.height < super::greeter::ROWS {
+        Vec::new()
+    } else {
+        super::greeter::lines(
+            top.width,
+            theme.color,
+            !app.form.is_empty() || !app.repl.queue.is_empty(),
+        )
+    };
     let rows = transcript(
+        &greeter,
         &app.transcript,
         usize::from(top.width),
         usize::from(top.height),
         &mut app.scroll,
     );
     frame.render_widget(Paragraph::new(rows), top);
-    if app.transcript.is_empty() {
-        super::greeter::draw(
-            frame,
-            top,
-            theme.color,
-            !app.form.is_empty() || !app.repl.queue.is_empty(),
-        );
-    }
     if app.references.picker.as_ref().is_some_and(|p| p.expanded)
         || app.references.inspected.is_some()
     {
@@ -886,16 +889,18 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
 }
 
 /// The transcript's last rows, `scroll` rows up from its end, wrapped to
-/// `width`. Only the lines it shows are wrapped, however long it grows;
-/// `scroll` stops at the transcript's start.
+/// `width`, with `header` as its first rows so it scrolls away with them.
+/// Only the lines it shows are wrapped, however long it grows; `scroll`
+/// stops at the header's start.
 fn transcript(
+    header: &[Line<'static>],
     lines: &[Line<'static>],
     width: usize,
     height: usize,
     scroll: &mut usize,
 ) -> Vec<Line<'static>> {
     let mut rows = Vec::new();
-    for line in lines.iter().rev() {
+    for line in header.iter().chain(lines).rev() {
         if rows.len() >= height + *scroll {
             break;
         }
@@ -1150,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bee_greets_then_leaves_room_for_output_and_short_terminals() {
+    fn the_bee_heads_the_transcript_and_scrolls_away_with_output() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = app(&settings);
         let screen = shown(&mut app, 80, 24).join("\n");
@@ -1162,10 +1167,23 @@ mod tests {
         let short = shown(&mut app, 80, 12).join("\n");
         assert!(!short.contains(">   _"), "{short}");
         assert!(short.contains("── Context"), "{short}");
+        // Output follows the bee, then scrolls it away like any other row.
         app.transcript.push(Line::from("An answer"));
+        let screen = shown(&mut app, 80, 24);
+        let bee = screen.iter().position(|row| row.contains(">   _"));
+        let answer = screen.iter().position(|row| row.contains("An answer"));
+        assert!(bee < answer && bee.is_some(), "{screen:?}");
+        app.transcript
+            .extend((0..20).map(|n| Line::from(format!("Line {n}"))));
         let screen = shown(&mut app, 80, 24).join("\n");
-        assert!(screen.contains("An answer"), "{screen}");
+        assert!(screen.contains("Line 19"), "{screen}");
         assert!(!screen.contains(">   _"), "{screen}");
+        app.scroll = 1000;
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(
+            screen.contains(">   _"),
+            "scrolling back reaches the bee: {screen}"
+        );
     }
 
     #[test]
@@ -1519,24 +1537,32 @@ mod tests {
         };
         let mut scroll = 0;
         assert_eq!(
-            text(transcript(&lines, 20, 3, &mut scroll)),
+            text(transcript(&[], &lines, 20, 3, &mut scroll)),
             ["7", "8", "9"]
         );
         scroll = 2;
         assert_eq!(
-            text(transcript(&lines, 20, 3, &mut scroll)),
+            text(transcript(&[], &lines, 20, 3, &mut scroll)),
             ["5", "6", "7"]
         );
         scroll = 100;
         assert_eq!(
-            text(transcript(&lines, 20, 3, &mut scroll)),
+            text(transcript(&[], &lines, 20, 3, &mut scroll)),
             ["0", "1", "2"]
         );
         assert_eq!(scroll, 7);
+        // A header is the transcript's first rows, and scrolling reaches it.
+        let header = [Line::from("h0"), Line::from("h1")];
+        scroll = 100;
+        assert_eq!(
+            text(transcript(&header, &lines, 20, 3, &mut scroll)),
+            ["h0", "h1", "0"]
+        );
+        assert_eq!(scroll, 9);
         let long = [Line::from("aaaa bbbb cccc")];
         let mut scroll = 0;
         assert_eq!(
-            text(transcript(&long, 5, 3, &mut scroll)),
+            text(transcript(&[], &long, 5, 3, &mut scroll)),
             ["aaaa ", "bbbb ", "cccc"]
         );
     }

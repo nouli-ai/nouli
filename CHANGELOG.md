@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Keep the TUI's bee greeter at the top of the transcript, so output scrolls it away instead of replacing it; scrolling back reveals it again.
+
 ## [0.4.2] - 2026-10-30
 
 ### Added

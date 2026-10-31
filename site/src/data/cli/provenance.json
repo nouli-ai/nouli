@@ -1,0 +1,32 @@
+{
+  "wide": {
+    "application": "nouli 0.4.2",
+    "binary_sha256": "17a6794ddfd229916322bb392124c066d0748e4fcafdd78bfb607ffe955cfd46",
+    "capture": "Native PTY replay of saved TypeSafe answers through a local stub",
+    "live_provider_calls": 0,
+    "terminal": {
+      "columns": 224,
+      "lines": 46,
+      "displayed_lines": 44
+    },
+    "steps": 5,
+    "updates": 882,
+    "replay_milliseconds": 46229,
+    "recorded_at": "2026-10-31T17:01:51Z"
+  },
+  "narrow": {
+    "application": "nouli 0.4.2",
+    "binary_sha256": "17a6794ddfd229916322bb392124c066d0748e4fcafdd78bfb607ffe955cfd46",
+    "capture": "Native PTY replay of saved TypeSafe answers through a local stub",
+    "live_provider_calls": 0,
+    "terminal": {
+      "columns": 64,
+      "lines": 46,
+      "displayed_lines": 44
+    },
+    "steps": 5,
+    "updates": 879,
+    "replay_milliseconds": 42150,
+    "recorded_at": "2026-10-31T17:03:34Z"
+  }
+}

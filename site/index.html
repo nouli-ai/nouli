@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nouli · decision graph</title>
 <meta name="description" content="Nouli is a decision graph: it runs decision models over many turns and feeds earlier decisions into later ones, keeping every fact, question, and answer in a ledger.">
-<link rel="icon" href="/favicon.svg">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0b6e63">
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<header class="top"><a class="mark" href="./">NOULI</a><nav><a href="guide/#interactive">interactive</a><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
+<header class="top"><a class="mark" href="./"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/standing-desks/nouli">github</a></nav></header>
 
 <h1 class="display">Every answer<br><span>remembers.</span></h1>
 <div class="sub"><p><strong>Nouli is a decision graph.</strong> It runs decision models over many turns and feeds earlier decisions into later ones: each turn adds facts and a new question, and the model answers it with the whole history in view.</p></div>
@@ -17,66 +20,65 @@
 <section class="install" aria-label="Install">
   <div class="shell"><span class="os">macOS</span><span class="dollar" aria-hidden="true">$</span><code>brew install standing-desks/tap/nouli</code><button class="copy" type="button" data-copy="brew install standing-desks/tap/nouli" aria-label="Copy the Homebrew install command">copy</button></div>
   <div class="shell"><span class="os">Linux</span><span class="dollar" aria-hidden="true">$</span><code>curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh</code><button class="copy" type="button" data-copy="curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh" aria-label="Copy the download installer command">copy</button></div>
-  <p class="meta"><span>v%NOULI_VERSION%</span><span>Apple silicon macOS · Linux ARM64 and x86_64</span><a href="guide/#install">other ways to install</a></p>
+  <p class="meta"><a data-latest-release href="https://github.com/standing-desks/nouli/releases/latest">latest release</a><span>Apple silicon macOS · Linux ARM64 and x86_64</span><a href="guide/#install">other ways to install</a></p>
 </section>
 
-<section id="hero" aria-label="A recorded Nouli session">
-  <div class="panel" id="panel">
-    <div class="group"><span>the train is</span>
-      <div class="keys" id="train"><button type="button" data-v="cancelled" aria-pressed="true">cancelled</button><button type="button" data-v="late" aria-pressed="false">late</button><button type="button" data-v="ontime" aria-pressed="false">on time</button></div></div>
-    <div class="group"><span>plan draws on</span>
-      <div class="keys" id="sources"><label><input type="checkbox" value="travel" checked>travel</label><label><input type="checkbox" value="budget" checked>budget</label></div></div>
+<section class="cli-replay" id="cli-replay" aria-labelledby="replay-title">
+  <div class="replay-head">
+    <h2 id="replay-title">Open a session.<br><span>Ask as you go.</span></h2>
+    <p class="thesis">A session keeps <b>every fact, question and answer.</b> Add a turn and the model answers its new question with all of it in view. <b>Branch</b> to try something else. <b>Blend</b> to put separate histories together.</p>
+  </div>
+  <div class="bench" data-bench>
+  <div class="term" data-cli-replay>
+    <span class="term-mark" hidden aria-hidden="true"></span>
+    <pre class="cli-replay-screen" tabindex="0" aria-label="Recorded Nouli TUI, including its decision graph"><code> ▄▀▄  ███████  ▄▀▄     /help for a hand · /sessions to pick up                                                                                  │ decisions · drag divider · Ctrl-G
+      ▀█████▀                                                                                                                                   │                     ┌─ workshop · 01a192e8-6 ──────────┐
+        ▀█▀                                                                                                                                     │                     │ Can we plan this workshop?       │
+                                                                                                                                                │                     │                                  │
+workshop › Plan a step-free workshop for 60 people. Budget: 6000 USD. Keep the event reliable and practical.                                    │                     │ ▶ P(yes)=0.82                    │
+workshop › Can we plan this workshop?                                                                                                           │                     └─────────────────┬────────────────┘
+  turn 1 · 1 fact · 1 question                                                                                                                  │                                       │
+     yes                              ████████████████▍    0.82                                                                                 │                   ┌───────────────────┴───────────────────┐
+venue › /branch venue                                                                                                                           │                   ▼                                       ▼
+  new session "venue" from workshop @ turn 1                                                                                                    │ ┌─ venue · 01a192e8-8 ─────────────┐    ┌─ program · 01a192e8-b ───────────┐
+venue › Riverside Hall is step-free, fits 80 and costs 1200 USD. The Loft costs 900 USD but has stairs.                                         │ │ Which venue should we choose?    │    │ Which program should we run?     │
+venue › Which venue should we choose?                                                                                                           │ │                                  │    │                                  │
+  turn 1 · 1 fact · 1 question                                                                                                                  │ │ Choices              Probability │    │ Choices              Probability │
+   ▶ Riverside Hall                   ████████████████████ 1.00                                                                                 │ │ ▶ Riverside Hall               1 │    │ ▶ Talks and practice        0.97 │
+     The Loft                                              0.00                                                                                 │ │   The Loft                     0 │    │   Talks only                0.03 │
+workshop › /use workshop                                                                                                                        │ └─────────────────┬────────────────┘    └─────────────────┬────────────────┘
+  workshop                                                                                                                                      │                   │                                       │
+program › /branch program                                                                                                                       │                   └───────────────────┬───────────────────┘
+  new session "program" from workshop @ turn 1                                                                                                  │                                       ▼
+program › Two speakers are available. Include breaks and useful hands-on time. The program costs 500 USD.                                       │                     ┌─ plan · 01a192e8-d ──────────────┐
+program › Which program should we run?                                                                                                          │                     │ Should we confirm the plan?      │
+  turn 1 · 1 fact · 1 question                                                                                                                  │                     │                                  │
+   ▶ Talks and practice               ███████████████████▍ 0.97                                                                                 │                     │ Choices              Probability │
+     Talks only                       ▋                    0.03                                                                                 │                     │ ▶ Confirm the plan          0.92 │
+plan › /blend venue program as plan                                                                                                             │                     │   Revise the plan           0.08 │
+  new session "plan" from venue + program                                                                                                       │                     └─────────────────┬────────────────┘
+plan › The venue and speakers can confirm today. Total event costs are 3500 USD, including lunch, materials and transport.                      │                                       │
+plan › Should we confirm the plan?                                                                                                              │                                       ▼
+  turn 1 · 1 fact · 1 question                                                                                                                  │                     ┌─ plan · 01a192e9-0 [latest] ─────┐
+   ▶ Confirm the plan                 ██████████████████▍  0.92                                                                                 │                     │ How ready is the workshop?       │
+     Revise the plan                  █▋                   0.08                                                                                 │                     │                                  │
+plan › The venue, speakers and lunch are confirmed. The morning bus is booked, but the return trip still has no driver.                         │                     │ Levels               Probability │
+plan › How ready is the workshop?                                                                                                               │                     │   0 Not ready                  0 │
+  turn 2 · 1 fact · 1 question                                                                                                                  │                     │   1 Needs work              0.19 │
+     expected 1.81 of 3   ▁▂▇▁                                                                                                                  │                     │   2 Mostly ready            0.81 │
+     Not ready 0.00 · Needs work 0.19 · Mostly ready 0.81 · Ready 0.00                                                                          │                     │   3 Ready                      0 │
+── Context · latest question included ──────────────────────────────────────────────────────────────────────────────────────────────────────────│                     │                                  │
+  ↳ How ready is the workshop?                                                                                                                  │                     │ ▶ Expected score: 1.81           │
+  › Add context or drop a file                                                                                                                  │                     └──────────────────────────────────┘
+── Question · Yes / No Choose one [Score] · Shift-Tab → ────────────────────────────────────────────────────────────────────────────────────────│
+    How ready is the workshop?                                                                                                                  │
+── Levels · lowest first · using previous 4 ────────────────────────────────────────────────────────────────────────────────────────────────────│
+  Press Enter to send                                                                                                                           │
+ typesafe/jev-1.14.0 · Ready</code></pre>
+  </div>
+  <div class="fig" data-figure></div>
   </div>
 </section>
-
-<section class="demo" id="interactive" aria-labelledby="repl-title">
-  <div class="repl-side">
-    <p class="kicker">interactive mode</p>
-    <h2 id="repl-title">Open a session.<br><span>Ask as you go.</span></h2>
-    <p>Add context, write a plain-text question, and choose Yes / No, Choose one or Score. Shift-Tab changes the type; Tab moves fields. Press Enter to send from Context or Question. In Options/Levels, Enter adds an item and a second Enter sends. Add new information to reconsider a choice using the same options.</p>
-    <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open travel</code><button class="copy" type="button" data-copy="nouli open travel" aria-label="Copy the command that opens a session">copy</button></div>
-    <a class="more" href="examples/meeting/">start with a three-turn example →</a>
-  </div>
-  <div class="term">
-    <div class="term-bar"><span>nouli open travel</span><button class="replay" type="button" id="replay">replay</button></div>
-    <div id="screen" class="tui-snapshot" aria-label="Captured current Nouli TUI"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · travel
-travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
-taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
-arrives on time.
-travel › How should I travel to the meeting?
-  turn 1 · 1 fact · 1 question
-   ▶ Take the train                   ████████████████████ 1.00
-     Take a taxi                                           0.00
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-── Context · latest question included ──────────────────────────────────────────
-  ↳ How should I travel to the meeting?
-  › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
-    How should I travel to the meeting?
-── Options · using previous 2 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
-  </div>
-</section>
-
-<p class="thesis">A session keeps <b>every fact, question and answer.</b> Add a turn and the model answers its new question with all of it in view. Branch to try something else. <b>Blend</b> to put separate histories together.</p>
 
 <table class="index">
   <thead><tr><th>example</th><th>what it shows</th><th class="n">turns</th></tr></thead>

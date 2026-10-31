@@ -1,17 +1,20 @@
-//! A terminal adaptation of the brand kit's honey bee, shown before output.
+//! A terminal adaptation of the brand kit's honey bee, heading the transcript.
 use ratatui::{
-    Frame,
-    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
 };
 
-/// Leave a row of breathing room above and below the bee. Short terminals
-/// keep the ordinary one-line header and all the available editing space.
-pub(super) fn draw(frame: &mut Frame, area: Rect, color: bool, drafting: bool) {
-    if area.width < 22 || area.height < 10 {
-        return;
+/// Rows the greeter adds above the transcript: the bee with a row of
+/// breathing room above and below it.
+pub(super) const ROWS: u16 = 10;
+/// The bee's width, with the gap before the copy beside it.
+const BEE_COLUMNS: usize = 23;
+
+/// The greeter as transcript rows, so it scrolls away as output arrives.
+/// Narrow transcripts get none; wide ones also get the copy beside the bee.
+pub(super) fn lines(width: u16, color: bool, drafting: bool) -> Vec<Line<'static>> {
+    if width < 22 {
+        return Vec::new();
     }
     let bold = Style::new().add_modifier(Modifier::BOLD);
     // Brand-kit honey, teal, and teal glass, with 256-color equivalents.
@@ -46,13 +49,13 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, color: bool, drafting: bool) {
     };
     let eyes = if drafting { " >   _ " } else { " >   < " };
     let bee = vec![
-        Line::styled("     ▄       ▄", honey),
+        Line::from(Span::styled("     ▄       ▄", honey)),
         Line::from(vec![
             Span::styled("      ╲", teal),
             Span::styled(" ▄█▄ ", honey),
             Span::styled("╱", teal),
         ]),
-        Line::styled("     ▄███████▄", honey),
+        Line::from(Span::styled("     ▄███████▄", honey)),
         Line::from(vec![
             Span::styled(" ▄█▄ ", wings),
             Span::styled("█", honey),
@@ -72,33 +75,59 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, color: bool, drafting: bool) {
             Span::styled(" ███████ ", honey),
             Span::styled(" ▄▀▄", wings),
         ]),
-        Line::styled("      ▀█████▀", teal),
-        Line::styled("        ▀█▀", honey),
+        Line::from(Span::styled("      ▀█████▀", teal)),
+        Line::from(Span::styled("        ▀█▀", honey)),
     ];
-    let bee_area = Rect {
-        y: area.y + 1,
-        height: 8,
-        ..area
-    };
-    frame.render_widget(Paragraph::new(bee), bee_area);
-    if area.width >= 64 {
-        let copy = vec![
-            Line::styled("Let's make a decision.", bold),
-            Line::default(),
-            Line::from("Add context below, then ask a question."),
-            Line::styled(
-                "/help for a hand · /sessions to pick up",
-                Style::new().add_modifier(Modifier::DIM),
+    // Beside the bee's third, fifth and sixth rows, when there is room.
+    let copy = if width >= 64 {
+        vec![
+            (2, Span::styled("Let's make a decision.", bold)),
+            (4, Span::raw("Add context below, then ask a question.")),
+            (
+                5,
+                Span::styled(
+                    "/help for a hand · /sessions to pick up",
+                    Style::new().add_modifier(Modifier::DIM),
+                ),
             ),
-        ];
-        frame.render_widget(
-            Paragraph::new(copy),
-            Rect {
-                x: area.x + 23,
-                y: area.y + 3,
-                width: area.width - 23,
-                height: 4,
-            },
-        );
+        ]
+    } else {
+        Vec::new()
+    };
+    let mut rows = vec![Line::default()];
+    for (index, mut row) in bee.into_iter().enumerate() {
+        if let Some((_, text)) = copy.iter().find(|(at, _)| *at == index) {
+            let pad = BEE_COLUMNS.saturating_sub(row.width());
+            row.spans.push(Span::raw(" ".repeat(pad)));
+            row.spans.push(text.clone());
+        }
+        rows.push(row);
+    }
+    rows.push(Line::default());
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lines;
+    use ratatui::{
+        buffer::Buffer,
+        layout::Rect,
+        style::{Color, Modifier},
+        widgets::{Paragraph, Widget},
+    };
+
+    #[test]
+    fn the_copy_sits_beside_the_bee_in_the_default_color() {
+        let area = Rect::new(0, 0, 80, 10);
+        let mut buffer = Buffer::empty(area);
+        Paragraph::new(lines(80, true, false)).render(area, &mut buffer);
+        for (y, symbol) in [(3, "L"), (5, "A"), (6, "/")] {
+            let cell = &buffer[(23, y)];
+            assert_eq!((cell.symbol(), cell.fg), (symbol, Color::Reset), "row {y}");
+        }
+        assert!(buffer[(23, 3)].modifier.contains(Modifier::BOLD));
+        assert!(lines(40, true, false).iter().all(|row| row.width() < 23));
+        assert!(lines(21, true, false).is_empty());
     }
 }

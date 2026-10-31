@@ -50,23 +50,14 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .copy[data-copied] { background: var(--teal); border-color: var(--teal); color: var(--on-teal); box-shadow: none; transform: translateY(3px); }
 .copy:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .install .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 22px; font: 400 11px var(--mono); font-stretch: 87%; color: var(--soft); }
-.install .meta span:first-child { color: var(--teal); font-weight: 700; }
+.install .meta [data-latest-release] { color: var(--teal); font-weight: 700; }
 .install .meta a { color: var(--ink); text-underline-offset: 3px; }
 
-/* Interactive mode: a recorded session next to how to start one */
-.demo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); gap: 48px; padding: 96px 28px 0; align-items: start; }
-.repl-side > * + * { margin-top: 18px; }
-.kicker { font: 400 12px var(--mono); font-stretch: 87%; color: var(--teal); }
-.demo h2, .start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
-.demo h2 span, .start h2 span { color: var(--teal); }
-.repl-side p:not(.kicker) { font: 400 14px/1.6 var(--mono); font-stretch: 87%; }
-.repl-side code, .steps code { color: var(--teal); }
-.repl-side .shell { margin-top: 28px; }
-.more { display: inline-block; font: 400 12px var(--mono); font-stretch: 87%; color: var(--teal); text-underline-offset: 3px; }
+/* Section heads and the terminal */
+.cli-replay h2, .start h2 { font-weight: 900; font-stretch: 62%; text-transform: uppercase; font-size: clamp(44px, 5.4vw, 88px); line-height: 0.86; }
+.cli-replay h2 span, .start h2 span { color: var(--teal); }
+.steps code { color: var(--teal); }
 .term { background: var(--ink); color: var(--paper); min-width: 0; }
-.term-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #f4f1eb22; font: 400 11px var(--mono); font-stretch: 87%; color: #f4f1eb99; }
-.replay { font: inherit; background: none; color: var(--paper); border: 1px solid #f4f1eb66; padding: 3px 10px; cursor: pointer; }
-.replay:hover { background: var(--paper); color: var(--ink); }
 
 /* Get started */
 .start { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 48px; padding: 0 28px 90px; align-items: start; }
@@ -145,8 +136,6 @@ code, pre, .mono { font-family: var(--mono); font-stretch: 87%; }
 .keys label:has(input:focus-visible), .keys button:focus-visible { outline: 2px solid var(--on-teal); outline-offset: 2px; }
 
 /* Quiet frame */
-.thesis { font-weight: 300; font-stretch: 87%; font-size: clamp(28px, 3.6vw, 52px); line-height: 1.08; letter-spacing: -0.01em; max-width: 24ch; padding: 90px 28px 80px; }
-.thesis b { font-weight: 800; }
 table.index { width: calc(100% - 56px); margin: 0 28px 90px; border-collapse: collapse; font: 400 13px var(--mono); font-stretch: 87%; }
 .index th { text-align: left; font-weight: 400; opacity: 0.6; padding: 0 12px 10px 0; border-bottom: 2px solid var(--ink); }
 .index td { padding: 16px 12px 16px 0; border-bottom: 1px solid var(--rule); vertical-align: baseline; }
@@ -214,8 +203,7 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
 
 @media (max-width: 960px) {
   .install { grid-template-columns: minmax(0, 1fr); }
-  .demo, .start { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  .demo { padding-top: 64px; }
+  .start { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .slab { grid-template-columns: 1fr; }
   .read { border-left: 0; border-top: 1px solid var(--on-teal-dim); }
   .guide { grid-template-columns: 1fr; gap: 24px; }
@@ -238,14 +226,12 @@ footer.site { padding: 0 28px 40px; font: 400 12px var(--mono); font-stretch: 87
 
 /* Captured full-screen TUI: real terminal cells, selectable text and local scrolling. */
 .tui-snapshot { min-width: 0; margin: 22px 0; background: #15191d; color: #d1d5db; border: 1px solid #31373e; }
-.tui-controls, .tui-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; font: 11px var(--mono); }
+.tui-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; font: 11px var(--mono); }
 .tui-controls { border-bottom: 1px solid #31373e; }
-.tui-controls button, .tui-navigation button { font: inherit; color: inherit; border: 1px solid #68717c; padding: 4px 9px; background: transparent; cursor: pointer; }
+.tui-controls button { font: inherit; color: inherit; border: 1px solid #68717c; padding: 4px 9px; background: transparent; cursor: pointer; }
 .tui-controls button[aria-pressed="true"] { color: #15191d; background: #d1d5db; border-color: #d1d5db; }
 .tui-controls > span { margin-left: auto; color: #9ca3af; font-size: 10px; }
-.tui-controls button:focus-visible, .tui-navigation button:focus-visible { outline: 2px solid #67e8f9; outline-offset: 3px; }
-.tui-navigation { color: var(--paper); justify-content: flex-end; }
-.tui-navigation button:disabled { opacity: .35; cursor: default; }
+.tui-controls button:focus-visible { outline: 2px solid #67e8f9; outline-offset: 3px; }
 .prose .tui-screen, .tui-screen, .prose .tui-static, .tui-static { display: block; margin: 0; padding: 14px; overflow: auto; max-width: 100%; background: #15191d; color: #d1d5db; border: 0; font: 12px/1.45 var(--term); font-stretch: 100%; white-space: pre; }
 .tui-grid { display: block; width: max-content; }
 .tui-row { display: block; height: 1.45em; }
@@ -259,3 +245,6 @@ body[data-view="commands"] .tui-only,
 body[data-view="commands"] .tui-snapshot { display: none; }
 @media (max-width: 600px) { .tui-controls > span { flex-basis: 100%; margin: 4px 0 0; } }
 .examples-heading { padding: 26px 28px 12px; font: 700 20px var(--mono); color: var(--teal); }
+
+/* The bee beside the existing wordmark. */
+.top .mark img { width:24px; height:auto; vertical-align:-6px; margin-right:8px; }

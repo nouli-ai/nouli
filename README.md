@@ -11,6 +11,7 @@ On Linux, or on macOS without Homebrew: `curl -fsSL https://standing-desks.githu
 
 [![CI](https://img.shields.io/github/actions/workflow/status/standing-desks/nouli/ci.yml?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/standing-desks/nouli?include_prereleases&sort=semver&style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/releases)
+[![Total downloads across all release assets](https://img.shields.io/github/downloads/standing-desks/nouli/total?style=flat-square&labelColor=1d2a28&color=0b6e63)](https://github.com/standing-desks/nouli/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0b6e63?style=flat-square&labelColor=1d2a28)](LICENSE)
 [![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-0b6e63?style=flat-square&labelColor=1d2a28)](rust-toolchain.toml)
 

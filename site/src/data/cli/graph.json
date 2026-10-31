@@ -1,0 +1,203 @@
+{
+ "session": "plan",
+ "nodes": [
+  {
+   "id": "01a192e8-6554-750f-b28f-def9481f55c9",
+   "session": "workshop",
+   "turn": 1,
+   "kind": "new",
+   "parents": [],
+   "state": "Plan a step-free workshop for 60 people. Budget: 6000 USD. Keep the event reliable and practical.",
+   "questions": [
+    {
+     "id": "q_e37890e4dec7",
+     "prompt": "Can we plan this workshop?",
+     "type": "noul",
+     "probability": 0.82
+    }
+   ],
+   "context": [],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli new workshop '…' -q '…'"
+  },
+  {
+   "id": "01a192e8-88c7-74f8-b8a1-fa876cb988c6",
+   "session": "venue",
+   "turn": 1,
+   "kind": "branch",
+   "parents": [
+    0
+   ],
+   "state": "Riverside Hall is step-free, fits 80 and costs 1200 USD. The Loft costs 900 USD but has stairs.",
+   "questions": [
+    {
+     "id": "q_82fb80ae6b57",
+     "prompt": "Which venue should we choose?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "option_1",
+       "label": "Riverside Hall",
+       "p": 1
+      },
+      {
+       "id": "option_2",
+       "label": "The Loft",
+       "p": 0
+      }
+     ],
+     "selected": "option_1"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli new venue --from workshop '…' -q '…'"
+  },
+  {
+   "id": "01a192e8-b1e6-75e5-aa79-bf26cc8b55f3",
+   "session": "program",
+   "turn": 1,
+   "kind": "branch",
+   "parents": [
+    0
+   ],
+   "state": "Two speakers are available. Include breaks and useful hands-on time. The program costs 500 USD.",
+   "questions": [
+    {
+     "id": "q_f50f195baa2f",
+     "prompt": "Which program should we run?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "option_1",
+       "label": "Talks and practice",
+       "p": 0.97
+      },
+      {
+       "id": "option_2",
+       "label": "Talks only",
+       "p": 0.03
+      }
+     ],
+     "selected": "option_1"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli new program --from workshop '…' -q '…'"
+  },
+  {
+   "id": "01a192e8-dadd-7770-8dac-e0f55e59901a",
+   "session": "plan",
+   "turn": 1,
+   "kind": "blend",
+   "parents": [
+    1,
+    2
+   ],
+   "state": "The venue and speakers can confirm today. Total event costs are 3500 USD, including lunch, materials and transport.",
+   "questions": [
+    {
+     "id": "q_16280e87bdf0",
+     "prompt": "Should we confirm the plan?",
+     "type": "choice",
+     "options": [
+      {
+       "id": "option_1",
+       "label": "Confirm the plan",
+       "p": 0.92
+      },
+      {
+       "id": "option_2",
+       "label": "Revise the plan",
+       "p": 0.08
+      }
+     ],
+     "selected": "option_1"
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli new plan --from venue --from program '…' -q '…'"
+  },
+  {
+   "id": "01a192e9-0034-70c0-ba58-4fe17853b682",
+   "session": "plan",
+   "turn": 2,
+   "kind": "continued",
+   "parents": [
+    3
+   ],
+   "state": "The venue, speakers and lunch are confirmed. The morning bus is booked, but the return trip still has no driver.",
+   "questions": [
+    {
+     "id": "q_3fb8e54a576a",
+     "prompt": "How ready is the workshop?",
+     "type": "score",
+     "levels": [
+      {
+       "label": "Not ready",
+       "p": 0
+      },
+      {
+       "label": "Needs work",
+       "p": 0.19
+      },
+      {
+       "label": "Mostly ready",
+       "p": 0.81
+      },
+      {
+       "label": "Ready",
+       "p": 0
+      }
+     ],
+     "expected": 1.81
+    }
+   ],
+   "context": [
+    {
+     "turn": 0,
+     "representation": "full"
+    },
+    {
+     "turn": 1,
+     "representation": "full"
+    },
+    {
+     "turn": 2,
+     "representation": "full"
+    },
+    {
+     "turn": 3,
+     "representation": "full"
+    }
+   ],
+   "model": "typesafe/jev-1.14.0",
+   "command": "nouli add plan '…' -q '…'"
+  }
+ ]
+}
