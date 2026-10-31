@@ -50,10 +50,14 @@ use tokio::{runtime::Runtime, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
 /// The keys, for `/help` before the commands the line loop lists.
-const KEYS: [(&str, &str); 13] = [
+const KEYS: [(&str, &str); 14] = [
     (
         "Mouse drag",
         "resize the divider; Option-drag selects text in iTerm2",
+    ),
+    (
+        "F6 / select text",
+        "hold the view for native drag-selection and terminal Copy; Esc or F6 resumes",
     ),
     ("Tab", "next field or option"),
     (
@@ -275,6 +279,7 @@ struct App<'a> {
     graph: Graph,
     /// Whether the decisions pane has the keys instead of the form.
     graph_focused: bool,
+    selection: mouse::Selection,
     status: Option<Status>,
     /// The provider and model that answered the last turn.
     model: Option<String>,
@@ -313,6 +318,7 @@ impl<'a> App<'a> {
             composer_top: 0,
             graph: Graph::default(),
             graph_focused: false,
+            selection: mouse::Selection::default(),
             status: None,
             model: None,
             selected_model: ModelSelection::default(),
@@ -440,6 +446,7 @@ impl<'a> App<'a> {
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut running: Option<Running<'a>> = None;
+        let mut mouse_capture = true;
         loop {
             if let Some(command) = self.pending_setup.take() {
                 drop(events);
@@ -448,6 +455,7 @@ impl<'a> App<'a> {
                 let result = self.setup_command(&command);
                 *terminal = ratatui::try_init()?;
                 execute!(io::stdout(), EnableBracketedPaste, EnableMouseCapture)?;
+                mouse_capture = true;
                 events = EventStream::new();
                 self.status = Some(match result {
                     Ok(()) => Status::info("connection settings updated"),
@@ -455,14 +463,26 @@ impl<'a> App<'a> {
                 });
                 self.refresh_model();
             }
-            terminal.draw(|frame| draw::screen(frame, self, running.as_ref()))?;
+            if self.selection.should_draw() {
+                terminal.draw(|frame| draw::screen(frame, self, running.as_ref()))?;
+                self.selection.did_draw();
+            }
+            let capture = !self.selection.active;
+            if capture != mouse_capture {
+                if capture {
+                    execute!(io::stdout(), EnableMouseCapture)?;
+                } else {
+                    execute!(io::stdout(), DisableMouseCapture)?;
+                }
+                mouse_capture = capture;
+            }
             let busy = running.is_some();
             let wake = runtime.block_on(async {
                 tokio::select! {
                     event = events.next() => Wake::Input(event),
                     done = finished(&mut running) => Wake::Done(Box::new(done)),
                     // Redraws the spinner while a turn runs.
-                    _ = tick.tick(), if busy || self.drop_start.is_some() => Wake::Tick,
+                    _ = tick.tick(), if !self.selection.active && (busy || self.drop_start.is_some()) => Wake::Tick,
                 }
             });
             match wake {
@@ -497,6 +517,9 @@ impl<'a> App<'a> {
     }
 
     fn event(&mut self, event: Event, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
+        if self.selection.active && !matches!(event, Event::Key(_) | Event::Resize(_, _)) {
+            return Ok(Flow::Continue);
+        }
         match event {
             Event::Mouse(event) => {
                 if !matches!(event.kind, crossterm::event::MouseEventKind::Moved) {
@@ -506,6 +529,7 @@ impl<'a> App<'a> {
                 Ok(Flow::Continue)
             }
             Event::Resize(_, _) => {
+                self.select_text(false);
                 self.graph.dragging = false;
                 Ok(Flow::Continue)
             }
@@ -538,6 +562,21 @@ impl<'a> App<'a> {
 
     fn key(&mut self, key: KeyEvent, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if self.selection.active {
+            if matches!(key.code, KeyCode::Esc | KeyCode::F(6))
+                || control && key.code == KeyCode::Char('c')
+            {
+                self.select_text(false);
+                if control && key.code == KeyCode::Char('c') && running.is_some() {
+                    return Ok(self.interrupt(running.as_ref()));
+                }
+            }
+            return Ok(Flow::Continue);
+        }
+        if key.code == KeyCode::F(6) {
+            self.select_text(true);
+            return Ok(Flow::Continue);
+        }
         if key.code != KeyCode::Enter {
             self.option_enter = false;
         }

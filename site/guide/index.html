@@ -111,11 +111,14 @@ travel › How should I travel to the meeting?
 <tr><td>@</td><td>Find saved answers across local sessions and files under the launch folder. Enter inserts a selection without sending.</td></tr>
 <tr><td>Drag the divider</td><td>Resize the graph at any time, while keeping the current field focused.</td></tr>
 <tr><td>Ctrl-G / Esc</td><td>Focus the graph for keyboard navigation, then return to the form.</td></tr>
-<tr><td>Option-drag in iTerm2</td><td>Select terminal text. Other terminals use their own selection modifier.</td></tr>
+<tr><td>F6 / select text</td><td>Hold the view, drag to select, and use terminal Copy. Esc or F6 resumes.</td></tr>
+<tr><td>Option-drag in iTerm2</td><td>Select terminal text in normal mode. Other terminals use their own selection modifier.</td></tr>
 </tbody></table>
 <p>After a choice or score, leave Options/Levels empty to reuse the prior list; the form says when it will do so. Add new context and a follow-up question to reconsider the answer. Yes/No questions stay fresh. Context previews the latest included question, while earlier answers remain in the saved history.</p>
 <p>Use <code>@budget.xlsx</code> or a relative filename to add a local file. DOCX/PPTX contribute text and tables; CSV/TSV and XLS/XLSX/XLSM/XLSB/ODS contribute rows from their sheets. PDFs need Poppler for text extraction. Raster images and SVGs use native image input when the model supports it; legacy DOC/PPT needs LibreOffice. Select a file to snapshot it, review the contents, then send. Documents do not render pages or run OCR.</p>
 <p>Use <code>@</code> with words you remember from a saved conversation to reference an exact earlier answer. Browse history shows its saved state. References appear as graph edges, including across sessions. Use <code>/rename NAME</code> to rename the current session, <code>/sessions</code> or <code>/use NAME</code> to resume one, and <code>/branch NAME</code> or <code>/blend A B as NAME</code> to combine histories. <code>/help</code> lists the available keys and commands. Ctrl-C cancels a turn, then clears input, and quits when the draft is empty.</p>
+
+<p><b>Copy text:</b> click <b>select text</b> in the header or press <b>F6</b>, drag normally, and use your terminal’s Copy command. The view holds still while model requests continue. <b>Esc</b> or <b>F6</b> resumes the previous draft and focus. Divider dragging remains available in normal mode.</p>
 
 <h2 id="first"><span class="num">04</span>Make a decision</h2>
 <p>Use shell commands for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the question with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>

@@ -1,10 +1,50 @@
-//! Divider dragging works independently of keyboard focus. Native terminal
-//! selection uses the host's modifier (for example Option-drag in iTerm2).
+//! Divider dragging and a temporary native terminal text-selection mode.
 use super::App;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use ratatui::layout::{Position, Rect};
+
+#[derive(Default)]
+pub(super) struct Selection {
+    pub(super) active: bool,
+    pub(super) button: Option<Rect>,
+    drawn: bool,
+}
+
+impl Selection {
+    pub(super) fn set_active(&mut self, active: bool) {
+        self.active = active;
+        self.drawn = false;
+    }
+
+    pub(super) fn should_draw(&self) -> bool {
+        !self.active || !self.drawn
+    }
+
+    pub(super) fn did_draw(&mut self) {
+        self.drawn = self.active;
+    }
+}
 
 impl App<'_> {
+    pub(super) fn select_text(&mut self, active: bool) {
+        self.selection.set_active(active);
+        self.graph.dragging = false;
+        self.option_enter = false;
+    }
+
     pub(super) fn graph_mouse(&mut self, event: MouseEvent) {
+        if self.selection.active {
+            return;
+        }
+        if matches!(event.kind, MouseEventKind::Down(MouseButton::Left))
+            && self
+                .selection
+                .button
+                .is_some_and(|area| area.contains(Position::new(event.column, event.row)))
+        {
+            self.select_text(true);
+            return;
+        }
         let over_graph = self
             .graph
             .divider
@@ -51,7 +91,140 @@ impl App<'_> {
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
+    use crossterm::event::{Event, KeyCode, KeyEvent};
     use ratatui::layout::Rect;
+
+    #[test]
+    fn selection_holds_the_view_until_resumed() {
+        let mut selection = Selection::default();
+        assert!(selection.should_draw());
+        selection.did_draw();
+        assert!(selection.should_draw(), "normal drawing continues");
+        selection.set_active(true);
+        assert!(selection.should_draw(), "show selection instructions once");
+        selection.did_draw();
+        assert!(
+            !selection.should_draw(),
+            "background updates must not erase native selection"
+        );
+        selection.set_active(false);
+        assert!(selection.should_draw());
+    }
+
+    #[test]
+    fn a_completed_turn_is_recorded_without_repainting_native_selection() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = super::super::tests::app(&settings);
+        app.form.input = "next draft".into();
+        app.select_text(true);
+        app.selection.did_draw();
+        app.finish(
+            nouli_core::protocol::ResultEnvelope::new(crate::repl::tests::saved_turn()),
+            &[],
+            false,
+            false,
+        )
+        .unwrap();
+        assert!(app.selection.active);
+        assert!(!app.selection.should_draw());
+        assert!(!app.transcript.is_empty());
+        assert_eq!(app.form.input, "next draft");
+        app.select_text(false);
+        assert!(
+            app.selection.should_draw(),
+            "show the completed result on resume"
+        );
+    }
+
+    #[test]
+    fn selection_keeps_drafts_focus_lists_and_paste_unchanged() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = super::super::tests::app(&settings);
+        app.form.input = "keep this context".into();
+        app.form.question = "Keep this question?".into();
+        app.form.cursor = 4;
+        app.graph_focused = true;
+        app.sessions = Some(vec![]);
+        app.option_enter = true;
+        let mut running = None;
+        let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
+        app.event(key(KeyCode::F(6)), &mut running).unwrap();
+        assert!(app.selection.active);
+        assert!(!app.option_enter);
+        for event in [
+            key(KeyCode::Char('x')),
+            key(KeyCode::Enter),
+            key(KeyCode::Tab),
+            Event::Paste("do not insert".into()),
+        ] {
+            app.event(event, &mut running).unwrap();
+        }
+        app.event(key(KeyCode::Esc), &mut running).unwrap();
+        assert!(!app.selection.active);
+        assert_eq!(app.form.input, "keep this context");
+        assert_eq!(app.form.question, "Keep this question?");
+        assert_eq!(app.form.cursor, 4);
+        assert!(app.graph_focused);
+        assert!(app.sessions.is_some());
+        assert!(running.is_none());
+    }
+
+    #[test]
+    fn copy_mode_control_c_keeps_idle_input_and_still_cancels_running_turns() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = super::super::tests::app(&settings);
+        app.form.input = "preserve this draft".into();
+        let key = Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        app.select_text(true);
+        assert!(matches!(
+            app.event(key.clone(), &mut None).unwrap(),
+            super::super::Flow::Continue
+        ));
+        assert_eq!(app.form.input, "preserve this draft");
+        assert!(!app.selection.active);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let mut running = Some(super::super::Running {
+            turn: Box::pin(std::future::pending()),
+            cancel: cancel.clone(),
+            ephemeral: false,
+            from_form: false,
+            started: std::time::Instant::now(),
+            model: nouli_core::history::ModelSelection::default(),
+        });
+        app.select_text(true);
+        app.event(key, &mut running).unwrap();
+        assert!(cancel.is_cancelled());
+        assert_eq!(app.form.input, "preserve this draft");
+    }
+
+    #[test]
+    fn header_selection_click_and_resize_preserve_divider_width() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = super::super::tests::app(&settings);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 30)).unwrap();
+        terminal
+            .draw(|frame| super::super::draw::screen(frame, &mut app, None))
+            .unwrap();
+        let button = app.selection.button.unwrap();
+        app.graph.preferred_width = Some(70);
+        app.graph.dragging = true;
+        app.event(
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: button.x + 1,
+                row: button.y,
+                modifiers: KeyModifiers::NONE,
+            }),
+            &mut None,
+        )
+        .unwrap();
+        assert!(app.selection.active);
+        assert!(!app.graph.dragging);
+        app.event(Event::Resize(80, 24), &mut None).unwrap();
+        assert!(!app.selection.active);
+        assert_eq!(app.graph.preferred_width, Some(70));
+    }
     #[test]
     fn divider_drag_works_without_graph_focus_and_clamps_both_panes() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());

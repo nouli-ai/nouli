@@ -26,7 +26,7 @@ a visible notice; Yes/No questions remain fresh. `@` finds local files under
 the launch directory and saved answers across the selected local ledger.
 Selection snapshots inputs without sending. `/rename NAME` renames the current
 session. Drag the graph divider at any time; Ctrl-G focuses graph keyboard
-navigation. Native text selection uses the host terminal's modifier.
+navigation. Click Select text or press F6 for native drag-selection and terminal Copy. The view holds still while requests continue; Esc or F6 resumes the previous draft and focus. The host terminal's modifier also selects text in normal mode.
 
 ## Docs
 
