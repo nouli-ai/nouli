@@ -75,7 +75,7 @@ impl Lines for Label {
     }
 }
 
-/// Write a top-down flowchart with one node per finalized turn.
+/// Write a top-down flowchart, separating questions at exact reference endpoints.
 pub(crate) fn write(export: &SessionExport, sink: &mut impl Write) -> Result<(), RenderError> {
     let selected = &export.session;
     writeln!(
@@ -97,12 +97,20 @@ pub(crate) fn write(export: &SessionExport, sink: &mut impl Write) -> Result<(),
             let mut label = Label::default();
             label.push(&node.title, true);
             label.text("");
-            super::describe(&mut label, node.turn)?;
+            super::describe_node(&mut label, node)?;
             writeln!(sink, "  t{index}[\"{}\"]", label.finish())?;
         }
         for (index, node) in nodes.iter().enumerate() {
             for parent in &node.parents {
-                writeln!(sink, "  t{parent} --> t{index}")?;
+                writeln!(
+                    sink,
+                    "  t{parent} {} t{index}",
+                    if node.references.contains(parent) {
+                        "-.->"
+                    } else {
+                        "-->"
+                    }
+                )?;
             }
         }
         let latest: Vec<_> = nodes

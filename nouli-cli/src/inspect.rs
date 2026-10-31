@@ -104,11 +104,15 @@ pub(crate) fn run(
     let ledger = Ledger::open(store, OpenMode::ReadOnlyExisting)?;
     let (label, value) = match command {
         Command::View(args) => {
-            let export = ledger.export_session(&args.session)?;
+            let exports = crate::view::include_references(
+                &ledger,
+                vec![ledger.export_session(&args.session)?],
+            )?;
+            let export = &exports[0];
             return if args.mermaid {
-                crate::view::write_mermaid(&export, sink)
+                crate::view::write_mermaid(export, sink)
             } else {
-                crate::view::write(&export, sink, color)
+                crate::view::write(export, sink, color)
             }
             .map_err(Into::into);
         }

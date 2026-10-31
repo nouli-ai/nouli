@@ -6,6 +6,7 @@ mod ansi;
 mod attachments;
 mod draw;
 mod form;
+mod mouse;
 mod references;
 mod sessions;
 
@@ -22,8 +23,8 @@ use crate::{
 };
 use crossterm::{
     event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, EventStream,
-        KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
     },
     execute,
 };
@@ -68,7 +69,7 @@ const KEYS: [(&str, &str); 13] = [
         "insert text, PDF contents, or an image into the focused field",
     ),
     ("PgUp, PgDn", "scroll the transcript"),
-    ("Ctrl-G", "show the decisions; Esc returns"),
+    ("Ctrl-G", "focus decisions to drag the divider; Esc returns"),
     ("Ctrl-C", "cancel, clear input, or quit"),
     ("/sessions", "resume an earlier session"),
 ];
@@ -207,6 +208,10 @@ struct Graph {
     page: usize,
     /// Why the graph could not be read.
     problem: Option<String>,
+    preferred_width: Option<u16>,
+    body: ratatui::layout::Rect,
+    divider: Option<ratatui::layout::Rect>,
+    dragging: bool,
 }
 
 impl Graph {
@@ -330,7 +335,17 @@ impl<'a> App<'a> {
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut running: Option<Running<'a>> = None;
+        let mut mouse_capture = false;
         loop {
+            if mouse_capture != self.graph_focused {
+                if self.graph_focused {
+                    execute!(io::stdout(), EnableMouseCapture)?;
+                } else {
+                    execute!(io::stdout(), DisableMouseCapture)?;
+                    self.graph.dragging = false;
+                }
+                mouse_capture = self.graph_focused;
+            }
             terminal.draw(|frame| draw::screen(frame, self, running.as_ref()))?;
             let busy = running.is_some();
             let wake = runtime.block_on(async {
@@ -374,6 +389,14 @@ impl<'a> App<'a> {
 
     fn event(&mut self, event: Event, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         match event {
+            Event::Mouse(event) => {
+                self.graph_mouse(event);
+                Ok(Flow::Continue)
+            }
+            Event::Resize(_, _) => {
+                self.graph.dragging = false;
+                Ok(Flow::Continue)
+            }
             Event::Key(key) if key.kind != KeyEventKind::Release => self.key(key, running),
             Event::Paste(text) => {
                 self.option_enter = false;
@@ -424,6 +447,7 @@ impl<'a> App<'a> {
             KeyCode::Char('d') if control => return Ok(self.end_of_input(running.is_some())),
             KeyCode::Char('g') if control => {
                 self.references.close();
+                self.sessions = None;
                 self.graph_focused = !self.graph_focused;
                 return Ok(Flow::Continue);
             }
@@ -1453,9 +1477,10 @@ fn graph_text(
         .iter()
         .map(|id| ledger.export_session(&SessionSelector::Id(*id)))
         .collect::<Result<Vec<_>, _>>()?;
+    let exports = crate::view::include_references(&ledger, exports)?;
     let selected = if exports
         .iter()
-        .any(|export| export.session.id == current && !export.turns.is_empty())
+        .any(|export| export.session.id == current && !export.session.frontier.is_empty())
     {
         Some(current)
     } else {
@@ -2226,6 +2251,12 @@ mod tests {
         assert_eq!((app.choice, app.form.input.as_str()), (1, ""));
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         assert!(app.sessions.is_none());
+        open(&mut app);
+        press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
+        assert!(app.sessions.is_none());
+        assert!(app.graph_focused);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(!app.graph_focused);
         open(&mut app);
         press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert!(
