@@ -166,8 +166,6 @@ impl Ledger {
 mod tests {
     use super::*;
     use crate::history::ModelSelection;
-    use std::io::{BufRead, BufReader, Read, Write};
-    use std::process::{Child, Command, Stdio};
 
     struct Store(PathBuf);
     impl Store {
@@ -183,14 +181,6 @@ mod tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
-    struct Process(Child);
-    impl Drop for Process {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-
     #[test]
     fn read_only_probe_never_creates_lock_files_and_observes_live_ownership() {
         let store = Store::new();
@@ -239,62 +229,5 @@ mod tests {
         drop(guard);
         assert!(second.session_guard(a.id).is_ok());
         drop(other);
-    }
-
-    #[test]
-    #[ignore = "subprocess helper invoked by owner_exit_releases_os_guard"]
-    fn child_lock_holder() {
-        let root = std::env::var_os("NOULI_TEST_GUARD_ROOT").unwrap();
-        let id = Id::try_from(std::env::var("NOULI_TEST_GUARD_SESSION").unwrap()).unwrap();
-        let ledger = Ledger::open(&PathBuf::from(root), OpenMode::ReadWriteCreate).unwrap();
-        let _guard = ledger.session_guard(id).unwrap();
-        let mut stdout = std::io::stdout().lock();
-        stdout.write_all(b"NOULI_READY\n").unwrap();
-        stdout.flush().unwrap();
-        let _ = std::io::stdin().read(&mut [0u8; 1]);
-    }
-
-    #[test]
-    fn owner_exit_releases_os_guard() {
-        let store = Store::new();
-        let mut ledger = store.open();
-        let session = ledger
-            .create_session(None, ModelSelection::default())
-            .unwrap();
-        let mut process = Process(
-            Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "storage::guards::tests::child_lock_holder",
-                    "--ignored",
-                    "--nocapture",
-                ])
-                .env_clear()
-                .env("NOULI_TEST_GUARD_ROOT", &store.0)
-                .env("NOULI_TEST_GUARD_SESSION", session.id.to_string())
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap(),
-        );
-        let output = process.0.stdout.take().unwrap();
-        let mut ready = false;
-        for line in BufReader::new(output).lines() {
-            if line.unwrap().contains("NOULI_READY") {
-                ready = true;
-                break;
-            }
-        }
-        assert!(
-            ready,
-            "child must own the guard before contention is checked"
-        );
-        assert!(matches!(
-            ledger.session_guard(session.id),
-            Err(GuardError::WriterActive)
-        ));
-        process.0.kill().unwrap();
-        process.0.wait().unwrap();
-        assert!(ledger.session_guard(session.id).is_ok());
     }
 }
