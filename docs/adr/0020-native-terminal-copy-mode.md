@@ -5,6 +5,9 @@ date: 2026-10-31
 
 # Return mouse selection and copying to the terminal on demand
 
+Default mouse capture and the normal-mode header control are superseded by
+[ADR 0021](0021-default-native-text-selection.md). The F6 hold-view behavior remains.
+
 ## Context
 
 [ADR 0018](0018-unfocused-divider-dragging.md) captures the mouse so the graph

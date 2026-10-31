@@ -37,7 +37,8 @@ class Probe:
             ], env)
         self.resize(columns, rows)
         self.wait_for(b"Ready")
-        self.wait_for(b"\x1b[?1006h")
+        self.wait_for(b"\x1b[?1006l")
+        assert b"\x1b[?1006h" not in self.output, "Ordinary dragging must belong to the terminal at startup"
 
     def resize(self, columns, rows):
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
@@ -87,6 +88,11 @@ def check(binary):
         draft = b"selection-draft-proof"
         terminal.send(b"\x1b[200~" + draft + b"\x1b[201~")
         terminal.wait_for(draft)
+        assert b"\x1b[?1006h" not in terminal.output, "Editing must preserve native dragging"
+
+        start = len(terminal.output)
+        terminal.send(b"\x07")  # Ctrl-G opts into graph mouse controls.
+        terminal.wait_for(b"\x1b[?1006h", start)
         for enter in [b"\x1b[17~", b"\x1b[<0;153;1M"]:
             start = len(terminal.output)
             terminal.send(enter)
@@ -100,12 +106,15 @@ def check(binary):
             terminal.send(b"\x1b")
             terminal.wait_for(b"\x1b[?1006h", held)
         start = len(terminal.output)
-        terminal.send(b"\x1b[17~")
+        terminal.send(b"\x1b")  # Esc returns from the graph to native selection.
         terminal.wait_for(b"\x1b[?1006l", start)
         start = len(terminal.output)
+        terminal.send(b"\x1b[17~")
+        terminal.wait_for(b"Esc/F6 resume", start)
+        start = len(terminal.output)
         terminal.resize(100, 24)
-        terminal.wait_for(b"\x1b[?1006h", start)
         terminal.wait_for(draft, start)
+        assert b"\x1b[?1006h" not in terminal.output[start:], "Resize must keep native selection outside graph focus"
         assert b"do-not-paste" not in terminal.output[start:], "Copying must preserve the original draft"
         terminal.send(b"\x03\x03")
         deadline = time.monotonic() + 10
@@ -122,7 +131,7 @@ def check(binary):
         assert b"\x1b]52;" not in terminal.output, "Copying must remain owned by the terminal"
     finally:
         terminal.close()
-    print("PASS: native selection, stable view, preserved draft, resize, and terminal cleanup")
+    print("PASS: default native dragging, graph capture, stable copy mode, preserved draft, resize, and terminal cleanup")
 
 
 if __name__ == "__main__":
