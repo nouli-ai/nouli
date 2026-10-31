@@ -1,4 +1,19 @@
-@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Martian+Mono:wdth,wght@75..112.5,300..700&display=swap");
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/archivo-latin-variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Martian Mono";
+  src: url("/fonts/martian-mono-latin-variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 700;
+  font-stretch: 75% 112.5%;
+  font-display: swap;
+}
 
 :root {
   --paper: #f4f1eb;

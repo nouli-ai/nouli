@@ -28,6 +28,10 @@ Building the site requires no release lookup.
 - `src/figure.js`: the decision graph and readout used on the home page and in walkthroughs.
 - `src/data/`: graph data generated from real Nouli sessions. Don't edit it by hand.
 
+Fonts are served from [public/fonts/](public/fonts/) with their SIL Open Font
+License notices. The homepage preloads Archivo and Martian Mono; neither the
+site nor its approved layout depends on Google Fonts requests.
+
 ## Search and answer engines
 
 Keep the product definition, installation commands, and example explanations in
