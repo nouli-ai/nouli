@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-30
+
+### Added
+
+- Greet interactive sessions with Nouli's honey bee above the form, with `> <` eyes at rest and `> _` while drafting. The greeter gives way to conversation output and stays hidden in short terminals.
+
 ## [0.4.1] - 2026-10-30
 
 ### Changed

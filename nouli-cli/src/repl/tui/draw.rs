@@ -190,6 +190,14 @@ fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
         &mut app.scroll,
     );
     frame.render_widget(Paragraph::new(rows), top);
+    if app.transcript.is_empty() {
+        super::greeter::draw(
+            frame,
+            top,
+            theme.color,
+            !app.form.is_empty() || !app.repl.queue.is_empty(),
+        );
+    }
     if app.references.picker.as_ref().is_some_and(|p| p.expanded)
         || app.references.inspected.is_some()
     {
@@ -1139,6 +1147,25 @@ mod tests {
         (0..height)
             .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
             .collect()
+    }
+
+    #[test]
+    fn the_bee_greets_then_leaves_room_for_output_and_short_terminals() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(screen.contains(">   <"), "{screen}");
+        assert!(screen.contains("Let's make a decision."), "{screen}");
+        assert!(screen.contains("── Context"), "{screen}");
+        app.form.input = "Some context".into();
+        assert!(shown(&mut app, 80, 24).join("\n").contains(">   _"));
+        let short = shown(&mut app, 80, 12).join("\n");
+        assert!(!short.contains(">   _"), "{short}");
+        assert!(short.contains("── Context"), "{short}");
+        app.transcript.push(Line::from("An answer"));
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("An answer"), "{screen}");
+        assert!(!screen.contains(">   _"), "{screen}");
     }
 
     #[test]
