@@ -28,7 +28,7 @@ const args = process.argv.slice(2);
 const url = args.find(a => a.startsWith('https://'));
 fs.appendFileSync(process.env.FAKE_REQUESTS, url + '\\n');
 if (url.endsWith('/latest')) {
-  process.stdout.write('https://github.com/standing-desks/nouli/releases/tag/v${version}');
+  process.stdout.write('https://github.com/nouli-ai/nouli/releases/tag/v${version}');
 } else {
   if (process.env.FAKE_DOWNLOAD_FAILURE === '1') process.exit(22);
   const output = args[args.indexOf('-o') + 1];

@@ -4,7 +4,7 @@
 
 Website: https://nouli.ai/
 
-Install with `curl -fsSL https://standing-desks.github.io/nouli/install.sh | sh` (Linux, or macOS without Homebrew) or `brew install standing-desks/tap/nouli` (macOS). Define a provider in `~/.nouli/config.toml`, then run `nouli auth login PROVIDER`, which reads the key without echo; let the person type it.
+Install with `curl -fsSL https://nouli.ai/install.sh | sh` (Linux, or macOS without Homebrew) or `brew install nouli-ai/tap/nouli` (macOS). Define a provider in `~/.nouli/config.toml`, then run `nouli auth login PROVIDER`, which reads the key without echo; let the person type it.
 
 Rules for driving Nouli from an agent:
 
@@ -30,14 +30,14 @@ navigation. Click Select text or press F6 for native drag-selection and terminal
 
 ## Docs
 
-- [Command line](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/cli.md): every command, facts, questions, request files, interactive sessions, and recovery
-- [Output formats](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/output.md): text, JSON, JSONL, and TOON reports
-- [Decision contract](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/contracts/decisions.md): `choice`, `noul`, and `score` questions and the compact question syntax
-- [Configuration](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/configuration.md): providers, models, credentials, and storage
-- [Workflows](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/cli-workflows.md): dependent decisions and resuming interrupted runs
+- [Command line](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/cli.md): every command, facts, questions, request files, interactive sessions, and recovery
+- [Output formats](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/output.md): text, JSON, JSONL, and TOON reports
+- [Decision contract](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/contracts/decisions.md): `choice`, `noul`, and `score` questions and the compact question syntax
+- [Configuration](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/configuration.md): providers, models, credentials, and storage
+- [Workflows](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/cli-workflows.md): dependent decisions and resuming interrupted runs
 
 ## Optional
 
 - [User guide](https://nouli.ai/guide/): a walkthrough of setup, sessions, branching, and blending
-- [Rust library](https://raw.githubusercontent.com/standing-desks/nouli/main/docs/embedding.md): embedding Nouli in an application
+- [Rust library](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/embedding.md): embedding Nouli in an application
 - [Examples](https://nouli.ai/examples/): recorded walkthroughs, including the food recall decision graph
