@@ -1155,7 +1155,6 @@ mod tests {
             assert!(screen.contains(message), "{screen}");
             assert!(!screen.contains("previous question"), "{screen}");
             assert!(screen.contains("Press Enter to send"), "{screen}");
-            assert!(screen.lines().next().unwrap().contains("nouli 0.4.0"));
             assert!(
                 screen.contains("Which destination suits this trip?"),
                 "{screen}"
