@@ -3,13 +3,21 @@ use nouli_core::identity::Id;
 use std::ops::Range;
 
 pub(crate) fn image_tags(value: &str) -> Vec<Range<usize>> {
+    tags(value, "[image:")
+}
+
+pub(crate) fn decision_tags(value: &str) -> Vec<Range<usize>> {
+    tags(value, "[decision:")
+}
+
+fn tags(value: &str, prefix: &str) -> Vec<Range<usize>> {
     let mut tags = Vec::new();
     let mut offset = 0;
-    while let Some(at) = value[offset..].find("[image:") {
+    while let Some(at) = value[offset..].find(prefix) {
         let start = offset + at;
-        let tail = &value[start + 7..];
+        let tail = &value[start + prefix.len()..];
         let Some(end) = tail.find(']') else { break };
-        offset = start + 7 + end + 1;
+        offset = start + prefix.len() + end + 1;
         if Id::try_from(tail[..end].to_owned()).is_ok() {
             tags.push(start..offset);
         }
@@ -21,7 +29,11 @@ pub(crate) fn image_label_projection(value: &str, cursor: usize) -> (String, usi
     let mut shown = String::new();
     let mut offset = 0;
     let mut mapped = None;
-    for mut tag in image_tags(value) {
+    let mut tags = image_tags(value);
+    tags.extend(decision_tags(value));
+    tags.sort_by_key(|tag| tag.start);
+    for mut tag in tags {
+        let decision = value[tag.clone()].starts_with("[decision:");
         if tag.start > offset && value.as_bytes()[tag.start - 1] == b' ' {
             tag.start -= 1;
         }
@@ -32,7 +44,7 @@ pub(crate) fn image_label_projection(value: &str, cursor: usize) -> (String, usi
         // Imported images have their filename before the tag. A standalone
         // saved reference still needs a visible attachment placeholder.
         if tag.start == 0 {
-            shown.push_str("[image]");
+            shown.push_str(if decision { "[reference]" } else { "[image]" });
         }
         if mapped.is_none() && cursor < tag.end {
             mapped = Some(shown.len());
@@ -74,5 +86,9 @@ mod tests {
             "literal [image:not-an-id]"
         );
         assert!(text.contains(&tag), "display never changes the stored text");
+        let reference = format!("[decision:{}]", Id::generate());
+        let combined = format!("@Where? · trip / 1 {reference} photo.png {tag}");
+        assert_eq!(image_labels(&combined), "@Where? · trip / 1 photo.png");
+        assert_eq!(image_labels(&reference), "[reference]");
     }
 }

@@ -127,6 +127,36 @@ PNG, JPEG, GIF, WebP, BMP, TIFF, and ICO images appear by filename in the focuse
 
 Pasting never submits. Context and question fields preserve paragraphs and indentation; Options split pasted lines into individual items. The alternate-screen transcript disappears when the view closes, while the session retains its saved turns. Scripts and `TERM=dumb` keep the line syntax documented above.
 
+## Reference earlier answers in the TUI
+
+Type `@` at a word boundary in Context, Question, an option, or a score level.
+Search by question wording, question ID, session name, or turn ID. Suggestions
+cover **all saved decisions in the selected local store**, including other
+sessions, workspaces, branches, and workflow decisions. The default store is
+shared across directories; an explicit `--store` searches that store. Independent
+sessions remain separate in the graph and retain their own active facts.
+
+Each result shows its answer, source session and saved turn. Repeated questions
+remain distinct answers, even when they share an ID. Use Up/Down and Enter to
+insert one; the first Enter only inserts the reference. Choose **Browse history**
+for a larger list with answer distributions and source IDs. Ctrl-O in a field
+with references inspects the reference nearest the cursor. Backspace/Delete
+removes a whole reference. Removed draft references add no new source evidence;
+previously saved history still follows the usual context policy.
+
+Tab closes suggestions and moves to the next field. Shift-Tab closes them and
+changes the answer type left to right. Esc closes them and leaves ordinary
+editable text. Email addresses stay literal. Ctrl-S/F5 waits for you to select
+or dismiss the open search before sending.
+
+A reference retains its exact question, saved answer, provider, used image
+inputs and explicit reference dependencies. It never resolves to a newer answer
+later or replaces the current draft's type, options or levels. Saved source turns
+remain immutable. The latest answer is still included automatically; choosing
+it does not duplicate its answer in context. Required evidence that cannot fit
+produces an error and preserves your draft. Internal binding markers remain in
+saved data and structured exports while human output shows the readable label.
+
 ## Output
 
 In a terminal, a turn is printed as bars: every option's probability, `▶` on the selected one, and the turn's header. A question asked again under an ID used before is marked where its new answer differs by at least 0.05 from the last answer under that ID (`→ was`); the earlier answer stays as it was.

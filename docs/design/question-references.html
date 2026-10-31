@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Nouli · @ reference workflows</title>
+  <style>
+    :root {
+      --paper: #f3f2ec; --card: #fffefa; --ink: #242b25; --muted: #687067;
+      --line: #d7dcd0; --green: #385e40; --green-soft: #e7edde;
+      --terminal: #15191d; --term-ink: #d6dade; --dim: #9ba4ad; --rule: #4b5359;
+      --noul: #a3e635; --choice: #67e8f9; --score: #fda4af; --active: var(--choice);
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.6 var(--sans); }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; color: inherit; }
+    a { color: inherit; text-underline-offset: 4px; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+      outline: 3px solid #617b4f; outline-offset: 4px;
+    }
+    [hidden] { display: none !important; }
+    .wrap { max-width: 1512px; padding: 0 44px; margin: 0 auto; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 0; border-bottom: 1px solid var(--line); }
+    .brand { font: 700 24px var(--mono); letter-spacing: -1.5px; }
+    .brand::before { content: ""; display: inline-block; width: 8px; height: 18px; margin-right: 10px; background: var(--green); }
+    .eyebrow { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.7px; color: var(--muted); }
+    .top-meta { display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 11px; }
+    .pill { border: 1px solid var(--line); padding: 3px 9px; border-radius: 20px; font-size: 10px; white-space: nowrap; }
+    .hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 80px; padding: 44px 0 35px; align-items: end; }
+    h1 { font-size: clamp(34px, 4vw, 56px); line-height: 1.06; font-weight: 600; letter-spacing: -2.3px; margin: 10px 0 0; }
+    h1 span { color: var(--green); }
+    .hero p { margin: 0 0 2px; color: var(--muted); max-width: 485px; font-size: 15px; }
+    .hero strong { color: var(--ink); font-weight: 600; }
+    .designs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+    .design { border: 1px solid var(--line); border-radius: 9px; padding: 18px 20px; text-align: left; background: transparent; transition: background .15s, border-color .15s; }
+    .design:hover { background: #fafaf5; border-color: #a8b6a3; }
+    .design[aria-pressed="true"] { background: var(--card); border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+    .design-top { display: flex; gap: 10px; align-items: center; margin-bottom: 9px; }
+    .design-number { font: 11px var(--mono); color: var(--muted); }
+    .design-name { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
+    .recommend { margin-left: auto; font-size: 9px; color: var(--green); border: 1px solid #c6d6bc; border-radius: 3px; padding: 1px 5px; }
+    .design p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .design-footer { display: flex; justify-content: space-between; margin-top: 14px; font: 10px var(--mono); color: var(--muted); }
+    .design[aria-pressed="true"] .design-footer { color: var(--green); }
+    .lab { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .lab-top { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 20px 22px 17px; }
+    .lab-top h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.4px; }
+    .lab-top p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+    .reset { border: 1px solid var(--line); background: transparent; border-radius: 5px; padding: 6px 11px; font-size: 11px; }
+    .reset:hover { background: var(--green-soft); }
+    .lab-body { display: grid; grid-template-columns: minmax(0, 1fr) 244px; gap: 22px; padding: 0 14px 14px; }
+    .terminal-wrap { min-width: 0; background: var(--terminal); border: 1px solid #080c10; border-radius: 7px; box-shadow: 0 4px 12px #1d2a2110; color: var(--term-ink); }
+    .terminal { font: 11px/1.65 var(--mono); }
+    .term-top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #ffffff10; color: var(--dim); }
+    .term-top strong { font-size: 13px; color: var(--term-ink); letter-spacing: -.7px; }
+    .term-top .session { color: var(--term-ink); }
+    .mock-label { margin-left: auto; font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase; }
+    .term-layout { display: grid; grid-template-columns: minmax(0, 1fr) 215px; min-height: 560px; }
+    .term-main { min-width: 0; display: flex; flex-direction: column; padding: 15px 15px 12px; }
+    .transcript { min-height: 150px; color: var(--dim); font-size: 10px; padding: 2px 2px 15px; }
+    .transcript p { margin: 0 0 6px; }
+    .transcript .prompt { color: var(--term-ink); }
+    .transcript .answer { color: var(--choice); padding-left: 13px; }
+    .transcript .yes-answer { color: var(--noul); padding-left: 13px; }
+    .time { font-size: 9px; margin-right: 8px; color: var(--dim); }
+    .composer { margin-top: auto; }
+    .rule { display: flex; align-items: center; gap: 9px; color: #c4cbd1; white-space: nowrap; margin: 4px 0; }
+    .rule::after { content: ""; height: 1px; background: var(--rule); flex: 1; min-width: 6px; }
+    .rule .subtle { font-size: 9px; font-weight: 400; }
+    .subtle { color: var(--dim); }
+    .included { padding: 0 7px 5px; color: var(--dim); font-size: 10px; }
+    .file-row { padding: 1px 7px 5px; color: #c1c8cd; font-size: 10px; }
+    .types { display: inline-flex; gap: 8px; font-size: 9px; }
+    .type { color: var(--c); opacity: .6; }
+    .type.selected { opacity: 1; font-weight: 700; }
+    .type-hint { margin-left: auto; font-size: 9px; font-weight: 400; }
+    .question-label, .option-label { color: var(--active); }
+    .plain-question { color: #e3e7e9; padding: 4px 7px 8px; font-size: 11px; }
+    .editor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px; padding: 6px 7px; min-height: 36px; background: #ffffff05; border: 1px solid #505b60; border-radius: 3px; }
+    .editor:focus-within { border-color: #819286; }
+    .editor input { flex: 1 1 100px; width: 100px; min-width: 65px; color: #edf0f1; background: transparent; font: inherit; line-height: 1.7; padding: 0; border: 0; outline: 0; box-shadow: none; caret-color: #d7e1cf; }
+    .editor input:focus-visible { outline: 0; }
+    .editor input::placeholder { color: #9ba4ad; }
+    .token { color: #e2e9dd; background: #91ad7c19; border: 1px solid #91ad7c65; padding: 0 5px; border-radius: 2px; font: inherit; line-height: 1.7; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+    .token small { color: #bac5b2; font-size: 9px; }
+    .token:hover { background: #91ad7c2b; }
+    .option-note { color: var(--dim); font-size: 10px; padding: 1px 7px 3px; }
+    .option-list { color: #c7cdd2; display: flex; gap: 9px; flex-wrap: wrap; padding: 0 7px 7px; font-size: 10px; }
+    .send { margin-top: 9px; display: flex; align-items: center; gap: 12px; font-size: 10px; }
+    .send strong { color: var(--active); font-weight: 650; }
+    .term-status { padding: 7px 15px 1px; border-top: 1px solid #ffffff10; color: #bcc6c9; font-size: 10px; }
+    .term-hints { padding: 1px 15px 9px; font-size: 9px; color: var(--dim); }
+    .graph { padding: 13px 12px; border-left: 1px solid var(--rule); min-width: 0; }
+    .graph-title { margin-bottom: 20px; color: var(--dim); font-size: 10px; }
+    .graph-card { border: 1px solid #727d84; padding: 15px 11px 11px; position: relative; margin-bottom: 21px; }
+    .graph-legend { position: absolute; top: -9px; left: 6px; background: var(--terminal); color: #c0c7cc; padding: 0 5px; font-size: 9px; }
+    .graph-question { color: var(--choice); line-height: 1.55; margin-bottom: 15px; font-weight: 650; }
+    .graph-values { font-size: 10px; }
+    .graph-values div { display: flex; justify-content: space-between; gap: 7px; }
+    .graph-values .chosen { color: var(--choice); font-weight: 650; }
+    .graph-arrow { color: #d2d8da; text-align: center; margin-top: -14px; margin-bottom: 14px; }
+    .yes-card .graph-question, .yes-card .chosen { color: var(--noul); }
+    .graph-caption { color: var(--dim); font-size: 9px; line-height: 1.7; }
+    .pick { background: #1c2328; border: 1px solid #657269; border-radius: 3px; margin: 5px 0 9px; overflow: hidden; }
+    .pick-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 8px; color: #c0cbbd; font-size: 9px; border-bottom: 1px solid #ffffff0e; }
+    .pick-list { max-height: 188px; overflow-y: auto; }
+    .pick-row { display: block; width: 100%; border: 0; border-left: 2px solid transparent; border-bottom: 1px solid #ffffff08; padding: 7px 8px; color: #d9e0e1; background: transparent; text-align: left; font: 10px/1.65 var(--mono); }
+    .pick-row[aria-selected="true"] { border-left-color: #b5cd9c; background: #b5cd9c12; }
+    .pick-row:hover { background: #b5cd9c18; }
+    .pick-row strong { font-weight: 650; }
+    .pick-row .result-top { display: flex; justify-content: space-between; gap: 6px; }
+    .kind-tag { color: var(--c); font-size: 9px; white-space: nowrap; }
+    .result-meta { display: flex; gap: 8px; justify-content: space-between; color: #a8b4b8; font-size: 9px; }
+    .result-meta .source-answer { color: var(--c); }
+    .match-id { color: #d7decf; font-size: 9px; overflow-wrap: anywhere; }
+    .pick-foot { padding: 6px 8px; border-top: 1px solid #ffffff10; color: #b1bdb5; font-size: 9px; }
+    .empty { padding: 18px 10px; color: #b9c3c7; font-size: 10px; line-height: 1.8; }
+    .context-refs { padding: 0 6px 5px; }
+    .context-ref { display: flex; align-items: center; gap: 6px; padding: 3px 0; color: #d0d9c9; font-size: 10px; }
+    .context-ref .remove { margin-left: auto; background: transparent; border: 0; color: #afbab0; font: 10px var(--mono); }
+    .bound-summary { padding: 5px 7px; margin-top: 7px; background: #aec28f0a; color: #c3cebc; font-size: 9px; }
+    .history { flex: 1; margin: 0 0 14px; border: 1px solid #66776b; border-radius: 3px; background: #1c2328; overflow: hidden; }
+    .history-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 9px; border-bottom: 1px solid #ffffff10; color: #d8dfd4; font-size: 10px; }
+    .history-body { display: grid; grid-template-columns: 1fr 1fr; min-height: 220px; }
+    .history .pick-list { max-height: 263px; }
+    .history-preview { padding: 11px; border-left: 1px solid #ffffff16; min-width: 0; font-size: 10px; }
+    .preview-type { font-size: 9px; color: var(--c); margin-bottom: 7px; }
+    .preview-title { color: var(--c); font-weight: 650; line-height: 1.6; margin-bottom: 10px; }
+    .preview-values { font-size: 9px; margin-bottom: 12px; }
+    .preview-values div { display: flex; justify-content: space-between; gap: 5px; }
+    .preview-values .winner { color: var(--c); }
+    .preview-note { color: #aeb8bb; font-size: 9px; margin-bottom: 8px; }
+    .preview-id { color: #b3bcb3; font-size: 8px; overflow-wrap: anywhere; }
+    .inspector { border: 1px solid #617163; background: #1e2721; border-radius: 3px; padding: 8px 10px; margin-top: 8px; color: #ccd6c7; font-size: 9px; }
+    .inspector strong { color: #e4eade; }
+    .inspector code { display: block; color: #afbdab; overflow-wrap: anywhere; font: 9px/1.7 var(--mono); }
+    .inspector button { background: none; border: 0; padding: 4px 0 0; color: #c5d3b9; font: inherit; text-decoration: underline; }
+    .guide { padding: 4px 8px 0 0; }
+    .guide-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin-bottom: 13px; }
+    .steps { margin: 0; padding: 0; list-style: none; }
+    .steps li { padding: 0 0 18px 27px; position: relative; color: var(--muted); font-size: 11px; line-height: 1.65; }
+    .steps li::before { position: absolute; left: 0; top: 1px; content: attr(data-step); width: 18px; height: 18px; font: 10px/18px var(--mono); text-align: center; background: #edf0e6; border-radius: 50%; color: var(--green); }
+    .steps strong { display: block; color: var(--ink); margin-bottom: 3px; font-size: 12px; }
+    .guide-note { border-top: 1px solid var(--line); padding: 15px 0; font-size: 11px; color: var(--muted); }
+    .guide-note strong { color: var(--ink); display: block; font-size: 12px; margin-bottom: 5px; }
+    .keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    kbd { font: 10px var(--mono); background: #eeefe7; padding: 3px 5px; border: 1px solid #d9ddcf; border-bottom-width: 2px; border-radius: 3px; }
+    .scenarios { display: flex; flex-wrap: wrap; gap: 7px; padding: 15px 22px; border-top: 1px solid var(--line); align-items: center; }
+    .scenarios .eyebrow { margin-right: 6px; }
+    .scenario { border: 1px solid var(--line); background: transparent; border-radius: 5px; padding: 5px 9px; font-size: 10px; }
+    .scenario[aria-pressed="true"] { color: var(--green); background: var(--green-soft); border-color: #a9bc9a; }
+    .lab-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 22px 15px; color: var(--muted); font-size: 10px; }
+    .status { min-height: 16px; color: var(--green); }
+    .recommendation { margin: 28px 0 36px; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 25px; padding: 22px 25px; border-left: 3px solid var(--green); background: #e9eddf; }
+    .recommendation h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.4px; }
+    .recommendation p { font-size: 13px; line-height: 1.7; margin: 0; color: #4e5b4d; }
+    .section-top { display: flex; justify-content: space-between; gap: 20px; align-items: baseline; margin: 0 0 15px; }
+    .section-top h2 { font-size: 23px; font-weight: 600; letter-spacing: -.6px; margin: 0; }
+    .section-top p { color: var(--muted); font-size: 11px; margin: 0; }
+    .table-wrap { border: 1px solid var(--line); border-radius: 8px; overflow: auto; background: var(--card); }
+    table { border-collapse: collapse; width: 100%; text-align: left; font-size: 12px; min-width: 700px; }
+    th, td { padding: 13px 17px; border-bottom: 1px solid #e3e6da; vertical-align: top; }
+    th { font-size: 10px; background: #eceedf; color: #55614f; font-weight: 650; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 600; width: 23%; }
+    td { width: 25%; color: #5e685a; }
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; margin: 33px 0 36px; }
+    .principle { border-top: 1px solid #bfcbb4; padding-top: 13px; }
+    .principle .num { font: 10px var(--mono); color: var(--muted); }
+    .principle h3 { margin: 7px 0 6px; font-size: 14px; font-weight: 650; }
+    .principle p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.75; }
+    details { background: var(--card); border: 1px solid var(--line); border-radius: 7px; margin: 10px 0; }
+    summary { cursor: pointer; padding: 14px 17px; font-size: 12px; font-weight: 600; }
+    details p { color: var(--muted); font-size: 12px; margin: 0; padding: 0 17px 16px; }
+    details code { font: 11px var(--mono); color: #41533c; }
+    .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 45px; border-top: 1px solid var(--line); margin-top: 38px; padding: 23px 0; }
+    .sources h3 { margin: 0 0 7px; font-size: 12px; }
+    .sources p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
+    .source-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 9px; font-size: 10px; }
+    footer { display: flex; justify-content: space-between; gap: 15px; color: var(--muted); font-size: 10px; padding: 19px 0 25px; border-top: 1px solid var(--line); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    @media (min-width: 1500px) { .terminal { font-size: 12px; } .term-layout { min-height: 580px; grid-template-columns: minmax(0,1fr) 238px; } .pick-row { font-size: 11px; } }
+    @media (max-width: 1200px) { .wrap { padding: 0 28px; } .lab-body { grid-template-columns: minmax(0,1fr) 210px; gap: 15px; } .graph { display: none; } .term-layout { grid-template-columns: 1fr; min-height: 580px; } .hero { gap: 35px; } }
+    @media (max-width: 850px) { .wrap { padding: 0 20px; } .hero { grid-template-columns: 1fr; gap: 20px; padding: 30px 0; } .hero p { max-width: 610px; } .designs { gap: 8px; } .design { padding: 13px; } .design-top { flex-wrap: wrap; gap: 5px 8px; } .design-name { font-size: 14px; } .recommend { margin-left: 0; } .design-footer { font-size: 9px; } .lab-body { grid-template-columns: 1fr; } .guide { padding: 8px 8px 0; } .steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 15px; } .guide-note { display: none; } .keys { display: none; } .recommendation { grid-template-columns: 1fr; gap: 10px; } .term-layout { min-height: 540px; } .principles { gap: 18px; } }
+    @media (max-width: 560px) { .wrap { padding: 0 13px; } .top { padding: 18px 0; } .top-meta span:not(.pill) { display: none; } h1 { font-size: 39px; letter-spacing: -1.7px; } .hero p { font-size: 13px; } .designs { grid-template-columns: 1fr; } .design { padding: 12px 15px; } .design-top { margin-bottom: 3px; flex-wrap: nowrap; } .design-footer { display: none; } .design p { font-size: 11px; } .recommend { margin-left: auto; } .lab-top { padding: 15px; } .lab-top h2 { font-size: 17px; } .lab-body { padding: 0 7px 7px; } .term-main { padding: 10px; } .term-top { padding: 10px; gap: 7px; font-size: 9px; } .mock-label { display: none; } .terminal { font-size: 10px; } .types { font-size: 8px; gap: 5px; } .type-hint { font-size: 8px; } .rule { gap: 5px; } .rule .subtle { font-size: 8px; } .pick-row { font-size: 9px; } .pick-head, .pick-foot, .result-meta { font-size: 8px; } .history-body { grid-template-columns: 1fr; } .history-preview { border-left: 0; border-top: 1px solid #ffffff16; } .history .pick-list { max-height: 165px; } .history-body { min-height: 0; } .steps { gap: 10px; } .steps li { padding-left: 0; padding-top: 25px; font-size: 10px; } .steps strong { font-size: 11px; } .scenarios { padding: 12px; } .lab-bottom { padding: 0 12px 12px; flex-wrap: wrap; } .principles, .sources { grid-template-columns: 1fr; gap: 18px; } .section-top { display: block; } .section-top p { margin-top: 4px; } .recommendation { padding: 18px; } }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+    @media print { body { background: white; } .wrap { padding: 0; } .scenarios, .reset, .keys { display: none; } .lab, .designs, .principles, .recommendation { break-inside: avoid; } .terminal-wrap { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">nouli</div>
+    <div class="top-meta"><span>Interaction study · 30 Oct 2026</span><span class="pill">01 selected · store-wide search</span></div>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div><div class="eyebrow">Referencing earlier decisions</div><h1>A little <span>@.</span><br>A clear reference.</h1></div>
+      <p>Bring an earlier question and its saved answer into the next decision. Find it by <strong>what you asked</strong> or <strong>its ID</strong>, then choose the exact answer you mean.</p>
+    </section>
+    <nav class="designs" aria-label="Choose a workflow design">
+      <button class="design" data-design="inline" aria-pressed="true" type="button">
+        <span class="design-top"><span class="design-number">01</span><span class="design-name">Inline suggestions</span><span class="recommend">Recommended</span></span>
+        <p>Type @ where you’re writing. A short menu resolves the reference in place.</p>
+        <span class="design-footer"><span>Stay in the sentence</span><span>↗ Try it</span></span>
+      </button>
+      <button class="design" data-design="context" aria-pressed="false" type="button">
+        <span class="design-top"><span class="design-number">02</span><span class="design-name">Context references</span></span>
+        <p>Add saved answers beside files and other context. Keep the question plain.</p>
+        <span class="design-footer"><span>Collect first, then ask</span><span>↗ Try it</span></span>
+      </button>
+      <button class="design" data-design="history" aria-pressed="false" type="button">
+        <span class="design-top"><span class="design-number">03</span><span class="design-name">History picker</span></span>
+        <p>Browse matching questions and their full answer distributions before inserting.</p>
+        <span class="design-footer"><span>More room to inspect</span><span>↗ Try it</span></span>
+      </button>
+    </nav>
+    <section class="lab" aria-labelledby="lab-title">
+      <div class="lab-top"><div><h2 id="lab-title">01 · Inline suggestions</h2><p id="lab-subtitle">A small menu beside the text you’re writing.</p></div><button class="reset" id="reset" type="button">Reset demo ↺</button></div>
+      <div class="lab-body">
+        <div class="terminal-wrap">
+          <div class="terminal" id="terminal" aria-label="Interactive Nouli workflow prototype">
+            <div class="term-top"><strong>nouli</strong><span>0.4.0</span><span class="session">joule-8-solder</span><span class="mock-label">Interactive prototype</span></div>
+            <div class="term-layout">
+              <div class="term-main">
+                <div class="transcript" id="transcript">
+                  <p><span class="time">turn 3</span><span class="prompt">Where should I go?</span></p>
+                  <p class="answer">▶ Siberia <span class="subtle">0.72 · after new information</span></p>
+                  <p style="margin-top:12px"><span class="time">turn 4</span><span class="prompt">Are you sure about that?</span></p>
+                  <p class="yes-answer">▶ P(yes)=0.54</p>
+                </div>
+                <div class="history" id="history-picker" hidden>
+                  <div class="history-head"><span>Reference a saved answer</span><span class="subtle">all local sessions</span></div>
+                  <div class="history-body"><div class="pick-list" id="history-results" role="listbox" aria-label="Saved answers"></div><div class="history-preview" id="history-preview"></div></div>
+                  <div class="pick-foot">↑↓ preview · Enter insert · Esc return to draft</div>
+                </div>
+                <div class="composer">
+                  <div class="rule"><strong>Context</strong><span class="subtle">· latest included</span></div>
+                  <div class="included">↳ Are you sure about that?</div>
+                  <div class="file-row">+ forecast.png</div>
+                  <div class="context-refs" id="context-refs"></div>
+                  <div id="context-editor-host"></div>
+                  <div class="rule"><strong class="question-label">Question</strong><span class="types" aria-label="Current answer type"><span class="type" data-kind="noul" style="--c:var(--noul)">Yes / No</span><span class="type selected" data-kind="choice" style="--c:var(--choice)">[Choose one]</span><span class="type" data-kind="score" style="--c:var(--score)">Score</span></span><span class="subtle type-hint">Shift-Tab →</span></div>
+                  <div class="plain-question" id="plain-question" hidden>Given the forecast, where should I go?</div>
+                  <div id="question-editor-host"></div>
+                  <div id="options-area"><div class="rule"><strong class="option-label" id="options-title">Options</strong><span class="subtle" id="options-count">· 3 options</span></div><div class="option-list" id="option-list"><span>San Diego</span><span>·</span><span>Siberia</span><span>·</span><span>Antarctica</span></div></div>
+                  <div class="bound-summary" id="bound-summary" hidden></div>
+                  <div class="inspector" id="inspector" hidden></div>
+                  <div class="send"><strong id="send-action">Enter to insert reference</strong><span class="subtle" id="send-shortcut">Esc to return</span></div>
+                </div>
+              </div>
+              <aside class="graph" aria-label="Existing decision graph">
+                <div class="graph-title">decisions · Ctrl-G</div>
+                <div class="graph-card"><div class="graph-legend">joule-8-solder · turn 3</div><div class="graph-question">Where should I go?</div><div class="graph-values"><div><span>San Diego</span><span>0.27</span></div><div class="chosen"><span>▶ Siberia</span><span>0.72</span></div><div><span>Antarctica</span><span>0.01</span></div></div></div>
+                <div class="graph-arrow">↓</div>
+                <div class="graph-card yes-card"><div class="graph-legend">turn 4 · latest</div><div class="graph-question">Are you sure about that?</div><div class="graph-values"><div class="chosen"><span>▶ P(yes)=0.54</span></div></div></div>
+                <p class="graph-caption">Questions and answers retain their Citrus accents.</p>
+              </aside>
+            </div>
+            <div class="term-status">typesafe/jev-latest <span class="subtle">· Draft</span></div>
+            <div class="term-hints" id="term-hints">↑↓ choose · Enter insert · Esc close · Tab next field · Shift-Tab type</div>
+          </div>
+        </div>
+        <aside class="guide" aria-label="How this design works">
+          <div class="guide-label">The interaction</div>
+          <ol class="steps" id="steps"></ol>
+          <div class="guide-note"><strong id="tradeoff-title"></strong><span id="tradeoff"></span></div>
+          <div class="guide-note"><strong>Try it with your keyboard</strong>Click the @ field, edit the search, then press Enter. The first Enter inserts the reference. It never also sends the decision.<div class="keys"><kbd>@</kbd><kbd>↑ ↓</kbd><kbd>Enter</kbd><kbd>Esc</kbd></div></div>
+        </aside>
+      </div>
+      <div class="scenarios" aria-label="Example states"><span class="eyebrow">Try a case</span>
+        <button class="scenario" data-scenario="text" aria-pressed="true" type="button">Question text</button>
+        <button class="scenario" data-scenario="id" aria-pressed="false" type="button">Question ID</button>
+        <button class="scenario" data-scenario="repeated" aria-pressed="false" type="button">Same question, two answers</button>
+        <button class="scenario" data-scenario="latest" aria-pressed="false" type="button">Already included</button>
+        <button class="scenario" data-scenario="empty" aria-pressed="false" type="button">No match</button>
+        <button class="scenario" data-scenario="inserted" aria-pressed="false" type="button">After selection</button>
+      </div>
+      <div class="lab-bottom"><span id="status" class="status" role="status" aria-live="polite">Type a question or ID after @. The examples use illustrative saved history.</span><span>Browser demo · no model calls</span></div>
+    </section>
+    <section class="recommendation" aria-labelledby="recommendation-title"><h2 id="recommendation-title">Start with 01.</h2><p>Inline suggestions keep the common path short: <strong>@ → type → Enter → keep writing.</strong> Offer “Browse history…” at the bottom when someone needs the larger preview from 03. Show a compact reference in the draft; keep IDs in source details unless they’re being searched.</p></section>
+    <section aria-labelledby="compare-title">
+      <div class="section-top"><h2 id="compare-title">Three ways to reach the same saved answer.</h2><p>The choice is where search and inspection happen.</p></div>
+      <div class="table-wrap"><table><thead><tr><th>Workflow</th><th>01 · Inline suggestions</th><th>02 · Context references</th><th>03 · History picker</th></tr></thead><tbody>
+        <tr><td>Start</td><td>Type @ in Context, Question, an option, or a level.</td><td>Type @ in Context; saved answers sit alongside other evidence.</td><td>Type @ in any text field; a larger picker replaces the transcript while open.</td></tr>
+        <tr><td>What you insert</td><td>An inline @question label, bound to a particular saved answer.</td><td>A reference row under Context. The question stays plain text.</td><td>An inline @question label after inspecting the saved answer.</td></tr>
+        <tr><td>Distinguish repeated questions</td><td>Answer, turn number, and a short context note in each result.</td><td>The same details in a compact evidence list.</td><td>List on the left; full distribution and source details beside it.</td></tr>
+        <tr><td>Best for</td><td>“Reconsider @that earlier question given this forecast.”</td><td>Comparing several previous judgments as evidence.</td><td>Long sessions and ambiguous or repeated questions.</td></tr>
+        <tr><td>Cost</td><td>Less preview room. Needs a path to more detail.</td><td>An extra move to Context when you’re writing elsewhere.</td><td>A bigger interruption for a simple reference.</td></tr>
+      </tbody></table></div>
+    </section>
+    <section class="principles" aria-label="Shared behavior across all designs">
+      <article class="principle"><span class="num">01 / WHAT’S INCLUDED</span><h3>Question + saved answer.</h3><p>The reference brings in the selected question, its typed result, and the image inputs needed to interpret it. The latest answer remains included automatically. An older reference adds to it.</p></article>
+      <article class="principle"><span class="num">02 / WHICH VERSION</span><h3>Bind the answer you picked.</h3><p>Two turns can share a question ID and have different answers. Show both. A chosen reference keeps its source turn, so a later update never changes its meaning.</p></article>
+      <article class="principle"><span class="num">03 / YOUR CURRENT DRAFT</span><h3>Keep the draft as it is.</h3><p>Referencing a Score result doesn’t switch a Choose one draft to Score. It doesn’t replace the prompt, options, or levels. Shift-Tab still changes the type; Tab still moves fields.</p></article>
+    </section>
+    <section aria-labelledby="details-title">
+      <div class="section-top"><h2 id="details-title">The details that make it predictable.</h2><p>Proposed behavior shared by all three designs.</p></div>
+      <details open><summary>Search by wording or ID, without learning a grammar</summary><p>Start typing after @. Match question text or paste a question ID; a short unambiguous ID prefix is enough to find candidates. IDs appear when relevant to the search and in source details. A question ID may match several saved turns: picking an answer is always explicit. The picker starts with recent answers across every session in the selected local store, including independent sessions, branch ancestors, and workflow decisions. Results show the source session and turn.</p></details>
+      <details><summary>Enter inserts; it doesn’t send in the same keystroke</summary><p>While results are open, ↑/↓ chooses a result and Enter inserts it. Esc closes the picker and leaves the typed text editable. Tab closes it and moves to the next field without accepting a candidate. Shift-Tab closes it and changes the answer type left to right. After selection, the usual Enter behavior resumes: send from Question or ready Context; add a row in Options/Levels, with a second consecutive Enter on the empty row to send.</p></details>
+      <details><summary>A normal @ stays normal text</summary><p>An @ at a word boundary opens suggestions; an email such as <code>me@example.com</code> doesn’t. Pasting an email or arbitrary prose doesn’t create a binding. Only choosing a saved answer creates a reference. No match gives “No saved question found” with an option to keep the literal text. Unselected text never secretly points to a result. A send shortcut with search open asks you to select or dismiss it first.</p></details>
+      <details><summary>Latest, duplicates, and repeated questions</summary><p>The latest question is labelled “already included.” Referencing it adds a readable inline label but doesn’t add the source twice. Choosing the same saved answer twice also shares one context source. Different turns of the same question remain separate sources. Short labels show a turn number when needed to disambiguate; full question and source IDs stay in details.</p></details>
+      <details><summary>Inspect and remove references without fighting the terminal</summary><p>In the proposed TUI, arrow keys move over an inline reference as one unit; Backspace or Delete removes the whole reference. A focused reference offers an explicit inspect action such as Ctrl-O, opening its question, answer and source turn. The browser demo’s labels are clickable for review, but the native design keeps mouse capture disabled so text selection continues to work.</p></details>
+      <details><summary>What happens if the referenced evidence won’t fit?</summary><p>Selected answers are required for that submission, including their needed image dependencies. If required evidence exceeds model capacity, keep the draft and identify the references that need to be removed. Don’t silently send a weaker request. A refused or failed source is identified as having no usable saved answer and cannot be selected as answer evidence.</p></details>
+      <details><summary>Other sessions and saved references</summary><p>Accepted scope: search all saved decisions across the selected local store, regardless of session or working directory. Show source session names and saved turns in results. Selecting a source adds that exact answer as evidence without merging the session’s history or active facts. Bind each reference to a saved turn and question together; preserve that binding when a draft is restored and record it with the submitted turn for inspection. This is a proposed addition, not existing @ support.</p></details>
+    </section>
+    <section class="sources" aria-label="Existing behavior and design scope">
+      <div><h3>Fits the current Nouli UI</h3><p>The latest-context cue, filename-only images, Citrus question/answer colors, and Tab / Shift-Tab behavior already exist on the context-and-image-labels branch. The @ interactions shown here are proposals.</p><div class="source-links"><a href="../adr/0012-visible-latest-context-and-image-labels.md">Latest context + image labels ↗</a><a href="../cli.md">Current keyboard behavior ↗</a><a href="question-type-colors.html?palette=citrus">Citrus color study ↗</a></div></div>
+      <div><h3>Review the interaction before implementation</h3><p>This file is a standalone, offline HTML prototype with example data. Search, selection, repeated answers, source inspection and removal are interactive. It doesn’t modify Nouli’s Rust code, sessions, model requests, or the current graph.</p><div class="source-links"><a href="../../nouli-cli/src/repl/tui/draw.rs">Current composer ↗</a><a href="../../nouli-cli/src/repl/tui.rs">Current context requirements ↗</a><a href="../../nouli-core/src/context/builder.rs">Context builder ↗</a></div></div>
+    </section>
+  </main>
+  <footer><span>nouli / Interaction study 02</span><span>Three proposals · one saved source of truth</span></footer>
+</div>
+<div id="editor-pool" hidden>
+  <div id="editor-block">
+    <label class="sr-only" for="reference-input">Search a prior question by text or ID after @</label>
+    <div class="editor" id="editor"><span id="sentence-prefix">Given the forecast, reconsider </span><span id="inline-tokens"></span><input id="reference-input" type="text" role="combobox" value="@" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-expanded="true" aria-controls="inline-results" placeholder="Type @ to reference a saved answer"></div>
+    <div class="pick" id="inline-picker"><div class="pick-head"><span id="picker-label">Saved answers · all local sessions</span><span id="result-count"></span></div><div class="pick-list" id="inline-results" role="listbox" aria-label="Saved answers"></div><div class="pick-foot">↑↓ choose · Enter insert · Esc close <button id="browse-history" type="button" style="float:right;border:0;background:none;color:#cedcc1;font:inherit;padding:0;text-decoration:underline">Browse history…</button></div></div>
+  </div>
+</div>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const colors = { noul: '#a3e635', choice: '#67e8f9', score: '#fda4af' };
+  const kindLabels = { noul: 'Yes / No', choice: 'Choose one', score: 'Score' };
+  // Illustrative data only. Repeated question IDs intentionally share different turn IDs.
+  const records = [
+    { key: 't4', turn: 4, questionId: 'q_a317c4289e120d5b', turnId: '01a18f21-a104-7543-8796-3c5d75c25429', prompt: 'Are you sure about that?', kind: 'noul', answer: 'Yes · 0.54', note: 'Latest · already included', latest: true, values: [['Yes','0.54'],['No','0.46']], files: [] },
+    { key: 't3', turn: 3, questionId: 'q_f089742e734fca2b', turnId: '01a18f1f-7ae4-7e14-9867-2ec11c5a9439', prompt: 'Where should I go?', kind: 'choice', answer: 'Siberia · 0.72', note: 'After metro preference', values: [['San Diego','0.27'],['Siberia','0.72'],['Antarctica','0.01']], files: ['map.png'] },
+    { key: 't2', turn: 2, questionId: 'q_c82a5164df0a19b6', turnId: '01a18f1e-1cb6-7e82-ae4b-f4884570683c', prompt: 'How well does San Diego fit my priorities?', kind: 'score', answer: '2.40 / 3', note: 'Sunlight and travel time', values: [['Low','0.02'],['Fair','0.08'],['Good','0.38'],['Excellent','0.52']], files: [] },
+    { key: 't1', turn: 1, questionId: 'q_f089742e734fca2b', turnId: '01a18f1c-0752-7376-9fd9-1a7ee26d1950', prompt: 'Where should I go?', kind: 'choice', answer: 'San Diego · 0.62', note: 'Original winter trip', values: [['San Diego','0.62'],['Siberia','0.37'],['Antarctica','0.01']], files: ['winter-trip.png'] }
+  ];
+  const designs = {
+    inline: { title: '01 · Inline suggestions', subtitle: 'A small menu beside the text you’re writing.', steps: [['Type @ in place','Search the question’s wording or paste its ID. Recent saved answers appear first.'],['Pick the saved answer','A turn number and answer distinguish repeated questions. Enter inserts; it doesn’t send.'],['Keep writing','The reference stays in the sentence. Your current type and answer list stay as they are.']], tradeoffTitle: 'Smallest interruption', tradeoff: 'Best default for a quick reference. Browse history opens the larger preview when a compact row isn’t enough.' },
+    context: { title: '02 · Context references', subtitle: 'Collect saved answers beside files and other evidence.', steps: [['Go to Context and type @','Search prior questions by wording or ID, alongside your other evidence.'],['Add a reference row','Enter attaches the saved question and answer under Context. Add another with @.'],['Ask in plain text','The question stays uncluttered. Remove any reference from the Context list.']], tradeoffTitle: 'Clear evidence list', tradeoff: 'Useful for several sources. It takes an extra field move when you’re already writing a question or an option.' },
+    history: { title: '03 · History picker', subtitle: 'A larger search surface with the saved answer beside each match.', steps: [['Type @ to open history','The picker uses the transcript area. Your draft remains visible below it.'],['Inspect before choosing','Arrow through matches to see the exact answer distribution, inputs, and source IDs.'],['Enter to insert and return','The picker closes and leaves an inline reference where you were writing.']], tradeoffTitle: 'Most inspection room', tradeoff: 'Best for long or repetitive history. More screen movement than a short inline menu for a simple reference.' }
+  };
+  const state = { design: 'inline', scenario: 'text', mode: 'choice', open: true, browser: false, active: 0, refs: [], parts: [], literal: false, inspect: null };
+  const input = $('reference-input');
+  const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function announce(message) { $('status').textContent = message; }
+  function query() { const match = input.value.match(/(?:^|\s)@([^@]*)$/u); return match ? match[1].trim().toLowerCase() : null; }
+  function matches() {
+    const text = query();
+    if (text === null || !text) return records;
+    const words = text.split(/\s+/u);
+    return records.filter(r => words.every(w => (r.prompt + ' ' + r.questionId).toLowerCase().includes(w)));
+  }
+  function useHistory() { return state.design === 'history' || state.browser; }
+  function renderMode() {
+    document.documentElement.style.setProperty('--active', colors[state.mode]);
+    document.querySelectorAll('[data-kind]').forEach(el => {
+      const selected = el.dataset.kind === state.mode;
+      el.classList.toggle('selected', selected);
+      el.textContent = selected ? '[' + kindLabels[el.dataset.kind] + ']' : kindLabels[el.dataset.kind];
+    });
+    $('options-area').hidden = state.mode === 'noul';
+    $('options-title').textContent = state.mode === 'score' ? 'Levels' : 'Options';
+    $('options-count').textContent = state.mode === 'score' ? '· add levels' : '· 3 options';
+    $('option-list').textContent = state.mode === 'score' ? '+ Add a level' : 'San Diego · Siberia · Antarctica';
+  }
+  function renderReferences() {
+    const inline = state.design !== 'context';
+    $('sentence-prefix').textContent = inline ? 'Given the forecast, reconsider ' : '';
+    $('inline-tokens').innerHTML = inline ? state.parts.map(part => typeof part === 'string' ? escape(part) : `<button class="token" type="button" data-inspect="${part.key}" aria-label="Inspect ${escape(part.prompt)}, turn ${part.turn}">@${escape(part.prompt)} <small>· turn ${part.turn}</small></button>`).join(' ') : '';
+    $('context-refs').innerHTML = inline ? '' : state.refs.map(r => `<div class="context-ref"><button class="token" type="button" data-inspect="${r.key}">@${escape(r.prompt)} <small>· turn ${r.turn}</small></button><button class="remove" type="button" data-remove="${r.key}" aria-label="Remove reference to ${escape(r.prompt)}, turn ${r.turn}">×</button></div>`).join('');
+    const added = state.refs.filter(r => !r.latest);
+    $('bound-summary').hidden = state.refs.length === 0;
+    $('bound-summary').textContent = added.length ? `Latest + ${added.length} earlier saved ${added.length === 1 ? 'answer' : 'answers'} included · type unchanged` : 'Latest answer already included · no duplicate source';
+    if (!state.inspect) $('inspector').hidden = true;
+  }
+  function preview(record) {
+    if (!record) return '<div class="empty">No matching saved answer.<br>Your draft is preserved.</div>';
+    return `<div style="--c:${colors[record.kind]}"><div class="preview-type">${kindLabels[record.kind]} · turn ${record.turn}</div><div class="preview-title">${escape(record.prompt)}</div><div class="preview-values">${record.values.map(([name,value]) => `<div class="${record.answer.startsWith(name) || (record.kind === 'score' && name === 'Excellent') ? 'winner' : ''}"><span>${escape(name)}</span><span>${escape(value)}</span></div>`).join('')}</div><div class="preview-note">${escape(record.note)}<br>${record.files.length ? 'Inputs: ' + record.files.map(escape).join(', ') : 'No image inputs'}</div><div class="preview-id">Question ${record.questionId}<br>Source ${record.turnId}</div></div>`;
+  }
+  function renderSearch() {
+    const found = matches();
+    state.active = Math.min(Math.max(0, state.active), Math.max(0, found.length - 1));
+    const open = state.open;
+    const expanded = open && useHistory();
+    $('inline-picker').hidden = !open || expanded;
+    $('history-picker').hidden = !expanded;
+    $('transcript').hidden = expanded;
+    const target = expanded ? $('history-results') : $('inline-results');
+    const other = expanded ? $('inline-results') : $('history-results');
+    other.replaceChildren();
+    const searchingId = (query() || '').startsWith('q_');
+    target.innerHTML = found.length ? found.map((r,i) => `<button class="pick-row" id="result-${r.key}" type="button" role="option" tabindex="-1" aria-selected="${i===state.active}" data-result="${r.key}" style="--c:${colors[r.kind]}"><span class="result-top"><strong>${escape(r.prompt)}</strong><span class="kind-tag">${kindLabels[r.kind]}</span></span><span class="result-meta"><span class="source-answer">${escape(r.answer)}</span><span>turn ${r.turn}</span></span><span class="result-meta"><span>${escape(r.note)}</span>${state.refs.some(x=>x.key===r.key)?'<span>✓ referenced</span>':''}</span>${searchingId?`<span class="match-id">${r.questionId}</span>`:''}</button>`).join('') : '<div class="empty">No saved question found.<br>Try different wording or an ID.<br><span class="subtle">Esc keeps this as plain text.</span></div>';
+    $('result-count').textContent = found.length + (found.length === 1 ? ' match' : ' matches');
+    if (expanded) $('history-preview').innerHTML = preview(found[state.active]);
+    $('browse-history').hidden = state.design !== 'inline';
+    input.setAttribute('aria-expanded', String(open));
+    input.setAttribute('aria-controls', expanded ? 'history-results' : 'inline-results');
+    if (open && found.length) input.setAttribute('aria-activedescendant', 'result-' + found[state.active].key);
+    else input.removeAttribute('aria-activedescendant');
+    $('term-hints').textContent = open ? '↑↓ choose · Enter insert · Esc close · Tab next field · Shift-Tab type' : 'Tab next field · Shift-Tab type · @ reference · Ctrl-O inspect';
+    $('send-action').textContent = open ? 'Enter to insert reference' : 'Press Enter to send';
+    $('send-shortcut').textContent = open ? 'Esc to return' : 'Ctrl-S / F5';
+  }
+  function layout() {
+    const design = designs[state.design];
+    $('lab-title').textContent = design.title;
+    $('lab-subtitle').textContent = design.subtitle;
+    document.querySelectorAll('[data-design]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.design === state.design)));
+    document.querySelectorAll('[data-scenario]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scenario === state.scenario)));
+    $('steps').innerHTML = design.steps.map(([title,text],i) => `<li data-step="${i+1}"><strong>${title}</strong>${text}</li>`).join('');
+    $('tradeoff-title').textContent = design.tradeoffTitle;
+    $('tradeoff').textContent = design.tradeoff;
+    const host = state.design === 'context' ? $('context-editor-host') : $('question-editor-host');
+    host.append($('editor-block'));
+    $('plain-question').hidden = state.design !== 'context';
+    input.setAttribute('aria-label', state.design === 'context' ? 'Context reference search: type @ and question text or ID' : 'Question reference search: type @ and question text or ID');
+    renderMode(); renderReferences(); renderSearch();
+  }
+  function choose(record) {
+    if (!record) return;
+    const already = state.refs.some(r => r.key === record.key);
+    const at = input.value.lastIndexOf('@');
+    if (!already) {
+      state.refs.push(record);
+      if (state.design !== 'context') { if (at > 0) state.parts.push(input.value.slice(0, at)); state.parts.push(record); }
+    }
+    input.value = state.design === 'context' && at > 0 ? input.value.slice(0, at) : '';
+    state.open = false; state.browser = false; state.inspect = null; state.literal = false;
+    renderReferences(); renderSearch(); input.focus();
+    announce(already ? 'That saved answer is already referenced.' : record.latest ? 'Reference inserted. This answer was already included; its context is not duplicated.' : `Referenced turn ${record.turn}: ${record.answer}. The draft stays ${kindLabels[state.mode]}. Type @ to add another.`);
+  }
+  function inspect(key) {
+    const record = records.find(r => r.key === key); if (!record) return;
+    state.inspect = key;
+    $('inspector').hidden = false;
+    $('inspector').innerHTML = `<strong>Saved source · turn ${record.turn}</strong><div>${escape(record.prompt)} → ${escape(record.answer)}</div><code>Question ${record.questionId}<br>Source ${record.turnId}</code><div>${record.files.length ? 'Image inputs: ' + record.files.map(escape).join(', ') : 'No image inputs'}</div><button type="button" data-remove="${key}">Remove reference</button> <button type="button" id="close-inspector">Close</button>`;
+    announce('Source details show the exact saved answer. The reference will not follow later updates.');
+  }
+  function remove(key) {
+    state.refs = state.refs.filter(r=>r.key!==key);
+    state.parts = state.parts.filter(p=>typeof p==='string'||p.key!==key);
+    state.inspect = null; renderReferences(); renderSearch();
+    announce('Reference removed. The automatically included latest answer stays in context.');
+  }
+  function scenario(name, focus = true) {
+    state.scenario = name; state.open = true; state.browser = false; state.active = 0; state.refs = []; state.parts = []; state.inspect = null; state.literal = false;
+    input.value = ({text:'@',id:'@q_f089742e',repeated:'@Where should I go?',latest:'@Are you sure',empty:'@hotel breakfast',inserted:'@Where should I go?'})[name] || '@';
+    layout();
+    if(name === 'inserted') choose(records.find(r=>r.key==='t3'));
+    else announce(({id:'A question ID can match more than one saved answer. Choose the source turn you mean.',repeated:'Same question ID, different answers. Compare turns 1 and 3 before inserting.',latest:'The latest answer is already included. An explicit reference won’t add its context twice.',empty:'No match stays editable. Esc closes suggestions and keeps ordinary text.'})[name] || 'Type a question or ID after @. Enter inserts the selected saved answer.');
+    if (focus) { input.focus(); input.setSelectionRange(input.value.length,input.value.length); }
+  }
+  document.querySelectorAll('[data-design]').forEach(button=>button.addEventListener('click',()=>{
+    state.design=button.dataset.design; state.mode='choice'; scenario(state.scenario, false);
+    try { const url=new URL(location.href); url.searchParams.set('design',state.design); history.replaceState(null,'',url); } catch {}
+  }));
+  document.querySelectorAll('[data-scenario]').forEach(button=>button.addEventListener('click',()=>scenario(button.dataset.scenario)));
+  $('reset').addEventListener('click',()=>{state.mode='choice'; scenario('text');});
+  input.addEventListener('input',()=>{state.literal=false; state.active=0; state.open=query()!==null; state.inspect=null; $('inspector').hidden=true; renderSearch();});
+  input.addEventListener('keydown',event=>{
+    if (event.key==='Tab' && event.shiftKey) {
+      event.preventDefault(); state.open=false; state.browser=false; state.mode=({noul:'choice',choice:'score',score:'noul'})[state.mode]; renderMode(); renderSearch(); announce('Answer type changed to '+kindLabels[state.mode]+'. References stay attached.'); return;
+    }
+    if (event.key==='Tab') { state.open=false;state.browser=false; renderSearch(); announce('Suggestions closed without accepting a result. Tab moves focus; Shift-Tab changes type.'); return; }
+    if (event.key==='Escape') {event.preventDefault();state.open=false;state.browser=false;state.literal=true;renderSearch();announce('Suggestions closed. Unselected @ text remains ordinary text.');return;}
+    if ((event.ctrlKey||event.metaKey) && ['s','o'].includes(event.key.toLowerCase())) {
+      event.preventDefault();
+      if(event.key.toLowerCase()==='o'&&state.refs.length){inspect(state.refs[state.refs.length-1].key);return;}
+      announce(state.open ? 'Choose a saved answer, or dismiss suggestions, before sending.' : 'Prototype only. Saved references are bound; no model request was sent.'); return;
+    }
+    if (state.open && ['ArrowDown','ArrowUp'].includes(event.key)) {
+      event.preventDefault();const found=matches();if(found.length)state.active=(state.active+(event.key==='ArrowDown'?1:-1)+found.length)%found.length;renderSearch();document.getElementById('result-'+(found[state.active]?.key||''))?.scrollIntoView({block:'nearest'});return;
+    }
+    if(event.key==='Enter') {
+      event.preventDefault();
+      if(state.open) {const found=matches();if(found.length)choose(found[state.active]);else announce('No saved answer matches. Esc keeps the text without creating a reference.');}
+      else announce('Prototype only. This is where the normal Enter action resumes; no decision was sent.');
+    }
+    if(event.key==='Backspace'&&!input.value&&state.refs.length){event.preventDefault();remove(state.refs[state.refs.length-1].key);}
+  });
+  document.addEventListener('click',event=>{
+    const result=event.target.closest('[data-result]'); if(result)choose(records.find(r=>r.key===result.dataset.result));
+    const token=event.target.closest('[data-inspect]'); if(token)inspect(token.dataset.inspect);
+    const removal=event.target.closest('[data-remove]'); if(removal)remove(removal.dataset.remove);
+    if(event.target.closest('#close-inspector')){state.inspect=null;$('inspector').hidden=true;input.focus();}
+  });
+  $('browse-history').addEventListener('click',()=>{state.browser=true;state.open=true;renderSearch();input.focus();announce('Expanded history keeps your draft below the saved-answer preview. Enter inserts; Esc returns.');});
+  const requested=new URLSearchParams(location.search).get('design'); if(Object.hasOwn(designs,requested))state.design=requested;
+  scenario('text', false);
+})();
+</script>
+</body>
+</html>

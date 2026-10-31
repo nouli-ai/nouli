@@ -6,6 +6,7 @@ mod ansi;
 mod attachments;
 mod draw;
 mod form;
+mod references;
 mod sessions;
 
 use super::{HELP, Queue, Repl, Step};
@@ -47,7 +48,7 @@ use tokio::{runtime::Runtime, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
 /// The keys, for `/help` before the commands the line loop lists.
-const KEYS: [(&str, &str); 11] = [
+const KEYS: [(&str, &str); 13] = [
     ("Mouse drag", "select text using the terminal"),
     ("Tab", "next field or option"),
     (
@@ -55,6 +56,8 @@ const KEYS: [(&str, &str); 11] = [
         "next answer type: Yes / No → Choose one → Score",
     ),
     ("Up, Down", "the row above or below"),
+    ("@", "reference a saved answer from any local session"),
+    ("Ctrl-O", "inspect the nearby saved reference"),
     (
         "Enter",
         "send; in Options/Levels, add an item then Enter again to send",
@@ -282,6 +285,7 @@ struct App<'a> {
     latest_question: Option<PreviousQuestion>,
     /// The previous Enter added/finished a list item; another Enter sends.
     option_enter: bool,
+    references: references::References,
 }
 
 impl<'a> App<'a> {
@@ -310,6 +314,7 @@ impl<'a> App<'a> {
             previous_question: None,
             latest_question: None,
             option_enter: false,
+            references: references::References::default(),
         };
         app.drain();
         app.refresh_model();
@@ -383,6 +388,7 @@ impl<'a> App<'a> {
                         self.paste_text(&text);
                     }
                     self.drop_start = None;
+                    self.sync_references();
                 }
                 Ok(Flow::Continue)
             }
@@ -408,9 +414,16 @@ impl<'a> App<'a> {
             self.warned = false;
         }
         match key.code {
+            KeyCode::Char('c')
+                if control && running.is_none() && self.references.picker.is_some() =>
+            {
+                self.references.close();
+                return Ok(Flow::Continue);
+            }
             KeyCode::Char('c') if control => return Ok(self.interrupt(running.as_ref())),
             KeyCode::Char('d') if control => return Ok(self.end_of_input(running.is_some())),
             KeyCode::Char('g') if control => {
+                self.references.close();
                 self.graph_focused = !self.graph_focused;
                 return Ok(Flow::Continue);
             }
@@ -420,10 +433,14 @@ impl<'a> App<'a> {
             && (key.code == KeyCode::BackTab
                 || key.code == KeyCode::Tab && key.modifiers.contains(KeyModifiers::SHIFT))
         {
+            self.references.close();
             self.sessions = None;
             self.hidden = true;
             self.graph_focused = false;
             self.form.next_kind(&mut self.repl.queue.facts);
+            return Ok(Flow::Continue);
+        }
+        if running.is_none() && self.reference_key(&key) {
             return Ok(Flow::Continue);
         }
         if let Some(flow) = self.list_key(&key, running)? {
@@ -476,6 +493,7 @@ impl<'a> App<'a> {
                     self.status = None;
                     self.choice = 0;
                     self.hidden = false;
+                    self.sync_references();
                 }
             }
         }
@@ -641,6 +659,7 @@ impl<'a> App<'a> {
         if !self.form.text(&self.repl.queue.facts).is_empty() {
             let delete = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
             self.edit_form(&delete);
+            self.sync_references();
             return Flow::Continue;
         }
         if !(self.repl.queue.is_empty() && self.form.is_empty()) && !self.warned {
@@ -866,6 +885,38 @@ impl<'a> App<'a> {
                 .chain(used_question.iter().copied())
                 .any(|text| text.contains(&image.reference))
         };
+        let reference_texts = self
+            .repl
+            .queue
+            .facts
+            .iter()
+            .map(String::as_str)
+            .chain(used_question.iter().copied())
+            .collect::<Vec<_>>();
+        if reference_texts
+            .iter()
+            .any(|text| text.contains("[decision:"))
+        {
+            let resolved = self
+                .repl
+                .ledger()
+                .map_err(|e| e.message)
+                .and_then(|ledger| self.reference_updates(&ledger, &reference_texts));
+            match resolved {
+                Ok((updates, required)) => {
+                    draft.request.updates.extend(updates);
+                    for id in required {
+                        if !draft.request.required_records.contains(&id) {
+                            draft.request.required_records.push(id);
+                        }
+                    }
+                }
+                Err(message) => {
+                    self.status = Some(Status::error(render::clean(&message)));
+                    return Ok(None);
+                }
+            }
+        }
         for image in self.images.iter().filter(referenced) {
             let update = attachments::update(image);
             draft
@@ -957,7 +1008,7 @@ impl<'a> App<'a> {
     /// reference remains in the stored text for provider dispatch.
     fn edit_form(&mut self, key: &KeyEvent) -> bool {
         let text = self.form.text(&self.repl.queue.facts);
-        let ranges: Vec<_> = render::image_tags(text)
+        let mut ranges: Vec<_> = render::image_tags(text)
             .into_iter()
             .map(|tag| {
                 let start = self
@@ -973,6 +1024,20 @@ impl<'a> App<'a> {
                 start..tag.end
             })
             .collect();
+        ranges.extend(render::decision_tags(text).into_iter().map(|tag| {
+            let start = self
+                .references
+                .bindings
+                .iter()
+                .find(|b| b.reference == text[tag.clone()])
+                .and_then(|b| {
+                    text[..tag.start]
+                        .strip_suffix(' ')
+                        .and_then(|prefix| prefix.strip_suffix(&b.label))
+                })
+                .map_or(tag.start, str::len);
+            start..tag.end
+        }));
         let cursor = self.form.cursor;
         let control = key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT);
@@ -1192,6 +1257,7 @@ impl<'a> App<'a> {
             self.latest_question = next_latest;
             self.form.sent(from_form);
             self.images.clear();
+            self.restore_references();
             self.refresh_graph();
         }
         Ok(())
@@ -1236,6 +1302,7 @@ impl<'a> App<'a> {
     }
 
     fn refresh_previous_question(&mut self) {
+        self.restore_references();
         self.previous_question = None;
         self.latest_question = None;
         let Some(export) = self

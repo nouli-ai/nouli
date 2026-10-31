@@ -145,6 +145,8 @@ A question is one line: an ID, a colon, the prompt, then the answers. `[a, b]` m
 
 The lines above are typed into the view's input row and appear in its transcript. Under it, a form holds the facts, the question, and its options, and the session's decisions are drawn beside it. Shift-Tab cycles left to right through yes/no, choice, and score from any field. Tab moves between fields and list items. In Options/Levels, Enter adds the next row and a second Enter sends. Typing `/` lists the commands, and `/sessions` resumes an earlier session. The selected answer type stays after sending. For choices and scores, an empty answer list reuses the prior options or levels with a visible notice; leave the question empty too to resend it with new information. Yes/No questions stay fresh. Citrus colors identify each type across the form and saved decisions. The [command-line guide](docs/cli.md#full-screen-view) lists the keys.
 
+Type `@` in any field to reference an exact saved answer. Search question wording or IDs across **all sessions in your local store**, including decisions from other workspaces and workflows. Suggestions show the source session and turn; **Browse history** adds full answer previews. Enter inserts the reference, Ctrl-O inspects it, and the current draft keeps its type and answer list. Selected results and their saved image inputs remain available in subsequent decisions.
+
 ## Can a script or an agent drive it?
 
 Everything you can do at the prompt is also a command. The `pick` session continues from a script, and each command adds the latest sensor report and asks the next question:

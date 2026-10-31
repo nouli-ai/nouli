@@ -2,6 +2,7 @@
 //! embedding in an async runtime; transactions never span a provider await.
 
 pub mod context;
+pub mod decisions;
 pub mod guards;
 pub mod inspection;
 mod publication;

@@ -53,10 +53,15 @@ impl Evidence {
                     return Err(codec::CodecError::Shape);
                 }
                 value["record"]["value"] = json!(image.reference);
-                if !images
+                if let Some(existing) = images
                     .iter()
-                    .any(|existing| existing.reference == image.reference)
+                    .find(|existing| existing.reference == image.reference)
                 {
+                    if existing.data_base64 != image.data_base64 || existing.format != image.format
+                    {
+                        return Err(codec::CodecError::ImageReferenceConflict);
+                    }
+                } else {
                     images.push(image);
                 }
             } else {
@@ -272,6 +277,30 @@ pub(crate) mod tests {
         let evidence = Evidence::read(&context).unwrap();
         assert!(evidence.images.is_empty());
         assert!(evidence.text.contains("caption"));
+    }
+
+    #[test]
+    fn equal_image_references_deduplicate_only_when_the_pixels_match() {
+        let a = picture(2, 2);
+        let b = picture(3, 3);
+        let context = |other: &Image| {
+            codec::encode_toon(&json!({"records":[
+                {"record":{"key":"image:a","value":{"nouli_image":a}}},
+                {"record":{"key":"image:b","value":{"nouli_image":other}}}
+            ]}))
+            .unwrap()
+        };
+        assert_eq!(Evidence::read(&context(&a)).unwrap().images.len(), 1);
+        assert!(matches!(
+            Evidence::read(&context(&b)),
+            Err(codec::CodecError::ImageReferenceConflict)
+        ));
+        let report = crate::engine::EngineError::Limit(crate::limits::LimitError::Codec(
+            codec::CodecError::ImageReferenceConflict,
+        ))
+        .report();
+        assert_eq!(report.code, "image_reference_conflict");
+        assert!(report.message.contains("different bytes"));
     }
 
     #[test]

@@ -3,7 +3,7 @@ mod media;
 mod text;
 pub(crate) mod turn;
 use clap::{Args, ValueEnum};
-pub(crate) use media::{image_label_projection, image_labels, image_tags};
+pub(crate) use media::{decision_tags, image_label_projection, image_labels, image_tags};
 use nouli_core::{
     codec,
     config::OutputFormat,
