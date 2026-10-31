@@ -5,6 +5,8 @@ date: 2026-10-30
 
 # Keep the graph across sessions and prepare native image requests
 
+Implicit provider image preparation is superseded by [ADR 0019](0019-independent-protocol-connections.md).
+
 Type-selection shortcuts and Tab navigation are superseded by
 [ADR 0010](0010-consistent-tab-navigation-and-list-entry.md).
 

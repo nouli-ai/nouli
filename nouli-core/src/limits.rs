@@ -1,7 +1,6 @@
-//! Verified capability limits and separately attributed preflight token counts.
+//! Explicit configured limits and separately attributed preflight token counts.
 
 pub mod count;
-pub mod registry;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -13,7 +12,6 @@ use crate::{
     history::TokenCount,
 };
 use count::{InputCounts, TokenCounter};
-use registry::Capabilities;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -26,14 +24,14 @@ pub enum Modality {
 
 #[derive(Debug, Error, PartialEq)]
 pub enum LimitError {
-    #[error("unknown/custom model requires an explicit context budget")]
-    MissingBudget,
-    #[error("context budget is zero or exceeds a known/configured limit")]
+    #[error("context budget is zero or cannot fit the configured output reserve")]
     InvalidBudget,
     #[error("unsupported input modality")]
     Modality,
     #[error("provider question/choice/rubric count limit exceeded")]
     Count,
+    #[error("serialized request exceeds configured byte limit")]
+    RequestBytes,
     #[error("total input plus output reserve exceeds context budget")]
     TotalCapacity,
     #[error("state plus one complete question exceeds its context limit")]
@@ -53,12 +51,15 @@ pub enum LimitError {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedLimits {
+    pub profile: ProviderProfile,
     pub protocol: crate::config::Protocol,
     pub model: String,
     pub budget: u64,
     pub per_question: Option<u64>,
     pub reserved_output_tokens: u64,
-    pub capabilities: Option<Capabilities>,
+    pub max_questions: Option<usize>,
+    pub max_choices: Option<usize>,
+    pub max_score_levels: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,21 +73,10 @@ pub struct BudgetAssessment {
 impl ResolvedLimits {
     pub fn for_profile(profile: &ProviderProfile) -> Result<Self, LimitError> {
         profile.validate().map_err(|_| LimitError::Profile)?;
-        let capabilities = registry::lookup(profile);
-        let known = capabilities.as_ref().map(|c| c.total_context);
-        let configured = profile.context_window_tokens.or(known);
-        if profile
-            .context_window_tokens
-            .zip(known)
-            .is_some_and(|(configured, known)| configured > known)
-        {
-            return Err(LimitError::InvalidBudget);
-        }
-        let budget = profile
-            .context_budget_tokens
-            .or(configured)
-            .ok_or(LimitError::MissingBudget)?;
-        if budget == 0 || configured.is_some_and(|limit| budget > limit) {
+        let configured = profile.context_window_tokens;
+        let budget = profile.context_budget_tokens.unwrap_or(8192);
+        let budget = configured.map_or(budget, |window| budget.min(window));
+        if budget == 0 {
             return Err(LimitError::InvalidBudget);
         }
         let reserve = profile.reserved_output_tokens.unwrap_or(0);
@@ -94,12 +84,15 @@ impl ResolvedLimits {
             return Err(LimitError::InvalidBudget);
         }
         Ok(Self {
+            profile: profile.clone(),
             protocol: profile.protocol,
             model: profile.model.clone(),
             budget,
-            per_question: capabilities.as_ref().and_then(|c| c.per_question_context),
+            per_question: profile.limits.per_question_context_tokens,
             reserved_output_tokens: reserve,
-            capabilities,
+            max_questions: profile.limits.max_questions,
+            max_choices: profile.limits.max_choices,
+            max_score_levels: profile.limits.max_score_levels,
         })
     }
 
@@ -109,31 +102,37 @@ impl ResolvedLimits {
         modality: Modality,
     ) -> Result<(), LimitError> {
         request.validate()?;
+        if self
+            .profile
+            .limits
+            .input_modalities
+            .as_ref()
+            .is_some_and(|m| !m.contains(&modality))
+        {
+            return Err(LimitError::Modality);
+        }
         if !matches!(modality, Modality::Text | Modality::Image) {
             return Err(LimitError::Modality);
         }
-        if let Some(capabilities) = &self.capabilities {
-            if !capabilities.modalities.contains(&modality) {
-                return Err(LimitError::Modality);
-            }
-            if capabilities
-                .max_questions
-                .is_some_and(|limit| request.questions.len() > limit)
-            {
-                return Err(LimitError::Count);
-            }
-            for question in &request.questions {
-                match &question.answer_space {
-                    AnswerSpace::Choice { options } if options.len() > capabilities.max_choices => {
-                        return Err(LimitError::Count);
-                    }
-                    AnswerSpace::Score { levels }
-                        if levels.len() > capabilities.max_score_levels =>
-                    {
-                        return Err(LimitError::Count);
-                    }
-                    _ => {}
+        if self
+            .max_questions
+            .is_some_and(|n| request.questions.len() > n)
+        {
+            return Err(LimitError::Count);
+        }
+        for question in &request.questions {
+            match &question.answer_space {
+                AnswerSpace::Choice { options }
+                    if self.max_choices.is_some_and(|n| options.len() > n) =>
+                {
+                    return Err(LimitError::Count);
                 }
+                AnswerSpace::Score { levels }
+                    if self.max_score_levels.is_some_and(|n| levels.len() > n) =>
+                {
+                    return Err(LimitError::Count);
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -157,7 +156,7 @@ impl ResolvedLimits {
         let InputCounts {
             total,
             per_question,
-        } = counter.count(self.protocol, &self.model, context_toon, &request.questions)?;
+        } = counter.count(&self.profile, context_toon, &request.questions)?;
         if per_question.len() != request.questions.len()
             || !total.is_consistent()
             || total.method == crate::history::CountMethod::ProviderReported
@@ -231,93 +230,29 @@ mod tests {
     }
 
     #[test]
-    fn known_unknown_custom_and_smaller_budgets_are_explicit() {
-        let mut jev = profile("jev");
-        let limits = ResolvedLimits::for_profile(&jev).unwrap();
-        assert_eq!(limits.budget, 64000);
-        assert_eq!(limits.per_question, Some(32000));
-        jev.context_budget_tokens = Some(1000);
-        assert_eq!(ResolvedLimits::for_profile(&jev).unwrap().budget, 1000);
-        jev.context_budget_tokens = Some(64001);
-        assert_eq!(
-            ResolvedLimits::for_profile(&jev),
-            Err(LimitError::InvalidBudget)
-        );
-        jev.context_budget_tokens = None;
-        jev.model = "unknown".into();
-        assert_eq!(
-            ResolvedLimits::for_profile(&jev),
-            Err(LimitError::MissingBudget)
-        );
-        jev.context_budget_tokens = Some(512);
-        assert_eq!(ResolvedLimits::for_profile(&jev).unwrap().budget, 512);
+    fn unknown_hosts_and_models_use_operational_budget_and_explicit_limits() {
         let mut custom = profile("jev");
-        custom.base_url = "http://localhost:8000".into();
-        assert_eq!(
-            ResolvedLimits::for_profile(&custom),
-            Err(LimitError::MissingBudget)
-        );
+        custom.base_url = "https://arbitrary.example".into();
+        custom.model = "unlisted".into();
+        assert_eq!(ResolvedLimits::for_profile(&custom).unwrap().budget, 8192);
         custom.context_window_tokens = Some(512);
-        assert!(
+        assert_eq!(ResolvedLimits::for_profile(&custom).unwrap().budget, 512);
+        custom.context_budget_tokens = Some(256);
+        assert_eq!(ResolvedLimits::for_profile(&custom).unwrap().budget, 256);
+        custom.limits.max_questions = Some(1);
+        assert_eq!(
             ResolvedLimits::for_profile(&custom)
                 .unwrap()
-                .capabilities
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn direct_and_router_question_limits_and_modalities_stay_distinct() {
-        let direct = ResolvedLimits::for_profile(&profile("openai")).unwrap();
-        let router = ResolvedLimits::for_profile(&profile("router")).unwrap();
-        assert_eq!(
-            direct.capabilities.as_ref().unwrap().max_questions,
-            Some(400)
-        );
-        assert_eq!(
-            router.capabilities.as_ref().unwrap().max_questions,
-            Some(200)
-        );
-        let mut request = request();
-        let question = request.questions[1].clone();
-        request.questions = (0..201)
-            .map(|index| {
-                let mut question = question.clone();
-                question.id = index.to_string();
-                question
-            })
-            .collect();
-        direct.validate_request(&request, Modality::Text).unwrap();
-        assert_eq!(
-            router.validate_request(&request, Modality::Text),
+                .validate_request(&request(), Modality::Text),
             Err(LimitError::Count)
         );
-        assert_eq!(direct.validate_request(&request, Modality::Image), Ok(()));
-        request.questions = (0..401)
-            .map(|index| {
-                let mut question = question.clone();
-                question.id = index.to_string();
-                question
-            })
-            .collect();
-        assert_eq!(
-            direct.validate_request(&request, Modality::Text),
-            Err(LimitError::Count)
-        );
-    }
-
-    struct FixedCounter {
-        total: u64,
-        one: u64,
-        method: CountMethod,
     }
 
     struct GivenCounts(InputCounts);
     impl TokenCounter for GivenCounts {
         fn count(
             &self,
-            _protocol: Protocol,
-            _model: &str,
+            _profile: &crate::config::ProviderProfile,
             _context: &str,
             _questions: &[crate::decision::Question],
         ) -> Result<InputCounts, LimitError> {
@@ -334,7 +269,11 @@ mod tests {
             one: 50,
             method: CountMethod::ByteEstimate,
         }
-        .count(Protocol::Typesafe, "jev", "state", &request.questions)
+        .count(
+            &crate::limits::count::tests::profile(Protocol::SystemOne, "jev"),
+            "state",
+            &request.questions,
+        )
         .unwrap();
         let mut invalid = valid.clone();
         invalid.total.exact = true;
@@ -374,11 +313,15 @@ mod tests {
             Err(LimitError::Overflow)
         );
     }
+    struct FixedCounter {
+        total: u64,
+        one: u64,
+        method: CountMethod,
+    }
     impl TokenCounter for FixedCounter {
         fn count(
             &self,
-            _protocol: Protocol,
-            _model: &str,
+            _profile: &crate::config::ProviderProfile,
             _context: &str,
             questions: &[crate::decision::Question],
         ) -> Result<InputCounts, LimitError> {
@@ -406,7 +349,10 @@ mod tests {
 
     #[test]
     fn total_and_per_question_limits_both_apply_with_count_provenance() {
-        let limits = ResolvedLimits::for_profile(&profile("jev")).unwrap();
+        let mut configured = profile("jev");
+        configured.context_budget_tokens = Some(64000);
+        configured.limits.per_question_context_tokens = Some(32000);
+        let limits = ResolvedLimits::for_profile(&configured).unwrap();
         let request = request();
         let counter = |total, one| FixedCounter {
             total,

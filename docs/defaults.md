@@ -17,9 +17,9 @@ These values describe implementation defaults, distinct from provider capabiliti
 | Retry-delay cap | 30 seconds | Recognized Retry-After can increase delay up to cap |
 | Response and CLI file/stdin bounds | 16 MiB each | Checked before accepting oversized content; response streaming remains bounded |
 | Output token reservation | 0 when omitted | Explicit model reservation reduces total/per-question input capacity |
-| Unknown-model budget | None | Explicit budget/window required; known registry caps otherwise apply |
+| Context budget | 8192 | CLI > exact model > provider defaults > global defaults; clamped by an explicit window |
 | Capacity replan | floor(3/4 of prior estimated input) plus reserve | Uses remaining attempt allowance only if rebuilt context actually becomes smaller; protected material remains intact |
-| Byte counter | ceil(UTF-8 bytes / 4) | Estimate only; adds envelope 32 (TypeSafe/OpenAI) or 48 (Router), plus 16 per question and serialized complete-question estimate |
+| Byte counter | ceil(UTF-8 bytes / 4) | Estimate only; adds estimated envelope 32, plus 16 per question and serialized complete-question estimate |
 | Choice/rubric bounds | 2-255 options, 2-10 ordered levels | Provider-specific count/context caps can be smaller |
 | Probability/expectation rounding tolerance | 0.005 per reported value (two-decimal rounding) | Distributions must be able to sum to 1, and scores must match an expectation, within those bounds; values are never renormalized or replaced |
 | Condition nesting | At most 64 recursive levels | Structured conditions only; no expression language |
@@ -33,4 +33,4 @@ These values describe implementation defaults, distinct from provider capabiliti
 
 Transient retry classes are connection failure, timeout, HTTP 429, and HTTP 500/502/503/504/524/529. Authentication, unsupported capability, malformed contracts, and cancellation fail without transient retry. Capacity has the separate smaller-context path above. Workflow resume starts an explicit new bounded round, preserving earlier attempts and unknown outcomes.
 
-The known-limit snapshot, its verification date, and numerical model/question caps are documented in [capabilities and budgets](contracts/limits.md) and `fixtures/capabilities/models.json`. They are not a promise that a provider will accept an estimated input or keep an alias unchanged. The [output guide](output.md) documents numerical exit statuses. [Storage](contracts/storage.md), [reduction](contracts/context-reduction.md), and [transport](contracts/transport.md) describe the corresponding invariants.
+Optional configured limits and estimated counting are documented in [limits and budgets](contracts/limits.md). Nouli has no provider/model capability catalog. The [output guide](output.md) documents numerical exit statuses. [Storage](contracts/storage.md), [reduction](contracts/context-reduction.md), and [transport](contracts/transport.md) describe the corresponding invariants.

@@ -461,6 +461,7 @@ mod tests {
             .unwrap()
             .profile;
         let settings = SettingsSnapshot {
+            format_version: 2,
             profile_name: "fixture".into(),
             profile,
             execution: config.execution,

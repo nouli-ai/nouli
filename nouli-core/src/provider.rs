@@ -2,8 +2,8 @@
 
 mod confidence;
 pub mod openai;
-pub mod openrouter;
-pub mod typesafe;
+pub mod system_one;
+pub mod wire;
 
 use crate::{decision::ContractError, limits::LimitError, transport::TransportError};
 use thiserror::Error;

@@ -38,8 +38,8 @@ impl DecisionProvider for NativeProvider {
     ) -> Result<TurnOutcome, ProviderError> {
         let transport = HttpTransport::new(&settings.snapshot.execution)?;
         match settings.snapshot.profile.protocol {
-            Protocol::Typesafe => {
-                provider::typesafe::evaluate(
+            Protocol::SystemOne => {
+                provider::system_one::evaluate(
                     &transport, settings, request, evidence, counter, cancel,
                 )
                 .await
@@ -47,12 +47,6 @@ impl DecisionProvider for NativeProvider {
             Protocol::OpenaiDecisions => {
                 provider::openai::evaluate(&transport, settings, request, evidence, counter, cancel)
                     .await
-            }
-            Protocol::OpenrouterDecisions => {
-                provider::openrouter::evaluate(
-                    &transport, settings, request, evidence, counter, cancel,
-                )
-                .await
             }
         }
     }

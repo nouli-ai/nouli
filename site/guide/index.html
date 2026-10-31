@@ -44,33 +44,23 @@ brew upgrade standing-desks/tap/nouli</code></pre>
 <p>For a script installation, run the download installer again. Uninstall with <code>brew uninstall standing-desks/tap/nouli</code> for Homebrew, or remove <code>~/.local/bin/nouli</code> for the script. Your configuration and saved sessions are preserved.</p>
 <p>See the <a href="https://github.com/standing-desks/nouli/blob/main/docs/release.md">installation guide</a> for selecting a version, changing the installation directory, inspecting the script, and building from source.</p>
 
-<h2 id="provider"><span class="num">02</span>Configure a provider</h2>
-<p>Nouli reads <code>~/.nouli/config.toml</code>. The first time you make a decision without one, Nouli creates an empty file and asks you to define a provider. For TypeSafe:</p>
-<pre><code>default_provider = "typesafe"
-default_model = "jev-latest"
+<h2 id="provider"><span class="num">02</span>Connect a model</h2>
+<p>Run <code>nouli connect</code>, choose a service, authenticate, and select a model. Shortcuts are available for OpenAI, TypeSafe, OpenRouter, Cloudflare Workers AI, Ollama and llama.cpp. Choose <code>custom</code> for another compatible server. You can type any model ID your server supports.</p>
+<pre><code>nouli connect
+nouli connect typesafe
+nouli connect cloudflare
+nouli connect ollama --model clef --default --non-interactive</code></pre>
+<p>Paste an API key into the masked prompt, name an environment variable, or use a credential program. Keys are stored privately beside your config. Setup makes no model calls. A bare <code>nouli</code> also opens setup when no connection exists.</p>
+<p>Shortcuts write ordinary settings. You can edit <code>~/.nouli/config.toml</code> yourself and get the same behavior:</p>
+<pre><code>default_provider = "gateway"
+default_model = "my-model"
 
-[providers.typesafe]
-protocol = "typesafe"
-base_url = "https://api.typesafe.ai"</code></pre>
-<p>Then log in once. Nouli asks for the key without showing it and keeps it in <code>~/.nouli/auth.toml</code>, a file only you can read, so every command works from any directory:</p>
-<pre><code>nouli auth login typesafe
-nouli auth list</code></pre>
-<p><code>nouli auth list</code> shows where each provider's key comes from and never prints a key. <code>nouli auth logout typesafe</code> removes it.</p>
-<p>For CI and agents, use an environment variable instead. Name it in the provider with <code>api_key_env</code>, and Nouli reads it from your shell or from a <code>.env</code> in the directory you run it in. The shell wins over <code>.env</code>, and both win over the stored key:</p>
-<pre><code>[providers.typesafe]
-protocol = "typesafe"
-base_url = "https://api.typesafe.ai"
-api_key_env = "TYPESAFE_TOKEN"</code></pre>
-<pre><code>TYPESAFE_TOKEN="your-api-key"</code></pre>
-<p>Use <code>--env-file FILE</code> to read a different file. The other supported protocols are <code>openai-decisions</code> and <code>openrouter-decisions</code>. A local Laya service uses the <code>typesafe</code> protocol with a loopback URL and needs a context budget, because Nouli can't look up its limits:</p>
-<pre><code>[providers.local]
-protocol = "typesafe"
-base_url = "http://localhost:8000"
-
-[providers.local.models."english"]
-context_budget_tokens = 8192
-reserved_output_tokens = 128</code></pre>
-<p>Pick a provider or model for one call with <code>--provider NAME</code> and <code>--model MODEL</code>. Each call uses your provider account and may cost money.</p>
+[providers.gateway]
+protocol = "system-one"
+base_url = "https://gateway.example/api"
+api_key_env = "GATEWAY_TOKEN"</code></pre>
+<p>The protocols are <code>system-one</code> and <code>openai-decisions</code>. Endpoints and model IDs are yours to configure. An omitted context budget uses 8,192 estimated tokens; set limits for your server when needed. No provider catalog restricts your configuration.</p>
+<p>Inside a session, use <code>/connect</code>, <code>/login</code>, <code>/logout</code> and <code>/model</code> while idle. Setup preserves your draft. Pick a connection or model for one command with <code>--provider NAME</code> and <code>--model MODEL</code>. Each inference uses your provider account and may cost money.</p>
 
 <h2 id="interactive"><span class="num">03</span>Interactive mode</h2>
 <p><code>nouli open travel</code> opens a session full screen. A bare <code>nouli</code> starts a new session with a random name. Add facts in Context, press Tab for a plain-text question, and use Shift-Tab to choose the answer type. There are no question IDs or bracket syntax to type in the form.</p>

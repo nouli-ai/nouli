@@ -15,9 +15,180 @@ use url::Url;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Protocol {
-    Typesafe,
+    SystemOne,
     OpenaiDecisions,
-    OpenrouterDecisions,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HttpBinding {
+    #[default]
+    Standard,
+    CloudflareWorkersAi,
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImageEncoding {
+    #[default]
+    Assets,
+    ImagesBase64,
+    ImagesDataUrls,
+    StateImageUrls,
+    OpenaiContent,
+}
+/// Explicit connection behavior. Every field overlays independently; no vendor detection.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ConnectionSettings {
+    pub binding: Option<HttpBinding>,
+    pub request_path: Option<String>,
+    pub wire_model: Option<String>,
+    pub no_auth: Option<bool>,
+    pub auth_header: Option<String>,
+    pub auth_scheme: Option<String>,
+    pub headers: BTreeMap<String, String>,
+    pub headers_env: BTreeMap<String, String>,
+    pub extra_body: BTreeMap<String, serde_json::Value>,
+    pub image_encoding: Option<ImageEncoding>,
+    pub min_image_dimension: Option<u32>,
+    pub max_image_dimension: Option<u32>,
+    pub pixel_patch_size: Option<u32>,
+    pub pixel_multiplier: Option<u64>,
+    pub pixel_overhead: Option<u64>,
+}
+impl ConnectionSettings {
+    pub fn overlay(&self, other: &Self) -> Self {
+        let mut result = self.clone();
+        macro_rules! overlay { ($($field:ident),*) => { $(if other.$field.is_some() {result.$field.clone_from(&other.$field);})* }; }
+        overlay!(
+            binding,
+            request_path,
+            wire_model,
+            no_auth,
+            auth_header,
+            auth_scheme,
+            image_encoding,
+            min_image_dimension,
+            max_image_dimension,
+            pixel_patch_size,
+            pixel_multiplier,
+            pixel_overhead
+        );
+        // HTTP header names are case insensitive across all settings layers.
+        for (name, value) in &other.headers {
+            result
+                .headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+            result
+                .headers_env
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+            result
+                .headers
+                .insert(name.to_ascii_lowercase(), value.clone());
+        }
+        for (name, value) in &other.headers_env {
+            result
+                .headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+            result
+                .headers_env
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+            result
+                .headers_env
+                .insert(name.to_ascii_lowercase(), value.clone());
+        }
+        result.extra_body.extend(other.extra_body.clone());
+        result
+    }
+    pub fn validate_fields(&self) -> Result<(), ConfigError> {
+        use reqwest::header::{HeaderName, HeaderValue};
+        for (name, value) in &self.headers {
+            HeaderName::from_bytes(name.as_bytes()).map_err(|_| ConfigError::Invalid("header"))?;
+            HeaderValue::from_str(value).map_err(|_| ConfigError::Invalid("header"))?;
+        }
+        for (name, value) in &self.headers_env {
+            HeaderName::from_bytes(name.as_bytes()).map_err(|_| ConfigError::Invalid("header"))?;
+            if !env_name(value) {
+                return Err(ConfigError::Invalid("header environment"));
+            }
+        }
+        if let Some(name) = &self.auth_header {
+            HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| ConfigError::Invalid("auth header"))?;
+        }
+        if self
+            .auth_scheme
+            .as_ref()
+            .is_some_and(|v| !v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+        {
+            return Err(ConfigError::Invalid("auth scheme"));
+        }
+        if self.extra_body.keys().any(|k| {
+            matches!(
+                k.as_str(),
+                "model" | "state" | "input" | "questions" | "assets" | "images"
+            )
+        }) {
+            return Err(ConfigError::Invalid("reserved request field"));
+        }
+        if [
+            self.min_image_dimension,
+            self.max_image_dimension,
+            self.pixel_patch_size,
+        ]
+        .contains(&Some(0))
+            || self
+                .min_image_dimension
+                .zip(self.max_image_dimension)
+                .is_some_and(|(a, b)| a > b)
+        {
+            return Err(ConfigError::Invalid("image settings"));
+        }
+        if self.request_path.as_ref().is_some_and(|p| {
+            p.is_empty()
+                || p.split('/').any(|s| s.is_empty() || s == "." || s == "..")
+                || p.contains(['?', '#', '\\'])
+        }) {
+            return Err(ConfigError::Invalid("request path"));
+        }
+        Ok(())
+    }
+    pub fn validate(&self, protocol: Protocol) -> Result<(), ConfigError> {
+        self.validate_fields()?;
+        if protocol == Protocol::OpenaiDecisions
+            && (self.binding == Some(HttpBinding::CloudflareWorkersAi)
+                || self
+                    .image_encoding
+                    .is_some_and(|e| e != ImageEncoding::OpenaiContent))
+        {
+            return Err(ConfigError::Invalid("protocol compatibility"));
+        }
+        if protocol == Protocol::SystemOne
+            && self.image_encoding == Some(ImageEncoding::OpenaiContent)
+        {
+            return Err(ConfigError::Invalid("protocol compatibility"));
+        }
+        Ok(())
+    }
+}
+impl ModelSettings {
+    pub fn overlay(&self, other: &Self) -> Self {
+        let mut r = self.clone();
+        r.connection = self.connection.overlay(&other.connection);
+        macro_rules! overlay {($($f:ident),*)=>{$(if other.$f.is_some(){r.$f.clone_from(&other.$f);})*};}
+        overlay!(
+            context_budget_tokens,
+            context_window_tokens,
+            reserved_output_tokens,
+            per_question_context_tokens,
+            max_questions,
+            max_choices,
+            max_score_levels,
+            max_request_bytes,
+            input_modalities
+        );
+        r
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +226,10 @@ impl Default for ExecutionSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderDefinition {
+    #[serde(default)]
+    pub connection: ConnectionSettings,
+    #[serde(default)]
+    pub defaults: ModelSettings,
     pub protocol: Protocol,
     pub base_url: String,
     pub api_key_env: Option<String>,
@@ -68,6 +243,14 @@ pub struct ProviderDefinition {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ModelSettings {
+    pub max_request_bytes: Option<usize>,
+    pub input_modalities: Option<Vec<crate::limits::Modality>>,
+    #[serde(default)]
+    pub connection: ConnectionSettings,
+    pub per_question_context_tokens: Option<u64>,
+    pub max_questions: Option<usize>,
+    pub max_choices: Option<usize>,
+    pub max_score_levels: Option<usize>,
     pub context_budget_tokens: Option<u64>,
     pub context_window_tokens: Option<u64>,
     pub reserved_output_tokens: Option<u64>,
@@ -77,6 +260,8 @@ pub struct ModelSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderProfile {
+    pub connection: ConnectionSettings,
+    pub limits: ModelSettings,
     pub protocol: Protocol,
     pub base_url: String,
     pub model: String,
@@ -97,6 +282,7 @@ pub struct ProviderProfile {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    pub defaults: ModelSettings,
     pub default_provider: Option<String>,
     pub default_model: Option<String>,
     pub output: OutputFormat,
@@ -163,6 +349,8 @@ pub enum ConfigError {
     MissingCredential,
     #[error("selected credential contains invalid header characters")]
     InvalidCredential,
+    #[error("header credential environment variable {variable} is unavailable or invalid")]
+    HeaderCredential { variable: String },
     #[error("credential environment variable {variable} is unavailable or invalid")]
     CredentialSource {
         variable: String,
@@ -236,16 +424,23 @@ fn validate_connection(
 
 impl ModelSettings {
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.connection.validate_fields()?;
+        if self.max_request_bytes == Some(0) {
+            return Err(ConfigError::Invalid("request byte limit"));
+        }
         if [
+            self.per_question_context_tokens,
             self.context_budget_tokens,
             self.context_window_tokens,
-            self.reserved_output_tokens,
         ]
         .into_iter()
         .flatten()
         .any(|value| value == 0)
         {
             return Err(ConfigError::Invalid("model limits"));
+        }
+        if [self.max_questions, self.max_choices, self.max_score_levels].contains(&Some(0)) {
+            return Err(ConfigError::Invalid("count limits"));
         }
         Ok(())
     }
@@ -259,6 +454,8 @@ impl ProviderDefinition {
             self.max_attempts,
             self.attempt_timeout_seconds,
         )?;
+        self.connection.validate(self.protocol)?;
+        self.defaults.validate()?;
         for (model, settings) in &self.models {
             if model.trim().is_empty() {
                 return Err(ConfigError::Invalid("model name"));
@@ -277,10 +474,19 @@ impl ProviderProfile {
             self.max_attempts,
             self.attempt_timeout_seconds,
         )?;
+        self.connection.validate(self.protocol)?;
         if self.model.trim().is_empty() {
             return Err(ConfigError::Invalid("model"));
         }
+        self.limits.validate()?;
         ModelSettings {
+            max_request_bytes: self.limits.max_request_bytes,
+            input_modalities: self.limits.input_modalities.clone(),
+            connection: self.connection.clone(),
+            per_question_context_tokens: None,
+            max_questions: None,
+            max_choices: None,
+            max_score_levels: None,
             context_budget_tokens: self.context_budget_tokens,
             context_window_tokens: self.context_window_tokens,
             reserved_output_tokens: self.reserved_output_tokens,
@@ -312,6 +518,7 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.defaults.validate()?;
         self.execution.validate()?;
         for (name, profile) in &self.providers {
             if name.trim().is_empty() {
@@ -349,6 +556,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn header_overlays_respect_case_and_source_precedence() {
+        let global = ConnectionSettings {
+            headers: BTreeMap::from([("x-tenant".into(), "global".into())]),
+            ..Default::default()
+        };
+        let provider = ConnectionSettings {
+            headers: BTreeMap::from([("X-Tenant".into(), "provider".into())]),
+            ..Default::default()
+        };
+        let model = ConnectionSettings {
+            headers_env: BTreeMap::from([("X-TENANT".into(), "TENANT_KEY".into())]),
+            ..Default::default()
+        };
+        let merged = global.overlay(&provider);
+        assert_eq!(merged.headers.len(), 1);
+        assert_eq!(merged.headers["x-tenant"], "provider");
+        let merged = merged.overlay(&model);
+        assert!(merged.headers.is_empty());
+        assert_eq!(merged.headers_env["x-tenant"], "TENANT_KEY");
+    }
+
+    #[test]
     fn missing_config_has_defaults_and_no_files_are_created() {
         let home =
             std::env::temp_dir().join(format!("nouli-config-{}", crate::identity::Id::generate()));
@@ -368,7 +597,7 @@ mod tests {
             assert!(Config::parse(input).is_err());
         }
         let template =
-            |url: &str| format!("[providers.local]\nprotocol='typesafe'\nbase_url='{url}'");
+            |url: &str| format!("[providers.local]\nprotocol='system-one'\nbase_url='{url}'");
         for url in [
             "not a URL",
             "file:///tmp/model",
@@ -388,13 +617,15 @@ mod tests {
             Config::parse(&template(url)).unwrap();
         }
         assert!(
-            Config::parse(&template("https://example.org").replace("typesafe", "unknown")).is_err()
+            Config::parse(&template("https://example.org").replace("system-one", "unknown"))
+                .is_err()
         );
     }
 
     #[test]
     fn definitions_allow_missing_defaults_but_reject_misplaced_fields_and_invalid_models() {
-        let provider = "[providers.local]\nprotocol='typesafe'\nbase_url='http://localhost:8000'\n";
+        let provider =
+            "[providers.local]\nprotocol='system-one'\nbase_url='http://localhost:8000'\n";
         let config = Config::parse(provider).unwrap();
         assert!(config.default_model.is_none());
         assert!(config.providers["local"].models.is_empty());
@@ -407,7 +638,6 @@ mod tests {
             format!("{provider}[providers.local.models.' ']\ncontext_budget_tokens=1024"),
             format!("{provider}[providers.local.models.a]\ncontext_budget_tokens=0"),
             format!("{provider}[providers.local.models.a]\ncontext_window_tokens=0"),
-            format!("{provider}[providers.local.models.a]\nreserved_output_tokens=0"),
             format!("{provider}[providers.local.models.a]\nunknown=1"),
         ] {
             assert!(Config::parse(&input).is_err(), "accepted {input}");

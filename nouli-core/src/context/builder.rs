@@ -724,12 +724,15 @@ mod tests {
     }
     fn limits(budget: u64) -> ResolvedLimits {
         ResolvedLimits {
-            protocol: Protocol::Typesafe,
+            profile: crate::limits::count::tests::profile(Protocol::SystemOne, "fixture"),
+            protocol: Protocol::SystemOne,
             model: "offline".into(),
             budget,
             per_question: None,
             reserved_output_tokens: 128,
-            capabilities: None,
+            max_questions: None,
+            max_choices: None,
+            max_score_levels: None,
         }
     }
     #[test]
@@ -1019,8 +1022,7 @@ mod tests {
         );
         let direct = ByteCounter
             .count(
-                Protocol::Typesafe,
-                "offline",
+                &crate::limits::count::tests::profile(Protocol::SystemOne, "offline"),
                 &plan.manifest.context_toon,
                 &request.questions,
             )
@@ -1276,8 +1278,7 @@ mod tests {
     impl TokenCounter for CountRecords {
         fn count(
             &self,
-            _protocol: Protocol,
-            _model: &str,
+            _profile: &crate::config::ProviderProfile,
             context: &str,
             questions: &[Question],
         ) -> Result<InputCounts, LimitError> {

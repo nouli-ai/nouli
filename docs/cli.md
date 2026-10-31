@@ -185,7 +185,7 @@ Persisted turns use the user ledger by default. A `whatif` opens an existing sto
 
 Credentials come from the current directory's `.env` or an explicit `--env-file FILE`; exported shell values take precedence. Missing automatic files are fine; malformed files and missing explicit files fail before execution. See [configuration](configuration.md).
 
-`--provider` and `--model` select a named provider and a model independently, and `--context-budget TOKENS` overrides the budget within known limits. Resolution is the command line, the request file, the session's defaults, then configuration defaults. Accepted work freezes its settings and sources, records the actual served provider and model, and never falls back to another one.
+`--provider` and `--model` select a named provider and a model independently, and `--context-budget TOKENS` overrides the estimated budget, clamped to an explicitly configured window. Omitted budgets use 8192. Resolution is the command line, the request file, the session's defaults, then configuration defaults. Accepted work freezes its settings and sources, records the actual served provider and model, and never falls back to another one.
 
 `--request-id KEY` (on `new`, `add`, and `ask`) identifies the normalized intent globally. A completed request replays the saved turn, and a conflicting intent fails. The record IDs of facts given on the command line are derived from the key, so the same command replays. `--replace` numbers refer to the facts as they are when the command runs; a repeated command with a request ID replays the replacements it saved, and a different replacement under the same ID conflicts. `--retry-interrupted` requires a request ID and explicitly retries eligible interrupted work with its saved settings. Ctrl-C cancels the shared engine and awaits its cleanup. A `whatif` has no request identity.
 
@@ -237,3 +237,22 @@ and memory/CPU limits; failed workers leave the TUI usable. Optional LibreOffice
 runs in a private temporary directory with a separate profile, resource limits
 and process-group cleanup. Install Poppler or LibreOffice separately when needed;
 Nouli does not install them automatically.
+
+## Connect and select models
+
+`nouli connect [SERVICE]` prompts for a connection, credentials and model, then
+optionally saves startup defaults. Services are `openai`, `typesafe`, `openrouter`,
+`cloudflare`, `ollama`, `llama.cpp` and `custom`. These are setup shortcuts that
+write ordinary settings; hand-written configuration is equally supported.
+Use `--non-interactive` with complete values for scripts, `--env NAME` or
+`--stdin` for credentials, and `--replace` to replace an existing connection.
+For credential programs, put `--command PROGRAM ARGS...` last. `--no-auth`
+disables primary authentication. `--name`, `--protocol`, `--binding`,
+`--base-url`, `--model` and `--default` make selections explicit.
+
+Inside the full-screen session, `/connect [SERVICE]`, `/login [CONNECTION]`,
+`/logout [CONNECTION]` and `/model [CONNECTION]` run while idle and retain the
+unsent question/options. Setup uses the terminal outside the alternate screen,
+then reloads settings. API keys never enter transcript/history fields. `/model`
+accepts any exact model ID; saving a startup default is an explicit choice.
+See [configuration](configuration.md) for manual TOML and all compatibility fields.

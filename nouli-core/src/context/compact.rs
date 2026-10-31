@@ -205,20 +205,22 @@ mod tests {
     }
     fn limits(budget: u64) -> ResolvedLimits {
         ResolvedLimits {
-            protocol: Protocol::Typesafe,
+            profile: crate::limits::count::tests::profile(Protocol::SystemOne, "fixture"),
+            protocol: Protocol::SystemOne,
             model: "offline".into(),
             budget,
             per_question: None,
             reserved_output_tokens: 0,
-            capabilities: None,
+            max_questions: None,
+            max_choices: None,
+            max_score_levels: None,
         }
     }
     struct Weights;
     impl TokenCounter for Weights {
         fn count(
             &self,
-            _protocol: Protocol,
-            _model: &str,
+            _profile: &crate::config::ProviderProfile,
             context: &str,
             questions: &[crate::decision::Question],
         ) -> Result<InputCounts, LimitError> {

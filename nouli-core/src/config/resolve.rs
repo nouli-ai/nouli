@@ -53,8 +53,10 @@ pub struct RuntimeOverrides {
 
 /// Frozen, serializable settings contain no credential values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, try_from = "RawSettingsSnapshot")]
 pub struct SettingsSnapshot {
+    #[serde(default)]
+    pub format_version: u32,
     pub profile_name: String,
     pub profile: ProviderProfile,
     pub execution: ExecutionSettings,
@@ -62,10 +64,39 @@ pub struct SettingsSnapshot {
     pub store: PathBuf,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSettingsSnapshot {
+    #[serde(default)]
+    format_version: u32,
+    profile_name: String,
+    profile: serde_json::Value,
+    execution: ExecutionSettings,
+    output: OutputFormat,
+    store: PathBuf,
+}
+impl TryFrom<RawSettingsSnapshot> for SettingsSnapshot {
+    type Error = String;
+    fn try_from(raw: RawSettingsSnapshot) -> Result<Self, Self::Error> {
+        if raw.format_version != 2 {
+            return Err("unsupported frozen settings; use a fresh store".into());
+        }
+        Ok(Self {
+            format_version: raw.format_version,
+            profile_name: raw.profile_name,
+            profile: serde_json::from_value(raw.profile).map_err(|_| "invalid frozen profile")?,
+            execution: raw.execution,
+            output: raw.output,
+            store: raw.store,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct ResolvedSettings {
     pub snapshot: SettingsSnapshot,
     pub credential: Option<Credential>,
+    pub headers: std::collections::BTreeMap<String, Credential>,
 }
 
 /// Layers are ordered highest first. Provider and model overrides are independent
@@ -85,10 +116,36 @@ impl SettingsSnapshot {
         self,
         lookup: impl Fn(&CredentialSource) -> Option<String>,
     ) -> Result<ResolvedSettings, ConfigError> {
+        if self.format_version != 2 {
+            return Err(ConfigError::Invalid(
+                "unsupported frozen settings; use a fresh store",
+            ));
+        }
         self.profile.validate()?;
         self.execution.validate()?;
         let provider = self.profile_name.clone();
-        let credential = if let Some(name) = &self.profile.api_key_env {
+        let mut headers = std::collections::BTreeMap::new();
+        for (header, env) in &self.profile.connection.headers_env {
+            let value = lookup(&CredentialSource::Env(env.clone())).ok_or_else(|| {
+                ConfigError::HeaderCredential {
+                    variable: env.clone(),
+                }
+            })?;
+            reqwest::header::HeaderValue::from_str(&value).map_err(|_| {
+                ConfigError::HeaderCredential {
+                    variable: env.clone(),
+                }
+            })?;
+            if value.is_empty() {
+                return Err(ConfigError::HeaderCredential {
+                    variable: env.clone(),
+                });
+            }
+            headers.insert(header.clone(), Credential(value));
+        }
+        let credential = if self.profile.connection.no_auth == Some(true) {
+            None
+        } else if let Some(name) = &self.profile.api_key_env {
             lookup(&CredentialSource::Env(name.clone()))
                 .or_else(|| lookup(&CredentialSource::Auth(provider.clone())))
                 .ok_or(ConfigError::MissingCredential)
@@ -112,6 +169,7 @@ impl SettingsSnapshot {
             None
         };
         Ok(ResolvedSettings {
+            headers,
             snapshot: self,
             credential,
         })
@@ -119,6 +177,26 @@ impl SettingsSnapshot {
 }
 
 impl Config {
+    /// Resolve connection overlays for selection/setup without reading credentials.
+    pub fn connection_settings(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+    ) -> Result<super::ConnectionSettings, ConfigError> {
+        let provider = self
+            .providers
+            .get(provider)
+            .ok_or(ConfigError::UnknownProvider)?;
+        let mut connection = self
+            .defaults
+            .connection
+            .overlay(&provider.defaults.connection)
+            .overlay(&provider.connection);
+        if let Some(settings) = model.and_then(|model| provider.models.get(model)) {
+            connection = connection.overlay(&settings.connection);
+        }
+        Ok(connection)
+    }
     pub fn store_path(&self, home: &Path, explicit: Option<&Path>) -> Result<PathBuf, ConfigError> {
         let store = explicit
             .or(self.store.as_deref())
@@ -165,15 +243,27 @@ impl Config {
             .get(&name)
             .ok_or(ConfigError::UnknownProvider)?;
         let model = selection.model.ok_or(ConfigError::MissingModel)?;
-        let settings = provider.models.get(&model).cloned().unwrap_or_default();
+        let settings = self
+            .defaults
+            .overlay(&provider.defaults)
+            .overlay(&provider.models.get(&model).cloned().unwrap_or_default());
+        let connection = self.connection_settings(&name, Some(&model))?;
         let mut profile = ProviderProfile {
+            connection: connection.clone(),
+            limits: settings.clone(),
             protocol: provider.protocol,
             base_url: provider.base_url.clone(),
             model,
             api_key_env: provider.api_key_env.clone(),
-            stored_credential: provider.api_key_env.is_none()
+            stored_credential: connection.no_auth != Some(true)
+                && provider.api_key_env.is_none()
                 && overrides.stored_credentials.contains(&name),
-            context_budget_tokens: settings.context_budget_tokens,
+            context_budget_tokens: Some(
+                settings
+                    .context_budget_tokens
+                    .unwrap_or(8192)
+                    .min(settings.context_window_tokens.unwrap_or(u64::MAX)),
+            ),
             context_window_tokens: settings.context_window_tokens,
             reserved_output_tokens: settings.reserved_output_tokens,
             max_attempts: provider.max_attempts,
@@ -198,6 +288,7 @@ impl Config {
         execution.validate()?;
         let store = self.store_path(home, overrides.store.as_deref())?;
         Ok(SettingsSnapshot {
+            format_version: 2,
             profile_name: name,
             profile,
             execution,
@@ -216,6 +307,65 @@ mod tests {
         Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap()
     }
 
+    #[test]
+    fn manual_settings_overlay_and_secret_headers_freeze_sources_only() {
+        let config = Config::parse(
+            r#"
+default_provider = "arbitrary"
+default_model = "unknown"
+[defaults]
+context_budget_tokens = 9000
+[defaults.connection.headers]
+x-tenant = "global"
+[providers.arbitrary]
+protocol = "system-one"
+base_url = "https://arbitrary.example/proxy"
+[providers.arbitrary.defaults]
+context_budget_tokens = 7000
+max_questions = 12
+[providers.arbitrary.defaults.connection.headers]
+X-Tenant = "defaults"
+[providers.arbitrary.connection.headers]
+X-TENANT = "provider"
+[providers.arbitrary.connection.headers_env]
+X-Gateway-Key = "HEADER_KEY"
+[providers.arbitrary.models.unknown]
+context_budget_tokens = 5000
+[providers.arbitrary.models.unknown.connection.headers]
+x-tenant = "model"
+"#,
+        )
+        .unwrap();
+        let resolved = config
+            .resolve(
+                &RuntimeOverrides::default(),
+                &Default::default(),
+                &Default::default(),
+                Path::new("/home"),
+                |_| Some("Bearer SECRET_VALUE".into()),
+            )
+            .unwrap();
+        assert_eq!(resolved.snapshot.profile.context_budget_tokens, Some(5000));
+        assert_eq!(resolved.snapshot.profile.limits.max_questions, Some(12));
+        assert_eq!(
+            resolved.snapshot.profile.connection.headers["x-tenant"],
+            "model"
+        );
+        assert_eq!(
+            resolved.headers["x-gateway-key"].expose(),
+            "Bearer SECRET_VALUE"
+        );
+        assert!(!format!("{resolved:?}").contains("SECRET_VALUE"));
+        let frozen = serde_json::to_string(&resolved.snapshot).unwrap();
+        assert!(!frozen.contains("SECRET_VALUE"));
+        assert!(frozen.contains("HEADER_KEY"));
+        let restored: SettingsSnapshot = serde_json::from_str(&frozen).unwrap();
+        let restored = restored
+            .with_credentials(|_| Some("new-key".into()))
+            .unwrap();
+        assert_eq!(restored.headers["x-gateway-key"].expose(), "new-key");
+        assert_eq!(restored.snapshot, resolved.snapshot);
+    }
     #[test]
     fn only_selected_credentials_are_read_and_never_serialized_or_debugged() {
         let config = config();
@@ -471,13 +621,13 @@ mod tests {
 
     #[test]
     fn models_share_connections_but_never_inherit_each_others_limits() {
-        use crate::limits::{LimitError, ResolvedLimits};
+        use crate::limits::ResolvedLimits;
         let config = Config::parse(
             r#"
 default_provider = "gateway"
 default_model = "a"
 [providers.gateway]
-protocol = "typesafe"
+protocol = "system-one"
 base_url = "https://gateway.example.com"
 max_attempts = 5
 attempt_timeout_seconds = 10
@@ -525,8 +675,10 @@ reserved_output_tokens = 256
         assert!(unlisted.profile.context_window_tokens.is_none());
         assert!(unlisted.profile.reserved_output_tokens.is_none());
         assert_eq!(
-            ResolvedLimits::for_profile(&unlisted.profile),
-            Err(LimitError::MissingBudget)
+            ResolvedLimits::for_profile(&unlisted.profile)
+                .unwrap()
+                .budget,
+            8192
         );
         assert_eq!(
             ResolvedLimits::for_profile(&resolve(Some("unlisted"), Some(2048)).unwrap().profile)
@@ -535,13 +687,15 @@ reserved_output_tokens = 256
             2048
         );
         assert_eq!(
-            ResolvedLimits::for_profile(&resolve(Some("a"), Some(8193)).unwrap().profile),
-            Err(LimitError::InvalidBudget)
+            ResolvedLimits::for_profile(&resolve(Some("a"), Some(8193)).unwrap().profile)
+                .unwrap()
+                .budget,
+            8192
         );
     }
 
     #[test]
-    fn missing_models_require_selection_and_known_unlisted_models_use_registry_limits() {
+    fn missing_models_require_selection_and_unlisted_models_use_operational_budget() {
         let mut config = config();
         config.default_model = None;
         let snapshot = |config: &Config, selection: ModelSelection| {
@@ -585,8 +739,8 @@ reserved_output_tokens = 256
         assert!(
             crate::limits::ResolvedLimits::for_profile(&selected.profile)
                 .unwrap()
-                .capabilities
-                .is_some()
+                .budget
+                == 8192
         );
         for (request, session, expected) in [
             (None, None, "gpt-6-luna"),

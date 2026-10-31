@@ -52,6 +52,6 @@ impl DecisionProvider for FakeProvider {
 }
 pub fn config() -> Result<Config, nouli_core::config::ConfigError> {
     Config::parse(
-        "default_provider='fake'\ndefault_model='requested-alias'\n[execution]\nmax_attempts=1\n[providers.fake]\nprotocol='typesafe'\nbase_url='http://127.0.0.1:1'\n[providers.fake.models.'requested-alias']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n",
+        "default_provider='fake'\ndefault_model='requested-alias'\n[execution]\nmax_attempts=1\n[providers.fake]\nprotocol='system-one'\nbase_url='http://127.0.0.1:1'\n[providers.fake.models.'requested-alias']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n",
     )
 }

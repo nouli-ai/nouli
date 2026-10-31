@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Configure any compatible service through `system-one` or `openai-decisions`, explicit HTTP bindings, headers, image formats and optional limits. Remove provider/model recognition and the bundled capacity catalog; omitted budgets use 8,192 estimated tokens, clamped to a configured window. This replaces the `typesafe` and `openrouter-decisions` protocol names. Older frozen runs require a fresh store and are preserved untouched.
 - Refresh the Pages home page, guide and walkthroughs with captures of the current full-screen TUI. Add a simple three-turn meeting example alongside the complex multi-session examples, preserving recorded model answers.
 - Resize the graph by dragging its divider at any time, including while editing a field. Ctrl-G remains keyboard navigation; use the terminal’s selection modifier for native text selection. Keep the chosen width through session changes and clamp it when the terminal shrinks.
 - Connect referenced answers to the questions that use them in the TUI and `nouli view`, including after reopening a destination session. Load the exact saved source history without blending sessions; separate question cards where necessary and mark reference edges with dashed arrows in Mermaid.
@@ -32,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove the interactive `/whatif` command from completion, help, and input handling.
 
 ### Added
+
+- Set up connections with `nouli connect`, service shortcuts or a fully custom endpoint, masked API keys, environment sources and credential programs. Edit the generated ordinary TOML directly; setup preserves unrelated comments and serializes concurrent edits. Use `/connect`, `/login`, `/logout` and `/model` while idle without losing the draft.
+- Call Cloudflare Workers AI directly through the shared System One codec and its explicit HTTP binding, including model-specific routes and response envelopes.
 
 - Find files from the launch folder with `@` beside saved answers. Select without sending, and snapshot contents into the focused field. Import DOCX/PPTX text and tables, CSV/TSV rows, XLS/XLSX/XLSM/XLSB/ODS sheets and native images including rendered SVGs; PDF text uses Poppler and legacy DOC/PPT conversion optionally uses LibreOffice. File drops use the same parsers, and each file occupies one option/level.
 - Rename the current session with `/rename NAME`, preserving its history, IDs, model settings, references and unsent draft. Header, graph and later `@` searches use the new name; collisions leave the session unchanged.

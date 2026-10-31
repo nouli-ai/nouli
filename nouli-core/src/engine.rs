@@ -285,6 +285,7 @@ mod tests {
     }
     fn config() -> Config {
         Config {
+            defaults: Default::default(),
             default_provider: Some("fixture".into()),
             default_model: Some("offline".into()),
             output: OutputFormat::Json,
@@ -296,12 +297,21 @@ mod tests {
             providers: BTreeMap::from([(
                 "fixture".into(),
                 ProviderDefinition {
-                    protocol: Protocol::Typesafe,
+                    connection: Default::default(),
+                    defaults: Default::default(),
+                    protocol: Protocol::SystemOne,
                     base_url: "http://127.0.0.1:8080".into(),
                     api_key_env: None,
                     models: BTreeMap::from([(
                         "offline".into(),
                         ModelSettings {
+                            connection: Default::default(),
+                            per_question_context_tokens: None,
+                            max_questions: None,
+                            max_choices: None,
+                            max_score_levels: None,
+                            max_request_bytes: None,
+                            input_modalities: None,
                             context_budget_tokens: Some(100_000),
                             context_window_tokens: Some(100_000),
                             reserved_output_tokens: Some(128),
@@ -766,8 +776,7 @@ mod tests {
     impl TokenCounter for Synthetic {
         fn count(
             &self,
-            _protocol: Protocol,
-            _model: &str,
+            _profile: &crate::config::ProviderProfile,
             evidence: &str,
             questions: &[crate::decision::Question],
         ) -> Result<crate::limits::count::InputCounts, LimitError> {

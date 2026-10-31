@@ -278,13 +278,18 @@ pub async fn evaluate(
         return Err(ProviderError::Protocol);
     }
     ResolvedLimits::for_profile(profile)?.assess(context_toon, request, counter)?;
-    let body = request_body(request, context_toon, &profile.model)?;
+    let body = crate::provider::wire::body(profile, request, context_toon)?;
     let response = transport
-        .post(
+        .post_with_headers(
             profile,
-            "v1/decisions",
+            profile
+                .connection
+                .request_path
+                .as_deref()
+                .unwrap_or("v1/decisions"),
             &body,
             settings.credential.as_ref(),
+            &settings.headers,
             cancel,
         )
         .await?;
@@ -333,6 +338,7 @@ mod tests {
         profile.base_url = base_url;
         profile.context_budget_tokens = Some(4096);
         SettingsSnapshot {
+            format_version: 2,
             profile_name: "direct-openai".into(),
             profile,
             execution: ExecutionSettings::default(),

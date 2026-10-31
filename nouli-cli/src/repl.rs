@@ -96,7 +96,7 @@ struct Current {
     label: String,
 }
 
-const HELP: [(&str, &str); 14] = [
+const HELP: [(&str, &str); 18] = [
     ("plain text", "queue a fact for the next question"),
     (
         "?id: prompt [a, b]",
@@ -116,6 +116,10 @@ const HELP: [(&str, &str); 14] = [
     ("/blend A B as NAME", "combine histories into a new session"),
     ("/view", "the sessions and how they connect"),
     ("/context", "what the model saw last turn"),
+    ("/connect", "configure a connection"),
+    ("/login [NAME]", "store an API key"),
+    ("/logout [NAME]", "remove a stored credential"),
+    ("/model", "choose a connection and model"),
     ("/quit, /exit", "leave (or Ctrl-C on an empty prompt)"),
 ];
 
@@ -133,7 +137,7 @@ enum Step {
 }
 
 struct Repl<'a, W> {
-    settings: &'a Settings,
+    settings: std::borrow::Cow<'a, Settings>,
     out: W,
     paint: Paint,
     model: ModelSelection,
@@ -338,7 +342,7 @@ impl<W: Write> Repl<'_, W> {
         let Some(draft) = self.draft(question, ephemeral)? else {
             return Ok(());
         };
-        let result = runtime.block_on(evaluate::run(&draft, self.settings));
+        let result = runtime.block_on(evaluate::run(&draft, &self.settings));
         self.finish(result.result, &draft.request.updates, ephemeral)
     }
 
@@ -415,7 +419,7 @@ impl<W: Write> Repl<'_, W> {
         }
         .draft_with_question(&mut io::empty(), Some(question));
         let draft = match draft {
-            Ok(draft) => evaluate::resolve(self.settings, draft),
+            Ok(draft) => evaluate::resolve(&self.settings, draft),
             Err(error) => Err(input_error(&error)),
         };
         match draft {
@@ -535,7 +539,7 @@ impl<W: Write> Repl<'_, W> {
             sources,
             defaults: ModelSelection::default(),
         };
-        match evaluate::create(self.settings, &creation) {
+        match evaluate::create(&self.settings, &creation) {
             Ok(report) => self
                 .ledger()
                 .and_then(|ledger| {
@@ -582,7 +586,7 @@ impl<W: Write> Repl<'_, W> {
         let session = if let Some(name) = name {
             self.create(name, vec![])
         } else {
-            match start::new_session(self.settings) {
+            match start::new_session(&self.settings) {
                 Ok(session) => Some(session),
                 Err(error) => {
                     self.fail(&error.message)?;
@@ -694,7 +698,7 @@ mod tests {
 
     pub(super) fn repl(settings: &Settings, queue: Queue) -> Repl<'_, Vec<u8>> {
         Repl {
-            settings,
+            settings: std::borrow::Cow::Borrowed(settings),
             out: Vec::new(),
             paint: Paint(false),
             model: ModelSelection::default(),

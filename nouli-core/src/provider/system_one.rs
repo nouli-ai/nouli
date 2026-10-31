@@ -1,4 +1,4 @@
-//! TypeSafe/Jev and separately served Laya's shared systemone protocol.
+//! Shared System One decision codec.
 
 use std::collections::BTreeMap;
 
@@ -58,15 +58,6 @@ pub fn request_body(
     context_toon: &str,
     model: &str,
 ) -> Result<Value, ProviderError> {
-    request_body_with_images(request, context_toon, model, true)
-}
-
-pub(super) fn request_body_with_images(
-    request: &TurnRequest,
-    context_toon: &str,
-    model: &str,
-    prepare_jev: bool,
-) -> Result<Value, ProviderError> {
     request.validate()?;
     crate::decision::nonempty(model, "model")?;
     let mut questions = BTreeMap::new();
@@ -90,7 +81,7 @@ pub(super) fn request_body_with_images(
     let evidence = crate::media::Evidence::read(context_toon)?;
     let mut body = json!({"model":model,"state":evidence.text,"questions":questions});
     if !evidence.images.is_empty() {
-        body["assets"] = evidence.assets(prepare_jev)?;
+        body["assets"] = evidence.assets()?;
     }
     Ok(body)
 }
@@ -251,21 +242,31 @@ pub async fn evaluate(
     cancel: &CancellationToken,
 ) -> Result<TurnOutcome, ProviderError> {
     let profile = &settings.snapshot.profile;
-    if profile.protocol != Protocol::Typesafe {
+    if profile.protocol != Protocol::SystemOne {
         return Err(ProviderError::Protocol);
     }
     ResolvedLimits::for_profile(profile)?.assess(context_toon, request, counter)?;
-    let body = request_body(request, context_toon, &profile.model)?;
+    let body = crate::provider::wire::body(profile, request, context_toon)?;
     let response = transport
-        .post(
+        .post_with_headers(
             profile,
-            "v1/systemone",
+            profile
+                .connection
+                .request_path
+                .as_deref()
+                .unwrap_or("v1/systemone"),
             &body,
             settings.credential.as_ref(),
+            &settings.headers,
             cancel,
         )
         .await?;
-    normalize(request, response.json()?, &settings.snapshot.profile_name)
+    crate::provider::wire::normalize(
+        request,
+        response.json()?,
+        &settings.snapshot.profile_name,
+        profile.connection.binding.unwrap_or_default(),
+    )
 }
 
 #[cfg(test)]
@@ -295,9 +296,12 @@ mod tests {
 
     fn settings(base_url: String) -> ResolvedSettings {
         SettingsSnapshot {
+            format_version: 2,
             profile_name: "local-laya".into(),
             profile: crate::config::ProviderProfile {
-                protocol: Protocol::Typesafe,
+                connection: Default::default(),
+                limits: Default::default(),
+                protocol: Protocol::SystemOne,
                 base_url,
                 model: "english".into(),
                 api_key_env: None,

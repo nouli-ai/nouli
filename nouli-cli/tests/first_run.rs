@@ -171,8 +171,8 @@ fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
         ("output='json'\n", "providers_required", 2),
         ("invalid TOML !", "invalid_configuration_syntax", 2),
         (
-            "default_provider='local'\ndefault_model='unknown'\n[providers.local]\nprotocol='typesafe'\nbase_url='http://localhost:8000'\n",
-            "invalid_model_budget",
+            "default_provider='local'\ndefault_model='unknown'\n[providers.local]\nprotocol='system-one'\nbase_url='http://localhost:8000'\n[providers.local.models.unknown]\ncontext_budget_tokens=0\n",
+            "invalid_configuration",
             2,
         ),
     ] {
@@ -205,7 +205,7 @@ fn model_selection_shares_one_provider_and_missing_models_fail_before_first_stor
 [execution]
 max_attempts = 1
 [providers.local]
-protocol = "typesafe"
+protocol = "system-one"
 base_url = "{}"
 [providers.local.models.a]
 context_budget_tokens = 4096

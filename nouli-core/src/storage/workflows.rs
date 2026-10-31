@@ -566,6 +566,7 @@ mod tests {
             .nodes
             .iter()
             .map(|_| SettingsSnapshot {
+                format_version: 2,
                 profile_name: "fixture".into(),
                 profile: profile.clone(),
                 execution: config.execution.clone(),

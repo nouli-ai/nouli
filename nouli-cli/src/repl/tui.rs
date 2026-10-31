@@ -262,6 +262,7 @@ impl PreviousQuestion {
 
 struct App<'a> {
     repl: Repl<'a, Vec<u8>>,
+    pending_setup: Option<String>,
     form: Form,
     transcript: Vec<Line<'static>>,
     /// How far the transcript is scrolled up from its end, in rows.
@@ -303,6 +304,7 @@ impl<'a> App<'a> {
     fn new(repl: Repl<'a, Vec<u8>>) -> Self {
         let mut app = Self {
             repl,
+            pending_setup: None,
             form: Form::default(),
             transcript: Vec::new(),
             scroll: 0,
@@ -334,6 +336,102 @@ impl<'a> App<'a> {
         app
     }
 
+    fn setup_command(&mut self, command: &str) -> Result<(), crate::connect::SetupError> {
+        use clap::Parser;
+        let mut args = crate::Args::try_parse_from([
+            "nouli",
+            "--config",
+            self.repl
+                .settings
+                .config_path
+                .to_str()
+                .ok_or(crate::connect::SetupError::Invalid)?,
+        ])
+        .map_err(|_| crate::connect::SetupError::Invalid)?;
+        args.env_file = self.repl.settings.env_file.clone();
+        args.store = Some(self.repl.settings.store.clone());
+        let (verb, argument) = command.split_once(' ').unwrap_or((command, ""));
+        match verb {
+            "/connect" => {
+                let selection = crate::connect::configure(
+                    &args,
+                    &crate::connect::Connect {
+                        service: if argument.is_empty() {
+                            None
+                        } else {
+                            Some(argument.into())
+                        },
+                        ..Default::default()
+                    },
+                )?;
+                self.repl.model = selection;
+            }
+            "/model" => {
+                let selection = crate::connect::pick_model(&self.repl.settings, argument)?;
+                self.repl.model = selection;
+            }
+            "/login" | "/logout" => {
+                let provider = if argument.is_empty() {
+                    self.repl
+                        .model
+                        .provider
+                        .clone()
+                        .or(self.repl.settings.config.default_provider.clone())
+                        .ok_or(crate::connect::SetupError::Invalid)?
+                } else {
+                    argument.into()
+                };
+                if !self.repl.settings.config.providers.contains_key(&provider) {
+                    return Err(crate::connect::SetupError::Invalid);
+                }
+                let auth = crate::settings::auth::path_for(&self.repl.settings.config_path);
+                if verb == "/logout" {
+                    crate::settings::auth::update(&auth, |store| {
+                        let removed = store.remove(&provider);
+                        ((), removed)
+                    })
+                    .map_err(|_| crate::connect::SetupError::Write)?;
+                } else {
+                    let model = self.repl.model.model.as_deref().or(self
+                        .repl
+                        .settings
+                        .config
+                        .default_model
+                        .as_deref());
+                    if self
+                        .repl
+                        .settings
+                        .config
+                        .connection_settings(&provider, model)?
+                        .no_auth
+                        == Some(true)
+                    {
+                        return Err(crate::connect::SetupError::AuthDisabled);
+                    }
+                    let key = crate::connect::read_key("API key: ")?;
+                    crate::settings::auth::update(&auth, |store| {
+                        store.insert(
+                            provider,
+                            nouli_core::config::auth::AuthEntry::ApiKey(
+                                nouli_core::config::auth::KeySource::Key(key),
+                            ),
+                        );
+                        ((), true)
+                    })
+                    .map_err(|_| crate::connect::SetupError::Write)?;
+                }
+            }
+            _ => return Err(crate::connect::SetupError::Invalid),
+        }
+        let mut settings =
+            crate::settings::load(&args).map_err(|_| crate::connect::SetupError::Invalid)?;
+        settings
+            .load_environment()
+            .map_err(|_| crate::connect::SetupError::Invalid)?;
+        self.repl.settings = std::borrow::Cow::Owned(settings);
+        Ok(())
+    }
+
     fn run(&mut self, terminal: &mut DefaultTerminal, runtime: &Runtime) -> io::Result<()> {
         // The timer needs the runtime; the turn runs only while the loop waits.
         let _context = runtime.enter();
@@ -342,6 +440,20 @@ impl<'a> App<'a> {
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut running: Option<Running<'a>> = None;
         loop {
+            if let Some(command) = self.pending_setup.take() {
+                drop(events);
+                execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture)?;
+                ratatui::try_restore()?;
+                let result = self.setup_command(&command);
+                *terminal = ratatui::try_init()?;
+                execute!(io::stdout(), EnableBracketedPaste, EnableMouseCapture)?;
+                events = EventStream::new();
+                self.status = Some(match result {
+                    Ok(()) => Status::info("connection settings updated"),
+                    Err(e) => Status::error(e.to_string()),
+                });
+                self.refresh_model();
+            }
             terminal.draw(|frame| draw::screen(frame, self, running.as_ref()))?;
             let busy = running.is_some();
             let wake = runtime.block_on(async {
@@ -738,6 +850,16 @@ impl<'a> App<'a> {
             self.repl.queue.facts.push(line);
             return Ok(Flow::Continue);
         }
+        if ["/connect", "/login", "/logout", "/model"]
+            .contains(&line.split_whitespace().next().unwrap_or(""))
+        {
+            if running.is_some() {
+                self.status = Some(Status::error("wait for the active request"));
+            } else {
+                self.pending_setup = Some(line);
+            }
+            return Ok(Flow::Continue);
+        }
         match line.as_str() {
             "/help" => {
                 self.echo(&line);
@@ -974,7 +1096,7 @@ impl<'a> App<'a> {
         }
         let cancel = CancellationToken::new();
         let stop = cancel.clone();
-        let settings = self.repl.settings;
+        let settings = self.repl.settings.clone().into_owned();
         let session = if draft.ephemeral {
             ModelSelection::default()
         } else {
@@ -1005,7 +1127,7 @@ impl<'a> App<'a> {
                     stop.cancelled().await;
                     Ok::<(), io::Error>(())
                 };
-                let envelope = evaluate::run_until(&draft, settings, interrupt).await;
+                let envelope = evaluate::run_until(&draft, &settings, interrupt).await;
                 (envelope, draft)
             }),
             cancel,
@@ -1595,6 +1717,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn setup_commands_suspend_submission_without_losing_the_question_draft() {
+        for command in ["/connect", "/model", "/login", "/logout"] {
+            let settings = settings();
+            let mut app = app(&settings);
+            app.form.question = "Keep this unsent question".into();
+            app.form.options = vec!["One".into(), "Two".into()];
+            app.form.input = command.into();
+            let transcript = app.transcript.len();
+            app.submit(&mut None).unwrap();
+            assert_eq!(app.pending_setup.as_deref(), Some(command));
+            assert_eq!(app.form.question, "Keep this unsent question");
+            assert_eq!(app.form.options, ["One", "Two"]);
+            assert_eq!(app.transcript.len(), transcript);
+            assert!(app.repl.queue.question.is_none());
+        }
+    }
     #[test]
     fn empty_lists_reuse_exact_prior_answers_and_require_new_evidence() {
         for kind in [Kind::Choice, Kind::Score] {
@@ -2345,7 +2484,7 @@ mod tests {
         let mut settings = settings();
         settings.config = nouli_core::config::Config::parse(&format!(
             "default_provider = 'local'\ndefault_model = 'offline'\n\
-             [providers.local]\nprotocol = 'typesafe'\nbase_url = 'http://{}'\n\
+             [providers.local]\nprotocol = 'system-one'\nbase_url = 'http://{}'\n\
              [providers.local.models.offline]\ncontext_budget_tokens = 100000\n\
              context_window_tokens = 100000\nreserved_output_tokens = 128\n",
             provider.local_addr().unwrap()

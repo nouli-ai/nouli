@@ -316,7 +316,7 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
     }
 }
 #[test]
-fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
+fn default_model_budget_works_and_competing_file_modes_fail_before_inference() {
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -327,13 +327,21 @@ fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
         .replace("context_window_tokens = 100000\n", "");
     std::fs::write(&path, config).unwrap();
     let create = [&["new", "Budgeted"][..], &QUESTION].concat();
-    let missing = home.run(&create);
-    assert_eq!(missing.status.code(), Some(2));
-    assert_eq!(server.count(), 0);
-    assert!(!home.store().exists());
-    let valid = report(home.run([&create[..], &["--context-budget", "90000"]].concat()));
-    assert_eq!(valid.manifest.budget, 90000);
+    let defaulted = report(home.run(&create));
+    assert_eq!(defaulted.manifest.budget, 8192);
     assert_eq!(server.count(), 1);
+    let valid = report(
+        home.run(
+            [
+                &["new", "ExplicitBudget"][..],
+                &QUESTION,
+                &["--context-budget", "90000"],
+            ]
+            .concat(),
+        ),
+    );
+    assert_eq!(valid.manifest.budget, 90000);
+    assert_eq!(server.count(), 2);
     let file = home.request("competing.json", "unused", vec![]);
     // A request file that names its own session competes with the verb.
     let mut value: serde_json::Value =
@@ -343,8 +351,8 @@ fn missing_model_budget_and_competing_file_modes_fail_before_inference() {
     std::fs::write(&competing, serde_json::to_vec(&value).unwrap()).unwrap();
     let output = home.run(["new", "Other", "--input", competing.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(2));
-    assert_eq!(server.count(), 1);
-    assert_eq!(before_count(&home), 1);
+    assert_eq!(server.count(), 2);
+    assert_eq!(before_count(&home), 2);
 }
 
 #[test]
@@ -440,7 +448,10 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     // A changed/invalid provider profile must not block store-only inspection.
     let config = std::fs::read_to_string(home.0.join("config.toml"))
         .unwrap()
-        .replace("protocol = \"typesafe\"", "protocol = \"removed-protocol\"");
+        .replace(
+            "protocol = \"system-one\"",
+            "protocol = \"removed-protocol\"",
+        );
     std::fs::write(home.0.join("config.toml"), config).unwrap();
     let output = home.run(["sessions", "export", "Diamond", "--format", "json"]);
     assert!(

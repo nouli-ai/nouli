@@ -5,6 +5,8 @@ date: 2026-10-27
 
 # Build Nouli as a durable decision-session harness
 
+Provider configuration is superseded by [ADR 0019](0019-independent-protocol-connections.md).
+
 Nouli needs to carry typed decisions across turns and combine independently
 developed histories into subsequent decisions. We will build a shared Rust
 runtime with a CLI, durable session ancestry, provider adapters, and explicit

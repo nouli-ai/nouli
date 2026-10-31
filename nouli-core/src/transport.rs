@@ -6,7 +6,7 @@ use std::{fmt, time::Duration};
 
 use reqwest::{
     Client,
-    header::{AUTHORIZATION, HeaderMap, HeaderValue, RETRY_AFTER},
+    header::{HeaderMap, HeaderName, HeaderValue, RETRY_AFTER},
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -88,13 +88,11 @@ pub struct HttpTransport {
 pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportError> {
     profile.validate().map_err(|_| TransportError::Endpoint)?;
     let mut url = Url::parse(&profile.base_url).map_err(|_| TransportError::Endpoint)?;
+    let path = profile.connection.request_path.as_deref().unwrap_or(path);
     let path = path.trim_matches('/');
     if path.is_empty()
         || path.split('/').any(|part| {
-            part.is_empty()
-                || !part
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+            part.is_empty() || part == "." || part == ".." || part.contains(['?', '#', '\\'])
         })
     {
         return Err(TransportError::Endpoint);
@@ -104,8 +102,32 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
             .path_segments_mut()
             .map_err(|_| TransportError::Endpoint)?;
         segments.pop_if_empty();
-        for part in path.split('/') {
+        for part in path.split('/').filter(|_| {
+            profile.connection.binding != Some(crate::config::HttpBinding::CloudflareWorkersAi)
+        }) {
             segments.push(part);
+        }
+    }
+    if profile.connection.binding == Some(crate::config::HttpBinding::CloudflareWorkersAi) {
+        let mut parts = url
+            .path_segments_mut()
+            .map_err(|_| TransportError::Endpoint)?;
+        // Cloudflare model IDs use slash-separated path components.
+        parts.pop_if_empty();
+        for segment in profile
+            .connection
+            .request_path
+            .as_deref()
+            .unwrap_or("run")
+            .split('/')
+        {
+            parts.push(segment);
+        }
+        for part in profile.model.split('/') {
+            if part.is_empty() || part == "." || part == ".." {
+                return Err(TransportError::Endpoint);
+            }
+            parts.push(part);
         }
     }
     Ok(url)
@@ -185,8 +207,22 @@ impl HttpTransport {
         credential: Option<&Credential>,
         cancel: &CancellationToken,
     ) -> Result<HttpResponse, TransportError> {
+        self.post_with_headers(profile, path, body, credential, &Default::default(), cancel)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn post_with_headers(
+        &self,
+        profile: &ProviderProfile,
+        path: &str,
+        body: &Value,
+        credential: Option<&Credential>,
+        headers: &std::collections::BTreeMap<String, Credential>,
+        cancel: &CancellationToken,
+    ) -> Result<HttpResponse, TransportError> {
         let url = endpoint(profile, path)?;
-        let exchange = self.exchange(url, body, credential);
+        let exchange = self.exchange(url, body, credential, profile, headers);
         tokio::select! {
             biased;
             _=cancel.cancelled()=>Err(TransportError::Canceled),
@@ -199,22 +235,65 @@ impl HttpTransport {
         url: Url,
         body: &Value,
         credential: Option<&Credential>,
+        profile: &ProviderProfile,
+        headers: &std::collections::BTreeMap<String, Credential>,
     ) -> Result<HttpResponse, TransportError> {
-        let mut request = self.client.post(url).json(body);
-        if body
-            .get("assets")
-            .and_then(Value::as_object)
-            .is_some_and(|assets| !assets.is_empty())
-        {
-            request = request.header("TypeSafe-Danger-Zone-Images", "true");
+        let mut resolved_headers = HeaderMap::new();
+        for (name, value) in &profile.connection.headers {
+            let mut v = HeaderValue::from_str(value).map_err(|_| TransportError::Settings)?;
+            v.set_sensitive(true);
+            resolved_headers.insert(
+                HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?,
+                v,
+            );
+        }
+        for (name, value) in headers {
+            let mut v =
+                HeaderValue::from_str(value.expose()).map_err(|_| TransportError::Settings)?;
+            v.set_sensitive(true);
+            resolved_headers.insert(
+                HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?,
+                v,
+            );
         }
         if let Some(credential) = credential {
-            let mut header = HeaderValue::from_str(&format!("Bearer {}", credential.expose()))
-                .map_err(|_| TransportError::Settings)?;
+            let mut header = HeaderValue::from_str(&format!(
+                "{}{}{}",
+                profile
+                    .connection
+                    .auth_scheme
+                    .as_deref()
+                    .unwrap_or("Bearer"),
+                if profile.connection.auth_scheme.as_deref() == Some("") {
+                    ""
+                } else {
+                    " "
+                },
+                credential.expose()
+            ))
+            .map_err(|_| TransportError::Settings)?;
             header.set_sensitive(true);
-            request = request.header(AUTHORIZATION, header);
+            resolved_headers.insert(
+                HeaderName::from_bytes(
+                    profile
+                        .connection
+                        .auth_header
+                        .as_deref()
+                        .unwrap_or("Authorization")
+                        .as_bytes(),
+                )
+                .map_err(|_| TransportError::Settings)?,
+                header,
+            );
         }
-        let mut response = request.send().await.map_err(network_error)?;
+        let mut response = self
+            .client
+            .post(url)
+            .json(body)
+            .headers(resolved_headers)
+            .send()
+            .await
+            .map_err(network_error)?;
         let status = response.status().as_u16();
         let headers = response.headers().clone();
         let expected = response.content_length();
@@ -271,7 +350,9 @@ mod tests {
 
     fn profile(base_url: String) -> ProviderProfile {
         ProviderProfile {
-            protocol: crate::config::Protocol::Typesafe,
+            connection: Default::default(),
+            limits: Default::default(),
+            protocol: crate::config::Protocol::SystemOne,
             base_url,
             model: "fixture".into(),
             api_key_env: None,
@@ -284,6 +365,55 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn cloudflare_binding_and_custom_headers_are_explicit_on_any_endpoint() {
+        let mut server = MockServer::start().await;
+        let mut profile = profile(format!("{}/accounts/demo/ai", server.url));
+        profile.model = "@cf/cloudflare/clef".into();
+        profile.connection.binding = Some(crate::config::HttpBinding::CloudflareWorkersAi);
+        profile.connection.request_path = Some("custom/run".into());
+        profile.connection.auth_header = Some("X-Api-Key".into());
+        profile.connection.auth_scheme = Some("".into());
+        profile
+            .connection
+            .headers
+            .insert("X-Tenant".into(), "literal".into());
+        let headers = std::collections::BTreeMap::from([(
+            "x-tenant".into(),
+            Credential::new("resolved".into()).unwrap(),
+        )]);
+        let key = Credential::new("private-key".into()).unwrap();
+        let transport = HttpTransport::new(&ExecutionSettings::default()).unwrap();
+        let cancel = CancellationToken::new();
+        let body = serde_json::json!({"model":"clef"});
+        let (result, request) = tokio::join!(
+            transport.post_with_headers(
+                &profile,
+                "v1/systemone",
+                &body,
+                Some(&key),
+                &headers,
+                &cancel
+            ),
+            async {
+                let request = server.received().await;
+                server.respond(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
+                );
+                request
+            }
+        );
+        result.unwrap();
+        let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
+        assert!(
+            request.starts_with("post /accounts/demo/ai/custom/run/@cf/cloudflare/clef http/1.1")
+        );
+        assert_eq!(request.matches("x-tenant:").count(), 1);
+        assert!(request.contains("x-tenant: resolved"));
+        assert!(request.contains("x-api-key: private-key"));
+        assert!(!request.contains("authorization:"));
+        server.finish().await;
+    }
     #[tokio::test]
     async fn actual_connection_failure_maps_to_a_retryable_connect_error() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

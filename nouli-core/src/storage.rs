@@ -57,6 +57,8 @@ pub enum StorageError {
     NewerSchema { found: u32, supported: u32 },
     #[error("read-only ledger requires migration from schema {found}")]
     MigrationRequired { found: u32 },
+    #[error("unsupported frozen settings; use a fresh store with --store DIR")]
+    FrozenSettings,
     #[error("stored structured payload is invalid")]
     Payload,
     #[error("stored projection changed concurrently")]
@@ -219,7 +221,15 @@ impl Ledger {
         codec::encode_toon(value).map_err(|_| StorageError::Payload)
     }
     pub fn decode_payload<T: DeserializeOwned>(payload: &str) -> Result<T, StorageError> {
-        codec::decode(payload.as_bytes(), InputFormat::Toon).map_err(|_| StorageError::Payload)
+        let value = codec::decode_value(payload.as_bytes(), InputFormat::Toon)
+            .map_err(|_| StorageError::Payload)?;
+        serde_json::from_value(value).map_err(|error| {
+            if error.to_string() == "unsupported frozen settings; use a fresh store" {
+                StorageError::FrozenSettings
+            } else {
+                StorageError::Payload
+            }
+        })
     }
 }
 
@@ -228,6 +238,29 @@ mod tests {
     use super::*;
     use crate::identity::Id;
 
+    #[test]
+    fn real_legacy_profiles_fail_with_fresh_store_guidance_before_profile_decoding() {
+        let legacy = serde_json::json!({"profile_name":"old","profile":{"protocol":"typesafe", "model":"old", "base_url":"https://example.com"}, "execution":crate::config::ExecutionSettings::default(), "output":"auto", "store":"/tmp/old"});
+        for value in [legacy.clone(), serde_json::json!({"settings":[legacy]})] {
+            let payload = Ledger::encode_payload(&value).unwrap();
+            if value.get("settings").is_some() {
+                #[derive(serde::Deserialize)]
+                struct Saved {
+                    #[allow(dead_code)]
+                    settings: Vec<crate::config::resolve::SettingsSnapshot>,
+                }
+                assert!(matches!(
+                    Ledger::decode_payload::<Saved>(&payload),
+                    Err(StorageError::FrozenSettings)
+                ));
+            } else {
+                assert!(matches!(
+                    Ledger::decode_payload::<crate::config::resolve::SettingsSnapshot>(&payload),
+                    Err(StorageError::FrozenSettings)
+                ));
+            }
+        }
+    }
     struct Store(PathBuf);
     impl Store {
         fn new() -> Self {
