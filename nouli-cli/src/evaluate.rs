@@ -297,12 +297,13 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
             return render_error(args, settings.config.output, input_error(&error));
         }
     };
-    let Ok(format) = render::resolve(
+    let format = match render::resolve_stream_format(
         &args.output,
         settings.config.output,
         io::stdout().is_terminal(),
-    ) else {
-        return ExitCode::from(2);
+    ) {
+        Ok(format) => format,
+        Err(error) => return render_error(args, settings.config.output, error),
     };
     if let Some(creation) = &draft.create {
         let result = match create(&settings, creation) {

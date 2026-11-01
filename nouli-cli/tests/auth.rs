@@ -401,14 +401,21 @@ fn report_commands_refuse_jsonl_with_one_error_code() {
         );
     }
     assert!(!auth_file(&home).exists());
-    // Global output flags on both sides of the subcommand pass clap's checks.
-    let conflicting = home.run(["--json", "auth", "list", "--jsonl"]);
-    assert_eq!(conflicting.status.code(), Some(2));
-    assert_eq!(String::from_utf8_lossy(&conflicting.stdout), "");
-    assert!(
-        String::from_utf8_lossy(&conflicting.stderr).contains("conflicting_output_options"),
-        "{conflicting:?}"
-    );
+    // Global output flags on both sides of the subcommand pass clap's checks,
+    // for report-only and streaming commands alike.
+    for arguments in [
+        &["--json", "auth", "list", "--jsonl"][..],
+        &["--json", "workflow", "run", "-", "--jsonl"][..],
+        &["--json", "new", "Trip", "-q", "pick: Which?", "--jsonl"][..],
+    ] {
+        let conflicting = home.run(arguments);
+        assert_eq!(conflicting.status.code(), Some(2), "{arguments:?}");
+        assert_eq!(String::from_utf8_lossy(&conflicting.stdout), "");
+        assert!(
+            String::from_utf8_lossy(&conflicting.stderr).contains("conflicting_output_options"),
+            "{conflicting:?}"
+        );
+    }
 }
 
 #[test]

@@ -49,6 +49,9 @@ use std::{
 use tokio::{runtime::Runtime, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
+/// Commands handled by [`App::setup_command`], outside the turn loop.
+const SETUP_COMMANDS: [&str; 4] = ["/connect", "/login", "/logout", "/model"];
+
 /// The keys and TUI-only commands, for `/help` before the commands the line
 /// loop lists. Setup commands prompt interactively, so only the TUI offers them.
 const KEYS: [(&str, &str); 18] = [
@@ -355,16 +358,16 @@ impl<'a> App<'a> {
     /// Runs a setup command; returns the status line to show on success.
     fn setup_command(&mut self, command: &str) -> Result<&'static str, crate::connect::SetupError> {
         use clap::Parser;
-        let mut args = crate::Args::try_parse_from([
-            "nouli",
-            "--config",
-            self.repl
-                .settings
-                .config_path
-                .to_str()
-                .ok_or(crate::connect::SetupError::ConfigPath)?,
-        ])
-        .map_err(|_| crate::connect::SetupError::ConfigPath)?;
+        let config = self
+            .repl
+            .settings
+            .config_path
+            .to_str()
+            .ok_or(crate::connect::SetupError::ConfigPath)?;
+        // `--config=PATH` keeps a path that starts with `-` from parsing as a flag.
+        let mut args =
+            crate::Args::try_parse_from(["nouli".to_owned(), format!("--config={config}")])
+                .map_err(|_| crate::connect::SetupError::ConfigPath)?;
         args.env_file.clone_from(&self.repl.settings.env_file);
         args.store = Some(self.repl.settings.store.clone());
         let (verb, argument) = command.split_once(' ').unwrap_or((command, ""));
@@ -402,17 +405,23 @@ impl<'a> App<'a> {
                 let auth = crate::settings::auth::path_for(&self.repl.settings.config_path);
                 let report = crate::connect::SetupError::Report;
                 if verb == "/logout" {
-                    crate::auth::log_out(&auth, &provider).map_err(report)?;
+                    let (_, outcome) = crate::auth::log_out(&auth, &provider).map_err(report)?;
+                    note = if outcome["removed"] == true {
+                        "credential removed"
+                    } else {
+                        "no stored credential to remove"
+                    };
                 } else {
                     let disabled =
                         crate::auth::check_login(&self.repl.settings, &provider).map_err(report)?;
                     let key = crate::connect::read_key("API key: ")?;
                     let source = nouli_core::config::auth::KeySource::Key(key);
                     crate::auth::store_key(&auth, &provider, &source, disabled).map_err(report)?;
-                    if disabled {
-                        note =
-                            "credential stored; authentication is disabled for the default model";
-                    }
+                    note = if disabled {
+                        "credential stored; authentication is disabled for the default model"
+                    } else {
+                        "credential stored"
+                    };
                 }
             }
             _ => return Err(crate::connect::SetupError::UnknownCommand),
@@ -912,9 +921,7 @@ impl<'a> App<'a> {
             self.repl.queue.facts.push(line);
             return Ok(Flow::Continue);
         }
-        if ["/connect", "/login", "/logout", "/model"]
-            .contains(&line.split_whitespace().next().unwrap_or(""))
-        {
+        if SETUP_COMMANDS.contains(&line.split_whitespace().next().unwrap_or("")) {
             if running.is_some() {
                 self.status = Some(Status::error("wait for the active request"));
             } else {
@@ -1575,6 +1582,16 @@ mod tests {
         }
     }
     #[test]
+    fn help_lists_exactly_the_setup_commands_the_tui_dispatches() {
+        let listed: Vec<&str> = KEYS
+            .iter()
+            .filter_map(|(usage, _)| usage.split_whitespace().next())
+            .filter(|name| name.starts_with('/') && *name != "/sessions")
+            .collect();
+        assert_eq!(listed, SETUP_COMMANDS);
+    }
+
+    #[test]
     fn logout_removes_a_stored_credential_for_an_unconfigured_provider_like_auth_logout() {
         use std::os::unix::fs::PermissionsExt;
         let root = std::env::temp_dir().join(format!("nouli-tui-logout-{}", Id::generate()));
@@ -1597,7 +1614,11 @@ mod tests {
         let mut app = app(&settings);
         assert_eq!(
             app.setup_command("/logout ghost").unwrap(),
-            "connection settings updated"
+            "credential removed"
+        );
+        assert_eq!(
+            app.setup_command("/logout ghost").unwrap(),
+            "no stored credential to remove"
         );
         let remaining = crate::settings::auth::update(&auth, |store| {
             let present = store.remove("ghost");

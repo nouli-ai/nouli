@@ -153,9 +153,9 @@ fn run_workflow(args: &Args, command: &workflows::Command) -> ExitCode {
     {
         return render_error(args, settings.config.output, error);
     }
-    match render::resolve(&args.output, settings.config.output, terminal) {
+    match render::resolve_stream_format(&args.output, settings.config.output, terminal) {
         Ok(format) => ExitCode::from(workflows::run(command, &settings, format)),
-        Err(_) => ExitCode::from(2),
+        Err(error) => render_error(args, settings.config.output, error),
     }
 }
 

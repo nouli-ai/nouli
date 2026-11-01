@@ -76,6 +76,28 @@ pub(crate) fn resolve(
         selected
     })
 }
+fn input(code: &str, message: &str) -> ErrorReport {
+    ErrorReport {
+        category: ErrorCategory::Input,
+        code: code.into(),
+        message: message.into(),
+        retryable: false,
+    }
+}
+/// Resolves the format of a command that may stream events, reporting
+/// conflicting output flags as an input error.
+pub(crate) fn resolve_stream_format(
+    args: &OutputArgs,
+    configured: OutputFormat,
+    terminal: bool,
+) -> Result<Format, ErrorReport> {
+    resolve(args, configured, terminal).map_err(|_| {
+        input(
+            "conflicting_output_options",
+            "Choose only one of --json, --jsonl, or --format",
+        )
+    })
+}
 /// Resolves the format of a command that reports once rather than streaming
 /// events, so JSONL is refused with an input error.
 pub(crate) fn resolve_report_format(
@@ -83,22 +105,12 @@ pub(crate) fn resolve_report_format(
     configured: OutputFormat,
     terminal: bool,
 ) -> Result<Format, ErrorReport> {
-    let input = |code: &str, message: &str| ErrorReport {
-        category: ErrorCategory::Input,
-        code: code.into(),
-        message: message.into(),
-        retryable: false,
-    };
-    match resolve(args, configured, terminal) {
-        Ok(Format::Jsonl) => Err(input(
+    match resolve_stream_format(args, configured, terminal)? {
+        Format::Jsonl => Err(input(
             "unsupported_output_format",
             "This command supports text, JSON, or TOON output",
         )),
-        Ok(format) => Ok(format),
-        Err(_) => Err(input(
-            "conflicting_output_options",
-            "Choose only one of --json, --jsonl, or --format",
-        )),
+        format => Ok(format),
     }
 }
 /// Color only on a terminal, with `NO_COLOR` unset or empty and `TERM` not `dumb`.

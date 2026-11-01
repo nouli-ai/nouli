@@ -225,6 +225,8 @@ async fn execute(
     tokio::pin!(evaluation);
     tokio::select! {biased;result=&mut evaluation=>result,signal=tokio::signal::ctrl_c()=>{cancel.cancel();let result=evaluation.await;if let Err(error)=signal {return Err(WorkflowCliError::Signal(error));}result}}
 }
+/// Runs a workflow command. `format` is never JSONL for `Command::Show`: the
+/// caller resolves `show` with `render::resolve_report_format`.
 pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 {
     if let Command::Show { run } = command {
         let result = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
