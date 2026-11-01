@@ -17,11 +17,13 @@ use nouli_core::{
     history::{ModelSelection, SessionSelection},
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
-    storage::{Ledger, OpenMode, replay::ReplayError, worker::LedgerWorker},
+    storage::{Ledger, OpenMode, replay::ReplayError, sessions::Session, worker::LedgerWorker},
 };
 use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
+pub(crate) const LEDGER_FILE: &str = "ledger.sqlite3";
+
 #[derive(Debug, thiserror::Error)]
 enum EvaluationError {
     #[error(transparent)]
@@ -220,10 +222,7 @@ pub(crate) fn overrides(draft: &Draft, settings: &Settings) -> RuntimeOverrides 
     }
 }
 
-pub(crate) fn create(
-    settings: &Settings,
-    creation: &Creation,
-) -> Result<SessionReport, ErrorReport> {
+pub(crate) fn create(settings: &Settings, creation: &Creation) -> Result<Session, ErrorReport> {
     let mut ledger =
         Ledger::open(&settings.store, OpenMode::ReadWriteCreate).map_err(|error| error.report())?;
     let session = if creation.sources.is_empty() {
@@ -239,6 +238,12 @@ pub(crate) fn create(
             )
             .map_err(|error| EngineError::Source(error).report())?
     };
+    Ok(session)
+}
+
+fn session_report(settings: &Settings, session: Session) -> Result<SessionReport, ErrorReport> {
+    let ledger = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
+        .map_err(|error| error.report())?;
     let sources = ledger
         .session_sources(session.id)
         .map_err(|error| error.report())?;
@@ -307,7 +312,10 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
     };
     if let Some(creation) = &draft.create {
         let result = match create(&settings, creation) {
-            Ok(report) => ResultEnvelope::new(Report::Session(report)),
+            Ok(session) => match session_report(&settings, session) {
+                Ok(report) => ResultEnvelope::new(Report::Session(report)),
+                Err(error) => ResultEnvelope::new(Report::Error(error)),
+            },
             Err(error) => ResultEnvelope::new(Report::Error(error)),
         };
         return write_result(&result, format);

@@ -2,12 +2,11 @@
 use crate::repl::label;
 use nouli_core::{
     context::{ContextUpdate, facts},
-    history::{FinalizedTurn, SourcePoint},
+    history::FinalizedTurn,
     identity::Id,
     protocol::ErrorReport,
-    storage::{Ledger, OpenMode, StorageError},
 };
-use std::{io, path::Path};
+use std::path::Path;
 
 /// A session to resume, with the first thing said in it.
 pub(super) struct Entry {
@@ -20,29 +19,16 @@ pub(super) struct Entry {
 /// Every session with turns of its own except `current`, the one with the
 /// latest turn first.
 pub(super) fn entries(store: &Path, current: Id) -> Result<Vec<Entry>, ErrorReport> {
-    let ledger = match Ledger::open(store, OpenMode::ReadOnlyExisting) {
-        Ok(ledger) => ledger,
-        Err(StorageError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
-            return Ok(vec![]);
-        }
-        Err(error) => return Err(error.report()),
+    let Some(ledger) = crate::repl::open_existing(store)? else {
+        return Ok(vec![]);
     };
     let mut found = Vec::new();
     for session in ledger.list_sessions().map_err(|error| error.report())? {
         if session.id == current || session.frontier.is_empty() {
             continue;
         }
-        let history = ledger
-            .ancestry(&[SourcePoint {
-                session: session.id,
-                frontier: session.frontier.clone(),
-            }])
-            .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())?;
-        // History runs oldest first.
-        let own: Vec<_> = history
-            .iter()
-            .filter(|turn| turn.session == session.id)
-            .collect();
+        let history = crate::repl::session_history(&ledger, &session)?;
+        let own: Vec<_> = crate::repl::own_history(&history, session.id).collect();
         let (Some(first), Some(last)) = (own.first(), own.last()) else {
             continue;
         };

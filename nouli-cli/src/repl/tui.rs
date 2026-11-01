@@ -2266,9 +2266,7 @@ mod tests {
             sources: vec![],
             defaults: ModelSelection::default(),
         };
-        let session = crate::evaluate::create(&settings, &creation)
-            .unwrap()
-            .session;
+        let session = crate::evaluate::create(&settings, &creation).unwrap().id;
         let mut app = app(&settings);
         app.repl.session.id = session;
         app.form.question = "late: Is the train late?".into();

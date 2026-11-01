@@ -46,10 +46,7 @@ fn earlier(store: &Path, report: &TurnReport) -> Result<(Vec<FinalizedTurn>, usi
             })
         })?;
     let own = report.session.map_or(0, |session| {
-        history
-            .iter()
-            .filter(|turn| turn.session == session)
-            .count()
+        crate::repl::own_history(&history, session).count()
     });
     Ok((
         history

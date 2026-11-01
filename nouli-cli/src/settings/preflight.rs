@@ -71,7 +71,10 @@ fn validate(
     Ok(())
 }
 fn existing(settings: &Settings) -> Result<bool, PreflightError> {
-    Ok(settings.store.join("ledger.sqlite3").try_exists()?)
+    Ok(settings
+        .store
+        .join(crate::evaluate::LEDGER_FILE)
+        .try_exists()?)
 }
 pub(crate) fn turn(
     settings: &Settings,

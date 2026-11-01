@@ -21,13 +21,14 @@ use input::{Command, Line};
 use nouli_core::{
     context::ContextUpdate,
     decision::grammar,
-    history::{ModelSelection, SessionSelection, SourcePoint, SourceSelection},
+    history::{FinalizedTurn, ModelSelection, SessionSelection, SourcePoint, SourceSelection},
     identity::{Id, SessionName, SessionSelector},
     protocol::{ErrorReport, Report},
-    storage::{Ledger, OpenMode, sessions::Session},
+    storage::{Ledger, OpenMode, StorageError, sessions::Session},
 };
 pub(crate) use start::{Target, run};
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use tokio::runtime::Runtime;
 
 /// Open the interactive session loop on a session, creating it if it is missing.
@@ -158,21 +159,44 @@ fn plural(count: usize, noun: &str) -> String {
     format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
-/// How many turns a session wrote itself, not counting inherited history.
-fn own_turns(ledger: &Ledger, session: &Session) -> Result<usize, ErrorReport> {
-    if session.frontier.is_empty() {
-        return Ok(0);
+/// The ledger, or `None` when the store has no ledger yet.
+pub(crate) fn open_existing(store: &Path) -> Result<Option<Ledger>, ErrorReport> {
+    match Ledger::open(store, OpenMode::ReadOnlyExisting) {
+        Ok(ledger) => Ok(Some(ledger)),
+        Err(StorageError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            Ok(None)
+        }
+        Err(error) => Err(error.report()),
     }
-    let history = ledger
+}
+
+/// History runs oldest first, including the session's inherited turns.
+pub(crate) fn session_history(
+    ledger: &Ledger,
+    session: &Session,
+) -> Result<Vec<FinalizedTurn>, ErrorReport> {
+    if session.frontier.is_empty() {
+        return Ok(vec![]);
+    }
+    ledger
         .ancestry(&[SourcePoint {
             session: session.id,
             frontier: session.frontier.clone(),
         }])
-        .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())?;
-    Ok(history
-        .iter()
-        .filter(|turn| turn.session == session.id)
-        .count())
+        .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())
+}
+
+/// A session's own turns, excluding inherited history.
+pub(crate) fn own_history(
+    history: &[FinalizedTurn],
+    session: Id,
+) -> impl DoubleEndedIterator<Item = &FinalizedTurn> {
+    history.iter().filter(move |turn| turn.session == session)
+}
+
+/// How many turns a session wrote itself, not counting inherited history.
+fn own_turns(ledger: &Ledger, session: &Session) -> Result<usize, ErrorReport> {
+    Ok(own_history(&session_history(ledger, session)?, session.id).count())
 }
 
 impl<W: Write> Repl<'_, W> {
@@ -532,17 +556,7 @@ impl<W: Write> Repl<'_, W> {
             defaults: ModelSelection::default(),
         };
         match evaluate::create(&self.settings, &creation) {
-            Ok(report) => self
-                .ledger()
-                .and_then(|ledger| {
-                    ledger
-                        .session(&SessionSelector::Id(report.session))
-                        .map_err(|e| e.report())
-                })
-                .map_err(|error| {
-                    let _ = self.fail(&error.message);
-                })
-                .ok(),
+            Ok(session) => Some(session),
             Err(error) => {
                 let _ = self.fail(&error.message);
                 None
