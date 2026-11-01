@@ -763,9 +763,9 @@ fn answer_distribution(
     lines
 }
 
-/// The preview's lines wrapped inside its border and scrolled to the
-/// browser's preview offset, which is clamped to the content, and the page
-/// size PgUp/PgDn move by.
+/// Draws the preview wrapped inside its border, scrolled to the browser's
+/// preview offset. Stores the page size PgUp/PgDn move by and clamps the
+/// stored offset to the wrapped content.
 fn draw_preview(
     frame: &mut Frame,
     area: Rect,
