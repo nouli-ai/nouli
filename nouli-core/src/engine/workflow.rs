@@ -2,9 +2,10 @@
 pub mod reporting;
 use super::{
     Engine, EngineError,
-    ephemeral::read_only_sources,
+    ephemeral::{ephemeral_sources, read_only_sources},
     execution::{DecisionProvider, RetryClock},
     run::{Executed, Recorder, RunInput},
+    session_defaults,
 };
 use crate::history::StandingChanges;
 use crate::{
@@ -14,10 +15,7 @@ use crate::{
         resolve::{RuntimeOverrides, SettingsSnapshot, select_model},
     },
     data::Data,
-    history::{
-        EvaluationRequest, FinalizedTurn, ModelSelection, SessionSelection, SourcePoint,
-        base::ContextBase,
-    },
+    history::{EvaluationRequest, FinalizedTurn, ModelSelection, SourcePoint, base::ContextBase},
     identity::Id,
     limits::count::TokenCounter,
     protocol::{ErrorCategory, ErrorReport},
@@ -446,16 +444,9 @@ async fn durable_settings(
     if let Some(saved) = saved {
         return Ok((saved.settings, saved.definition.defaults));
     }
-    let session = if let SessionSelection::Continue { session } = &request.session {
-        let session = session.clone();
-        worker
-            .call(move |ledger| ledger.session(&session))
-            .await?
-            .map_err(WorkflowError::from)?
-            .defaults
-    } else {
-        ModelSelection::default()
-    };
+    let session = session_defaults(worker, &request.session)
+        .await?
+        .map_err(WorkflowError::from)?;
     Ok(resolve_settings(input, request, &session)?)
 }
 /// An ephemeral workflow frozen in memory, with the read-only history it starts from.
@@ -472,16 +463,8 @@ async fn freeze_ephemeral(
     request: &WorkflowRequest,
     graph: &CompiledWorkflow,
 ) -> Result<EphemeralWorkflow, WorkflowEngineError> {
-    if request.request_id.is_some()
-        || !matches!(
-            request.session,
-            SessionSelection::New { name: None } | SessionSelection::From { name: None, .. }
-        )
-    {
-        return Err(EngineError::EphemeralOptions.into());
-    }
-    let (sources, history) = if let SessionSelection::From { sources, .. } = &request.session {
-        let selections = sources.clone();
+    let selections = ephemeral_sources(&request.session, request.request_id.as_deref(), false)?;
+    let (sources, history) = if let Some(selections) = selections {
         worker
             .ok_or(WorkflowEngineError::Store)?
             .call(move |ledger| read_only_sources(ledger, &selections))
@@ -855,7 +838,7 @@ mod tests {
         data::Input,
         decision::TurnRequest,
         engine::{EvaluationInput, execution::TokioClock},
-        history::EvaluationRequest,
+        history::{EvaluationRequest, SessionSelection},
         identity::SessionSelector,
         limits::count::ByteCounter,
         outcome::TurnOutcome,

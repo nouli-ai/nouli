@@ -54,17 +54,11 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         }
         let request = input.request;
         request.validate()?;
-        if request.request_id.is_some() || input.retry_interrupted {
-            return Err(EngineError::EphemeralOptions);
-        }
-        let selections = match &request.session {
-            SessionSelection::New { name: None } => None,
-            SessionSelection::From {
-                sources,
-                name: None,
-            } => Some(sources.clone()),
-            _ => return Err(EngineError::EphemeralOptions),
-        };
+        let selections = ephemeral_sources(
+            &request.session,
+            request.request_id.as_deref(),
+            input.retry_interrupted,
+        )?;
         let (sources, history) = if let Some(selections) = selections {
             ledger
                 .ok_or(EngineError::EphemeralStore)?
@@ -122,6 +116,26 @@ fn ephemeral_settings(input: &EvaluationInput<'_>) -> Result<SettingsSnapshot, C
         &ModelSelection::default(),
         input.home,
     )
+}
+
+/// Validate options shared by ephemeral turns and workflows, then select only
+/// the histories the caller explicitly provided.
+pub(super) fn ephemeral_sources(
+    session: &SessionSelection,
+    request_id: Option<&str>,
+    retry_interrupted: bool,
+) -> Result<Option<Vec<SourceSelection>>, EngineError> {
+    if request_id.is_some() || retry_interrupted {
+        return Err(EngineError::EphemeralOptions);
+    }
+    match session {
+        SessionSelection::New { name: None } => Ok(None),
+        SessionSelection::From {
+            sources,
+            name: None,
+        } => Ok(Some(sources.clone())),
+        _ => Err(EngineError::EphemeralOptions),
+    }
 }
 
 /// Resolve source selections and their ancestry, refusing a ledger opened for writing so

@@ -235,19 +235,26 @@ async fn new_request_settings(
     input: &EvaluationInput<'_>,
     request: &EvaluationRequest,
 ) -> Result<SettingsSnapshot, EngineError> {
-    let defaults = match &request.session {
-        SessionSelection::Continue { session } => {
-            let selector = session.clone();
-            ledger
-                .call(move |ledger| ledger.session(&selector))
-                .await??
-                .defaults
-        }
-        _ => ModelSelection::default(),
-    };
+    let defaults = session_defaults(ledger, &request.session).await??;
     Ok(input
         .config
         .resolve_snapshot(input.overrides, &request.model, &defaults, input.home)?)
+}
+
+/// Model defaults belong only to continued sessions; new and branched sessions
+/// resolve against an empty selection until their first request is accepted.
+async fn session_defaults(
+    worker: &LedgerWorker,
+    session: &SessionSelection,
+) -> Result<Result<ModelSelection, SessionError>, WorkerError> {
+    if let SessionSelection::Continue { session } = session {
+        let session = session.clone();
+        worker
+            .call(move |ledger| ledger.session(&session).map(|session| session.defaults))
+            .await
+    } else {
+        Ok(Ok(ModelSelection::default()))
+    }
 }
 
 #[cfg(test)]
