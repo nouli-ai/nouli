@@ -1,18 +1,18 @@
-# Nouli: Every decision has a history.
+# Nouli
 
-**Keep the evidence. Build on the answer.**
+**Every decision has a history.**
 
 Keep the facts behind a decision, add what changes, and ask the next question without losing the earlier answer. Nouli is a terminal app, CLI, and Rust library for connected decision histories: a ledger-backed decision network. Use a compatible decision service, or follow a task-specific model’s local recipe. Use the CLI to run individual model requests with a recorded decision history.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/nouli-ai/nouli/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/nouli-ai/nouli/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/nouli-ai/nouli?include_prereleases&sort=semver&style=flat-square&color=blue&logo=github)](https://github.com/nouli-ai/nouli/releases) [![Total downloads across all release assets](https://img.shields.io/github/downloads/nouli-ai/nouli/total?style=flat-square&color=blueviolet)](https://github.com/nouli-ai/nouli/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE) [![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-dea584?style=flat-square&logo=rust&logoColor=white)](rust-toolchain.toml)
 
-[Website](https://nouli.ai/) · [Models](#models-from-nouli) · [Quickstart](#quickstart) · [Examples](https://nouli.ai/examples/) · [User guide](https://nouli.ai/guide/)
+[Website](https://nouli.ai/) · [Models](https://nouli.ai/models/) · [Quickstart](#quickstart) · [Examples](https://nouli.ai/examples/) · [User guide](https://nouli.ai/guide/)
 
 ## See Nouli in action
 
 [![Nouli TUI replay: saved decisions, branches, and blends.](.github/readme/tui-replay.gif)](https://nouli.ai/#cli-replay)
 
-*Recorded workshop replay using saved model answers, at 4× speed.*
+*Current terminal app, replaying saved workshop answers at 3× speed. [Watch the video](https://nouli.ai/media/tui-workshop.webm) or [inspect the recording](.github/readme/tui-replay-provenance.json).*
 
 ## Quickstart
 
@@ -39,11 +39,18 @@ nouli connect
 nouli
 ```
 
-In the app, add context and a question, then choose **Yes / No**, **Choose one**, or **Score**. **Shift-Tab** changes the answer type; **Tab** moves between fields. Press **Enter** to send from Context or Question, or **Enter twice** from Options or Levels. Use `/exit` to return to your shell. [Terminal guide](docs/cli.md#full-screen-view).
+In the app, add facts in **Context** and write a plain question in **Question**. **Enter** adds a nonempty context row; Enter on a blank row moves to the next section. **Shift-Tab** changes the answer type and **Tab** moves between sections. Send with **Enter** on a nonempty Question or **Ctrl-S** from any section. Options/Levels use one item per row; blank Enter finishes the list without sending. Use `/exit` to return to your shell. [Terminal guide](docs/cli.md#full-screen-view).
 
 A service must support System One or OpenAI Decisions. Provider fees may apply to remote inference. [Connection setup](docs/configuration.md).
 
 Prebuilt CLI binaries support Apple silicon macOS and ARM64/x86_64 GNU/Linux with glibc 2.38+. The download installer checks its checksum and installs into `~/.local/bin` by default. Each local model has its own runtime requirements. [Installation and upgrades](docs/release.md).
+
+## Work in the terminal
+
+- **Choose a model without losing your draft.** Open `/model` or press **Ctrl-L** to search your connections, add one, or enter a missing API key. The selected model stays available in later views.
+- **Reuse saved answers and files.** Type `@` to search local history or attach a file. Review its snapshot before sending; references connect the saved source to the new decision.
+- **Copy and resize.** Drag normally to select text and use terminal Copy. **Ctrl-P** holds the view while a request continues; Esc resumes. For panel resizing, press **Ctrl-G**, drag the divider, then press **Esc** to return to the form and native selection.
+- **Choose what the status line shows.** Use `/statusline` for the Minimal, Session, Request, or Hidden preset, or select individual fields. Preferences are saved beside the connection configuration.
 
 ## Models from Nouli
 
@@ -51,11 +58,11 @@ We also publish five task-specific decision models in the [nouli-ai Hugging Face
 
 | Model | What it does |
 | --- | --- |
-| [Nouli Guard](https://huggingface.co/nouli-ai/nouli-guard) | English hate-speech classification: no, unclear, or yes. |
 | [Nouli Route](https://huggingface.co/nouli-ai/nouli-route) | English banking intent classification across 77 BANKING77 labels. |
 | [Nouli Clause](https://huggingface.co/nouli-ai/nouli-clause) | NDA evidence retrieval and a fixed 17-hypothesis checklist. |
 | [Nouli Push](https://huggingface.co/nouli-ai/nouli-push) | XY actions from keypoints and history in the PushT simulator. |
 | [Nouli Doom](https://huggingface.co/nouli-ai/nouli-doom) | Structured-state actions for ViZDoom Deadly Corridor. |
+| [Nouli Guard](https://huggingface.co/nouli-ai/nouli-guard) | English hate-speech classification: no, unclear, or yes. |
 
 To try one, follow its model card’s **Quickstart with Nouli CLI**: prepare the documented input, start its local server, and run its supplied workflow. The recipes use Python 3.12 and the Hugging Face CLI and do not need a hosted inference API key. Installing Nouli alone does not download or load these models.
 

@@ -69,51 +69,46 @@
   <div class="bench" data-bench>
   <div class="term" data-cli-replay>
     <span class="term-mark" hidden aria-hidden="true"></span>
-    <pre class="cli-replay-screen" tabindex="0" aria-label="Recorded Nouli TUI, including its decision graph"><code> ▄▀▄  ███████  ▄▀▄     /help for a hand · /sessions to pick up                                                                                  │ decisions · drag divider · Ctrl-G
-      ▀█████▀                                                                                                                                   │                     ┌─ workshop · 01a192e8-6 ──────────┐
-        ▀█▀                                                                                                                                     │                     │ Can we plan this workshop?       │
-                                                                                                                                                │                     │                                  │
-workshop › Plan a step-free workshop for 60 people. Budget: 6000 USD. Keep the event reliable and practical.                                    │                     │ ▶ P(yes)=0.82                    │
-workshop › Can we plan this workshop?                                                                                                           │                     └─────────────────┬────────────────┘
-  turn 1 · 1 fact · 1 question                                                                                                                  │                                       │
-     yes                              ████████████████▍    0.82                                                                                 │                   ┌───────────────────┴───────────────────┐
-venue › /branch venue                                                                                                                           │                   ▼                                       ▼
-  new session "venue" from workshop @ turn 1                                                                                                    │ ┌─ venue · 01a192e8-8 ─────────────┐    ┌─ program · 01a192e8-b ───────────┐
-venue › Riverside Hall is step-free, fits 80 and costs 1200 USD. The Loft costs 900 USD but has stairs.                                         │ │ Which venue should we choose?    │    │ Which program should we run?     │
-venue › Which venue should we choose?                                                                                                           │ │                                  │    │                                  │
-  turn 1 · 1 fact · 1 question                                                                                                                  │ │ Choices              Probability │    │ Choices              Probability │
-   ▶ Riverside Hall                   ████████████████████ 1.00                                                                                 │ │ ▶ Riverside Hall               1 │    │ ▶ Talks and practice        0.97 │
-     The Loft                                              0.00                                                                                 │ │   The Loft                     0 │    │   Talks only                0.03 │
-workshop › /use workshop                                                                                                                        │ └─────────────────┬────────────────┘    └─────────────────┬────────────────┘
-  workshop                                                                                                                                      │                   │                                       │
-program › /branch program                                                                                                                       │                   └───────────────────┬───────────────────┘
-  new session "program" from workshop @ turn 1                                                                                                  │                                       ▼
-program › Two speakers are available. Include breaks and useful hands-on time. The program costs 500 USD.                                       │                     ┌─ plan · 01a192e8-d ──────────────┐
-program › Which program should we run?                                                                                                          │                     │ Should we confirm the plan?      │
-  turn 1 · 1 fact · 1 question                                                                                                                  │                     │                                  │
-   ▶ Talks and practice               ███████████████████▍ 0.97                                                                                 │                     │ Choices              Probability │
-     Talks only                       ▋                    0.03                                                                                 │                     │ ▶ Confirm the plan          0.92 │
-plan › /blend venue program as plan                                                                                                             │                     │   Revise the plan           0.08 │
-  new session "plan" from venue + program                                                                                                       │                     └─────────────────┬────────────────┘
-plan › The venue and speakers can confirm today. Total event costs are 3500 USD, including lunch, materials and transport.                      │                                       │
-plan › Should we confirm the plan?                                                                                                              │                                       ▼
-  turn 1 · 1 fact · 1 question                                                                                                                  │                     ┌─ plan · 01a192e9-0 [latest] ─────┐
-   ▶ Confirm the plan                 ██████████████████▍  0.92                                                                                 │                     │ How ready is the workshop?       │
-     Revise the plan                  █▋                   0.08                                                                                 │                     │                                  │
-plan › The venue, speakers and lunch are confirmed. The morning bus is booked, but the return trip still has no driver.                         │                     │ Levels               Probability │
-plan › How ready is the workshop?                                                                                                               │                     │   0 Not ready                  0 │
-  turn 2 · 1 fact · 1 question                                                                                                                  │                     │   1 Needs work              0.19 │
-     expected 1.81 of 3   ▁▂▇▁                                                                                                                  │                     │   2 Mostly ready            0.81 │
-     Not ready 0.00 · Needs work 0.19 · Mostly ready 0.81 · Ready 0.00                                                                          │                     │   3 Ready                      0 │
-── Context · latest question included ──────────────────────────────────────────────────────────────────────────────────────────────────────────│                     │                                  │
-  ↳ How ready is the workshop?                                                                                                                  │                     │ ▶ Expected score: 1.81           │
-  › Add context or drop a file                                                                                                                  │                     └──────────────────────────────────┘
-── Question · Yes / No Choose one [Score] · Shift-Tab → ────────────────────────────────────────────────────────────────────────────────────────│
-    How ready is the workshop?                                                                                                                  │
-── Levels · lowest first · using previous 4 ────────────────────────────────────────────────────────────────────────────────────────────────────│
-  Press Enter to send                                                                                                                           │
- typesafe/jev-1.14.0 · Ready</code></pre>
+    <pre class="cli-replay-screen" tabindex="0" aria-label="Recorded Nouli TUI, including its decision graph"><code>nouli 0.5.1 · plan                                        select text · Ctrl-P  │
+costs 900 USD but has stairs.                                                   │ decisions · drag divider · Ctrl-G
+venue › Which venue should we choose?                                           │                     ┌─ workshop · 01a198a7-8 ──────────┐
+  turn 1 · 1 fact · 1 question                                                  │                     │ Can we plan this workshop?       │
+   ▶ Riverside Hall                   ████████████████████ 1.00                 │                     │                                  │
+     The Loft                                              0.00                 │                     │ ▶ P(yes)=0.82                    │
+workshop › /use workshop                                                        │                     └─────────────────┬────────────────┘
+  workshop                                                                      │                                       │
+program › /branch program                                                       │                   ┌───────────────────┴───────────────────┐
+  new session &quot;program&quot; from workshop @ turn 1                                  │                   ▼                                       ▼
+program › Two speakers are available. Include breaks and useful hands-on time.  │ ┌─ venue · 01a198a7-a ─────────────┐    ┌─ program · 01a198a7-d ───────────┐
+The program costs 500 USD.                                                      │ │ Which venue should we choose?    │    │ Which program should we run?     │
+program › Which program should we run?                                          │ │                                  │    │                                  │
+  turn 1 · 1 fact · 1 question                                                  │ │ Choices              Probability │    │ Choices              Probability │
+   ▶ Talks and practice               ███████████████████▍ 0.97                 │ │ ▶ Riverside Hall               1 │    │ ▶ Talks and practice        0.97 │
+     Talks only                       ▋                    0.03                 │ │   The Loft                     0 │    │   Talks only                0.03 │
+plan › /blend venue program as plan                                             │ └─────────────────┬────────────────┘    └─────────────────┬────────────────┘
+  new session &quot;plan&quot; from venue + program                                       │                   │                                       │
+plan › The venue and speakers can confirm today. Total event costs are 3500     │                   └───────────────────┬───────────────────┘
+USD, including lunch, materials and transport.                                  │                                       ▼
+plan › Should we confirm the plan?                                              │                     ┌─ plan · 01a198a7-f ──────────────┐
+  turn 1 · 1 fact · 1 question                                                  │                     │ Should we confirm the plan?      │
+   ▶ Confirm the plan                 ██████████████████▍  0.92                 │                     │                                  │
+     Revise the plan                  █▋                   0.08                 │                     │ Choices              Probability │
+plan › The venue, speakers and lunch are confirmed. The morning bus is booked,  │                     │ ▶ Confirm the plan          0.92 │
+but the return trip still has no driver.                                        │                     │   Revise the plan           0.08 │
+plan › How ready is the workshop?                                               │                     └─────────────────┬────────────────┘
+  turn 2 · 1 fact · 1 question                                                  │                                       │
+     expected 1.81 of 3   ▁▂▇▁                                                  │                                       ▼
+     Not ready 0.00 · Needs work 0.19 · Mostly ready 0.81 · Ready 0.00          │                     ┌─ plan · 01a198a8-1 [latest] ─────┐
+── Context · latest question included ───────────────────────────────────────── │                     │ How ready is the workshop?       │
+  ↳ How ready is the workshop?                                                  │                     │                                  │
+    Add context or drop a file                                                  │                     │ Levels               Probability │
+── Question ─────────────────────────────────────────────────────────── [Score] │                     │   0 Not ready                  0 │
+    How ready is the workshop?                                                  │                     │   1 Needs work              0.19 │
+  Levels · lowest first · using previous 4                                      │                     │   2 Mostly ready            0.81 │
+drag divider to resize · arrows / wheel scroll · Esc returns to form            │                     │   3 Ready                      0 │
+jev-1.14.0 · typesafe                                   Shift-Tab question type │                     │                                  │</code></pre>
   </div>
+  <p class="replay-note">Current Nouli TUI, using saved workshop answers at 3× speed. <a href="media/tui-workshop.webm">Watch the recording</a> · <a href="guide/#controls-video">See the current controls</a>.</p>
   <div class="fig" data-figure></div>
   </div>
 </section>
@@ -138,9 +133,9 @@ plan › How ready is the workshop?                                             
     <li><b>Install.</b>
       <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>brew install nouli-ai/tap/nouli</code><button class="copy" type="button" data-copy="brew install nouli-ai/tap/nouli" aria-label="Copy the Homebrew install command">copy</button></div>
       <p>On Linux, use the <a href="guide/#install">download installer</a>.</p></li>
-    <li><b>Add a provider.</b> Define one in <code>~/.nouli/config.toml</code> (<a href="guide/#provider">how</a>), then log in once:
-      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli auth login typesafe</code><button class="copy" type="button" data-copy="nouli auth login typesafe" aria-label="Copy the login command">copy</button></div></li>
-    <li><b>Open a session.</b> Add context and a plain question in the form:
+    <li><b>Connect a model.</b> Configure a compatible decision service. In the app, <b>Ctrl-L</b> or <code>/model</code> opens the picker and connection setup.
+      <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli connect</code><button class="copy" type="button" data-copy="nouli connect" aria-label="Copy the connection setup command">copy</button></div></li>
+    <li><b>Open a session.</b> Enter adds Context rows; blank Enter moves to Question. Send with Enter on a nonempty Question or Ctrl-S:
       <div class="shell"><span class="dollar" aria-hidden="true">$</span><code>nouli open travel</code><button class="copy" type="button" data-copy="nouli open travel" aria-label="Copy the command that opens a session">copy</button></div></li>
   </ol>
 </section>

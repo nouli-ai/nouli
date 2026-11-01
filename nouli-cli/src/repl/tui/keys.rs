@@ -29,9 +29,6 @@ impl<'a> App<'a> {
         }
         match event {
             Event::Mouse(event) => {
-                if !matches!(event.kind, crossterm::event::MouseEventKind::Moved) {
-                    self.option_enter = false;
-                }
                 self.graph_mouse(event);
                 Ok(Flow::Continue)
             }
@@ -46,7 +43,6 @@ impl<'a> App<'a> {
             }
             Event::Paste(text) => {
                 self.graph.dragging = false;
-                self.option_enter = false;
                 if running.is_some() {
                     self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
                 } else {
@@ -117,14 +113,10 @@ impl<'a> App<'a> {
         Flow::Continue
     }
 
-    /// Ends what a key interrupts: a pending second Enter in a list, a file
-    /// drop still being typed before moving between fields, and the Ctrl-D
-    /// quit warning.
+    /// Settles a file drop before moving between fields and clears the
+    /// Ctrl-D quit warning when another key is pressed.
     pub(super) fn settle_before_key(&mut self, key: &KeyEvent, running: bool) {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
-        if key.code != KeyCode::Enter {
-            self.option_enter = false;
-        }
         if !running
             && (matches!(
                 key.code,
@@ -445,13 +437,13 @@ impl<'a> App<'a> {
     }
 
     pub(super) fn enter(&mut self, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
+        if self.form.text().trim().is_empty() {
+            self.settle_context();
+            self.form.tab();
+            return Ok(Flow::Continue);
+        }
         if let Row::Option(index) = self.form.row {
-            if std::mem::take(&mut self.option_enter) {
-                *running = self.send_form(false)?;
-            } else {
-                self.form.enter_option(index);
-                self.option_enter = true;
-            }
+            self.form.enter_option(index);
             return Ok(Flow::Continue);
         }
         // Context only takes rows and commands; sending is from Question.
@@ -463,7 +455,7 @@ impl<'a> App<'a> {
     }
 
     /// Enter on the input row: the line is queued as a fact, or runs as a
-    /// command. An empty line does nothing.
+    /// command. Blank rows are handled by `enter` as section navigation.
     pub(super) fn submit(&mut self, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         let line = self.form.input.trim().to_owned();
         if line.is_empty() {
@@ -569,43 +561,67 @@ mod tests {
     }
 
     #[test]
-    fn option_and_level_lists_need_two_consecutive_enters_to_send() {
-        for kind in [Kind::Choice, Kind::Score] {
+    fn blank_enter_moves_sections_without_sending_and_ctrl_s_still_sends() {
+        for kind in [Kind::Noul, Kind::Choice, Kind::Score] {
             let settings = settings();
             let mut app = app(&settings);
             app.form.kind = kind;
-            app.form.question = "Which fits?".into();
-            app.form.options = vec!["First".into(), "Second".into()];
-            app.form.row = Row::Option(1);
-            app.form.cursor = "Second".len();
-            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-            assert_eq!(app.form.row, Row::Option(2));
-            assert!(app.option_enter);
-            typed(&mut app, "Third");
-            assert!(!app.option_enter, "typing continues the list");
-            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-            assert_eq!(app.form.row, Row::Option(3));
-            // Tab navigates away and cancels the pending confirmation.
-            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-            assert!(!app.option_enter);
-            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-            assert_eq!(app.form.row, Row::Option(0));
-            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-            app.event(Event::Paste("Another".into()), &mut None)
-                .unwrap();
-            assert!(!app.option_enter, "pasting also continues the list");
-            press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-            let expected = app.form.build_question().unwrap();
+            app.form.input = "  ".into();
+            app.form.cursor = 2;
             let mut running = None;
             app.key(
                 KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
                 &mut running,
             )
             .unwrap();
+            assert_eq!(app.form.row, Row::Question);
+            app.key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &mut running,
+            )
+            .unwrap();
+            if kind == Kind::Noul {
+                assert_eq!(app.form.row, Row::Input);
+            } else {
+                assert_eq!(app.form.row, Row::Option(0));
+                app.key(
+                    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                    &mut running,
+                )
+                .unwrap();
+                assert_eq!(app.form.row, Row::Input);
+                assert_eq!(app.form.options, [] as [String; 0]);
+            }
+            assert!(running.is_none());
+            assert!(app.status.is_none());
+            assert_eq!(app.repl.queue.facts, [] as [String; 0]);
+            app.form.question = "Which fits?".into();
+            if kind != Kind::Noul {
+                app.form.options = vec!["First".into(), "Second".into()];
+                app.form.go(Row::Option(1));
+                app.key(
+                    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                    &mut running,
+                )
+                .unwrap();
+                assert_eq!(app.form.row, Row::Option(2));
+                app.key(
+                    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                    &mut running,
+                )
+                .unwrap();
+                assert_eq!(app.form.row, Row::Input);
+                assert_eq!(app.form.options, ["First", "Second"]);
+                assert!(running.is_none());
+            }
+            let expected = app.form.build_question().unwrap();
+            app.key(
+                KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+                &mut running,
+            )
+            .unwrap();
             let draft = draft_from(running.unwrap());
             assert_eq!(draft.request.turn.questions, [expected]);
-            assert!(!app.option_enter);
         }
     }
 
@@ -913,11 +929,12 @@ mod tests {
         assert!(shown.contains("queued: replace fact 1"), "{shown}");
         assert!(app.repl.queue.facts.contains(&"?broken".to_owned()));
         assert_eq!(app.repl.queue.replaces.len(), 1);
-        // An empty line does nothing.
+        // An empty line moves to Question without changing the queue.
         let queued = app.repl.queue.facts.len();
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(app.form.row, Row::Input);
+        assert_eq!(app.form.row, Row::Question);
         assert_eq!(app.repl.queue.facts.len(), queued);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         typed(&mut app, "/quit");
         let flow = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(matches!(flow, Flow::Quit));
@@ -928,7 +945,7 @@ mod tests {
         let settings = settings();
         let mut app = app(&settings);
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         let status = app.status.as_ref().unwrap();
         assert!(status.error && status.text.contains("Write a question"));
         assert_eq!(app.form.row, Row::Question);
@@ -939,7 +956,7 @@ mod tests {
         assert_eq!(app.form.row, Row::Option(0));
         typed(&mut app, "Yes");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         let status = app.status.as_ref().unwrap();
         assert!(status.text.contains("at least two"), "{}", status.text);
         assert_eq!(app.form.row, Row::Option(1), "ready for the second option");

@@ -446,7 +446,6 @@ impl App<'_> {
                         self.images.push(image);
                     }
                     self.references.dismissed = None;
-                    self.option_enter = false;
                     self.status = Some(Status::info(format!("Added {label} · review, then Send")));
                 }
                 Err(error) => self.status = Some(Status::error(error.to_string())),
@@ -495,7 +494,6 @@ impl App<'_> {
         self.form.remove_range(picker.range);
         self.form.paste(&inserted);
         self.references.dismissed = None;
-        self.option_enter = false;
         self.status = Some(Status::info(
             "Reference added · Ctrl-O inspects · Backspace removes",
         ));

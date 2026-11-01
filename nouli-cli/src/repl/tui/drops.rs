@@ -8,7 +8,6 @@ use nouli_core::context::evidence::marker::MarkerKind;
 
 impl App<'_> {
     pub(super) fn paste_text(&mut self, text: &str) {
-        self.option_enter = false;
         if let Row::Option(mut index) = self.form.row {
             let mut lines = text.lines().filter(|line| !line.trim().is_empty());
             if let Some(first) = lines.next() {
@@ -151,7 +150,6 @@ impl App<'_> {
                     self.form.paste(" ");
                 }
             }
-            self.option_enter = false;
             self.form.paste(&file.text);
             if let Some(image) = file.image {
                 self.images.push(image);
@@ -372,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_file_paste_cancels_the_pending_second_enter() {
+    fn a_failed_file_paste_does_not_submit_the_list() {
         let settings = settings();
         let mut app = app(&settings);
         app.form.kind = Kind::Choice;
@@ -380,18 +378,14 @@ mod tests {
         app.form.options = vec!["First".into(), "Second".into()];
         app.form.row = Row::Option(1);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(app.option_enter);
         let path = std::env::temp_dir().join(format!("nouli-list-drop-{}", Id::generate()));
         std::fs::write(&path, [0, 255]).unwrap();
         app.event(Event::Paste(path.to_string_lossy().into_owned()), &mut None)
             .unwrap();
         assert!(app.status.as_ref().unwrap().error);
-        assert!(!app.option_enter);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(
-            app.option_enter,
-            "the next Enter arms again instead of sending"
-        );
+        assert_eq!(app.form.row, Row::Input);
+        assert_eq!(app.form.options, ["First", "Second"]);
         std::fs::remove_file(path).unwrap();
     }
 

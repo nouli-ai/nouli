@@ -32,12 +32,28 @@
 </div>
 <div class="views" role="group" aria-label="Show the steps as">
 <span>show the steps as</span><button type="button" data-view="tui" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
-<p class="tui-only">Open <code>nouli open cashflow</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>
+<p class="tui-only">Open <code>nouli open cashflow</code>. Add each step’s context, question and answers in the form, then press Ctrl-S to send from any section. Captures replay the recorded model answers in the current TUI.</p>
 </div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record verified household cash flow</h2>
 <p>Start with the verified income and existing expenses. This session has no product policy yet, so its question asks only about money available before a new loan payment.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · cashflow
+<div class="tui-snapshot" data-capture="loan-approval" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · cashflow
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 cashflow › Fictional application L-101, initial verification at 09:00: verified
 recurring net income is 5000 USD per month. Essential living expenses are 3000
 USD and payments on existing debts are 600 USD. These expenses exclude any
@@ -48,29 +64,13 @@ cashflow › What monthly amount remains before a new loan payment?
    ▶ 1400 USD                         ████████████████████ 1.00
      2000 USD                                              0.00
      Request missing cash-flow recor…                      0.00
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What monthly amount remains before a new loan payment?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What monthly amount remains before a new loan payment?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-cashflow&quot; \
   &#x27;Fictional application L-101, initial verification at 09:00: verified recurring
 net income is 5000 USD per month. Essential living expenses are 3000 USD and
@@ -91,7 +91,13 @@ sample.&#x27; \
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review repayment history</h2>
 <p>Record repayment performance separately. We use a score with three ordered levels so the later review can retain both the answer and its scale.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · history
+<div class="tui-snapshot" data-capture="loan-approval" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · history
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 cashflow › Fictional application L-101, initial verification at 09:00: verified
 recurring net income is 5000 USD per month. Essential living expenses are 3000
 USD and payments on existing debts are 600 USD. These expenses exclude any
@@ -111,20 +117,14 @@ history › How strong is the documented repayment performance?
   turn 1 · 1 fact · 1 question
      expected 2.00 of 2   ▁▁█
      Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently
-timel…
-
-
-
-
+time…
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How strong is the documented repayment performance?
   › Add context or drop a file
-── Question · Yes / No Choose one [Score] · Shift-Tab → ────────────────────────
+── Question ──────────────────────────────────────────────────────────── [Score]
     How strong is the documented repayment performance?
-── Levels · lowest first · using previous 3 ────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Levels · lowest first · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-history&quot; \
   &#x27;Fictional application L-101: the verified credit record covers 48 scheduled
 monthly payments. Every payment was on time. There are no defaults or
@@ -142,7 +142,9 @@ delinquent balances, and the record is complete for this review.&#x27; \
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record the request and sample product policy</h2>
 <p>Record the two quoted products and the sample bank policy. The policy requires both repayment evidence and an affordability check, and it will be shared by both review branches.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · policy
+<div class="tui-snapshot" data-capture="loan-approval" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · policy
+history › /new history
+  new session &quot;history&quot;
 history › Fictional application L-101: the verified credit record covers 48
 scheduled monthly payments. Every payment was on time. There are no defaults or
 delinquent balances, and the record is complete for this review.
@@ -150,7 +152,7 @@ history › How strong is the documented repayment performance?
   turn 1 · 1 fact · 1 question
      expected 2.00 of 2   ▁▁█
      Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently
-timel…
+time…
 policy › /new policy
   new session &quot;policy&quot;
 policy › Fictional bank policy for application L-101: the applicant requests a
@@ -170,12 +172,10 @@ policy › What must a loan recommendation consider?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What must a loan recommendation consider?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What must a loan recommendation consider?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-policy&quot; \
   &#x27;Fictional bank policy for application L-101: the applicant requests a 6000 USD
 personal loan with a quoted all-in monthly installment of 250 USD. A smaller
@@ -200,7 +200,9 @@ for it; otherwise refer for manual review. No funds have been advanced.&#x27; \
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Review affordability for both loan sizes</h2>
 <p>Blend the cash-flow and policy sessions to evaluate each quoted installment. Repeated --from supplies both source histories to a new decision.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · affordability
+<div class="tui-snapshot" data-capture="loan-approval" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · affordability
+policy › Fictional bank policy for application L-101: the applicant requests a
+6000 USD personal loan with a quoted all-in monthly installment of 250 USD. A
 smaller 3000 USD loan has a quoted all-in installment of 150 USD. Either offer
 requires at least 1000 USD remaining each month after living expenses, existing
 debt payments, and the proposed installment. Repayment records must be complete
@@ -228,12 +230,10 @@ affordability › Which quoted loans satisfy the sample affordability policy?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which quoted loans satisfy the sample affordability policy?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which quoted loans satisfy the sample affordability policy?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-affordability&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
   &#x27;Apply the sample product policy to the latest verified cash-flow record.
 Subtract each quoted installment separately, since these are alternative
@@ -255,7 +255,9 @@ threshold.&#x27; \
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Review the credit-history gate</h2>
 <p>Blend the independent repayment record with the same policy. This branch checks history requirements without treating payment performance as proof of affordability.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · credit-review
+<div class="tui-snapshot" data-capture="loan-approval" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · credit-review
+  turn 1 · 1 fact · 1 question
+   ▶ Both affordability and document… ████████████████████ 1.00
      Repayment history alone                               0.00
      Income alone                                          0.00
 affordability › /blend cashflow policy as affordability
@@ -283,12 +285,10 @@ gate?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Does the documented repayment record pass the sample history gate?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Does the documented repayment record pass the sample history gate?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-credit-review&quot; --from &quot;$example-history&quot; --from &quot;$example-policy&quot; \
   &#x27;Apply the sample policy requirements for repayment records only. Do not infer
 affordability from this review.&#x27; \
@@ -306,7 +306,9 @@ affordability from this review.&#x27; \
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine both reviews into a lending recommendation</h2>
 <p>Combine the two review sessions. Each source is already a blend, so the recommendation includes cash flow, repayment history, and the shared policy.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · recommendation
+<div class="tui-snapshot" data-capture="loan-approval" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · recommendation
+   ▶ Both quoted loans meet the affo… █████████████████▊   0.89
+     Only the 3000 USD loan meets th… █▎                   0.06
      Neither quoted loan meets the a… ▊                    0.04
      Required affordability evidence… ▎                    0.01
 credit-review › /blend history policy as credit-review
@@ -334,12 +336,10 @@ recommendation › What should the loan officer review?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the loan officer review?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the loan officer review?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-recommendation&quot; --from &quot;$example-affordability&quot; --from &quot;$example-credit-review&quot; \
   &#x27;Combine the affordability and credit-history reviews using the sample product
 policy. A passing history gate cannot override an affordability failure.
@@ -360,7 +360,9 @@ for a loan officer, not an executed lending decision.&#x27; \
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Record corrected income verification</h2>
 <p>Continue the cash-flow session with corrected income of 4800 USD. The later verification explicitly replaces the earlier 5000 USD figure for subsequent decisions.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · cashflow
+<div class="tui-snapshot" data-capture="loan-approval" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · cashflow
+     The record fails the history re…                      0.00
+     Required history evidence is mi… ▎                    0.01
 recommendation › /blend affordability credit-review as recommendation
   new session &quot;recommendation&quot; from affordability + credit-review
 recommendation › Combine the affordability and credit-history reviews using the
@@ -388,12 +390,10 @@ cashflow › What monthly amount now remains before a new loan payment?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What monthly amount now remains before a new loan payment?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What monthly amount now remains before a new loan payment?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-cashflow&quot; \
   &#x27;Fictional application L-101, corrected verification at 11:00: recurring net
 income is 4800 USD per month, replacing the 09:00 figure of 5000 USD. Essential
@@ -413,7 +413,9 @@ no other obligations. The proposed loan has not been approved or disbursed.&#x27
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Create an updated affordability review</h2>
 <p>Create a new affordability blend from the updated cash-flow session and the original policy. The earlier affordability decision remains saved with its original sources.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · affordability-updated
+<div class="tui-snapshot" data-capture="loan-approval" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · affordability-updated
+     Refer for manual review without… █                    0.05
+cashflow › /use cashflow
   cashflow
 cashflow › Fictional application L-101, corrected verification at 11:00:
 recurring net income is 4800 USD per month, replacing the 09:00 figure of 5000
@@ -441,12 +443,10 @@ policy now?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which quoted loans satisfy the sample affordability policy now?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which quoted loans satisfy the sample affordability policy now?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-affordability-updated&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
   &#x27;Apply the sample product policy to the latest verified cash-flow record.
 Subtract each quoted installment separately, since these are alternative
@@ -468,7 +468,9 @@ threshold.&#x27; \
 <section class="step" id="step-9" data-node="8">
 <h2><span class="num">09</span>Reconsider the offer using the updated review</h2>
 <p>Combine the updated affordability review with the unchanged repayment-history review to obtain a new recommendation.</p>
-<div class="tui-snapshot" data-capture="loan-approval" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · recommendation-updated
+<div class="tui-snapshot" data-capture="loan-approval" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · recommendation-updated
+affordability-updated › Apply the sample product policy to the latest verified
+cash-flow record. Subtract each quoted installment separately, since these are
 alternative offers, not two concurrent loans. Compare the remainder with the
 1000 USD sample threshold.
 affordability-updated › Which quoted loans satisfy the sample affordability
@@ -496,12 +498,10 @@ recommendation-updated › What should the loan officer review now?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the loan officer review now?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the loan officer review now?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-recommendation-updated&quot; --from &quot;$example-affordability-updated&quot; --from &quot;$example-credit-review&quot; \
   &#x27;Combine the affordability and credit-history reviews using the sample product
 policy. A passing history gate cannot override an affordability failure.

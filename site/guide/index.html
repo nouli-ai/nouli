@@ -69,7 +69,23 @@ api_key_env = "GATEWAY_TOKEN"</code></pre>
 
 <h2 id="interactive"><span class="num">03</span>Interactive mode</h2>
 <p><code>nouli open travel</code> opens a session full screen. A bare <code>nouli</code> starts a new session with a random name. Add facts in Context, press Tab for a plain-text question, and use Shift-Tab to choose the answer type. There are no question IDs or bracket syntax to type in the form.</p>
-<div class="tui-snapshot" data-capture="meeting" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · travel
+<div class="tui-snapshot" data-capture="meeting" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · travel
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let&#x27;s make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
 taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
 arrives on time.
@@ -80,45 +96,33 @@ travel › How should I travel to the meeting?
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How should I travel to the meeting?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     How should I travel to the meeting?
-── Options · using previous 2 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 2
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
+<figure class="ui-video" id="controls-video"><video controls playsinline preload="metadata" poster="../media/tui-workshop.png" aria-label="Current Nouli terminal controls: model picker, status line, help, resizing and copy mode"><source src="../media/tui-controls.webm" type="video/webm">Your browser cannot play this recording. <a href="../media/tui-controls.webm">Download it</a>.</video><figcaption>Current terminal controls at normal speed: model picker, status preferences, help, Ctrl-G resizing, and Ctrl-P copy mode. Recorded locally with saved answers.</figcaption></figure>
 <p>These captures replay saved model answers in the current TUI. Use Form to see the inputs before sending, Answer for the result, and Decisions for the graph. Start with <a href="../examples/meeting/">one session and three travel questions</a>, then try a <a href="../examples/recall/">multi-session recall response</a>.</p>
 <table><thead><tr><th>Key or action</th><th>What happens</th></tr></thead><tbody>
-<tr><td>Tab</td><td>Move fields; in Options/Levels, move to the next item.</td></tr>
+<tr><td>Tab</td><td>Move between Context, Question, and Options/Levels. Up and Down move between items within a section.</td></tr>
 <tr><td>Shift-Tab</td><td>Cycle Yes / No → Choose one → Score from any field.</td></tr>
-<tr><td>Enter</td><td>Send from Context/Question when ready. In Options/Levels, add another item; a second consecutive Enter sends.</td></tr>
+<tr><td>Enter</td><td>Add a nonempty Context or Options/Levels row. On a blank row, move to the next section without sending. Send from a nonempty Question; Ctrl-S sends from any section.</td></tr>
 <tr><td>@</td><td>Find saved answers across local sessions and files under the launch folder. Enter inserts a selection without sending.</td></tr>
-<tr><td>Drag the divider</td><td>Resize the graph at any time, while keeping the current field focused.</td></tr>
-<tr><td>Ctrl-G / Esc</td><td>Focus the graph for keyboard navigation, then return to the form.</td></tr>
-<tr><td>F6 / select text</td><td>Hold the view, drag to select, and use terminal Copy. Esc or F6 resumes.</td></tr>
-<tr><td>Option-drag in iTerm2</td><td>Select terminal text in normal mode. Other terminals use their own selection modifier.</td></tr>
+<tr><td>Drag the divider</td><td>Press Ctrl-G, then drag the divider to resize the graph and conversation panels. Esc returns to the form and native selection.</td></tr>
+<tr><td>Ctrl-G / Esc</td><td>Enable graph keyboard navigation, divider dragging, and mouse scrolling; Esc returns to the form.</td></tr>
+<tr><td>Ctrl-P</td><td>Hold the view for copying while requests continue. Esc or Ctrl-P resumes with your draft and focus intact.</td></tr>
+<tr><td>Ctrl-L / /model</td><td>Search connected models, add a connection, or enter a missing API key without losing the draft.</td></tr>
+<tr><td>/statusline</td><td>Choose saved status fields or a Minimal, Session, Request, or Hidden preset.</td></tr>
+<tr><td>Normal drag</td><td>Select text with the terminal, then use its Copy command. A terminal selection modifier also works while graph mouse controls are active.</td></tr>
 </tbody></table>
 <p>After a choice or score, leave Options/Levels empty to reuse the prior list; the form says when it will do so. Add new context and a follow-up question to reconsider the answer. Yes/No questions stay fresh. Context previews the latest included question, while earlier answers remain in the saved history.</p>
 <p>Use <code>@budget.xlsx</code> or a relative filename to add a local file. DOCX/PPTX contribute text and tables; CSV/TSV and XLS/XLSX/XLSM/XLSB/ODS contribute rows from their sheets. PDFs need Poppler for text extraction. Raster images and SVGs use native image input when the model supports it; legacy DOC/PPT needs LibreOffice. Select a file to snapshot it, review the contents, then send. Documents do not render pages or run OCR.</p>
-<p>Use <code>@</code> with words you remember from a saved conversation to reference an exact earlier answer. Browse history shows its saved state. References appear as graph edges, including across sessions. Use <code>/rename NAME</code> to rename the current session, <code>/sessions</code> or <code>/use NAME</code> to resume one, and <code>/branch NAME</code> or <code>/blend A B as NAME</code> to combine histories. <code>/help</code> lists the available keys and commands. Ctrl-C cancels a turn, then clears input, and quits when the draft is empty.</p>
+<p>Use <code>@</code> with words you remember from a saved conversation to reference an exact earlier answer. Browse history shows its saved state. References appear as graph edges, including across sessions. Use <code>/rename NAME</code> to rename the current session, <code>/sessions</code> or <code>/use NAME</code> to resume one, and <code>/branch NAME</code> or <code>/blend A B as NAME</code> to combine histories. <code>/help</code> opens a shortcuts dialog; type <code>/</code> in Context to list commands. Ctrl-C cancels a turn, then clears input, and quits when the draft is empty.</p>
 
-<p><b>Copy text:</b> click <b>select text</b> in the header or press <b>F6</b>, drag normally, and use your terminal’s Copy command. The view holds still while model requests continue. <b>Esc</b> or <b>F6</b> resumes the previous draft and focus. Divider dragging remains available in normal mode.</p>
+<p><b>Copy text:</b> drag normally and use your terminal’s Copy command. To keep the screen still while a request continues, press <b>Ctrl-P</b> first. <b>Esc</b> or <b>Ctrl-P</b> resumes the previous draft and focus. <b>Resize panels:</b> press <b>Ctrl-G</b>, drag the divider, then press <b>Esc</b>. Mouse controls apply while the graph is focused; normal form editing keeps native text selection.</p>
+<p><b>Choose a model:</b> press <b>Ctrl-L</b> or use <code>/model</code>. Search models listed by your connections, enter a model ID when needed, or add a connection and its API key inside the view. <b>Customize the footer:</b> use <code>/statusline</code> to choose visible fields or a preset. The selected model and status preferences are saved. Function-key submission and copy bindings have been removed; use <b>Ctrl-S</b> and <b>Ctrl-P</b>.</p>
 
 <h2 id="first"><span class="num">04</span>Make a decision</h2>
 <p>Use shell commands for scripts and agents. <code>nouli new</code> starts a saved session. Give it the facts, then the question with <code>-q</code>. A question is one line: an ID, a prompt, and the options in brackets:</p>

@@ -573,12 +573,6 @@ mod tests {
         let screen = shown(&mut app, 140, 20).join("\n");
         assert!(screen.contains("  Levels · lowest first"), "{screen}");
         assert!(screen.contains("  2 high"), "{screen}");
-        app.option_enter = true;
-        assert!(
-            shown(&mut app, 140, 20)
-                .join("\n")
-                .contains("Press Enter again to send")
-        );
         assert!(
             shown(&mut app, 140, 20)
                 .join("\n")

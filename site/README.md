@@ -145,8 +145,33 @@ no credentials or provider calls. It needs Python with `pyte`:
 ```sh
 node scripts/record-cli-replay.mjs --nouli ../target/release/nouli --python /path/to/python
 node scripts/record-cli-replay.mjs --nouli ../target/release/nouli --python /path/to/python --columns 64
+node scripts/record-cli-replay.mjs --nouli ../target/release/nouli --python /path/to/python --tour
 npm test
 ```
+
+The wide recording is 160 columns by 38 rows and includes the header and status
+line. Blank Enter navigation is exercised between Context and Question; Ctrl-S
+submits each question. The optional `--tour` records the model picker, status
+editor, shortcut help, Ctrl-G divider resizing, and Ctrl-P hold/resume in
+`tui-tour.json`. Opening a source session can restore its answer type; the
+recorder reads the active Question heading before choosing a type.
+
+`render-tui-media.py` exports the same saved terminal cells to README GIF/PNG and
+playable WebM. It requires Pillow and FFmpeg with PNG decoding and VP9 encoding;
+its default font is the macOS Menlo collection (`--font` overrides it).
+
+```sh
+python scripts/render-tui-media.py --replay src/data/cli/tui.json \
+  --output ../.github/readme --video public/media/tui-workshop.webm --ffmpeg /path/to/ffmpeg
+python scripts/render-tui-media.py --replay src/data/cli/tui-narrow.json \
+  --video public/media/tui-workshop-narrow.webm --ffmpeg /path/to/ffmpeg
+```
+
+The controls video uses `tui-tour.json` at `--speed 1`, with `--start-seconds`
+set to three seconds after the last saved answer marker (milliseconds / 1000).
+This skips the already-demonstrated workshop. The guide uses native video
+controls and does not autoplay. The home replay keeps its selectable HTML text,
+keyboard controls, reduced-motion behavior, and static fallback.
 
 The wide recording also refreshes `graph.json` from its own store, so the turn
 IDs shown in the graph pane match the figure. `provenance.json` records each

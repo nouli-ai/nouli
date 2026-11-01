@@ -33,12 +33,27 @@
 </div>
 <div class="views" role="group" aria-label="Show the steps as">
 <span>show the steps as</span><button type="button" data-view="tui" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
-<p class="tui-only">Open <code>nouli open team</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>
+<p class="tui-only">Open <code>nouli open team</code>. Add each step’s context, question and answers in the form, then press Ctrl-S to send from any section. Captures replay the recorded model answers in the current TUI.</p>
 </div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Review the founding team</h2>
 <p>Record the founders' backgrounds in their own session. A choice question names the shape of the team instead of rating it.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · team
+<div class="tui-snapshot" data-capture="seed-investment" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · team
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 team › Fictional company Tidewell builds an AI agent that prepares and follows
 up dental insurance claims for independent practices. Maya Ortiz, CEO, ran
 billing for a 12-location dental group for six years. Dev Patel, CTO, spent
@@ -50,28 +65,13 @@ team › How complete is the founding team for this market?
    ▶ Strong product and technology f… ███████████████████▊ 0.99
      Complete team, including proven…                      0.00
      Missing skills the company need… ▎                    0.01
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How complete is the founding team for this market?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     How complete is the founding team for this market?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-team&quot; \
   &#x27;Fictional company Tidewell builds an AI agent that prepares and follows up dental insurance claims for independent practices. Maya Ortiz, CEO, ran billing for a 12-location dental group for six years. Dev Patel, CTO, spent four years on document-understanding models at a large cloud provider and has shipped two production ML systems. Both founders work full time. There is no sales hire yet.&#x27; \
   -q &#x27;team: How complete is the founding team for this market? [&quot;Strong product and technology fit, with a gap in sales leadership&quot;,
@@ -88,7 +88,10 @@ team › How complete is the founding team for this market?
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review traction</h2>
 <p>Record traction in a separate session, including where the customers came from.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · traction
+<div class="tui-snapshot" data-capture="seed-investment" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · traction
+        ▀▀█████▀▀
+           ▀▀▀
+
 team › Fictional company Tidewell builds an AI agent that prepares and follows
 up dental insurance claims for independent practices. Maya Ortiz, CEO, ran
 billing for a 12-location dental group for six years. Dev Patel, CTO, spent
@@ -112,16 +115,13 @@ traction › What does the traction show?
    ▶ An early product-market signal … ████████████████████ 1.00
      Repeatable sales across unrelat…                      0.00
      Too little evidence of demand                         0.00
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What does the traction show?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What does the traction show?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-traction&quot; \
   &#x27;Tidewell metrics at month 10: 9 of 12 pilot practices converted to paid plans, monthly recurring revenue is $14,200, and no paying practice has cancelled. Practices collect insurance claims 11 days faster on average. All 9 customers came from the CEO&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s professional network. Tidewell has not yet tried outbound sales.&#x27; \
   -q &quot;traction: What does the traction show? [An early product-market signal that sales beyond the founders&#x27; network have not yet tested,
@@ -138,7 +138,9 @@ traction › What does the traction show?
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record the fund policy and round terms</h2>
 <p>Record the fund's rules and the round terms in a third session. Every recommendation that follows reuses this history.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · fund
+<div class="tui-snapshot" data-capture="seed-investment" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · fund
+     Complete team, including proven…                      0.00
+     Missing skills the company need… ▎                    0.01
 traction › /new traction
   new session &quot;traction&quot;
 traction › Tidewell metrics at month 10: 9 of 12 pilot practices converted to
@@ -166,12 +168,10 @@ fund › Which check fits the fund policy for this round?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which check fits the fund policy for this round?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which check fits the fund policy for this round?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-fund&quot; \
   &#x27;Illustrative fund policy: a $40M seed fund investing in applied AI companies. Initial checks range from $500,000 to $1,500,000, with a target of at least 8% ownership at entry. The fund does not invest in rounds priced above a $20M post-money valuation. Tidewell is raising $3M at a $15M post-money valuation. A $1.2M check buys 8%; a $1M check buys 6.7%.&#x27; \
   -q &#x27;check: Which check fits the fund policy for this round? [Request $1.2M for 8% ownership,
@@ -188,7 +188,9 @@ fund › Which check fits the fund policy for this round?
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Plan diligence from team and traction</h2>
 <p>Blend team and traction to choose what diligence should test first. The fund policy isn't needed for that.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · diligence
+<div class="tui-snapshot" data-capture="seed-investment" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · diligence
+traction › What does the traction show?
+  turn 1 · 1 fact · 1 question
    ▶ An early product-market signal … ████████████████████ 1.00
      Repeatable sales across unrelat…                      0.00
      Too little evidence of demand                         0.00
@@ -216,12 +218,10 @@ diligence › What should diligence test first?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should diligence test first?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should diligence test first?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-diligence&quot; --from &quot;$example-team&quot; --from &quot;$example-traction&quot; \
   &#x27;Plan the week of diligence before the investment committee. Start with the largest unresolved risk in the team and traction records.&#x27; \
   -q &quot;diligence: What should diligence test first? [Call practices outside the founders&#x27; network about retention and switching risk,
@@ -238,7 +238,9 @@ diligence › What should diligence test first?
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Draft the investment committee recommendation</h2>
 <p>Blend the diligence plan with the fund policy to draft the recommendation for Monday's committee.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · ic
+<div class="tui-snapshot" data-capture="seed-investment" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · ic
+at least 8% ownership at entry. The fund does not invest in rounds priced above
+a $20M post-money valuation. Tidewell is raising $3M at a $15M post-money
 valuation. A $1.2M check buys 8%; a $1M check buys 6.7%.
 fund › Which check fits the fund policy for this round?
   turn 1 · 1 fact · 1 question
@@ -266,12 +268,10 @@ ic › What should the partner recommend to the investment committee?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the partner recommend to the investment committee?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the partner recommend to the investment committee?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-ic&quot; --from &quot;$example-diligence&quot; --from &quot;$example-fund&quot; \
   &#x27;Prepare a recommendation for Monday&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s investment committee. It must respect the fund policy and name any diligence that is still open.&#x27; \
   -q &#x27;recommendation: What should the partner recommend to the investment committee? [&quot;Invest $1.2M, conditional on completing the planned diligence&quot;,
@@ -288,7 +288,9 @@ ic › What should the partner recommend to the investment committee?
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Add the reference calls</h2>
 <p>The reference calls come back mid-week. Add them to the traction session as its second turn; the first turn stays in its history. The turn asks a new question; the traction answer from the first turn stays as it was.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · traction
+<div class="tui-snapshot" data-capture="seed-investment" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · traction
+with the largest unresolved risk in the team and traction records.
+diligence › What should diligence test first?
   turn 1 · 1 fact · 1 question
    ▶ Call practices outside the foun… ███████████████▎     0.76
      Review the claim-preparation mo…                      0.00
@@ -316,12 +318,10 @@ traction › What is now the biggest risk to Tidewell's growth?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What is now the biggest risk to Tidewell's growth?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What is now the biggest risk to Tidewell's growth?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-traction&quot; \
   &#x27;Reference call update: the partner spoke with 4 practices outside the founders&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27; network that trialed Tidewell. Two signed paid plans and report faster collections. Two declined because their practice-management software vendor announced a built-in claims assistant for next quarter.&#x27; \
   -q &quot;risk: What is now the biggest risk to Tidewell&#x27;s growth? [A practice-management vendor bundling a competing feature,
@@ -338,7 +338,9 @@ traction › What is now the biggest risk to Tidewell's growth?
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Replan diligence with the updated traction</h2>
 <p>Blend the team with the updated traction. The earlier diligence session doesn't change; this is a new plan from the new history.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · diligence-updated
+<div class="tui-snapshot" data-capture="seed-investment" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · diligence-updated
+respect the fund policy and name any diligence that is still open.
+ic › What should the partner recommend to the investment committee?
   turn 1 · 1 fact · 1 question
    ▶ Invest $1.2M, conditional on co… ███████████████████▋ 0.98
      Invest $1.2M now without furthe…                      0.00
@@ -366,12 +368,10 @@ diligence-updated › What should diligence test first?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should diligence test first?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should diligence test first?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-diligence-updated&quot; --from &quot;$example-team&quot; --from &quot;$example-traction&quot; \
   &#x27;Plan the remaining diligence before the investment committee. Use the latest traction record, including the reference calls.&#x27; \
   -q &quot;diligence: What should diligence test first? [Test whether practices would keep Tidewell if their software vendor bundles a claims assistant,
@@ -388,7 +388,9 @@ diligence-updated › What should diligence test first?
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Reconsider the recommendation</h2>
 <p>Blend the new diligence plan with the same fund policy.</p>
-<div class="tui-snapshot" data-capture="seed-investment" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · ic-updated
+<div class="tui-snapshot" data-capture="seed-investment" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · ic-updated
+report faster collections. Two declined because their practice-management
+software vendor announced a built-in claims assistant for next quarter.
 traction › What is now the biggest risk to Tidewell's growth?
   turn 2 · 1 fact · 1 question
    ▶ A practice-management vendor bu… ███████████████████▊ 0.99
@@ -416,12 +418,10 @@ ic-updated › What should the partner recommend to the investment committee?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the partner recommend to the investment committee?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the partner recommend to the investment committee?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-ic-updated&quot; --from &quot;$example-diligence-updated&quot; --from &quot;$example-fund&quot; \
   &#x27;Prepare the recommendation for Monday&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s investment committee. It must respect the fund policy and use the latest diligence record.&#x27; \
   -q &#x27;recommendation: What should the partner recommend to the investment committee? [Invest $1.2M with a milestone: win two practices whose software vendor bundles a claims assistant,

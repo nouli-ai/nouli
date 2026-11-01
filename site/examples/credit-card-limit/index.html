@@ -32,12 +32,28 @@
 </div>
 <div class="views" role="group" aria-label="Show the steps as">
 <span>show the steps as</span><button type="button" data-view="tui" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
-<p class="tui-only">Open <code>nouli open cashflow</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>
+<p class="tui-only">Open <code>nouli open cashflow</code>. Add each step’s context, question and answers in the form, then press Ctrl-S to send from any section. Captures replay the recorded model answers in the current TUI.</p>
 </div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record income and existing obligations</h2>
 <p>Record income, living expenses, and other debt payments. Exclude the existing payment on this card because the capacity review will substitute a stressed payment for the candidate total line.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · cashflow
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · cashflow
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 cashflow › Fictional card application C-202 for an adult over 21, verification
 at 09:00: recurring net monthly income is 4000 USD, essential living expenses
 are 2500 USD, and payments on other debts are 700 USD. The 700 USD excludes
@@ -48,29 +64,13 @@ cashflow › What monthly amount is available before this card payment?
    ▶ 800 USD                          ███████████████████▊ 0.99
      1500 USD                         ▎                    0.01
      Request missing income or oblig…                      0.00
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What monthly amount is available before this card payment?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What monthly amount is available before this card payment?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-cashflow&quot; \
   &#x27;Fictional card application C-202 for an adult over 21, verification at 09:00:
 recurring net monthly income is 4000 USD, essential living expenses are 2500 USD,
@@ -91,7 +91,12 @@ sample policy are verified.&#x27; \
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Review the existing card account</h2>
 <p>Start a separate history for account behavior. A score records the documented payment performance independently of income.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · account
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · account
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 cashflow › Fictional card application C-202 for an adult over 21, verification
 at 09:00: recurring net monthly income is 4000 USD, essential living expenses
 are 2500 USD, and payments on other debts are 700 USD. The 700 USD excludes
@@ -112,19 +117,14 @@ account › How strong is the documented payment performance?
   turn 1 · 1 fact · 1 question
      expected 2.00 of 2   ▁▁█
      Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently
-timel…
-
-
-
+time…
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How strong is the documented payment performance?
   › Add context or drop a file
-── Question · Yes / No Choose one [Score] · Shift-Tab → ────────────────────────
+── Question ──────────────────────────────────────────────────────────── [Score]
     How strong is the documented payment performance?
-── Levels · lowest first · using previous 3 ────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Levels · lowest first · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-account&quot; \
   &#x27;Fictional card account C-202: the current total limit is 5000 USD and the balance
 is 1000 USD. All 24 monthly minimum payments were made on time. There is no
@@ -143,12 +143,14 @@ account record is complete.&#x27; \
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record the request and sample review policy</h2>
 <p>Record the request, alternative line, and sample bank rules. Stressed monthly payments are supplied all-in estimates at full utilization, not statutory percentage formulas.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · policy
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · policy
+There is no delinquency, over-limit balance, or unresolved account restriction.
+The account record is complete.
 account › How strong is the documented payment performance?
   turn 1 · 1 fact · 1 question
      expected 2.00 of 2   ▁▁█
      Adverse payment history 0.00 · Mixed payment history 0.00 · Consistently
-timel…
+time…
 policy › /new policy
   new session &quot;policy&quot;
 policy › Fictional bank review policy for C-202: the customer requests a total
@@ -171,12 +173,10 @@ policy › What does this limit review require?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What does this limit review require?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What does this limit review require?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-policy&quot; \
   &#x27;Fictional bank review policy for C-202: the customer requests a total credit
 line of 10000 USD, replacing the current 5000 USD line. A 6000 USD total line is an
@@ -204,7 +204,9 @@ requires manual review.&#x27; \
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Review capacity at each candidate limit</h2>
 <p>Blend cash flow and policy to compare the candidate total lines. Assess each separately using its supplied stressed minimum payment.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · capacity
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · capacity
+full utilization are 300 USD for 10000 USD, 180 USD for 6000 USD, and 150 USD
+for the current 5000 USD. These are illustrative account-term estimates, not a
 statutory percentage formula. Each line must leave at least 600 USD per month
 after living expenses, other debt payments, and its stressed card payment. The
 account gate requires complete records, at least 12 timely payments, and no
@@ -232,12 +234,10 @@ capacity › What is the highest total line supported by the sample capacity tes
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What is the highest total line supported by the sample capacity test?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What is the highest total line supported by the sample capacity test?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-capacity&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
   &#x27;Use the latest verified income and obligations with the sample policy. Assess
 each candidate total line separately, not as an additional amount on top of
@@ -259,7 +259,9 @@ the highest total line that leaves at least 600 USD each month.&#x27; \
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Review account eligibility</h2>
 <p>Blend the account history and policy to evaluate the standing gate. This branch shares policy with the capacity branch while using different evidence.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · standing
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · standing
+  turn 1 · 1 fact · 1 question
+   ▶ Evaluate payment capacity and a… ████████████████████ 1.00
      Use account standing alone                            0.00
      Use the current balance alone                         0.00
 capacity › /blend cashflow policy as capacity
@@ -287,12 +289,10 @@ standing › Does the account pass the sample standing gate?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Does the account pass the sample standing gate?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Does the account pass the sample standing gate?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-standing&quot; --from &quot;$example-account&quot; --from &quot;$example-policy&quot; \
   &#x27;Apply only the account-standing gate from the sample policy to the recorded
 account. Do not use account standing to infer income or payment capacity.&#x27; \
@@ -310,7 +310,9 @@ account. Do not use account standing to infer income or payment capacity.&#x27; 
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine the reviews into a limit recommendation</h2>
 <p>Combine capacity and standing into a limit recommendation. Both branches must support the offer.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · limit
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · limit
+     No line qualifies or required v… ▋                    0.03
+standing › /blend account policy as standing
   new session &quot;standing&quot; from account + policy
 standing › Apply only the account-standing gate from the sample policy to the
 recorded account. Do not use account standing to infer income or payment
@@ -338,12 +340,10 @@ limit › Which total credit line should the reviewer consider?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which total credit line should the reviewer consider?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which total credit line should the reviewer consider?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-limit&quot; --from &quot;$example-capacity&quot; --from &quot;$example-standing&quot; \
   &#x27;Combine the capacity and account-standing reviews. Recommend the highest
 eligible total line up to the requested 10000 USD only when both gates pass. A
@@ -367,7 +367,9 @@ test passes; otherwise refer for manual review. This recommendation does not cha
 <section class="step" id="step-7" data-node="6">
 <h2><span class="num">07</span>Record new verified income</h2>
 <p>Continue the cash-flow session with verified income of 4500 USD, explicitly replacing the earlier amount. No account change has been applied.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · cashflow
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · cashflow
+limit › Combine the capacity and account-standing reviews. Recommend the
+highest eligible total line up to the requested 10000 USD only when both gates
 pass. A passing account review cannot override insufficient payment capacity.
 If the account-standing gate fails or lacks evidence, refer for manual review.
 If standing passes but no increase qualifies, retain 5000 USD only if its
@@ -395,12 +397,10 @@ cashflow › What monthly amount is now available before this card payment?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What monthly amount is now available before this card payment?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What monthly amount is now available before this card payment?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-cashflow&quot; \
   &#x27;Fictional card application C-202, new verification at 11:00: recurring net
 monthly income is now 4500 USD, replacing the 09:00 value of 4000 USD. Essential
@@ -421,7 +421,9 @@ verified evidence of the income change. No limit increase has been applied.&#x27
 <section class="step" id="step-8" data-node="7">
 <h2><span class="num">08</span>Review capacity with the updated source</h2>
 <p>Create a fresh capacity blend from the updated cash-flow history and the same policy. The initial capacity review remains a separate saved decision.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · capacity-updated
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · capacity-updated
+  cashflow
+cashflow › Fictional card application C-202, new verification at 11:00:
 recurring net monthly income is now 4500 USD, replacing the 09:00 value of 4000
 USD. Essential living expenses remain 2500 USD and other debt payments remain
 700 USD, excluding this credit card. There are no other obligations. The
@@ -449,12 +451,10 @@ capacity test?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What is the highest total line supported by the updated capacity test?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What is the highest total line supported by the updated capacity test?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-capacity-updated&quot; --from &quot;$example-cashflow&quot; --from &quot;$example-policy&quot; \
   &#x27;Use the latest verified income and obligations with the sample policy. Assess
 each candidate total line separately, not as an additional amount on top of
@@ -476,7 +476,9 @@ the highest total line that leaves at least 600 USD each month.&#x27; \
 <section class="step" id="step-9" data-node="8">
 <h2><span class="num">09</span>Reconsider the limit using both review branches</h2>
 <p>Reuse the account-standing review and combine it with updated capacity. This creates a revised recommendation without rewriting the initial limit decision.</p>
-<div class="tui-snapshot" data-capture="credit-card-limit" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · limit-updated
+<div class="tui-snapshot" data-capture="credit-card-limit" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · limit-updated
+sample policy. Assess each candidate total line separately, not as an
+additional amount on top of the existing line. Subtract the supplied stressed
 card payment once. Determine the highest total line that leaves at least 600
 USD each month.
 capacity-updated › What is the highest total line supported by the updated
@@ -504,12 +506,10 @@ limit-updated › Which total credit line should the reviewer consider now?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which total credit line should the reviewer consider now?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which total credit line should the reviewer consider now?
-── Options · using previous 4 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 4
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-limit-updated&quot; --from &quot;$example-capacity-updated&quot; --from &quot;$example-standing&quot; \
   &#x27;Combine the capacity and account-standing reviews. Recommend the highest
 eligible total line up to the requested 10000 USD only when both gates pass. A

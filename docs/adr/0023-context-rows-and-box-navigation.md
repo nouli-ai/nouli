@@ -5,6 +5,8 @@ date: 2026-11-01
 
 # Make Context rows simple and let Tab move between boxes
 
+Blank-row Enter navigation is superseded by [ADR 0025](0025-blank-enter-section-navigation.md).
+
 ## Context
 
 Enter in Context either queued the text or sent the question, depending on state,

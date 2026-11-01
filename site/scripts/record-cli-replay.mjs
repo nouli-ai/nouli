@@ -4,7 +4,7 @@
 //
 //   node scripts/record-cli-replay.mjs --nouli ../target/release/nouli --python /path/to/python [--columns 64]
 //
-// The default 224 columns write tui.json, with the decision graph beside the
+// The default 160 columns write tui.json, with the decision graph beside the
 // transcript, and refresh graph.json. Narrower recordings write tui-narrow.json
 // for small screens, which show only the transcript.
 // The Python interpreter needs pyte. No provider credentials or live calls are used.
@@ -27,18 +27,19 @@ const option = (name) => {
 };
 const nouli = option("--nouli");
 const python = option("--python");
-const columns = args.includes("--columns") ? Number(args[args.indexOf("--columns") + 1]) : 224;
+const columns = args.includes("--columns") ? Number(args[args.indexOf("--columns") + 1]) : 160;
 const wide = columns >= 116;
-const name = wide ? "wide" : "narrow";
+const tour = args.includes("--tour");
+const name = tour ? "tour" : wide ? "wide" : "narrow";
 
-// Rows the page omits: the session header above and the key hints below.
-const FIRST_ROW = 1, ROWS = 44, PLAYBACK_START_MS = 150;
+// Keep the header, form, and configurable status line in the recording.
+const PLAYBACK_START_MS = 150;
 
 /** Recorded frames as the page's replay: the first ready screen, then only changed rows. */
 export function toReplay(recording, application) {
   const crop = (frame) => ({
-    rows: frame.rows.slice(FIRST_ROW, FIRST_ROW + ROWS),
-    cursor: frame.cursor && [frame.cursor[0], frame.cursor[1] - FIRST_ROW],
+    rows: frame.rows,
+    cursor: frame.cursor,
   });
   const frames = recording.frames;
   let previous = crop(frames[0]), previousAt = frames[0].t, elapsed = 0;
@@ -60,7 +61,7 @@ export function toReplay(recording, application) {
     .filter((marker) => marker.phase === "answer")
     .map((marker) => ({ session: marker.session, title: marker.title, at: times.findLast(([t]) => t <= marker.t)[1] }));
   const initial = crop(frames[0]);
-  return { version: 3, application, columns: recording.columns, lines: ROWS, initial, updates, final: previous, steps };
+  return { version: 3, application, columns: recording.columns, lines: recording.lines, initial, updates, final: previous, steps };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -74,7 +75,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     await new Promise((done, fail) => {
       const child = spawn(python, [join(site, "scripts/record-cli-replay.py")], {
         stdio: "inherit",
-        env: { ...process.env, NOULI_BIN: nouli, REPLAY_DIR: dir, REPLAY_COLUMNS: String(columns) },
+        env: { ...process.env, NOULI_BIN: nouli, REPLAY_DIR: dir, REPLAY_COLUMNS: String(columns), REPLAY_TOUR: tour ? "1" : "0" },
       });
       child.on("error", fail);
       child.on("exit", (code) => (code === 0 ? done() : fail(new Error(`Recording failed: ${code}`))));
@@ -84,8 +85,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     const version = execFileSync(nouli, ["--version"], { encoding: "utf8" }).trim();
     const recording = JSON.parse(readFileSync(join(dir, "recording.json"), "utf8"));
     const replay = toReplay(recording, version);
-    writeFileSync(join(data, wide ? "tui.json" : "tui-narrow.json"), JSON.stringify(replay));
-    if (wide) {
+    writeFileSync(join(data, tour ? "tui-tour.json" : wide ? "tui.json" : "tui-narrow.json"), JSON.stringify(replay));
+    if (wide && !tour) {
       process.env.NOULI = nouli;
       writeFileSync(join(data, "graph.json"), JSON.stringify(exportStore(join(dir, "store")), null, 1) + "\n");
     }
@@ -94,7 +95,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
       binary_sha256: createHash("sha256").update(readFileSync(nouli)).digest("hex"),
       capture: "Native PTY replay of saved TypeSafe answers through a local stub",
       live_provider_calls: 0,
-      terminal: { columns: recording.columns, lines: recording.lines, displayed_lines: ROWS },
+      terminal: { columns: recording.columns, lines: recording.lines, displayed_lines: recording.lines },
       steps: replay.steps.length,
       updates: replay.updates.length,
       replay_milliseconds: replay.updates.reduce((total, update) => total + update.wait, 0),

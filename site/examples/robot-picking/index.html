@@ -33,12 +33,28 @@
 </div>
 <div class="views" role="group" aria-label="Show the steps as">
 <span>show the steps as</span><button type="button" data-view="tui" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
-<p class="tui-only">Open <code>nouli open catalog</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>
+<p class="tui-only">Open <code>nouli open catalog</code>. Add each step’s context, question and answers in the form, then press Ctrl-S to send from any section. Captures replay the recorded model answers in the current TUI.</p>
 </div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Load the item's grasp history</h2>
 <p>Load what the station knows about this item into its own session. Every pick of this SKU can start from it.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · catalog
+<div class="tui-snapshot" data-capture="robot-picking" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · catalog
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 catalog › Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a
 clear polybag, weighing 0.45 kg. At this station this month the arm picked it
 112 times. Suction on the flat label area succeeded first time in 81 of those
@@ -49,29 +65,13 @@ catalog › Which grasp should the arm prefer for this item?
    ▶ Suction on the flat label area … ███████████████████▊ 0.99
      Suction on any flat bag surface                       0.00
      A two-finger pinch on the bottl… ▎                    0.01
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which grasp should the arm prefer for this item?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which grasp should the arm prefer for this item?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-catalog&quot; \
   &#x27;Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a clear polybag, weighing 0.45 kg. At this station this month the arm picked it 112 times. Suction on the flat label area succeeded first time in 81 of those picks. Most failures happened when the suction cup sealed on loose bag film instead of the bottle.&#x27; \
   -q &#x27;grasp: Which grasp should the arm prefer for this item? [Suction on the flat label area of the bottle,
@@ -88,7 +88,11 @@ catalog › Which grasp should the arm prefer for this item?
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Load the station rules</h2>
 <p>Load the station rules into a second session. The first rule is about uncertainty: the robot's controller reads the probability Nouli returns and acts on its own only at 0.6 or above.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · policy
+<div class="tui-snapshot" data-capture="robot-picking" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · policy
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 catalog › Illustrative item record: SKU 30418 is a 400 ml shampoo bottle in a
 clear polybag, weighing 0.45 kg. At this station this month the arm picked it
 112 times. Suction on the flat label area succeeded first time in 81 of those
@@ -111,17 +115,13 @@ policy › May the arm place a load that weighs 1.9 kg when one 0.45 kg item is
 expected?
   turn 1 · 1 fact · 1 question
      yes                              ▋                    0.03
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ May the arm place a load that weighs 1.9 kg when one 0.45 kg item is
     expected?
   › Add context or drop a file
-── Question · [Yes / No] Choose one Score · Shift-Tab → ────────────────────────
-    Ask a question
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+── Question ───────────────────────────────────────────────────────── [Yes / No]
+    Tab to add a question
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-policy&quot; \
   &#x27;Illustrative station rules for the picking arm: the arm acts on its own only when its chosen action has a probability of at least 0.6; otherwise a remote operator chooses. After two failed grasps on one item, stop and request remote assistance. Never place a load whose measured weight differs from the expected item weight by more than 15%. A torn or open bag goes to the exception station, never into a shipping box.&#x27; \
   -q &#x27;overweight: May the arm place a load that weighs 1.9 kg when one 0.45 kg item is expected?&#x27;</code></pre>
@@ -134,7 +134,9 @@ expected?
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Start the pick</h2>
 <p>Start the pick as a blend of the item history and the station rules. From here the robot continues one session, adding each sensor update as a new turn.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · pick
+<div class="tui-snapshot" data-capture="robot-picking" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · pick
+   ▶ Suction on the flat label area … ███████████████████▊ 0.99
+     Suction on any flat bag surface                       0.00
      A two-finger pinch on the bottl… ▎                    0.01
 policy › /new policy
   new session &quot;policy&quot;
@@ -162,12 +164,10 @@ pick › What should the arm do first?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the arm do first?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the arm do first?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-pick&quot; --from &quot;$example-catalog&quot; --from &quot;$example-policy&quot; \
   &#x27;Task: pick one unit of SKU 30418 for order 4471 into box B-12. Tote camera: 6 items. The target is detected with confidence 0.82, lying label-down, partly under another polybagged item. The only flat surface visible on it is 3 square centimeters of loose bag film.&#x27; \
   -q &quot;action: What should the arm do first? [Nudge the covering item aside to expose the target&#x27;s label,
@@ -184,7 +184,9 @@ pick › What should the arm do first?
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>React to a failed grasp</h2>
 <p>The robot sends only what changed: the nudge worked, but the suction attempt failed when the film peeled. The camera scene, item history, and rules come from the session.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · pick
+<div class="tui-snapshot" data-capture="robot-picking" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · pick
+station, never into a shipping box.
+policy › May the arm place a load that weighs 1.9 kg when one 0.45 kg item is
 expected?
   turn 1 · 1 fact · 1 question
      yes                              ▋                    0.03
@@ -212,12 +214,10 @@ pick › What should the arm do next?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the arm do next?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the arm do next?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-pick&quot; \
   &#x27;Sensor update: the nudge worked and the target now lies label-up with a 6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum at 2 cm of lift, because the bag film peeled away from the bottle. The loose film now hangs over the label area. The bottle neck is exposed and clear. That is one failed grasp.&#x27; \
   -q &#x27;action: What should the arm do next? [Try a two-finger pinch on the bottle neck,
@@ -256,7 +256,9 @@ pick › What should the arm do next?
 <section class="step" id="step-6" data-node="4">
 <h2><span class="num">06</span>React to a double pick</h2>
 <p>The real outcome: the neck pinch lifted two bottles stuck together. <code>-q</code> sets the question for the new turn; the earlier one is not asked again.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · pick
+<div class="tui-snapshot" data-capture="robot-picking" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · pick
+partly under another polybagged item. The only flat surface visible on it is 3
+square centimeters of loose bag film.
 pick › What should the arm do first?
   turn 1 · 1 fact · 1 question
    ▶ Nudge the covering item aside t… ████████████████▋    0.83
@@ -284,12 +286,10 @@ pick › What should the arm do with the load?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What should the arm do with the load?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What should the arm do with the load?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-pick&quot; \
   &#x27;Sensor update: the arm pinched the bottle neck, and pinch attempt 2 lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45 kg. The tote camera shows a second bottle stuck to the target by an adhesive strip on the bags.&#x27; \
   -q &#x27;load: What should the arm do with the load? [Lower the load back into the tote and request remote assistance,
@@ -306,7 +306,9 @@ pick › What should the arm do with the load?
 <section class="step" id="step-7" data-node="5">
 <h2><span class="num">07</span>Take the remote operator's report</h2>
 <p>Add the remote operator's report as the next turn, again swapping the session's question for the new one.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · pick
+<div class="tui-snapshot" data-capture="robot-picking" data-step="6"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · pick
+6 square centimeter flat label area. Suction attempt 1 on the label lost vacuum
+at 2 cm of lift, because the bag film peeled away from the bottle. The loose
 film now hangs over the label area. The bottle neck is exposed and clear. That
 is one failed grasp.
 pick › What should the arm do next?
@@ -334,12 +336,10 @@ pick › Where should the arm put the target?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Where should the arm put the target?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Where should the arm put the target?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-pick&quot; \
   &#x27;Remote assistance, 40 seconds: the operator separated the bottles by marking pinch points, and the arm now holds only the target (0.46 kg). The operator reports that the target&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s bag is torn along one edge.&#x27; \
   -q &#x27;destination: Where should the arm put the target? [Send it to the exception station,
@@ -356,7 +356,9 @@ pick › Where should the arm put the target?
 <section class="step" id="step-8" data-node="6">
 <h2><span class="num">08</span>Update the item's grasp profile</h2>
 <p>Blend the item history with the whole pick episode to decide how the arm should grasp this SKU next time. One robot's episode becomes station knowledge without changing the original item session.</p>
-<div class="tui-snapshot" data-capture="robot-picking" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · catalog-review
+<div class="tui-snapshot" data-capture="robot-picking" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · catalog-review
+pick › Sensor update: the arm pinched the bottle neck, and pinch attempt 2
+lifted the target. The wrist force sensor reads 1.9 kg against an expected 0.45
 kg. The tote camera shows a second bottle stuck to the target by an adhesive
 strip on the bags.
 pick › What should the arm do with the load?
@@ -384,12 +386,10 @@ catalog-review › How should the grasp profile for SKU 30418 change?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How should the grasp profile for SKU 30418 change?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     How should the grasp profile for SKU 30418 change?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-catalog-review&quot; --from &quot;$example-catalog&quot; --from &quot;$example-pick&quot; \
   &#x27;Review the completed pick against the item&#x27;\&#x27;&#x27;\&#x27;\&#x27;&#x27;&#x27;\&#x27;&#x27;s history and decide how the arm should grasp this SKU next time.&#x27; \
   -q &#x27;profile: How should the grasp profile for SKU 30418 change? [&quot;Prefer a neck pinch, and check the weight before placing&quot;,

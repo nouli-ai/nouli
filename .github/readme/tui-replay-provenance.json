@@ -1,52 +1,31 @@
 {
-  "application": "nouli 0.4.3",
-  "binary_sha256": "608c32a0efe2cdeb59c8fbbfa0b1da364ec09e2fa99018bf2af8b5b639197741",
-  "capture": "Real native PTY, saved workshop answers replayed through loopback fixture",
+  "application": "nouli 0.5.1",
+  "capture": "Native PTY recording rendered from terminal cells",
+  "answer_source": "site/src/data/cli/graph.json",
   "live_provider_calls": 0,
   "local_fixture_calls": 5,
-  "columns": 132,
-  "lines": 32,
-  "raw_frames": 891,
-  "recorded_at": "2026-10-31T23:41:50.323Z",
-  "answer_source": "site/src/data/cli/graph.json",
-  "answer_source_sha256": "7c348683a5f1a3d7cd82928f23dc61bca09ca107a92c5e24c05a7f04521c03f9",
-  "media": {
-    "gif": "tui-replay.gif",
-    "poster": "tui-poster.png",
-    "width": 1344,
-    "height": 664,
-    "font": "macOS Menlo Regular/Bold, 16px; DejaVu Sans fallback for Braille spinner; 10px cells; 20px rows",
-    "renderer": "Recorded native terminal cells rendered with Pillow; not a capture of a macOS Terminal window",
-    "source_clip_seconds": {
-      "from": 6.158,
-      "through": 46.064
-    },
-    "playback_speed": 4.0,
-    "output_frame_milliseconds": 80,
-    "output_sample_frames": 172,
-    "output_milliseconds": 13760,
-    "holds": "800ms opening hold; 400ms additional at each later saved answer; 1760ms final hold",
-    "poster_source_seconds": 36.532,
-    "poster_step": "Fourth recorded decision, plan confirmation after venue/program blend",
-    "source_events": "Five saved workshop decisions; question/answer values and ancestry preserved",
-    "live_model_inference": false,
-    "gif_bytes": 932075,
-    "poster_bytes": 120964,
-    "gif_frames": 109,
-    "gif_duration_milliseconds": 13760,
-    "gif_loop": 0,
-    "gif_sha256": "7926f883679ccff591e05b6b6b07e8bcccd2bd11800233962686673a4ab76766",
-    "poster_sha256": "8e1df696b7f6778dee3623d5a9f861d3c37b970b0779179f2fe13476d2e600d9"
+  "playback_speed": 3,
+  "frames_per_second": 8,
+  "final_hold_seconds": 1,
+  "source_sha256": "03974bc8a1b72a3bd49a242d51388b0283baabaf14e1fdefd09d369d187f7028",
+  "source_recording": "site/src/data/cli/tui.json",
+  "renderer": "site/scripts/render-tui-media.py",
+  "dimensions": {
+    "columns": 160,
+    "lines": 38,
+    "width": 1464,
+    "height": 708
   },
-  "reproduction": {
-    "capture_command": "node /tmp/nouli-readme-tui-media/capture.mjs",
-    "render_command": "/tmp/nouli-openrig-history/plot-env/bin/python /tmp/nouli-readme-tui-media/render.py",
-    "recording_script_source": "site/scripts/record-cli-replay.py",
-    "capture_adjustments": [
-      "132 columns; 32 terminal rows",
-      "Divider moved to column 50 to balance transcript and parallel graph cards",
-      "Fresh isolated HOME/config/store; saved answers from checked-in graph.json via loopback"
-    ],
-    "website_files_changed": false
+  "recorded_at": "2026-11-01T19:48:42Z",
+  "binary_sha256": "3209c587e21ab7d1834774d3b062932cac43f2bd8fd10c38ac95a75e55972e66",
+  "media": {
+    "tui-replay.gif": {
+      "bytes": 2244331,
+      "sha256": "827c608cb8c4f06af17ffce303583766e1590b7ca5f2df2d3e7f11177629a7e0"
+    },
+    "tui-poster.png": {
+      "bytes": 132700,
+      "sha256": "86c7437f9b8720598441f99456faa1706acad69e774c8ee5bb0a68fe51cebbf9"
+    }
   }
 }

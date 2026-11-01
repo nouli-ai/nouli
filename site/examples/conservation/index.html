@@ -32,12 +32,28 @@
 </div>
 <div class="views" role="group" aria-label="Show the steps as">
 <span>show the steps as</span><button type="button" data-view="tui" aria-pressed="true">interactive</button><button type="button" data-view="commands" aria-pressed="false">commands</button>
-<p class="tui-only">Open <code>nouli open request</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>
+<p class="tui-only">Open <code>nouli open request</code>. Add each step’s context, question and answers in the form, then press Ctrl-S to send from any section. Captures replay the recorded model answers in the current TUI.</p>
 </div>
 <section class="step" id="step-1" data-node="0">
 <h2><span class="num">01</span>Record the conservation request</h2>
 <p>Record the external request separately from the facility limits. The two-hour planning interval is 18:00-20:00, after the historical alert.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · request
+<div class="tui-snapshot" data-capture="conservation" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · request
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 request › Cal OES reported a September 6, 2022 emergency alert at 17:45,
 requesting reductions in nonessential electricity use where health permits
 until 21:00. Our illustrative facility is considering 18:00-20:00. This is a
@@ -48,29 +64,13 @@ request › Which type of response fits this request?
      Include critical operations in …                      0.00
      Request clarification before ch… ▎                    0.01
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which type of response fits this request?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which type of response fits this request?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-request&quot; \
   &#x27;Cal OES reported a September 6, 2022 emergency alert at 17:45, requesting
 reductions in nonessential electricity use where health permits until 21:00.
@@ -90,7 +90,12 @@ conservation request, not a market dispatch instruction.&#x27; \
 <section class="step" id="step-2" data-node="1">
 <h2><span class="num">02</span>Record battery availability</h2>
 <p>Record battery telemetry without applying a reserve requirement yet. Stored energy and the discharge power limit are distinct quantities.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery
+<div class="tui-snapshot" data-capture="conservation" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · battery
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 request › Cal OES reported a September 6, 2022 emergency alert at 17:45,
 requesting reductions in nonessential electricity use where health permits
 until 21:00. Our illustrative facility is considering 18:00-20:00. This is a
@@ -112,18 +117,13 @@ considered?
      100 kW                                                0.00
      150 kW                                                0.00
    ▶ 200 kW                           ████████████████████ 1.00
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What battery power limit applies before reserve requirements are considered?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What battery power limit applies before reserve requirements are considered?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-battery&quot; \
   &#x27;Illustrative reading at 17:50: stored AC-deliverable energy is 800 kWh in a
 1000 kWh battery. The discharge limit is 200 kW. No charging is planned during
@@ -143,7 +143,9 @@ reserve.&#x27; \
 <section class="step" id="step-3" data-node="2">
 <h2><span class="num">03</span>Record facility obligations</h2>
 <p>Record facility obligations in a separate history so both planning branches can reuse them. The reserve is 500 kWh and refrigeration cannot be curtailed.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · facility
+<div class="tui-snapshot" data-capture="conservation" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · facility
+     Request clarification before ch… ▎                    0.01
+battery › /new battery
   new session &quot;battery&quot;
 battery › Illustrative reading at 17:50: stored AC-deliverable energy is 800
 kWh in a 1000 kWh battery. The discharge limit is 200 kW. No charging is
@@ -171,12 +173,10 @@ facility › Which load can be reduced without disrupting critical operations?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which load can be reduced without disrupting critical operations?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which load can be reduced without disrupting critical operations?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-facility&quot; \
   &#x27;Illustrative facility policy: retain at least 500 kWh of AC-deliverable
 battery energy after 20:00 for critical operations. Vehicle charging can be
@@ -197,7 +197,9 @@ flexible loads. The local conservation goal is 250 kW for the interval.&#x27; \
 <section class="step" id="step-4" data-node="3">
 <h2><span class="num">04</span>Choose the battery contribution</h2>
 <p>Blend telemetry and facility policy to choose constant battery output for two hours. The plan has not executed.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery-plan
+<div class="tui-snapshot" data-capture="conservation" data-step="3"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · battery-plan
+     100 kW                                                0.00
+     150 kW                                                0.00
    ▶ 200 kW                           ████████████████████ 1.00
 facility › /new facility
   new session &quot;facility&quot;
@@ -225,12 +227,10 @@ battery-plan › What constant battery contribution is feasible?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What constant battery contribution is feasible?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What constant battery contribution is feasible?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-battery-plan&quot; --from &quot;$example-battery&quot; --from &quot;$example-facility&quot; \
   &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
 least the recorded reserve. Use the latest telemetry. The proposed plan has
@@ -249,7 +249,9 @@ not executed.&#x27; \
 <section class="step" id="step-5" data-node="4">
 <h2><span class="num">05</span>Choose the load contribution</h2>
 <p>Blend the conservation request with facility policy to choose a load response independently of battery dispatch.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · load-plan
+<div class="tui-snapshot" data-capture="conservation" data-step="4"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · load-plan
+are no other flexible loads. The local conservation goal is 250 kW for the
+interval.
 facility › Which load can be reduced without disrupting critical operations?
   turn 1 · 1 fact · 1 question
    ▶ Defer vehicle charging           ████████████████████ 1.00
@@ -277,12 +279,10 @@ load-plan › Which load response should the facility offer?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which load response should the facility offer?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which load response should the facility offer?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-load-plan&quot; --from &quot;$example-request&quot; --from &quot;$example-facility&quot; \
   &#x27;Choose a voluntary load reduction consistent with the conservation request and
 the facility obligations.&#x27; \
@@ -300,7 +300,9 @@ the facility obligations.&#x27; \
 <section class="step" id="step-6" data-node="5">
 <h2><span class="num">06</span>Combine the two plans</h2>
 <p>Combine both planning branches into one offer toward the sample local target.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · plan
+<div class="tui-snapshot" data-capture="conservation" data-step="5"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · plan
+plan has not executed.
+battery-plan › What constant battery contribution is feasible?
   turn 1 · 1 fact · 1 question
      Discharge at 100 kW for two hou… ███▋                 0.18
    ▶ Discharge at 150 kW for two hou… █████████            0.45
@@ -328,12 +330,10 @@ plan › Which conservation plan is feasible for 18:00-20:00?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which conservation plan is feasible for 18:00-20:00?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which conservation plan is feasible for 18:00-20:00?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-plan&quot; --from &quot;$example-battery-plan&quot; --from &quot;$example-load-plan&quot; \
   &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
 loads, and the local goal. Prefer meeting the goal when feasible. Otherwise
@@ -381,7 +381,9 @@ charging, and two-hour interval. Choose the largest feasible offer toward the
 <section class="step" id="step-8" data-node="6">
 <h2><span class="num">08</span>Record corrected telemetry</h2>
 <p>Continue the telemetry session with the corrected 700 kWh reading. Unlike the what-if, this becomes saved source evidence for new decisions. It asks a reworded question under the same ID, and the first reading's answer stays in the history.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery
+<div class="tui-snapshot" data-capture="conservation" data-step="7"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · battery
+  turn 1 · 1 fact · 1 question
+   ▶ Defer 100 kW of vehicle chargin… ███████████████████▊ 0.99
      Defer charging and refrigeratio…                      0.00
      Request a revised operating pla… ▎                    0.01
 plan › /blend battery-plan load-plan as plan
@@ -409,12 +411,10 @@ battery › What stored-energy reading should the next plan use?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What stored-energy reading should the next plan use?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What stored-energy reading should the next plan use?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text add &quot;$example-battery&quot; \
   &#x27;Confirmed illustrative correction at 17:55, replacing the 17:50 reading:
 stored AC-deliverable energy is 700 kWh. The power limit remains 200 kW. No
@@ -434,7 +434,9 @@ starts.&#x27; \
 <section class="step" id="step-9" data-node="7">
 <h2><span class="num">09</span>Recompute the battery plan from its sources</h2>
 <p>Create a new battery plan from updated telemetry and unchanged facility obligations. This brings the corrected source into a fresh blend.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · battery-plan-updated
+<div class="tui-snapshot" data-capture="conservation" data-step="8"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · battery-plan-updated
+plan › Which conservation plan is feasible for 18:00-20:00?
+  turn 1 · 1 fact · 1 question
    ▶ Reduce imports by 250 kW: 150 k… █████████████▍       0.67
      Reduce imports by 200 kW: 100 k… █████▊               0.29
      Request a revised plan because … ▊                    0.04
@@ -462,12 +464,10 @@ battery-plan-updated › What constant battery contribution is feasible?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ What constant battery contribution is feasible?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     What constant battery contribution is feasible?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-battery-plan-updated&quot; --from &quot;$example-battery&quot; --from &quot;$example-facility&quot; \
   &#x27;Choose the greatest constant battery output for 18:00-20:00 that leaves at
 least the recorded reserve. Use the latest telemetry. The proposed plan has
@@ -486,7 +486,9 @@ not executed.&#x27; \
 <section class="step" id="step-10" data-node="8">
 <h2><span class="num">10</span>Save a revised combined plan</h2>
 <p>Combine the revised battery branch with the unchanged load plan to save a new overall recommendation.</p>
-<div class="tui-snapshot" data-capture="conservation" data-step="9"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code> nouli 0.4.0 · plan-updated
+<div class="tui-snapshot" data-capture="conservation" data-step="9"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · plan-updated
+battery › What stored-energy reading should the next plan use?
+  turn 2 · 1 fact · 1 question
    ▶ 700 kWh                          ███████████████████▎ 0.96
      800 kWh                          ▎                    0.01
      Request a fresh reading          ▋                    0.03
@@ -514,12 +516,10 @@ plan-updated › Which conservation plan is feasible for 18:00-20:00?
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Which conservation plan is feasible for 18:00-20:00?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     Which conservation plan is feasible for 18:00-20:00?
-── Options · using previous 3 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre></div>
+  Options · using previous 3
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
 <pre><code>nouli --format text new &quot;$example-plan-updated&quot; --from &quot;$example-battery-plan-updated&quot; --from &quot;$example-load-plan&quot; \
   &#x27;Choose a combined offer consistent with battery reserve, power limit, flexible
 loads, and the local goal. Prefer meeting the goal when feasible. Otherwise

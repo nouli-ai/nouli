@@ -168,7 +168,7 @@ for (const name of names) {
       .replaceAll('class="repl-only"', 'class="tui-only"');
     updated = updated.replace(
       /<p class="tui-only">Open the first session[\s\S]*?<\/p>/,
-      `<p class="tui-only">Open <code>nouli open ${escape(steps[0].session)}</code>. Add each step’s context, question and answers in the form, then press Enter to send. Captures replay the recorded model answers in the current TUI.</p>`,
+      `<p class="tui-only">Open <code>nouli open ${escape(steps[0].session)}</code>. Add each step’s context, question and answers in the form, then press Ctrl-S to send from any section. Captures replay the recorded model answers in the current TUI.</p>`,
     );
     writeFileSync(path, updated);
     console.error(`${name}: ${output.frames.length} captured steps`);

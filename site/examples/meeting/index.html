@@ -52,11 +52,23 @@
             use Shift-Tab for Choose one. Enter the two options on separate
             rows. Enter adds another option; press Enter again to send.
           </p>
-          <div class="tui-snapshot" data-capture="meeting" data-step="0">
-            <pre
-              class="tui-static"
-              aria-label="Captured current Nouli TUI"
-            ><code> nouli 0.4.0 · travel
+                    <div class="tui-snapshot" data-capture="meeting" data-step="0"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · travel
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
 taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
 arrives on time.
@@ -67,31 +79,14 @@ travel › How should I travel to the meeting?
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How should I travel to the meeting?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     How should I travel to the meeting?
-── Options · using previous 2 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre>
-          </div>
-          <pre><code>nouli --format text new &quot;$example-travel&quot; \
+  Options · using previous 2
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
+<pre><code>nouli --format text new &quot;$example-travel&quot; \
   &#x27;The train costs 40 USD and arrives 30 minutes before the meeting. A taxi costs 70 USD and also arrives in time. Prefer the cheaper option that arrives on time.&#x27; \
   -q &#x27;transport: How should I travel to the meeting? [Take the train, Take a taxi]&#x27;</code></pre>
           <p class="caption">Output</p>
@@ -107,11 +102,23 @@ travel › How should I travel to the meeting?
             Shift-Tab to return to Yes / No. The earlier answer stays in
             context; this question asks whether the train still gets you there.
           </p>
-          <div class="tui-snapshot" data-capture="meeting" data-step="1">
-            <pre
-              class="tui-static"
-              aria-label="Captured current Nouli TUI"
-            ><code> nouli 0.4.0 · travel
+                    <div class="tui-snapshot" data-capture="meeting" data-step="1"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · travel
+
+        ▄       ▄
+         ╲  ▄  ╱
+         ▄▀████▀▄
+      ▄████████▀▀▀▀         Let's make a decision.
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
 taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
 arrives on time.
@@ -123,30 +130,13 @@ travel › The train has been cancelled. The taxi is still available at 70 USD.
 travel › Will the train get me to the meeting on time?
   turn 2 · 1 fact · 1 question
      yes                              █▊                   0.09
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ Will the train get me to the meeting on time?
   › Add context or drop a file
-── Question · [Yes / No] Choose one Score · Shift-Tab → ────────────────────────
-    Ask a question
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre>
-          </div>
-          <pre><code>nouli --format text add &quot;$example-travel&quot; \
+── Question ───────────────────────────────────────────────────────── [Yes / No]
+    Tab to add a question
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
+<pre><code>nouli --format text add &quot;$example-travel&quot; \
   &#x27;The train has been cancelled. The taxi is still available at 70 USD.&#x27; \
   -q &#x27;on_time: Will the train get me to the meeting on time?&#x27;</code></pre>
           <p class="caption">Output</p>
@@ -161,11 +151,18 @@ travel › Will the train get me to the meeting on time?
             train and Take a taxi as the two options again after changing back
             from Yes / No. The recorded answer moves to the taxi.
           </p>
-          <div class="tui-snapshot" data-capture="meeting" data-step="2">
-            <pre
-              class="tui-static"
-              aria-label="Captured current Nouli TUI"
-            ><code> nouli 0.4.0 · travel
+                    <div class="tui-snapshot" data-capture="meeting" data-step="2"><pre class="tui-static" aria-label="Captured current Nouli TUI"><code>nouli 0.5.1 · travel
+      ████▀████████
+  ▄█▄▄███ &gt;   &lt; ███████▄    Add context below, then ask a question.
+ ███▀██▀█   ▿   ███████▀    /help for a hand · /sessions to pick up
+ ▀▀███▀▀█████████▀▀▀▀██▀
+  ▀▀▀▀▀▀▄▀▀███▀▀▄ ▀▀███
+  ████▀█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ▀▀▀  ██▀██████
+        ▀▀▀▀▀▀▀▀▀
+        ▀▀█████▀▀
+           ▀▀▀
+
 travel › The train costs 40 USD and arrives 30 minutes before the meeting. A
 taxi costs 70 USD and also arrives in time. Prefer the cheaper option that
 arrives on time.
@@ -181,26 +178,14 @@ travel › How should I travel to the meeting now?
   turn 3 · 0 facts · 1 question
      Take the train                                        0.00
    ▶ Take a taxi                      ████████████████████ 1.00
-
-
-
-
-
-
-
-
-
 ── Context · latest question included ──────────────────────────────────────────
   ↳ How should I travel to the meeting now?
   › Add context or drop a file
-── Question · Yes / No [Choose one] Score · Shift-Tab → ────────────────────────
+── Question ─────────────────────────────────────────────────────── [Choose one]
     How should I travel to the meeting now?
-── Options · using previous 2 ──────────────────────────────────────────────────
-  Press Enter to send
- typesafe/jev-1.14.0 · Ready
- Tab question · @ reference · ↑↓ fields · /help</code></pre>
-          </div>
-          <pre><code>nouli --format text ask &quot;$example-travel&quot; \
+  Options · using previous 2
+jev-1.14.0 · typesafe                                    Shift-Tab question type</code></pre></div>
+<pre><code>nouli --format text ask &quot;$example-travel&quot; \
   -q &#x27;rebook: How should I travel to the meeting now? [Take the train, Take a taxi]&#x27;</code></pre>
           <p class="caption">Output</p>
           <pre class="out"><code>  turn 3 · 0 facts · 1 question
