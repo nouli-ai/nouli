@@ -118,7 +118,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     );
     assert!(!everything_visible(&output).contains(KEY));
     // The key reaches the provider, and appears nowhere it should not.
-    let turn = report(home.run([&["new", "Trip", "A fact"][..], &QUESTION].concat()));
+    let turn = report(&home.run([&["new", "Trip", "A fact"][..], &QUESTION].concat()));
     assert_eq!(
         server.authorizations.lock().unwrap()[0].as_deref(),
         Some(&*format!("Bearer {KEY}"))
@@ -139,7 +139,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     assert!(turn.turn.is_some());
     // Logging in again replaces the key.
     assert!(login(&home, "SECOND_KEY").status.success());
-    report(home.run([&["add", "Trip", "More"][..], &QUESTION].concat()));
+    report(&home.run([&["add", "Trip", "More"][..], &QUESTION].concat()));
     assert_eq!(
         server.authorizations.lock().unwrap()[1].as_deref(),
         Some("Bearer SECOND_KEY")
@@ -187,7 +187,7 @@ fn the_shell_beats_the_env_file_and_the_env_file_beats_the_store() {
         if let Some(value) = shell {
             command.env("NOULI_FIXTURE_KEY", value);
         }
-        report(command.output().unwrap());
+        report(&command.output().unwrap());
     };
     ask("One", Some("SHELL_KEY"));
     ask("Two", None);
@@ -252,7 +252,7 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
     command
         .args(create("B"))
         .env("CUSTOM_SOURCE_VARIABLE", "VARIABLE_KEY");
-    report(command.output().unwrap());
+    report(&command.output().unwrap());
     // A command source runs without a shell and its output is the key.
     assert!(
         home.run([
@@ -267,7 +267,7 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
         .status
         .success()
     );
-    report(home.run(create("C")));
+    report(&home.run(create("C")));
     // A command that fails, or prints nothing, is unavailable. Its output is never shown.
     for (name, words) in [
         (
@@ -389,7 +389,7 @@ fn a_resumed_workflow_uses_the_stored_key_as_it_is_now() {
     assert!(login(&home, "KEY_AT_START").status.success());
     let file = home.0.join("workflow.json");
     fs::write(&file, serde_json::to_vec(&harness::workflow()).unwrap()).unwrap();
-    let partial = harness::run_report(home.run(["workflow", "run", file.to_str().unwrap()]), 4);
+    let partial = harness::run_report(&home.run(["workflow", "run", file.to_str().unwrap()]), 4);
     assert_eq!(partial.status, RunStatus::Partial);
     let before = server.count();
     assert!(login(&home, "KEY_AT_RESUME").status.success());
@@ -403,7 +403,7 @@ fn a_resumed_workflow_uses_the_stored_key_as_it_is_now() {
     let text = everything_visible(&shown);
     assert!(text.contains("stored_credential") && !text.contains("KEY_AT_START"));
     let done = harness::run_report(
-        home.run(["workflow", "resume", &partial.run.unwrap().to_string()]),
+        &home.run(["workflow", "resume", &partial.run.unwrap().to_string()]),
         0,
     );
     assert_eq!(done.status, RunStatus::Completed);

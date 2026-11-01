@@ -22,11 +22,7 @@ fn command(home: &Home) -> Command {
         .current_dir(&home.0);
     command
 }
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "takes ownership of a finished process output"
-)]
-fn error(output: Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {
+fn error(output: &Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {
     assert_eq!(output.status.code(), Some(exit));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
@@ -47,7 +43,7 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
             "First run",
         ])
         .args(QUESTION);
-        let failure = error(call.output().unwrap(), 2, "providers_required");
+        let failure = error(&call.output().unwrap(), 2, "providers_required");
         let path = home.0.join(".nouli/config.toml");
         assert!(failure.message.contains(path.to_str().unwrap()));
         assert!(
@@ -76,7 +72,7 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
             );
         }
         error(
-            command(&home)
+            &command(&home)
                 .args([&["new", "First"][..], &QUESTION, &["--provider", "openai"]].concat())
                 .output()
                 .unwrap(),
@@ -106,7 +102,7 @@ fn help_invalid_input_inspection_and_resume_do_not_initialize_configuration() {
     }
     let missing = home.0.join("explicit/missing.toml");
     let failure = error(
-        command(&home)
+        &command(&home)
             .arg("--config")
             .arg(&missing)
             .args([&["new", "First"][..], &QUESTION].concat())
@@ -144,9 +140,9 @@ fn configured_first_run_persists_and_replays_without_requiring_current_profiles(
         &["--request-id", "first-run"],
     ]
     .concat();
-    let first = report(command(&home).args(&args).output().unwrap());
+    let first = report(&command(&home).args(&args).output().unwrap());
     let continued = report(
-        command(&home)
+        &command(&home)
             .args([&["add", "First"][..], &QUESTION].concat())
             .output()
             .unwrap(),
@@ -155,7 +151,7 @@ fn configured_first_run_persists_and_replays_without_requiring_current_profiles(
     assert_eq!(std::fs::read(&path).unwrap(), original);
     let database = std::fs::read(path.parent().unwrap().join("ledger.sqlite3")).unwrap();
     std::fs::remove_file(&path).unwrap();
-    let replay = report(command(&home).args(&args).output().unwrap());
+    let replay = report(&command(&home).args(&args).output().unwrap());
     assert!(replay.replayed);
     assert_eq!(replay.turn, first.turn);
     assert_eq!(server.count(), 2);
@@ -191,7 +187,7 @@ fn explicit_config_errors_and_invalid_budgets_leave_existing_files_untouched() {
             .args([&["new", "First"][..], &QUESTION].concat())
             .output()
             .unwrap();
-        let failure = error(output, exit, code);
+        let failure = error(&output, exit, code);
         if failure.category == ErrorCategory::Configuration {
             assert!(failure.message.contains(path.to_str().unwrap()));
         }
@@ -224,7 +220,7 @@ reserved_output_tokens = 256
     );
     std::fs::write(&path, &config).unwrap();
     let create = [&["new", "Models"][..], &QUESTION].concat();
-    let failure = error(home.run(&create), 2, "model_required");
+    let failure = error(&home.run(&create), 2, "model_required");
     assert!(failure.message.contains("default_model") && failure.message.contains("--model"));
     assert!(failure.message.contains(path.to_str().unwrap()));
     assert!(!home.store().exists());
@@ -234,7 +230,8 @@ reserved_output_tokens = 256
     let sessions = home.0.join("sessions");
     for (model, budget, reserve) in [("a", 4096, 128), ("b", 8192, 256)] {
         let result = report(
-            home.command_at(&sessions)
+            &home
+                .command_at(&sessions)
                 .args([&["new", model][..], &QUESTION, &["--model", model]].concat())
                 .output()
                 .unwrap(),
@@ -243,7 +240,8 @@ reserved_output_tokens = 256
         assert_eq!(result.manifest.reserved_output_tokens, reserve);
     }
     let result = report(
-        home.command_at(&sessions)
+        &home
+            .command_at(&sessions)
             .args(
                 [
                     &["new", "unlisted"][..],
@@ -262,7 +260,7 @@ reserved_output_tokens = 256
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     error(
-        home.run(["workflow", "run", file.to_str().unwrap()]),
+        &home.run(["workflow", "run", file.to_str().unwrap()]),
         2,
         "model_required",
     );
@@ -272,12 +270,12 @@ reserved_output_tokens = 256
     }
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let ephemeral = harness::run_report(
-        home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
+        &home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert_eq!(ephemeral.status, nouli_core::workflow::RunStatus::Completed);
     assert!(!home.store().exists());
-    let result = harness::run_report(home.run(["workflow", "run", file.to_str().unwrap()]), 0);
+    let result = harness::run_report(&home.run(["workflow", "run", file.to_str().unwrap()]), 0);
     assert_eq!(result.status, nouli_core::workflow::RunStatus::Completed);
     let calls = server.calls.lock().unwrap();
     assert_eq!(calls[0]["model"], "a");
@@ -303,7 +301,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     let mut graph = harness::workflow();
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let failure = error(
-        command(&home)
+        &command(&home)
             .args(["workflow", "run", file.to_str().unwrap()])
             .output()
             .unwrap(),
@@ -318,7 +316,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     graph.nodes[1].model.provider = Some("unknown".into());
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     error(
-        command(&home)
+        &command(&home)
             .args(["workflow", "run", file.to_str().unwrap()])
             .output()
             .unwrap(),
@@ -330,7 +328,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     graph.nodes[1].model.provider = None;
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let partial = harness::run_report(
-        command(&home)
+        &command(&home)
             .args(["workflow", "run", file.to_str().unwrap()])
             .output()
             .unwrap(),
@@ -338,7 +336,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
     );
     std::fs::remove_file(&path).unwrap();
     let done = harness::run_report(
-        command(&home)
+        &command(&home)
             .args(["workflow", "resume", &partial.run.unwrap().to_string()])
             .output()
             .unwrap(),
@@ -380,7 +378,7 @@ fn a_preexisting_empty_ledger_still_gets_configuration_path_guidance() {
     );
     let before = std::fs::read(store.join("ledger.sqlite3")).unwrap();
     let failure = error(
-        command(&home)
+        &command(&home)
             .args([&["new", "First"][..], &QUESTION].concat())
             .output()
             .unwrap(),
@@ -417,7 +415,7 @@ fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_ke
     ]
     .concat();
     let failure = error(
-        command(&home).args(&args).output().unwrap(),
+        &command(&home).args(&args).output().unwrap(),
         3,
         "credential_unavailable",
     );
@@ -427,14 +425,14 @@ fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_ke
     );
     assert_eq!(server.count(), 0);
     let result = report(
-        command(&home)
+        &command(&home)
             .args(&args)
             .arg("--retry-interrupted")
             .env("FROZEN_TEST_KEY", "PRIVATE_SENTINEL_VALUE")
             .output()
             .unwrap(),
     );
-    let replay = report(command(&home).args(&args).output().unwrap());
+    let replay = report(&command(&home).args(&args).output().unwrap());
     assert!(replay.replayed && replay.turn == result.turn);
     assert_eq!(server.count(), 1);
 }
@@ -463,7 +461,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
         "frozen-credentials",
     ];
     let partial = harness::run_report(
-        command(&home)
+        &command(&home)
             .args(args)
             .env("ORIGINAL_FROZEN_KEY", "PRIVATE_SENTINEL_VALUE")
             .output()
@@ -511,7 +509,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
         assert_eq!(server.count(), 2);
     }
     let done = harness::run_report(
-        command(&home)
+        &command(&home)
             .args(["workflow", "resume", &run])
             .env("ORIGINAL_FROZEN_KEY", "PRIVATE_SENTINEL_VALUE")
             .output()
@@ -522,6 +520,6 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
     assert_eq!(server.count(), 5);
     // A valid current config without providers still permits completed replay.
     std::fs::write(&path, "output='json'\n").unwrap();
-    assert!(harness::run_report(command(&home).args(args).output().unwrap(), 0).replayed);
+    assert!(harness::run_report(&command(&home).args(args).output().unwrap(), 0).replayed);
     assert_eq!(server.count(), 5);
 }

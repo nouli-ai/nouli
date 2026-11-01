@@ -26,7 +26,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let seed = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Origin", "ORIGINAL"][..],
                 &QUESTION,
@@ -38,12 +38,12 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     let first = seed.turn.unwrap();
     let original = seed.session.unwrap();
     // A later turn asks the question it is given, here the same one again.
-    let next = report(home.run([&["add", "Origin", "LATER"][..], &QUESTION].concat()));
+    let next = report(&home.run([&["add", "Origin", "LATER"][..], &QUESTION].concat()));
     assert_eq!(next.session, Some(original));
     assert_eq!(next.questions, seed.questions);
     let source = format!("Origin@{first}");
     let branch = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Branch", "BRANCH", "--from", &source][..],
                 &QUESTION,
@@ -55,7 +55,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     assert_eq!(branch.manifest.sources[0].frontier, vec![first]);
     assert_eq!(branch.questions, seed.questions);
     let blend = report(
-        home.run(
+        &home.run(
             [
                 &[
                     "new", "Blend", "BLEND", "--from", "Branch", "--from", "Origin",
@@ -67,7 +67,7 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
     );
     assert_eq!(blend.manifest.sources.len(), 2);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let ephemeral = report(home.run([&["whatif", "Blend", "TEMPORARY"][..], &QUESTION].concat()));
+    let ephemeral = report(&home.run([&["whatif", "Blend", "TEMPORARY"][..], &QUESTION].concat()));
     assert!(ephemeral.session.is_none());
     assert!(ephemeral.turn.is_none());
     assert!(
@@ -119,7 +119,7 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
             record: record.clone(),
         }],
     );
-    let first = report(home.run([
+    let first = report(&home.run([
         "new",
         "Full",
         "--input",
@@ -148,7 +148,7 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
     };
     let toon = home.0.join("same.toon");
     std::fs::write(&toon, codec::encode_toon(&file).unwrap()).unwrap();
-    let replay = report(home.run([
+    let replay = report(&home.run([
         "new",
         "Full",
         "--input",
@@ -191,7 +191,7 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
         .unwrap()
         .write_all(&serde_json::to_vec(&file).unwrap())
         .unwrap();
-    let result = report(child.wait_with_output().unwrap());
+    let result = report(&child.wait_with_output().unwrap());
     assert!(result.turn.is_none());
     assert_eq!(server.count(), 2);
     // A request file that names a session is refused: the verb supplies it.
@@ -218,7 +218,8 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
     assert_eq!(server.count(), 0);
     assert!(!home.store().exists());
     let recovered = report(
-        home.command()
+        &home
+            .command()
             .args(&named)
             .env("NOULI_FIXTURE_KEY", "SECRET_FIXTURE_TOKEN")
             .output()
@@ -299,7 +300,7 @@ fn cli_dispatches_direct_openai_and_router_protocols_without_fallback() {
         }
         let path = home.0.join("request.json");
         std::fs::write(&path, serde_json::to_vec(&turn).unwrap()).unwrap();
-        let result = report(home.run([
+        let result = report(&home.run([
             "new",
             "Dispatch",
             "--input",
@@ -330,11 +331,11 @@ fn default_model_budget_works_and_competing_file_modes_fail_before_inference() {
         .replace("context_window_tokens = 100000\n", "");
     std::fs::write(&path, config).unwrap();
     let create = [&["new", "Budgeted"][..], &QUESTION].concat();
-    let defaulted = report(home.run(&create));
+    let defaulted = report(&home.run(&create));
     assert_eq!(defaulted.manifest.budget, 8192);
     assert_eq!(server.count(), 1);
     let valid = report(
-        home.run(
+        &home.run(
             [
                 &["new", "ExplicitBudget"][..],
                 &QUESTION,
@@ -392,7 +393,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             },
         }],
     );
-    let root = report(keyed(&["new", "Root", "--input", root.to_str().unwrap()]));
+    let root = report(&keyed(&["new", "Root", "--input", root.to_str().unwrap()]));
     let mut branches = vec![];
     for (name, kind) in [
         ("Left", ContextKind::Evidence),
@@ -409,7 +410,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             name,
             vec![ContextUpdate::Append { record }],
         );
-        branches.push(report(keyed(&[
+        branches.push(report(&keyed(&[
             "new",
             name,
             "--from",
@@ -418,7 +419,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             path.to_str().unwrap(),
         ])));
     }
-    let blend = report(keyed(
+    let blend = report(&keyed(
         &[
             &[
                 "new", "Diamond", "BLENDED", "--from", "Left", "--from", "Right",
@@ -436,10 +437,10 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             .any(|record| record.record == root.turn.unwrap()
                 && record.representation != Representation::Full)
     );
-    report(keyed(
+    report(&keyed(
         &[&["add", "Root", "AFTER_CAPTURE"][..], &QUESTION].concat(),
     ));
-    report(keyed(
+    report(&keyed(
         &[
             &["new", "Unrelated", "UNRELATED_PRIVATE_STATE"][..],
             &QUESTION,
@@ -650,7 +651,7 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
     let result = run_report(
-        home.run([
+        &home.run([
             "workflow",
             "run",
             file.to_str().unwrap(),
@@ -746,7 +747,8 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     );
     let fresh = home.0.join("fresh-workflow-store");
     let result = run_report(
-        home.command_at(&fresh)
+        &home
+            .command_at(&fresh)
             .args(["workflow", "run", file.to_str().unwrap(), "--no-session"])
             .output()
             .unwrap(),
@@ -798,7 +800,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
             },
         }],
     );
-    let source = report(home.run(["new", "Source", "--input", seed.to_str().unwrap()]));
+    let source = report(&home.run(["new", "Source", "--input", seed.to_str().unwrap()]));
     let mut definition = workflow();
     definition.nodes[1].when = None;
     definition.nodes[2].when = None;
@@ -816,7 +818,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     let file = home.0.join("parallel.json");
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
     let partial = run_report(
-        home.run([
+        &home.run([
             "workflow",
             "run",
             file.to_str().unwrap(),
@@ -850,7 +852,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
             pinned: None,
         }],
     );
-    report(home.run([
+    report(&home.run([
         "add",
         &source.session.unwrap().to_string(),
         "--input",
@@ -926,11 +928,11 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
     std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
-    let partial = run_report(home.run(["workflow", "run", file.to_str().unwrap()]), 4);
+    let partial = run_report(&home.run(["workflow", "run", file.to_str().unwrap()]), 4);
     assert_eq!(partial.nodes[1].status, NodeStatus::Failed);
     let run = partial.run.unwrap();
     report(
-        home.run(
+        &home.run(
             [
                 &["add", &partial.session.unwrap().to_string()][..],
                 &QUESTION,
@@ -1006,7 +1008,7 @@ fn workflow_files_may_mix_compact_and_object_questions_and_name_the_node_on_erro
     let file = home.0.join("mixed.json");
     std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
     let done = run_report(
-        home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
+        &home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert_eq!(done.status, RunStatus::Completed);
@@ -1020,7 +1022,7 @@ fn workflow_files_may_mix_compact_and_object_questions_and_name_the_node_on_erro
     let toon = home.0.join("mixed.toon");
     std::fs::write(&toon, codec::encode_toon(&graph).unwrap()).unwrap();
     run_report(
-        home.run(["workflow", "run", toon.to_str().unwrap(), "--no-session"]),
+        &home.run(["workflow", "run", toon.to_str().unwrap(), "--no-session"]),
         0,
     );
     let count = server.count();
@@ -1053,7 +1055,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
     let file = home.0.join("workflow.toon");
     std::fs::write(&file, codec::encode_toon(&spec).unwrap()).unwrap();
     let report = run_report(
-        home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
+        &home.run(["workflow", "run", file.to_str().unwrap(), "--no-session"]),
         0,
     );
     assert!(report.run.is_none());

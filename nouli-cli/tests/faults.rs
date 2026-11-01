@@ -66,11 +66,7 @@ fn key_request(
     std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
     path
 }
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "takes ownership of a finished process output"
-)]
-fn error(output: std::process::Output, code: i32) -> nouli_core::protocol::ErrorReport {
+fn error(output: &std::process::Output, code: i32) -> nouli_core::protocol::ErrorReport {
     assert_eq!(output.status.code(), Some(code));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
@@ -111,7 +107,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     )
     .unwrap();
     std::fs::write(config, text).unwrap();
-    let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
+    let base = report(&home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
     let arguments = [
         &["add", "Main", "CRASHING", "--request-id", "crash-request"][..],
         &QUESTION,
@@ -126,9 +122,9 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
             .unwrap(),
     );
     waiting.recv_timeout(Duration::from_secs(5)).unwrap();
-    error(home.run(&arguments), 5);
+    error(&home.run(&arguments), 5);
     error(
-        home.run(
+        &home.run(
             [
                 &[
                     "add",
@@ -144,7 +140,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         5,
     );
     error(
-        home.run(
+        &home.run(
             [
                 &["add", "Main", "CHANGED", "--request-id", "crash-request"][..],
                 &QUESTION,
@@ -155,7 +151,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     );
     assert_eq!(primary.count(), 2);
     let independent = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Other", "INDEPENDENT"][..],
                 &QUESTION,
@@ -188,7 +184,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[1].progress.state, AttemptStatus::Running);
     drop(ledger);
-    let interrupted = error(home.run(&arguments), 130);
+    let interrupted = error(&home.run(&arguments), 130);
     assert_eq!(
         interrupted.category,
         nouli_core::protocol::ErrorCategory::Interrupted
@@ -196,14 +192,14 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     assert_eq!(primary.count(), 2);
     let mut retry = arguments.clone();
     retry.push("--retry-interrupted");
-    let recovered = report(home.run(&retry));
+    let recovered = report(&home.run(&retry));
     assert_eq!(recovered.session, base.session);
     assert_eq!(
         recovered.manifest.sources[0].frontier,
         vec![base.turn.unwrap()]
     );
     assert_eq!(primary.count(), 3);
-    let replay = report(home.run(&arguments));
+    let replay = report(&home.run(&arguments));
     assert!(replay.replayed);
     assert_eq!(replay.turn, recovered.turn);
     assert_eq!(primary.count(), 3);
@@ -224,7 +220,7 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
         let server = Server::with_handler(harness::typesafe);
         let home = Home::create();
         home.configure(&server, "typesafe", false);
-        let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
+        let base = report(&home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
         let record = ContextRecord {
             id: Id::generate(),
             key: "atomic".into(),
@@ -258,7 +254,7 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
             );
         }
         error(
-            home.run(["add", "Main", "--input", path.to_str().unwrap()]),
+            &home.run(["add", "Main", "--input", path.to_str().unwrap()]),
             6,
         );
         assert_eq!(server.count(), if mode == "before" { 1 } else { 2 });
@@ -284,7 +280,7 @@ fn before_dispatch_and_transactional_finalization_faults_never_publish_false_suc
         }
         assert!(ledger_guard_released(&home, base.session.unwrap()));
         sql(&home, "DROP TRIGGER inject_fault;");
-        let retry = report(home.run([
+        let retry = report(&home.run([
             "add",
             "Main",
             "--input",
@@ -311,7 +307,7 @@ fn retrying_an_interrupted_request_asks_its_own_question_once() {
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
+    report(&home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
     // The answer comes back, but saving the turn fails after the provider call.
     sql(
         &home,
@@ -327,14 +323,14 @@ fn retrying_an_interrupted_request_asks_its_own_question_once() {
         "retry-questions",
         "--json",
     ];
-    error(home.run(arguments), 6);
+    error(&home.run(arguments), 6);
     assert_eq!(server.count(), 2);
     sql(&home, "DROP TRIGGER inject_fault;");
     // Without the flag the request is interrupted and nothing is sent.
-    let interrupted = error(home.run(arguments), 130);
+    let interrupted = error(&home.run(arguments), 130);
     assert_eq!(interrupted.code, "request_requires_explicit_retry");
     assert_eq!(server.count(), 2);
-    let recovered = report(home.run([&arguments[..], &["--retry-interrupted"]].concat()));
+    let recovered = report(&home.run([&arguments[..], &["--retry-interrupted"]].concat()));
     assert!(!recovered.replayed);
     let asked: Vec<_> = recovered
         .questions
@@ -351,7 +347,7 @@ fn retrying_an_interrupted_request_asks_its_own_question_once() {
         .collect();
     assert_eq!(sent, ["extra"]);
     assert_eq!(server.count(), 3);
-    let replay = report(home.run(arguments));
+    let replay = report(&home.run(arguments));
     assert!(replay.replayed && replay.turn == recovered.turn);
     assert_eq!(server.count(), 3);
 }
@@ -411,7 +407,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
             assert!(matches!(failure.result, Report::Error(_)));
             (failure.recovery.unwrap().run.unwrap(), None)
         } else {
-            let partial = run_report(output, 4);
+            let partial = run_report(&output, 4);
             assert_eq!(partial.status, RunStatus::Partial);
             (partial.run.unwrap(), partial.nodes[2].turn)
         };
@@ -454,7 +450,7 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
         drop(ledger);
         sql(&home, "DROP TRIGGER inject_fault;");
         let calls = server.count();
-        let done = run_report(home.run(["workflow", "resume", &run.to_string()]), 0);
+        let done = run_report(&home.run(["workflow", "resume", &run.to_string()]), 0);
         assert_eq!(done.status, RunStatus::Completed);
         assert_eq!(done.nodes[0].turn, initial);
         if let Some(preserved) = preserved {
@@ -496,7 +492,7 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
     drop(connection);
     let before = std::fs::read(&database).unwrap();
     error(
-        home.run([&["new", "Migrate", "MIGRATE"][..], &QUESTION].concat()),
+        &home.run([&["new", "Migrate", "MIGRATE"][..], &QUESTION].concat()),
         6,
     );
     assert_eq!(server.count(), 0);
@@ -505,7 +501,7 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
         before == std::fs::read(&database).unwrap(),
         "failed migration changed original database"
     );
-    let failure = error(home.run(["sessions", "list"]), 6);
+    let failure = error(&home.run(["sessions", "list"]), 6);
     assert_eq!(failure.code, "ledger_migration_required");
     assert!(
         before == std::fs::read(&database).unwrap(),
@@ -528,7 +524,7 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
             },
         }],
     );
-    let base = report(home.run(["new", "Base", "--input", seed.to_str().unwrap()]));
+    let base = report(&home.run(["new", "Base", "--input", seed.to_str().unwrap()]));
     let left = record(12);
     let right = record(16);
     let mut sources = vec![];
@@ -542,7 +538,7 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
                 pinned: None,
             }],
         );
-        sources.push(report(home.run([
+        sources.push(report(&home.run([
             "new",
             name,
             "--from",
@@ -567,7 +563,7 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
         .collect();
     let path = home.request("conflict.json", "CONFLICT", vec![]);
     error(
-        home.run(
+        &home.run(
             [
                 &["new", "Conflict", "--input", path.to_str().unwrap()][..],
                 &from.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -588,7 +584,7 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
         }],
     );
     let blend = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Resolved", "--input", path.to_str().unwrap()][..],
                 &from.iter().map(String::as_str).collect::<Vec<_>>(),

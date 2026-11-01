@@ -179,13 +179,13 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         ],
         Some("meal-seed"),
     );
-    let meal = report(home.run(["new", "Dinner", "--input", path.to_str().unwrap()]));
+    let meal = report(&home.run(["new", "Dinner", "--input", path.to_str().unwrap()]));
     assert_eq!(score(&meal.outcome), 1.43);
     assert_eq!(jev.count(), 1);
     let request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let toon = home.0.join("equivalent.toon");
     std::fs::write(&toon, codec::encode_toon(&request).unwrap()).unwrap();
-    let replay = report(home.run(["new", "Dinner", "--input", toon.to_str().unwrap()]));
+    let replay = report(&home.run(["new", "Dinner", "--input", toon.to_str().unwrap()]));
     assert!(replay.replayed);
     assert_eq!(replay.turn, meal.turn);
     assert_eq!(jev.count(), 1);
@@ -206,7 +206,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         }],
         None,
     );
-    let follow = report(home.run([
+    let follow = report(&home.run([
         "add",
         "Dinner",
         "--input",
@@ -279,7 +279,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
     value.as_object_mut().unwrap().remove("session");
     let path = home.0.join("unpin.json");
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    let branch = report(home.run([
+    let branch = report(&home.run([
         "new",
         "Relaxed",
         "--input",
@@ -330,7 +330,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
     drop(captured);
     let file = home.0.join("plain-food.json");
     std::fs::write(&file, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
-    let blend = report(home.run([
+    let blend = report(&home.run([
         "new",
         "Blend",
         "--input",
@@ -416,8 +416,8 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         }],
         None,
     );
-    report(home.run(["add", "Dinner", "--input", path.to_str().unwrap()]));
-    let continued = report(home.run(["add", "Blend", "--input", file.to_str().unwrap()]));
+    report(&home.run(["add", "Dinner", "--input", path.to_str().unwrap()]));
+    let continued = report(&home.run(["add", "Blend", "--input", file.to_str().unwrap()]));
     assert_eq!(continued.session, blend.session);
     let calls = openai.calls.lock().unwrap();
     let actual = body_context(calls.last().unwrap());
@@ -428,7 +428,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
     assert!(actual.contains("Excellent"));
     drop(calls);
     let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let ephemeral = report(home.run([
+    let ephemeral = report(&home.run([
         "whatif",
         "Blend",
         "--input",
@@ -474,7 +474,7 @@ fn protected_context_overflow_precedes_native_dispatch_for_every_protocol() {
             }],
             None,
         );
-        let first = report(home.run([
+        let first = report(&home.run([
             "new",
             &format!("Pinned_{profile}"),
             "--input",
@@ -639,7 +639,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     let path = home.0.join("parallel.json");
     std::fs::write(&path, serde_json::to_vec(&graph).unwrap()).unwrap();
     let partial = run_report(
-        home.run([
+        &home.run([
             "workflow",
             "run",
             path.to_str().unwrap(),
@@ -718,7 +718,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     let final_head = done.nodes[4].turn.unwrap();
     let input = home.0.join("continue.json");
     std::fs::write(&input, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
-    let continued = report(home.run([
+    let continued = report(&home.run([
         "add",
         &done.session.unwrap().to_string(),
         "--input",
@@ -788,7 +788,7 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
     std::fs::write(&file, serde_json::to_vec(&fixture("food")).unwrap()).unwrap();
     // A what-if needs a saved session to start from.
     let file_arg = file.to_str().unwrap();
-    report(home.run(["new", "Meal", "--input", file_arg, "--json"]));
+    report(&home.run(["new", "Meal", "--input", file_arg, "--json"]));
     let output = home.run(["whatif", "Meal", "--input", file_arg]);
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
@@ -806,8 +806,8 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
         assert!(text.contains(expected), "{expected}: {text}");
     }
     assert!(!text.contains('\x1b'));
-    report(home.run(["whatif", "Meal", "--input", file_arg, "--json"]));
-    report(home.run(["whatif", "Meal", "--input", file_arg, "--format", "auto"]));
+    report(&home.run(["whatif", "Meal", "--input", file_arg, "--json"]));
+    report(&home.run(["whatif", "Meal", "--input", file_arg, "--format", "auto"]));
     let output = home.run(["whatif", "Meal", "--input", file_arg, "--jsonl"]);
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");

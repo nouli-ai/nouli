@@ -129,11 +129,7 @@ pub fn turn() -> TurnRequest {
     plain(&mut turn.questions);
     turn
 }
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "takes ownership of a finished process output"
-)]
-pub fn report(output: Output) -> TurnReport {
+pub fn report(output: &Output) -> TurnReport {
     assert!(
         output.status.success(),
         "exit={:?},stdout={},stderr={}",
@@ -171,11 +167,7 @@ pub fn workflow() -> nouli_core::workflow::WorkflowSpec {
     }
     definition
 }
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "takes ownership of a finished process output"
-)]
-pub fn run_report(output: Output, expected: u8) -> nouli_core::protocol::RunReport {
+pub fn run_report(output: &Output, expected: u8) -> nouli_core::protocol::RunReport {
     assert_eq!(
         output.status.code(),
         Some(i32::from(expected)),

@@ -84,7 +84,7 @@ fn common_wire_corpus_preserves_probabilities_fractional_expectation_and_native_
             }
             let actual_model = response["model"].as_str().unwrap().to_owned();
             let (output, calls) = invoke(protocol, response, 200);
-            let result = report(output);
+            let result = report(&output);
             assert_eq!(calls, 1);
             assert_eq!(result.outcome.provider.provider, "local");
             assert_eq!(result.outcome.provider.model, actual_model);
@@ -196,7 +196,7 @@ fn malformed_coverage_boolean_noul_score_argmax_and_capacity_fail_without_succes
             );
             assert_eq!(calls, 1);
             if case == "refusal" && protocol == "openai-decisions" {
-                let result = report(output);
+                let result = report(&output);
                 assert!(
                     matches!(&result.outcome.outcomes[1], QuestionOutcome::Refused { question_id, .. } if question_id == "available")
                 );
@@ -236,14 +236,14 @@ fn every_adapter_receives_compact_selected_outputs_and_preserves_full_original_l
         file.as_object_mut().unwrap().remove("session");
         std::fs::write(&json, serde_json::to_vec(&file).unwrap()).unwrap();
         std::fs::write(&toon, codec::encode_toon(&file).unwrap()).unwrap();
-        let first = report(home.run(["new", "Origin", "--input", json.to_str().unwrap()]));
-        let replay = report(home.run(["new", "Origin", "--input", toon.to_str().unwrap()]));
+        let first = report(&home.run(["new", "Origin", "--input", json.to_str().unwrap()]));
+        let replay = report(&home.run(["new", "Origin", "--input", toon.to_str().unwrap()]));
         assert!(replay.replayed);
         assert_eq!(replay.turn, first.turn);
         assert_eq!(server.count(), 1);
         let follow = home.0.join("follow.json");
         std::fs::write(&follow, serde_json::to_vec(&food()).unwrap()).unwrap();
-        let second = report(home.run([
+        let second = report(&home.run([
             "add",
             &first.session.unwrap().to_string(),
             "--input",

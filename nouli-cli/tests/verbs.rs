@@ -34,11 +34,7 @@ fn provider() -> Server {
     })
 }
 
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "takes ownership of a finished process output"
-)]
-fn failure(output: Output, code: &str) -> ErrorReport {
+fn failure(output: &Output, code: &str) -> ErrorReport {
     assert_eq!(output.status.code(), Some(2), "{code}");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
@@ -62,7 +58,7 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let first = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Trip", "The train costs 40 USD", "--json"][..],
                 &QUESTION,
@@ -74,12 +70,12 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     // A fact needs a question to go with it; nothing is asked again.
     let calls = server.count();
     let nothing = failure(
-        home.run(["add", "Trip", "A taxi costs 70 USD", "--json"]),
+        &home.run(["add", "Trip", "A taxi costs 70 USD", "--json"]),
         "questions_required",
     );
     assert!(nothing.message.contains("-q"));
     assert_eq!(server.count(), calls);
-    let second = report(home.run([
+    let second = report(&home.run([
         "add",
         "Trip",
         "A taxi costs 70 USD",
@@ -107,7 +103,7 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     );
     drop(ledger);
     // Replacing fact 2 shows the model only the new text, and keeps its number.
-    let fourth = report(home.run([
+    let fourth = report(&home.run([
         "add",
         "Trip",
         "--replace",
@@ -131,7 +127,7 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     // A what-if asks its own question and saves nothing.
     let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
     let calls = server.count();
-    let what = report(home.run([
+    let what = report(&home.run([
         "whatif",
         "Trip",
         "The train is CANCELLED",
@@ -148,12 +144,15 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     );
     // Mistakes are input errors that never reach the provider.
     let calls = server.count();
-    failure(home.run(["whatif", "Trip", "--json"]), "questions_required");
+    failure(
+        &home.run(["whatif", "Trip", "--json"]),
+        "questions_required",
+    );
     let removed = home.run(["add", "Trip", "--drop", "travel"]);
     assert_eq!(removed.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&removed.stderr).contains("--drop"));
     let grammar = failure(
-        home.run(["add", "Trip", "-q", "no colon in this question"]),
+        &home.run(["add", "Trip", "-q", "no colon in this question"]),
         "invalid_decision_input",
     );
     assert!(grammar.message.starts_with("grammar error: "));
@@ -162,11 +161,11 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     assert_eq!(twice.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&twice.stderr).contains("--question"));
     failure(
-        home.run(["add", "Trip", "-q", "bad: What? [only one]"]),
+        &home.run(["add", "Trip", "-q", "bad: What? [only one]"]),
         "invalid_decision_input",
     );
     failure(
-        home.run([
+        &home.run([
             "add",
             "Trip",
             "--replace",
@@ -178,15 +177,15 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         "invalid_decision_input",
     );
     failure(
-        home.run(["add", "Trip", "--replace", "one", "text"]),
+        &home.run(["add", "Trip", "--replace", "one", "text"]),
         "invalid_decision_input",
     );
     failure(
-        home.run(["add", "Trip", "--input", "request.json", "-q", "a: b"]),
+        &home.run(["add", "Trip", "--input", "request.json", "-q", "a: b"]),
         "invalid_decision_input",
     );
     failure(
-        home.run(["add", "Trip", "--input", "request.json", "A fact"]),
+        &home.run(["add", "Trip", "--input", "request.json", "A fact"]),
         "invalid_decision_input",
     );
     // A 0.2.0 request file with standing questions says what to change.
@@ -200,7 +199,7 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
             json!({"turn": {"state": [], "questions": questions}, "standing": {"set": [question]}});
         std::fs::write(&path, file.to_string()).unwrap();
         let standing = failure(
-            home.run(["add", "Trip", "--input", path.to_str().unwrap(), "--json"]),
+            &home.run(["add", "Trip", "--input", path.to_str().unwrap(), "--json"]),
             "invalid_standing_question",
         );
         assert!(standing.message.contains("turn.questions"), "{name}");
@@ -212,7 +211,7 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     )
     .unwrap();
     let nothing = failure(
-        home.run(["add", "Trip", "--input", empty.to_str().unwrap(), "--json"]),
+        &home.run(["add", "Trip", "--input", empty.to_str().unwrap(), "--json"]),
         "questions_required",
     );
     assert!(nothing.message.contains("turn.questions"));
@@ -249,17 +248,17 @@ fn new_without_facts_or_questions_creates_a_session_and_branches_ask_only_their_
     drop(ledger);
     // The session is usable: its first turn brings the question.
     let first =
-        report(home.run([&["add", "Empty", "A fact"][..], &QUESTION, &["--json"]].concat()));
+        report(&home.run([&["add", "Empty", "A fact"][..], &QUESTION, &["--json"]].concat()));
     assert_eq!(first.session, Some(session.session));
     // A name is taken once.
     let again = home.run(["new", "Empty"]);
     assert_eq!(again.status.code(), Some(5));
     // A branch asks its own question, not its source's.
     failure(
-        home.run(["new", "Child", "A later fact", "--from", "Empty", "--json"]),
+        &home.run(["new", "Child", "A later fact", "--from", "Empty", "--json"]),
         "questions_required",
     );
-    let child = report(home.run([
+    let child = report(&home.run([
         "new",
         "Child",
         "A later fact",
@@ -280,7 +279,7 @@ fn new_without_facts_or_questions_creates_a_session_and_branches_ask_only_their_
     // A fact with no question says so.
     let blend = home.run(["new", "Blend", "--from", "Empty", "--from", "Child"]);
     assert!(blend.status.success());
-    let nothing = failure(home.run(["add", "Blend", "A fact"]), "questions_required");
+    let nothing = failure(&home.run(["add", "Blend", "A fact"]), "questions_required");
     assert!(nothing.message.contains("-q"));
 }
 
@@ -344,8 +343,8 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
         "same-command",
         "--json",
     ];
-    let saved = report(home.run(args));
-    let replay = report(home.run(args));
+    let saved = report(&home.run(args));
+    let replay = report(&home.run(args));
     assert!(replay.replayed && replay.turn == saved.turn);
     // A replacement replays too, though its fact number now names the
     // replacement; a different replacement under the same ID conflicts.
@@ -361,9 +360,9 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
         "replace-command",
         "--json",
     ];
-    let saved = report(home.run(args));
+    let saved = report(&home.run(args));
     assert!(!saved.replayed);
-    let replay = report(home.run(args));
+    let replay = report(&home.run(args));
     assert!(replay.replayed && replay.turn == saved.turn);
     let other = home.run([
         "add",
@@ -389,7 +388,7 @@ fn facts_list_inherited_and_replaced_facts() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     report(
-        home.run(
+        &home.run(
             [
                 &["new", "Trip", "Fact one", "Fact two", "--json"][..],
                 &QUESTION,
@@ -397,7 +396,7 @@ fn facts_list_inherited_and_replaced_facts() {
             .concat(),
         ),
     );
-    report(home.run([
+    report(&home.run([
         "add",
         "Trip",
         "--replace",
@@ -407,7 +406,7 @@ fn facts_list_inherited_and_replaced_facts() {
         "corrected: Is fact two corrected?",
         "--json",
     ]));
-    report(home.run([
+    report(&home.run([
         "new",
         "Child",
         "A fact of its own",
@@ -453,7 +452,7 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     report(
-        home.run(
+        &home.run(
             [
                 &["new", "Trip", "Fact one", "Fact two", "--json"][..],
                 &QUESTION,
@@ -463,7 +462,7 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     );
     for (name, text) in [("Cheap", "Cheap fact"), ("Dear", "Dear fact")] {
         assert!(home.run(["new", name, "--from", "Trip"]).status.success());
-        report(home.run([
+        report(&home.run([
             "add",
             name,
             "--replace",
@@ -500,14 +499,14 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     assert_eq!(listed[0]["alternatives"].as_array().unwrap().len(), 2);
     assert_eq!(listed[1]["records"].as_array().unwrap().len(), 1);
     // Both alternatives reach the model, and a plain add still works.
-    report(home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTION].concat()));
+    report(&home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTION].concat()));
     let state = server.calls.lock().unwrap().last().unwrap().to_string();
     assert!(
         state.contains("Cheap fact") && state.contains("Dear fact"),
         "{state}"
     );
     // A replacement supersedes every alternative.
-    report(home.run([
+    report(&home.run([
         "add",
         "Both",
         "--replace",

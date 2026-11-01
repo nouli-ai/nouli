@@ -36,11 +36,11 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     for name in ["Travel", "Appointments"] {
-        report(home.run([&["new", name, name][..], &QUESTION].concat()));
-        report(home.run([&["add", name, "More evidence"][..], &QUESTIONS[1]].concat()));
+        report(&home.run([&["new", name, name][..], &QUESTION].concat()));
+        report(&home.run([&["add", name, "More evidence"][..], &QUESTIONS[1]].concat()));
     }
     let combined = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Combined", "Combine histories"][..],
                 &QUESTIONS[2],
@@ -66,8 +66,8 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert!(initial.contains("Expected score:"));
     assert!(!initial.contains('\u{1b}'));
 
-    report(home.run([&["add", "Travel", "Later source evidence"][..], &QUESTION].concat()));
-    report(home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTION].concat()));
+    report(&home.run([&["add", "Travel", "Later source evidence"][..], &QUESTION].concat()));
+    report(&home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTION].concat()));
     let calls = server.count();
     // Store-only discovery must tolerate removed/invalid provider definitions.
     let config = "output = 'json'\n[providers.local]\nprotocol = 'removed-protocol'\n";
