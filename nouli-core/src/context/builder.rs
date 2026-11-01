@@ -1,4 +1,7 @@
 //! Deterministic model evidence assembly from fixed, declared ancestry.
+mod collect;
+mod protect;
+
 use super::{
     ContextUpdate,
     projection::{self, ProjectionError},
@@ -9,12 +12,13 @@ use crate::{
     decision::{Question, TurnRequest},
     history::{
         EvaluationManifest, FinalizedTurn, HistoryError, RecordProjection, Representation,
-        SourcePoint, order::canonical_history,
+        SourcePoint, TokenCount, order::canonical_history,
     },
     identity::Id,
     limits::{LimitError, ResolvedLimits, count::TokenCounter},
     outcome::ProviderIdentity,
 };
+use collect::{EntryCollector, unless_runtime_only};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use thiserror::Error;
@@ -115,177 +119,6 @@ impl ContextPolicy for FullHistory {
 fn data(value: &impl Serialize) -> Result<Data, BuildError> {
     Ok(Data::new(codec::to_value(value)?)?)
 }
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum RevisionSource {
-    Finalized { session: Id, turn: Id, index: usize },
-    Run { session: Id, run: Id, index: usize },
-    Ephemeral { node: Option<String>, index: usize },
-    Pending { index: usize },
-}
-#[derive(Serialize)]
-struct ContextMaterial<'a> {
-    record: &'a super::ContextRecord,
-    active: bool,
-    pinned: bool,
-    created_session: Option<Id>,
-    created_turn: Option<Id>,
-    created_run: Option<Id>,
-    created_node: Option<String>,
-    revision: Option<RevisionSource>,
-}
-fn context_entry(
-    record: &super::ContextRecord,
-    active: Option<&super::projection::ActiveRecord>,
-    created: &super::projection::RevisionOrigin,
-) -> Result<ContextEntry, BuildError> {
-    use super::projection::RevisionOrigin;
-    let pinned = active.is_some_and(|record| record.pinned);
-    let (created_session, created_turn, created_run, created_node) = match created {
-        RevisionOrigin::Turn { session, turn } => (Some(*session), Some(*turn), None, None),
-        RevisionOrigin::Run { session, run } => (Some(*session), None, Some(*run), None),
-        RevisionOrigin::Ephemeral { node } => (None, None, None, node.clone()),
-        RevisionOrigin::Pending { .. } => (None, None, None, None),
-    };
-    let revision = active.map(|record| match &record.origin {
-        RevisionOrigin::Turn { session, turn } => RevisionSource::Finalized {
-            session: *session,
-            turn: *turn,
-            index: record.revision,
-        },
-        RevisionOrigin::Run { session, run } => RevisionSource::Run {
-            session: *session,
-            run: *run,
-            index: record.revision,
-        },
-        RevisionOrigin::Ephemeral { node } => RevisionSource::Ephemeral {
-            node: node.clone(),
-            index: record.revision,
-        },
-        RevisionOrigin::Pending { .. } => RevisionSource::Pending {
-            index: record.revision,
-        },
-    });
-    Ok(ContextEntry {
-        id: record.id,
-        kind: EntryKind::Context,
-        protected: pinned,
-        representation: Representation::Full,
-        value: data(&ContextMaterial {
-            record,
-            active: active.is_some(),
-            pinned,
-            created_session,
-            created_turn,
-            created_run,
-            created_node,
-            revision,
-        })?,
-    })
-}
-fn is_replaced_fact(entry: &ContextEntry) -> bool {
-    let value = entry.value.value();
-    entry.kind == EntryKind::Context
-        && value["active"] == false
-        && value["record"]["key"]
-            .as_str()
-            .is_some_and(|key| key.starts_with(super::facts::KEY_PREFIX))
-}
-fn append_base(
-    base: &crate::history::base::ContextBase,
-    active: &[super::projection::ActiveRecord],
-    protected: bool,
-    entries: &mut Vec<ContextEntry>,
-    records: &mut HashSet<Id>,
-    bases: &mut HashSet<Id>,
-) -> Result<(), BuildError> {
-    if !bases.insert(base.id) {
-        if protected && let Some(entry) = entries.iter_mut().find(|entry| entry.id == base.id) {
-            entry.protected = true;
-        }
-        return Ok(());
-    }
-    if !base.state.is_empty() {
-        entries.push(ContextEntry {id:base.id,kind:EntryKind::Base,protected,representation:Representation::Full,value:data(&serde_json::json!({"workflow_base":base.state,"run":if base.runtime_only {None} else {Some(base.id)},"runtime_only":base.runtime_only}))?});
-    }
-    let origin = if base.runtime_only {
-        super::projection::RevisionOrigin::Ephemeral { node: None }
-    } else {
-        super::projection::RevisionOrigin::Run {
-            session: base.session,
-            run: base.id,
-        }
-    };
-    for update in &base.updates {
-        if let Some(record) = update.new_record()
-            && records.insert(record.id)
-        {
-            entries.push(context_entry(
-                record,
-                active.iter().find(|active| active.record.id == record.id),
-                &origin,
-            )?);
-        }
-    }
-    Ok(())
-}
-fn pointer<'a>(
-    value: &'a serde_json::Value,
-    path: &str,
-    record: Id,
-    decision: bool,
-) -> Result<&'a serde_json::Value, BuildError> {
-    if !path.is_empty() && !path.starts_with('/') {
-        return Err(BuildError::InvalidPointer);
-    }
-    let mut chars = path.chars();
-    while let Some(c) = chars.next() {
-        if c == '~' && !matches!(chars.next(), Some('0' | '1')) {
-            return Err(BuildError::InvalidPointer);
-        }
-    }
-    let parts: Vec<_> = path.split('/').skip(1).collect();
-    if decision && parts.len() >= 3 && parts[0] == "outcome" && parts[1] == "outcomes" {
-        let index = parts[2]
-            .parse::<usize>()
-            .ok()
-            .filter(|i| i.to_string() == parts[2]);
-        if index
-            .and_then(|index| {
-                value
-                    .get("outcome")?
-                    .get("outcomes")?
-                    .get(index)?
-                    .get("status")
-            })
-            .and_then(|status| status.as_str())
-            == Some("refused")
-        {
-            return Err(BuildError::RequiredRefused {
-                record,
-                pointer: path.into(),
-            });
-        }
-    }
-    let mut current = value;
-    for component in parts {
-        let key = component.replace("~1", "/").replace("~0", "~");
-        current = match current {
-            serde_json::Value::Array(values) => key
-                .parse::<usize>()
-                .ok()
-                .filter(|i| i.to_string() == key)
-                .and_then(|i| values.get(i)),
-            serde_json::Value::Object(values) => values.get(&key),
-            _ => None,
-        }
-        .ok_or_else(|| BuildError::RequiredMissing {
-            record,
-            pointer: Some(path.into()),
-        })?;
-    }
-    Ok(current)
-}
 
 #[derive(Serialize)]
 struct Evidence<'a> {
@@ -351,6 +184,166 @@ fn reported_sources(history: &[FinalizedTurn], sources: &[SourcePoint]) -> Vec<S
     reported
 }
 
+/// Checks the live request against `limits` and the provider they were resolved for.
+fn validate(input: &ContextInput<'_>, limits: &ResolvedLimits) -> Result<(), BuildError> {
+    limits.validate_request(input.request, crate::limits::Modality::Text)?;
+    if input.provider.provider.trim().is_empty() || input.provider.model != limits.model {
+        return Err(BuildError::Provider);
+    }
+    Ok(())
+}
+
+/// Collects every candidate entry in evidence order: each ancestor's context
+/// base, decision, and records, then the current base, then the live turn's
+/// pending records.
+fn collect_entries(input: &ContextInput<'_>) -> Result<Vec<ContextEntry>, BuildError> {
+    let ordered = canonical_history(input.history, input.sources)?;
+    if ordered.iter().any(|turn| turn.id == input.turn) {
+        return Err(HistoryError::DuplicateTurn.into());
+    }
+    let pending_origin = projection::RevisionOrigin::Pending {
+        session: unless_runtime_only(input.runtime_only, input.session),
+        token: input.turn,
+    };
+    let active = projection::project_with_base(
+        input.history,
+        input.sources,
+        input.context_base,
+        input.updates,
+        &pending_origin,
+    )?;
+    let mut collector = EntryCollector::new(&active);
+    for turn in ordered {
+        if let Some(base) = &turn.context_base {
+            let current = input
+                .context_base
+                .is_some_and(|current| current.id == base.id);
+            collector.push_base(base, current)?;
+        }
+        collector.push_turn(turn)?;
+    }
+    if let Some(base) = input.context_base {
+        collector.push_base(base, true)?;
+    }
+    collector.push_pending(input.updates, &pending_origin)?;
+    let entries = collector.into_entries();
+    let mut ids = HashSet::new();
+    if entries.iter().any(|entry| !ids.insert(entry.id)) {
+        return Err(BuildError::History(HistoryError::DuplicateTurn));
+    }
+    Ok(entries)
+}
+
+/// Marks the entries that reduction must keep, then trims protected
+/// references to ancestry and evicts replaced facts.
+fn protect_entries(
+    input: &ContextInput<'_>,
+    entries: &mut [ContextEntry],
+) -> Result<(), BuildError> {
+    let live = data(&(input.request, input.updates))?;
+    protect::protect_required(entries, input.required)?;
+    protect::protect_linked_images(entries, input.history, live.value());
+    protect::protect_dependencies(entries, input.history, live.value());
+    protect::collapse_ancestry_references(entries, input.required)?;
+    protect::evict_replaced_facts(entries);
+    Ok(())
+}
+
+/// Fails when protected evidence and live questions alone exceed capacity.
+fn ensure_mandatory_fits(
+    input: &ContextInput<'_>,
+    entries: &[ContextEntry],
+    limits: &ResolvedLimits,
+    counter: &impl TokenCounter,
+) -> Result<(), BuildError> {
+    let mandatory = render(input, entries, true)?;
+    match limits.assess(&mandatory, input.request, counter) {
+        Ok(_) => Ok(()),
+        Err(error) if capacity(&error) => Err(BuildError::ProtectedCapacity),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Applies `policy` reductions until the rendered context fits `limits`.
+fn fit_to_budget(
+    input: ContextInput<'_>,
+    mut entries: Vec<ContextEntry>,
+    limits: &ResolvedLimits,
+    counter: &impl TokenCounter,
+    policy: &impl ContextPolicy,
+) -> Result<ContextPlan, BuildError> {
+    loop {
+        let context = render(&input, &entries, false)?;
+        match limits.assess(&context, input.request, counter) {
+            Ok(assessment) => return plan(input, entries, limits, assessment.total, context),
+            Err(error) if capacity(&error) => {}
+            Err(error) => return Err(error.into()),
+        }
+        let action = policy.next(&entries)?.ok_or(BuildError::OptionalCapacity)?;
+        reduce(&mut entries, action)?;
+    }
+}
+
+/// Applies one policy reduction to an unprotected entry that is still present.
+fn reduce(entries: &mut [ContextEntry], action: ContextAction) -> Result<(), BuildError> {
+    let (id, replacement) = match action {
+        ContextAction::Compact { record, value } => (record, Some(value)),
+        ContextAction::Omit { record } => (record, None),
+    };
+    let entry = entries
+        .iter_mut()
+        .find(|entry| {
+            entry.id == id && !entry.protected && entry.representation != Representation::Omitted
+        })
+        .ok_or(BuildError::Policy)?;
+    if let Some(value) = replacement {
+        if entry.kind != EntryKind::Decision
+            || entry.representation != Representation::Full
+            || codec::encode_toon(&value)?.len() >= codec::encode_toon(&entry.value)?.len()
+        {
+            return Err(BuildError::Policy);
+        }
+        entry.value = value;
+        entry.representation = Representation::Compacted;
+    } else {
+        entry.representation = Representation::Omitted;
+    }
+    Ok(())
+}
+
+/// Records the fitted context and each entry's projection in a validated plan.
+fn plan(
+    input: ContextInput<'_>,
+    entries: Vec<ContextEntry>,
+    limits: &ResolvedLimits,
+    input_count: TokenCount,
+    context_toon: String,
+) -> Result<ContextPlan, BuildError> {
+    let manifest = EvaluationManifest {
+        sources: reported_sources(input.history, input.sources),
+        records: entries
+            .iter()
+            .map(|entry| RecordProjection {
+                record: entry.id,
+                representation: entry.representation,
+                protected: entry.protected,
+            })
+            .collect(),
+        provider: input.provider,
+        budget: limits.budget,
+        input_count,
+        reserved_output_tokens: limits.reserved_output_tokens,
+        context_toon,
+    };
+    manifest.validate()?;
+    Ok(ContextPlan {
+        manifest,
+        questions: input.request.questions.clone(),
+        required: input.required.to_vec(),
+        entries,
+    })
+}
+
 pub struct ContextBuilder;
 impl ContextBuilder {
     /// Assembles the evidence for a turn, reducing optional history with `policy` until it fits
@@ -375,370 +368,17 @@ impl ContextBuilder {
     ///   an invalid compaction.
     /// - Any error the policy returns, or [`BuildError::Codec`] or [`BuildError::Data`] if evidence
     ///   cannot be encoded.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
     pub fn build(
         input: ContextInput<'_>,
         limits: &ResolvedLimits,
         counter: &impl TokenCounter,
         policy: &impl ContextPolicy,
     ) -> Result<ContextPlan, BuildError> {
-        /// Whether any string inside the value contains the reference.
-        fn mentions(value: &serde_json::Value, reference: &str) -> bool {
-            match value {
-                serde_json::Value::String(text) => text.contains(reference),
-                serde_json::Value::Array(values) => {
-                    values.iter().any(|value| mentions(value, reference))
-                }
-                serde_json::Value::Object(values) => {
-                    values.values().any(|value| mentions(value, reference))
-                }
-                _ => false,
-            }
-        }
-        limits.validate_request(input.request, crate::limits::Modality::Text)?;
-        if input.provider.provider.trim().is_empty() || input.provider.model != limits.model {
-            return Err(BuildError::Provider);
-        }
-        let ordered = canonical_history(input.history, input.sources)?;
-        if ordered.iter().any(|turn| turn.id == input.turn) {
-            return Err(HistoryError::DuplicateTurn.into());
-        }
-        let pending_origin = projection::RevisionOrigin::Pending {
-            session: if input.runtime_only {
-                None
-            } else {
-                Some(input.session)
-            },
-            token: input.turn,
-        };
-        let active = projection::project_with_base(
-            input.history,
-            input.sources,
-            input.context_base,
-            input.updates,
-            &pending_origin,
-        )?;
-        let mut entries = Vec::new();
-        let mut context_ids = HashSet::new();
-        let mut base_ids = HashSet::new();
-        for turn in ordered {
-            #[derive(Serialize)]
-            struct Decision<'a> {
-                session: Option<Id>,
-                turn: Option<Id>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                workflow_node: Option<&'a str>,
-                request: &'a TurnRequest,
-                outcome: &'a crate::outcome::TurnOutcome,
-            }
-            if let Some(base) = &turn.context_base {
-                append_base(
-                    base,
-                    &active,
-                    input
-                        .context_base
-                        .is_some_and(|current| current.id == base.id),
-                    &mut entries,
-                    &mut context_ids,
-                    &mut base_ids,
-                )?;
-            }
-            let created = if turn.runtime_only {
-                projection::RevisionOrigin::Ephemeral {
-                    node: turn.workflow_node.clone(),
-                }
-            } else {
-                projection::RevisionOrigin::Turn {
-                    session: turn.session,
-                    turn: turn.id,
-                }
-            };
-            entries.push(ContextEntry {
-                id: turn.id,
-                kind: EntryKind::Decision,
-                value: data(&Decision {
-                    session: if turn.runtime_only {
-                        None
-                    } else {
-                        Some(turn.session)
-                    },
-                    turn: if turn.runtime_only {
-                        None
-                    } else {
-                        Some(turn.id)
-                    },
-                    workflow_node: turn.workflow_node.as_deref(),
-                    request: &turn.request,
-                    outcome: &turn.outcome,
-                })?,
-                protected: false,
-                representation: Representation::Full,
-            });
-            for update in &turn.updates {
-                if let Some(record) = update.new_record() {
-                    context_ids.insert(record.id);
-                    entries.push(context_entry(
-                        record,
-                        active.iter().find(|active| active.record.id == record.id),
-                        &created,
-                    )?);
-                }
-            }
-        }
-        if let Some(base) = input.context_base {
-            append_base(
-                base,
-                &active,
-                true,
-                &mut entries,
-                &mut context_ids,
-                &mut base_ids,
-            )?;
-        }
-        for update in input.updates {
-            if let Some(record) = update.new_record()
-                && context_ids.insert(record.id)
-            {
-                entries.push(context_entry(
-                    record,
-                    active.iter().find(|active| active.record.id == record.id),
-                    &pending_origin,
-                )?);
-            }
-        }
-        let mut ids = HashSet::new();
-        if entries.iter().any(|entry| !ids.insert(entry.id)) {
-            return Err(BuildError::History(HistoryError::DuplicateTurn));
-        }
-        // Explicitly reusing a saved image is current evidence, even when the
-        // original file has gone. Protect that dependency before reduction.
-        let live = data(&(input.request, input.updates))?;
-        for required in input.required {
-            let entry = entries
-                .iter_mut()
-                .find(|entry| entry.id == required.record)
-                .ok_or_else(|| BuildError::RequiredMissing {
-                    record: required.record,
-                    pointer: required.pointer.clone(),
-                })?;
-            if let Some(path) = &required.pointer {
-                pointer(
-                    entry.value.value(),
-                    path,
-                    entry.id,
-                    entry.kind == EntryKind::Decision,
-                )?;
-            }
-            entry.protected = true;
-        }
-        // Required historical decisions retain any image payload their saved
-        // questions reference, not just an otherwise unusable filename/token.
-        let protected_turns: HashSet<_> = entries
-            .iter()
-            .filter(|entry| entry.protected && entry.kind == EntryKind::Decision)
-            .map(|entry| entry.id)
-            .collect();
-        let prior_input_records: HashSet<_> = input
-            .history
-            .iter()
-            .filter(|turn| protected_turns.contains(&turn.id))
-            .flat_map(|turn| &turn.manifest.records)
-            .filter(|record| record.representation != Representation::Omitted)
-            .map(|record| record.record)
-            .collect();
-        let linked_images: Vec<_> = entries
-            .iter()
-            .filter(|entry| {
-                let value = entry.value.value();
-                entry.kind == EntryKind::Context
-                    && value["record"]["key"]
-                        .as_str()
-                        .is_some_and(|key| key.starts_with("image:"))
-                    && value["record"]["value"]["nouli_image"]["reference"]
-                        .as_str()
-                        .is_some_and(|reference| {
-                            !reference.is_empty()
-                                && (prior_input_records.contains(&entry.id)
-                                    || mentions(live.value(), reference)
-                                    || entries.iter().any(|prior| {
-                                        prior.protected
-                                            && prior.kind == EntryKind::Decision
-                                            && mentions(prior.value.value(), reference)
-                                    }))
-                        })
-            })
-            .map(|entry| entry.id)
-            .collect();
-        for entry in &mut entries {
-            if linked_images.contains(&entry.id) {
-                entry.protected = true;
-            }
-        }
-        // A saved-answer reference is a dependency, not session ancestry. Keep
-        // it (and its native image snapshot) when used by the live draft or a
-        // protected saved turn. Walk to a fixed point for references to turns
-        // that themselves used references. Never resurrect omitted inputs.
-        loop {
-            let protected: HashSet<_> = entries
-                .iter()
-                .filter(|e| e.protected && e.kind == EntryKind::Decision)
-                .map(|e| e.id)
-                .collect();
-            let used: HashSet<_> = input
-                .history
-                .iter()
-                .filter(|t| protected.contains(&t.id))
-                .flat_map(|t| &t.manifest.records)
-                .filter(|r| r.representation != Representation::Omitted)
-                .map(|r| r.record)
-                .collect();
-            let mut protect = HashSet::new();
-            for entry in &entries {
-                let record = &entry.value.value()["record"];
-                if let Some(reference) = record["value"]["nouli_decision_reference"].as_object() {
-                    let mentioned = reference
-                        .get("reference")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|r| mentions(live.value(), r));
-                    if entry.protected || used.contains(&entry.id) || mentioned {
-                        protect.insert(entry.id);
-                        if let Some(turn) = reference
-                            .get("source")
-                            .and_then(|s| s.get("turn"))
-                            .and_then(serde_json::Value::as_str)
-                            .and_then(|s| Id::try_from(s.to_owned()).ok())
-                        {
-                            protect.insert(turn);
-                        }
-                    }
-                } else if record["key"]
-                    .as_str()
-                    .is_some_and(|k| k.starts_with("image:"))
-                    && used.contains(&entry.id)
-                {
-                    protect.insert(entry.id);
-                }
-            }
-            let mut changed = false;
-            for entry in &mut entries {
-                if protect.contains(&entry.id) && !entry.protected {
-                    entry.protected = true;
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        // Within existing ancestry the source decision is already present and
-        // now protected. Keep only the explicit binding alongside that source,
-        // rather than sending the same answer and images a second time.
-        let decisions: HashSet<_> = entries
-            .iter()
-            .filter(|e| e.protected && e.kind == EntryKind::Decision)
-            .map(|e| e.id.to_string())
-            .collect();
-        for entry in &mut entries {
-            if !entry.protected {
-                continue;
-            }
-            if input
-                .required
-                .iter()
-                .any(|required| required.record == entry.id && required.pointer.is_some())
-            {
-                continue;
-            }
-            let source=entry.value.value()["record"]["value"]["nouli_decision_reference"]["source"]["turn"].as_str();
-            if source.is_some_and(|s| decisions.contains(s)) {
-                let mut value = entry.value.value().clone();
-                if let Some(reference) =
-                    value["record"]["value"]["nouli_decision_reference"].as_object_mut()
-                {
-                    reference.remove("question");
-                    reference.remove("outcome");
-                    reference.remove("images");
-                    reference.remove("input_references");
-                    reference.insert("included_in_ancestry".into(), serde_json::Value::Bool(true));
-                }
-                entry.value = Data::new(value)?;
-            }
-        }
-        // A replaced fact is evicted from model context so the model sees only
-        // the current text. The ledger keeps it, and an explicit requirement
-        // still includes it.
-        for entry in &mut entries {
-            if !entry.protected && is_replaced_fact(entry) {
-                entry.representation = Representation::Omitted;
-            }
-        }
-        let mandatory = render(&input, &entries, true)?;
-        if let Err(error) = limits.assess(&mandatory, input.request, counter) {
-            if capacity(&error) {
-                return Err(BuildError::ProtectedCapacity);
-            }
-            return Err(error.into());
-        }
-        loop {
-            let context = render(&input, &entries, false)?;
-            match limits.assess(&context, input.request, counter) {
-                Ok(assessment) => {
-                    let manifest = EvaluationManifest {
-                        sources: reported_sources(input.history, input.sources),
-                        records: entries
-                            .iter()
-                            .map(|entry| RecordProjection {
-                                record: entry.id,
-                                representation: entry.representation,
-                                protected: entry.protected,
-                            })
-                            .collect(),
-                        provider: input.provider,
-                        budget: limits.budget,
-                        input_count: assessment.total,
-                        reserved_output_tokens: limits.reserved_output_tokens,
-                        context_toon: context,
-                    };
-                    manifest.validate()?;
-                    return Ok(ContextPlan {
-                        manifest,
-                        questions: input.request.questions.clone(),
-                        required: input.required.to_vec(),
-                        entries,
-                    });
-                }
-                Err(error) if capacity(&error) => {}
-                Err(error) => return Err(error.into()),
-            }
-            let action = policy.next(&entries)?.ok_or(BuildError::OptionalCapacity)?;
-            let (id, replacement) = match action {
-                ContextAction::Compact { record, value } => (record, Some(value)),
-                ContextAction::Omit { record } => (record, None),
-            };
-            let entry = entries
-                .iter_mut()
-                .find(|entry| {
-                    entry.id == id
-                        && !entry.protected
-                        && entry.representation != Representation::Omitted
-                })
-                .ok_or(BuildError::Policy)?;
-            if let Some(value) = replacement {
-                if entry.kind != EntryKind::Decision
-                    || entry.representation != Representation::Full
-                    || codec::encode_toon(&value)?.len() >= codec::encode_toon(&entry.value)?.len()
-                {
-                    return Err(BuildError::Policy);
-                }
-                entry.value = value;
-                entry.representation = Representation::Compacted;
-            } else {
-                entry.representation = Representation::Omitted;
-            }
-        }
+        validate(&input, limits)?;
+        let mut entries = collect_entries(&input)?;
+        protect_entries(&input, &mut entries)?;
+        ensure_mandatory_fits(&input, &entries, limits, counter)?;
+        fit_to_budget(input, entries, limits, counter, policy)
     }
 }
 
@@ -850,11 +490,33 @@ mod tests {
                 && plan.manifest.context_toon.contains("Now prefer driving")
         );
     }
+    /// A saved-answer reference record citing `question` 0 of `source`.
+    fn saved_answer(id: Id, source: &FinalizedTurn, turn: Id) -> ContextRecord {
+        ContextRecord {
+            id,
+            key: format!("decision:{id}"),
+            kind: ContextKind::Evidence,
+            value: Data::new(serde_json::json!({"nouli_decision_reference":{
+                "source":{"session":source.session,"turn":turn,"question":source.request.questions[0].id},
+                "reference":format!("[decision:{id}]"),
+                "question":source.request.questions[0],
+                "outcome":source.outcome.outcomes[0],
+                "images":[]
+            }}))
+            .unwrap(),
+        }
+    }
+    /// Builds with a generous budget and no reduction, expecting success.
+    fn build_full(input: ContextInput<'_>) -> ContextPlan {
+        ContextBuilder::build(input, &limits(100_000), &ByteCounter, &FullHistory).unwrap()
+    }
+    fn entry(plan: &ContextPlan, id: Id) -> &ContextEntry {
+        plan.entries.iter().find(|entry| entry.id == id).unwrap()
+    }
+    fn decision_reference(plan: &ContextPlan, id: Id) -> &serde_json::Value {
+        &entry(plan, id).value.value()["record"]["value"]["nouli_decision_reference"]
+    }
     #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
     fn selected_answers_are_required_across_sessions_and_followups_and_deduplicate_ancestry() {
         let mut history = history();
         let original = history[0].clone();
@@ -863,39 +525,22 @@ mod tests {
             frontier: vec![original.id],
         }];
         let id = Id::generate();
-        let reference = format!("[decision:{id}]");
-        let mut record=ContextRecord{id,key:format!("decision:{id}"),kind:ContextKind::Evidence,value:Data::new(serde_json::json!({"nouli_decision_reference":{
-            "source":{"session":original.session,"turn":original.id,"question":original.request.questions[0].id},
-            "reference":reference,"question":original.request.questions[0],"outcome":original.outcome.outcomes[0],"images":[]
-        }})).unwrap()};
         let required = [RequiredItem {
             record: id,
             pointer: None,
         }];
         let updates = [ContextUpdate::Append {
-            record: record.clone(),
+            record: saved_answer(id, &original, original.id),
         }];
-        let plan = ContextBuilder::build(
-            input(&history, &sources, &original.request, &updates, &required),
-            &limits(100_000),
-            &ByteCounter,
-            &FullHistory,
-        )
-        .unwrap();
-        assert!(
-            plan.entries
-                .iter()
-                .find(|e| e.id == original.id)
-                .unwrap()
-                .protected
-        );
-        let binding = &plan
-            .entries
-            .iter()
-            .find(|e| e.id == id)
-            .unwrap()
-            .value
-            .value()["record"]["value"]["nouli_decision_reference"];
+        let plan = build_full(input(
+            &history,
+            &sources,
+            &original.request,
+            &updates,
+            &required,
+        ));
+        assert!(entry(&plan, original.id).protected);
+        let binding = decision_reference(&plan, id);
         assert_eq!(binding["included_in_ancestry"], true);
         assert!(
             binding.get("outcome").is_none(),
@@ -905,46 +550,28 @@ mod tests {
             record: id,
             pointer: Some("/record/value/nouli_decision_reference/outcome".into()),
         }];
-        let pointed_plan = ContextBuilder::build(
-            input(&history, &sources, &original.request, &updates, &pointed),
-            &limits(100_000),
-            &ByteCounter,
-            &FullHistory,
-        )
-        .unwrap();
-        assert!(
-            pointed_plan
-                .entries
-                .iter()
-                .find(|e| e.id == id)
-                .unwrap()
-                .value
-                .value()["record"]["value"]["nouli_decision_reference"]["outcome"]
-                .is_object()
-        );
+        let pointed_plan = build_full(input(
+            &history,
+            &sources,
+            &original.request,
+            &updates,
+            &pointed,
+        ));
+        assert!(decision_reference(&pointed_plan, id)["outcome"].is_object());
         // An independent source stays a question-specific snapshot, without
         // importing or mutating the other session's ancestry or active facts.
-        let mut value = record.value.value().clone();
-        value["nouli_decision_reference"]["source"]["turn"] = serde_json::json!(Id::generate());
-        record.value = Data::new(value).unwrap();
+        let record = saved_answer(id, &original, Id::generate());
         let updates = [ContextUpdate::Append {
             record: record.clone(),
         }];
-        let plan = ContextBuilder::build(
-            input(&history, &sources, &original.request, &updates, &required),
-            &limits(100_000),
-            &ByteCounter,
-            &FullHistory,
-        )
-        .unwrap();
-        let binding = &plan
-            .entries
-            .iter()
-            .find(|e| e.id == id)
-            .unwrap()
-            .value
-            .value()["record"]["value"]["nouli_decision_reference"];
-        assert!(binding.get("outcome").is_some());
+        let plan = build_full(input(
+            &history,
+            &sources,
+            &original.request,
+            &updates,
+            &required,
+        ));
+        assert!(decision_reference(&plan, id).get("outcome").is_some());
         // The next fresh question may have no literal token. Its required
         // preceding decision still retains this used reference dependency.
         history[0].updates.push(ContextUpdate::Append { record });
@@ -957,14 +584,8 @@ mod tests {
             record: original.id,
             pointer: None,
         }];
-        let plan = ContextBuilder::build(
-            input(&history, &sources, &original.request, &[], &required),
-            &limits(100_000),
-            &ByteCounter,
-            &FullHistory,
-        )
-        .unwrap();
-        assert!(plan.entries.iter().find(|e| e.id == id).unwrap().protected);
+        let plan = build_full(input(&history, &sources, &original.request, &[], &required));
+        assert!(entry(&plan, id).protected);
         assert!(matches!(
             ContextBuilder::build(
                 input(&history, &sources, &original.request, &[], &required),
