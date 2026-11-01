@@ -10,10 +10,10 @@ mod greeter;
 mod mouse;
 mod references;
 mod sessions;
+mod turn;
 
 use super::{HELP, Queue, Repl, Step};
 use crate::{
-    evaluate,
     inspect::InspectError,
     render::{
         self,
@@ -564,68 +564,17 @@ impl<'a> App<'a> {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
     fn key(&mut self, key: KeyEvent, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
-        let control = key.modifiers.contains(KeyModifiers::CONTROL);
         if self.selection.active {
-            if matches!(key.code, KeyCode::Esc | KeyCode::F(6))
-                || control && key.code == KeyCode::Char('c')
-            {
-                self.select_text(false);
-                if control && key.code == KeyCode::Char('c') && running.is_some() {
-                    return Ok(self.interrupt(running.as_ref()));
-                }
-            }
-            return Ok(Flow::Continue);
+            return Ok(self.selection_key(&key, running.as_ref()));
         }
         if key.code == KeyCode::F(6) {
             self.select_text(true);
             return Ok(Flow::Continue);
         }
-        if key.code != KeyCode::Enter {
-            self.option_enter = false;
-        }
-        if running.is_none()
-            && (matches!(
-                key.code,
-                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down
-            ) || control && key.code == KeyCode::Char('g'))
-        {
-            self.consume_drop();
-        }
-        if !(control && key.code == KeyCode::Char('d')) {
-            self.warned = false;
-        }
-        match key.code {
-            KeyCode::Char('c')
-                if control && running.is_none() && self.references.picker.is_some() =>
-            {
-                self.references.close();
-                return Ok(Flow::Continue);
-            }
-            KeyCode::Char('c') if control => return Ok(self.interrupt(running.as_ref())),
-            KeyCode::Char('d') if control => return Ok(self.end_of_input(running.is_some())),
-            KeyCode::Char('g') if control => {
-                self.references.close();
-                self.sessions = None;
-                self.graph_focused = !self.graph_focused;
-                return Ok(Flow::Continue);
-            }
-            _ => {}
-        }
-        if running.is_none()
-            && (key.code == KeyCode::BackTab
-                || key.code == KeyCode::Tab && key.modifiers.contains(KeyModifiers::SHIFT))
-        {
-            self.references.close();
-            self.sessions = None;
-            self.hidden = true;
-            self.graph_focused = false;
-            self.form.next_kind(&mut self.repl.queue.facts);
-            return Ok(Flow::Continue);
+        self.settle_before_key(&key, running.is_some());
+        if let Some(flow) = self.global_key(&key, running.as_ref()) {
+            return Ok(flow);
         }
         if running.is_none() && self.reference_key(&key) {
             return Ok(Flow::Continue);
@@ -640,6 +589,83 @@ impl<'a> App<'a> {
             // Any other key is for the form.
             self.graph_focused = false;
         }
+        self.form_key(&key, running)
+    }
+
+    /// Keys while the view is held for native selection: only Esc, F6, and
+    /// Ctrl-C resume it, and Ctrl-C also cancels a running turn.
+    fn selection_key(&mut self, key: &KeyEvent, running: Option<&Running>) -> Flow {
+        let control_c =
+            key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
+        if matches!(key.code, KeyCode::Esc | KeyCode::F(6)) || control_c {
+            self.select_text(false);
+            if control_c && running.is_some() {
+                return self.interrupt(running);
+            }
+        }
+        Flow::Continue
+    }
+
+    /// Ends what a key interrupts: a pending second Enter in a list, a file
+    /// drop still being typed before moving between fields, and the Ctrl-D
+    /// quit warning.
+    fn settle_before_key(&mut self, key: &KeyEvent, running: bool) {
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if key.code != KeyCode::Enter {
+            self.option_enter = false;
+        }
+        if !running
+            && (matches!(
+                key.code,
+                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down
+            ) || control && key.code == KeyCode::Char('g'))
+        {
+            self.consume_drop();
+        }
+        if !(control && key.code == KeyCode::Char('d')) {
+            self.warned = false;
+        }
+    }
+
+    /// Keys that act wherever the focus is: Ctrl-C, Ctrl-D, Ctrl-G, and
+    /// Shift-Tab, which cycles the answer type. `None` passes the key on.
+    fn global_key(&mut self, key: &KeyEvent, running: Option<&Running>) -> Option<Flow> {
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Char('c')
+                if control && running.is_none() && self.references.picker.is_some() =>
+            {
+                self.references.close();
+                return Some(Flow::Continue);
+            }
+            KeyCode::Char('c') if control => return Some(self.interrupt(running)),
+            KeyCode::Char('d') if control => return Some(self.end_of_input(running.is_some())),
+            KeyCode::Char('g') if control => {
+                self.references.close();
+                self.sessions = None;
+                self.graph_focused = !self.graph_focused;
+                return Some(Flow::Continue);
+            }
+            _ => {}
+        }
+        if running.is_none()
+            && (key.code == KeyCode::BackTab
+                || key.code == KeyCode::Tab && key.modifiers.contains(KeyModifiers::SHIFT))
+        {
+            self.references.close();
+            self.sessions = None;
+            self.hidden = true;
+            self.graph_focused = false;
+            self.form.next_kind(&mut self.repl.queue.facts);
+            return Some(Flow::Continue);
+        }
+        None
+    }
+
+    /// Keys for the form: scrolling the transcript, sending, moving between
+    /// rows, and editing. While a turn runs, only scrolling works.
+    fn form_key(&mut self, key: &KeyEvent, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::PageUp => self.scroll = self.scroll.saturating_add(self.page),
             KeyCode::PageDown => self.scroll = self.scroll.saturating_sub(self.page),
@@ -661,30 +687,36 @@ impl<'a> App<'a> {
             KeyCode::Backspace if self.form.cursor == 0 => {
                 self.form.remove_empty(&mut self.repl.queue.facts);
             }
-            _ => {
-                let start = self.form.cursor;
-                if self.edit_form(&key) {
-                    if self.form.row == Row::Input && self.form.input.is_empty() {
-                        self.literal_input = false;
-                    }
-                    if matches!(key.code, KeyCode::Char('/' | '~' | '\'' | '"' | 'f'))
-                        && self.drop_start.is_none()
-                    {
-                        self.drop_start = Some((self.form.row, start, Instant::now()));
-                    }
-                    if let Some((row, _, time)) = &mut self.drop_start
-                        && *row == self.form.row
-                    {
-                        *time = Instant::now();
-                    }
-                    self.status = None;
-                    self.choice = 0;
-                    self.hidden = false;
-                    self.sync_references();
-                }
-            }
+            _ => self.type_key(key),
         }
         Ok(Flow::Continue)
+    }
+
+    /// Edits the focused row and, when the key changed it, tracks a file
+    /// path being typed or dropped, clears the status and the list choice,
+    /// and looks for an @ reference.
+    fn type_key(&mut self, key: &KeyEvent) {
+        let start = self.form.cursor;
+        if !self.edit_form(key) {
+            return;
+        }
+        if self.form.row == Row::Input && self.form.input.is_empty() {
+            self.literal_input = false;
+        }
+        if matches!(key.code, KeyCode::Char('/' | '~' | '\'' | '"' | 'f'))
+            && self.drop_start.is_none()
+        {
+            self.drop_start = Some((self.form.row, start, Instant::now()));
+        }
+        if let Some((row, _, time)) = &mut self.drop_start
+            && *row == self.form.row
+        {
+            *time = Instant::now();
+        }
+        self.status = None;
+        self.choice = 0;
+        self.hidden = false;
+        self.sync_references();
     }
 
     /// Keys for a list over the transcript: the sessions to resume, or the
@@ -960,230 +992,6 @@ impl<'a> App<'a> {
             Step::Quit => return Ok(Flow::Quit),
         }
         Ok(Flow::Continue)
-    }
-
-    /// Sends the form's question with the queue, or says what to fix and
-    /// moves there.
-    fn send_form(&mut self, ephemeral: bool) -> io::Result<Option<Running<'a>>> {
-        self.option_enter = false;
-        if !self.prepare_input() {
-            return Ok(None);
-        }
-        let inherited = self.inherited_answers().cloned();
-        let prompt = if self.form.question.trim().is_empty() {
-            self.prior_for_kind()
-                .map_or(self.form.question.as_str(), |previous| {
-                    previous.question.prompt.as_str()
-                })
-        } else {
-            self.form.question.as_str()
-        };
-        let question = if let Some(previous) = &inherited {
-            let mut question = previous.question.clone();
-            prompt.trim().clone_into(&mut question.prompt);
-            Ok(question)
-        } else if prompt == self.form.question {
-            self.form.build_question()
-        } else {
-            self.form.build_question_with_prompt(prompt)
-        };
-        match question {
-            Ok(question) => {
-                // Include context still being edited when sending.
-                if !self.form.input.trim().is_empty() {
-                    self.repl
-                        .queue
-                        .facts
-                        .push(std::mem::take(&mut self.form.input));
-                    if self.form.row == Row::Input {
-                        self.form.cursor = 0;
-                    }
-                }
-                self.literal_input = false;
-                if !ephemeral {
-                    self.repl.queue.question = None;
-                }
-                self.echo_turn(&question.prompt, ephemeral);
-                let mut draft = self.repl.draft_question(question, ephemeral)?;
-                if let (Some(previous), Some(draft)) = (&inherited, &mut draft) {
-                    let ids =
-                        std::iter::once(previous.turn)
-                            .chain(
-                                draft.request.updates.iter().filter_map(|update| {
-                                    update.new_record().map(|record| record.id)
-                                }),
-                            )
-                            .collect::<Vec<_>>();
-                    for id in ids {
-                        if !draft.request.required_records.contains(&id) {
-                            draft.request.required_records.push(id);
-                        }
-                    }
-                }
-                Ok(self.launch_draft(draft, ephemeral, true))
-            }
-            Err(problem) => {
-                self.status = Some(Status::error(problem.message));
-                self.form.focus(problem.section, &mut self.repl.queue.facts);
-                Ok(None)
-            }
-        }
-    }
-
-    fn launch(
-        &mut self,
-        question: &str,
-        ephemeral: bool,
-        from_form: bool,
-    ) -> io::Result<Option<Running<'a>>> {
-        let draft = self.repl.draft(question, ephemeral)?;
-        Ok(self.launch_draft(draft, ephemeral, from_form))
-    }
-
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
-    fn launch_draft(
-        &mut self,
-        draft: Option<Draft>,
-        ephemeral: bool,
-        from_form: bool,
-    ) -> Option<Running<'a>> {
-        self.drain();
-        let mut draft = draft?;
-        let used_question = draft
-            .request
-            .turn
-            .questions
-            .iter()
-            .flat_map(|question| {
-                let mut text = vec![question.prompt.as_str()];
-                match &question.answer_space {
-                    nouli_core::decision::AnswerSpace::Choice { options } => {
-                        text.extend(options.iter().map(|option| option.description.as_str()));
-                    }
-                    nouli_core::decision::AnswerSpace::Score { levels } => {
-                        text.extend(levels.iter().map(|level| match level {
-                            nouli_core::decision::Criterion::Text(text) => text.as_str(),
-                            nouli_core::decision::Criterion::Detailed { description, .. } => {
-                                description.as_str()
-                            }
-                        }));
-                    }
-                    nouli_core::decision::AnswerSpace::Noul => {}
-                }
-                text
-            })
-            .collect::<Vec<_>>();
-        let referenced = |image: &&nouli_core::media::Image| {
-            self.repl
-                .queue
-                .facts
-                .iter()
-                .map(String::as_str)
-                .chain(used_question.iter().copied())
-                .any(|text| text.contains(&image.reference))
-        };
-        let reference_texts = self
-            .repl
-            .queue
-            .facts
-            .iter()
-            .map(String::as_str)
-            .chain(used_question.iter().copied())
-            .collect::<Vec<_>>();
-        if reference_texts
-            .iter()
-            .any(|text| text.contains("[decision:"))
-        {
-            let resolved = self
-                .repl
-                .ledger()
-                .map_err(|e| e.message)
-                .and_then(|ledger| self.reference_updates(&ledger, &reference_texts));
-            match resolved {
-                Ok((updates, required)) => {
-                    draft.request.updates.extend(updates);
-                    for id in required {
-                        if !draft.request.required_records.contains(&id) {
-                            draft.request.required_records.push(id);
-                        }
-                    }
-                }
-                Err(message) => {
-                    self.status = Some(Status::error(render::clean(&message)));
-                    return None;
-                }
-            }
-        }
-        for image in self.images.iter().filter(referenced) {
-            let update = attachments::update(image);
-            draft
-                .request
-                .required_records
-                .push(update.new_record().expect("image record").id);
-            draft.request.updates.push(update);
-        }
-        let required = self
-            .latest_question
-            .iter()
-            .map(|latest| latest.turn)
-            .chain(
-                draft
-                    .request
-                    .updates
-                    .iter()
-                    .filter_map(|update| update.new_record().map(|record| record.id)),
-            )
-            .collect::<Vec<_>>();
-        for id in required {
-            if !draft.request.required_records.contains(&id) {
-                draft.request.required_records.push(id);
-            }
-        }
-        let cancel = CancellationToken::new();
-        let stop = cancel.clone();
-        let settings = self.repl.settings.clone().into_owned();
-        let session = if draft.ephemeral {
-            ModelSelection::default()
-        } else {
-            match &draft.request.session {
-                nouli_core::history::SessionSelection::Continue { session } => self
-                    .repl
-                    .ledger()
-                    .and_then(|ledger| ledger.session(session).map_err(|error| error.report()))
-                    .map(|session| session.defaults)
-                    .unwrap_or_default(),
-                _ => ModelSelection::default(),
-            }
-        };
-        let defaults = ModelSelection {
-            provider: settings.config.default_provider.clone(),
-            model: settings.config.default_model.clone(),
-        };
-        let model = nouli_core::config::resolve::select_model(&[
-            &draft.common_model,
-            &draft.request.model,
-            &session,
-            &defaults,
-        ]);
-        self.status = None;
-        Some(Running {
-            turn: Box::pin(async move {
-                let interrupt = async move {
-                    stop.cancelled().await;
-                    Ok::<(), io::Error>(())
-                };
-                let envelope = evaluate::run_until(&draft, &settings, interrupt).await;
-                (envelope, draft)
-            }),
-            cancel,
-            ephemeral,
-            from_form,
-            started: Instant::now(),
-            model,
-        })
     }
 
     fn paste_text(&mut self, text: &str) {
@@ -1703,11 +1511,11 @@ mod tests {
         text
     }
 
-    fn settings() -> Settings {
+    pub(super) fn settings() -> Settings {
         Settings::for_test(std::env::temp_dir().join(format!("nouli-tui-{}", Id::generate())))
     }
 
-    fn failed() -> ResultEnvelope {
+    pub(super) fn failed() -> ResultEnvelope {
         ResultEnvelope::new(Report::Error(ErrorReport {
             category: nouli_core::protocol::ErrorCategory::Transport,
             code: "provider_transport".into(),
@@ -1716,7 +1524,7 @@ mod tests {
         }))
     }
 
-    fn draft_from(turn: Running<'_>) -> Draft {
+    pub(super) fn draft_from(turn: Running<'_>) -> Draft {
         turn.cancel.cancel();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1784,100 +1592,6 @@ mod tests {
             assert!(app.repl.queue.question.is_none());
         }
     }
-    #[test]
-    fn empty_lists_reuse_exact_prior_answers_and_require_new_evidence() {
-        for kind in [Kind::Choice, Kind::Score] {
-            let settings = settings();
-            let mut app = app(&settings);
-            let previous = previous(kind);
-            app.form.kind = kind;
-            app.previous_question = Some(previous.clone());
-            assert!(app.form.is_empty(), "inherited values are not unsent input");
-            app.form.options.push("  ".into());
-            app.form.input = "I now have a smaller budget.".into();
-            let draft = draft_from(app.send_form(false).unwrap().unwrap());
-            assert_eq!(
-                draft.request.turn.questions.as_slice(),
-                std::slice::from_ref(&previous.question)
-            );
-            assert!(draft.request.required_records.contains(&previous.turn));
-            assert_eq!(draft.request.updates.len(), 1);
-            let evidence = draft.request.updates[0].new_record().unwrap();
-            assert!(draft.request.required_records.contains(&evidence.id));
-            assert_eq!(evidence.value.value(), "I now have a smaller budget.");
-            // Updating the wording still compares with the preceding response.
-            app.form.question = "Which destination is affordable now?".into();
-            let draft = draft_from(app.send_form(false).unwrap().unwrap());
-            let question = &draft.request.turn.questions[0];
-            assert_eq!(question.id, previous.question.id);
-            assert_eq!(question.prompt, app.form.question);
-            assert_eq!(question.answer_space, previous.question.answer_space);
-            assert_eq!(question.criteria, previous.question.criteria);
-        }
-    }
-
-    #[test]
-    fn explicit_lists_replace_inheritance_and_yes_no_does_not_inherit() {
-        let settings = settings();
-        let mut app = app(&settings);
-        let previous = previous(Kind::Choice);
-        app.form.kind = Kind::Choice;
-        app.previous_question = Some(previous.clone());
-        app.form.options = vec!["One new option".into()];
-        assert!(app.send_form(false).unwrap().is_none());
-        assert!(app.status.as_ref().unwrap().text.contains("at least two"));
-        assert!(app.inherited_answers().is_none());
-        app.form.options.push("Another new option".into());
-        let draft = draft_from(app.send_form(false).unwrap().unwrap());
-        let question = &draft.request.turn.questions[0];
-        assert_ne!(question.id, previous.question.id);
-        assert_eq!(question.prompt, previous.question.prompt);
-        assert_eq!(
-            question.criteria,
-            [] as [nouli_core::decision::Criterion; 0]
-        );
-        assert!(!draft.request.required_records.contains(&previous.turn));
-        app.form.kind = Kind::Score;
-        assert!(app.prior_for_kind().is_none());
-        app.form.kind = Kind::Noul;
-        app.form.question.clear();
-        assert!(app.prior_for_kind().is_none());
-        assert!(app.send_form(false).unwrap().is_none());
-        app.form.question = "Will it be sunny?".into();
-        let draft = draft_from(app.send_form(false).unwrap().unwrap());
-        assert_eq!(
-            draft.request.turn.questions[0].answer_space,
-            AnswerSpace::Noul
-        );
-    }
-
-    #[test]
-    fn the_latest_question_and_new_evidence_stay_in_context_for_a_fresh_yes_no() {
-        let settings = settings();
-        let mut app = app(&settings);
-        let latest = previous(Kind::Noul);
-        app.latest_question = Some(latest.clone());
-        app.form.question = "Are you sure about that?".into();
-        app.form.input = "Here is new information.".into();
-        assert!(
-            app.prior_for_kind().is_none(),
-            "Yes/No still uses a fresh prompt"
-        );
-        let draft = draft_from(app.send_form(false).unwrap().unwrap());
-        assert_eq!(draft.request.turn.questions[0].prompt, app.form.question);
-        assert!(draft.request.required_records.contains(&latest.turn));
-        let evidence = draft.request.updates[0].new_record().unwrap();
-        assert!(draft.request.required_records.contains(&evidence.id));
-        app.finish(failed(), &[], false, true).unwrap();
-        assert_eq!(app.latest_question.as_ref().unwrap().turn, latest.turn);
-        app.repl.session.id = Id::generate();
-        app.refresh_previous_question();
-        assert!(
-            app.latest_question.is_none(),
-            "independent sessions start without that context"
-        );
-    }
-
     #[test]
     fn image_labels_edit_as_attachments_without_exposing_reference_characters() {
         let settings = settings();
@@ -2001,35 +1715,6 @@ mod tests {
         app.repl.session.id = Id::generate();
         app.refresh_previous_question();
         assert!(app.previous_question.is_none());
-    }
-
-    #[test]
-    fn running_model_uses_the_draft_mode_instead_of_a_stale_ready_selection() {
-        let mut settings = settings();
-        settings.config.default_provider = Some("configured".into());
-        settings.config.default_model = Some("configured-model".into());
-        let mut app = app(&settings);
-        app.selected_model = ModelSelection {
-            provider: Some("session".into()),
-            model: Some("session-model".into()),
-        };
-        app.form.question = "Is this a what-if?".into();
-        let mut draft = app
-            .repl
-            .draft_question(app.form.build_question().unwrap(), false)
-            .unwrap()
-            .unwrap();
-        draft.ephemeral = true;
-        draft.request.session = nouli_core::history::SessionSelection::From {
-            sources: vec![nouli_core::history::SourceSelection {
-                session: app.repl.selector(),
-                frontier: None,
-            }],
-            name: None,
-        };
-        let running = app.launch_draft(Some(draft), true, true).unwrap();
-        assert_eq!(running.model.provider.as_deref(), Some("configured"));
-        assert_eq!(running.model.model.as_deref(), Some("configured-model"));
     }
 
     #[test]
