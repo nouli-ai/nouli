@@ -362,14 +362,12 @@ impl Ledger {
                 |row| row.get(0),
             )
             .map_err(|error| sql_error("read last retry round", error))?;
-        let round = u32::try_from(previous)
-            .ok()
-            .and_then(|round| round.checked_add(1))
-            .ok_or(WorkflowError::Snapshot)?;
+        let previous = u32::try_from(previous).map_err(|_| WorkflowError::Snapshot)?;
+        let round = previous.checked_add(1).ok_or(WorkflowError::Snapshot)?;
         let snapshots = attempts(self, &self.connection, run)?;
         let old_nodes = settled(stored.nodes.clone());
         let graph = crate::workflow::compile::compile(&stored.frozen.definition.request.workflow)?;
-        let (start_order, completion_order) = super::round_order(self, run, previous as u32)?;
+        let (start_order, completion_order) = super::round_order(self, run, previous)?;
         let old_result = if let Some(result) = &stored.result {
             result.clone()
         } else {
@@ -399,17 +397,17 @@ impl Ledger {
                 let code=if attempt.progress.state==AttemptStatus::Running {"provider_outcome_unknown"} else {"not_dispatched"};
                 let progress=AttemptProgress {state:AttemptStatus::Interrupted,error:Some(ErrorReport {category:ErrorCategory::Interrupted,code:code.into(),message:"Previous workflow owner exited".into(),retryable:false})};
                 tx.execute("UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1 AND state IN ('pending','running')",[attempt.intent.id.to_string()]).map_err(|error|sql_error("recover orphan attempt",error))?;progress_event(tx,attempt.intent.id,&progress)?;
-                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous as u32,kind:WorkflowEventKind::Recovered,progress:None,node:Some(scope.node),node_status:Some(NodeStatus::Interrupted),run_status:None,attempt:Some(attempt.intent.id),turn:None})?;
+                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous,kind:WorkflowEventKind::Recovered,progress:None,node:Some(scope.node),node_status:Some(NodeStatus::Interrupted),run_status:None,attempt:Some(attempt.intent.id),turn:None})?;
             }}
             let old:Option<String>=tx.query_row("SELECT payload_toon FROM workflow_round_results WHERE run_id=?1 AND round=?2",params![run.to_string(),previous],|row|row.get(0)).optional().map_err(|error|sql_error("inspect prior round result",error))?;
             if old.is_none() {
                 tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES(?1,?2,'interrupted',?3,?4,?5)",params![run.to_string(),previous,Self::encode_payload(&stored.frontier)?,stored.published_revision,Self::encode_payload(&old_result)?]).map_err(|error|sql_error("preserve interrupted retry round",error))?;
                 for (node,progress) in old_nodes.iter().enumerate() {
                     if matches!(stored.nodes[node].status,NodeStatus::Pending|NodeStatus::Running) {
-                        event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous as u32,kind:WorkflowEventKind::Recovered,progress:Some(progress.clone()),node:Some(node),node_status:Some(progress.status),run_status:None,attempt:None,turn:None})?;
+                        event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous,kind:WorkflowEventKind::Recovered,progress:Some(progress.clone()),node:Some(node),node_status:Some(progress.status),run_status:None,attempt:None,turn:None})?;
                     }
                 }
-                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous as u32,kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Interrupted),attempt:None,turn:None})?;
+                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous,kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Interrupted),attempt:None,turn:None})?;
             }
             let changed=tx.execute("UPDATE workflow_runs SET owner_id=?2,state='running',result_toon=NULL WHERE id=?1 AND state!='completed'",params![run.to_string(),session_guard.owner.to_string()]).map_err(|error|sql_error("renew workflow owner",error))?;if changed!=1 {return Err(WorkflowError::Conflict);}
             let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow' AND state!='completed'",params![key,session_guard.owner.to_string()]).map_err(|error|sql_error("renew workflow reservation",error))?;if changed!=1 {return Err(WorkflowError::Conflict);}

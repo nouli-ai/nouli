@@ -128,15 +128,24 @@ fn distribution(values: impl Iterator<Item = f64>) -> Result<(), ContractError> 
 /// The lowest and highest expected level index over true distributions consistent with
 /// the reported probabilities: start every level at its lower bound, then hand the
 /// remaining mass to the lowest (or highest) levels first.
+/// A score level index as a number on the score scale.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "score scales have a handful of levels, far below 2^52"
+)]
+fn level(index: usize) -> f64 {
+    index as f64
+}
+
 fn expectation_range(probabilities: &[f64]) -> (f64, f64) {
     let lows: Vec<f64> = probabilities.iter().map(|p| bounds(*p).0).collect();
-    let floor: f64 = lows.iter().enumerate().map(|(i, p)| i as f64 * p).sum();
+    let floor: f64 = lows.iter().enumerate().map(|(i, p)| level(i) * p).sum();
     let slack = (1.0 - lows.iter().sum::<f64>()).max(0.0);
     let fill = |order: &mut dyn Iterator<Item = usize>| {
         let (mut left, mut expected) = (slack, floor);
         for i in order {
             let add = (bounds(probabilities[i]).1 - lows[i]).min(left);
-            expected += i as f64 * add;
+            expected += level(i) * add;
             left -= add;
         }
         expected
@@ -198,7 +207,7 @@ impl Answer {
                 if probabilities.len() != levels.len() {
                     return Err(ContractError::Missing("score.probabilities"));
                 }
-                if !value.is_finite() || !(0.0..=(levels.len() - 1) as f64).contains(value) {
+                if !value.is_finite() || !(0.0..=level(levels.len() - 1)).contains(value) {
                     return Err(ContractError::Number("score.value"));
                 }
                 distribution(probabilities.iter().copied())?;

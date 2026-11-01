@@ -249,6 +249,16 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
     Ok(out)
 }
 
+/// A rendered SVG side in whole pixels, at least one.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "scale caps the longest side at 1568 pixels and the side is at least 1"
+)]
+fn pixels(side: f32, scale: f32) -> u32 {
+    (side * scale).ceil().max(1.0) as u32
+}
+
 pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
     use std::sync::{
         Arc,
@@ -269,11 +279,9 @@ pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
     }
     let size = tree.size();
     let scale = (1568.0 / size.width().max(size.height())).min(1.0);
-    let mut pixels = resvg::tiny_skia::Pixmap::new(
-        (size.width() * scale).ceil().max(1.0) as u32,
-        (size.height() * scale).ceil().max(1.0) as u32,
-    )
-    .ok_or_else(|| unsupported(name))?;
+    let mut pixels =
+        resvg::tiny_skia::Pixmap::new(pixels(size.width(), scale), pixels(size.height(), scale))
+            .ok_or_else(|| unsupported(name))?;
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::from_scale(scale, scale),
@@ -361,7 +369,9 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
     loop {
         match process.try_wait() {
             Ok(Some(status)) if status.success() => {
-                let _ = killpg(Pid::from_raw(process.id() as i32), Signal::SIGKILL);
+                if let Ok(pid) = i32::try_from(process.id()) {
+                    let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
+                }
                 break;
             }
             Ok(None)
@@ -371,7 +381,9 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
                 thread::sleep(Duration::from_millis(10));
             }
             _ => {
-                let _ = killpg(Pid::from_raw(process.id() as i32), Signal::SIGKILL);
+                if let Ok(pid) = i32::try_from(process.id()) {
+                    let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
+                }
                 let _ = process.kill();
                 let _ = process.wait();
                 return Err(unsupported(name));

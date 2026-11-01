@@ -22,6 +22,10 @@ fn provider() -> Server {
     Server::with_handler(answer)
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "fixture questions have a few options"
+)]
 fn answer(body: &Value) -> (u16, String) {
     {
         let cancelled = body["state"].as_str().unwrap().contains("CANCELLED");

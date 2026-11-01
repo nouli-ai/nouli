@@ -52,19 +52,19 @@ pub(super) fn insert_turn(
         ],
     )
     .map_err(|error| sql_error("insert finalized turn", error))?;
-    for (position, parent) in turn.parents.iter().enumerate() {
+    for (position, parent) in (0_i64..).zip(&turn.parents) {
         tx.execute(
             "INSERT INTO turn_parents(turn_id,parent_id,position) VALUES(?1,?2,?3)",
-            params![turn.id.to_string(), parent.to_string(), position as i64],
+            params![turn.id.to_string(), parent.to_string(), position],
         )
         .map_err(|error| sql_error("record ancestry", error))?;
     }
-    for (position, update) in turn.updates.iter().enumerate() {
+    for (position, update) in (0_i64..).zip(&turn.updates) {
         tx.execute(
             "INSERT INTO context_events(turn_id,position,payload_toon) VALUES(?1,?2,?3)",
             params![
                 turn.id.to_string(),
-                position as i64,
+                position,
                 Ledger::encode_payload(update)?
             ],
         )

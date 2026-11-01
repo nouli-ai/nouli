@@ -62,18 +62,23 @@ pub(crate) fn maybe_worker() -> Option<ExitCode> {
 fn over_memory(pid: u32) -> bool {
     use nix::libc;
     let mut info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
-    let size = std::mem::size_of::<libc::proc_taskinfo>();
+    let (Ok(pid), Ok(size)) = (
+        i32::try_from(pid),
+        i32::try_from(std::mem::size_of::<libc::proc_taskinfo>()),
+    ) else {
+        return false;
+    };
     // SAFETY: proc_pidinfo initializes exactly this task-info struct on success.
     let copied = unsafe {
         libc::proc_pidinfo(
-            pid as i32,
+            pid,
             libc::PROC_PIDTASKINFO,
             0,
             info.as_mut_ptr().cast(),
-            size as i32,
+            size,
         )
     };
-    copied == size as i32 && unsafe { info.assume_init() }.pti_resident_size > MEMORY
+    copied == size && unsafe { info.assume_init() }.pti_resident_size > MEMORY
 }
 
 #[cfg(not(target_os = "macos"))]

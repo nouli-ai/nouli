@@ -109,8 +109,8 @@ pub(super) fn insert_session(
             params![session.id.to_string(), event],
         )
         .map_err(|error| sql_error("record session creation", error))?;
-    for (position, source) in sources.iter().enumerate() {
-        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position as i64,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",error))?;
+    for (position, source) in (0_i64..).zip(sources) {
+        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",error))?;
     }
     Ok(())
 }

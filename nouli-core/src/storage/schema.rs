@@ -54,7 +54,7 @@ pub(super) fn migrate(
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| sql_error("begin migration", error))?;
     let (app, version) = identity(&transaction)?;
-    let supported = migrations.len() as u32;
+    let supported = u32::try_from(migrations.len()).expect("migration count fits in u32");
     if version > supported {
         return Err(StorageError::NewerSchema {
             found: version,
@@ -76,12 +76,12 @@ pub(super) fn migrate(
             return Err(StorageError::WrongStore);
         }
     }
-    for (index, sql) in migrations.iter().enumerate().skip(version as usize) {
+    for (next, sql) in (1_u32..).zip(migrations).skip(version as usize) {
         transaction
             .execute_batch(sql)
             .map_err(|error| sql_error("migrate schema", error))?;
         transaction
-            .pragma_update(None, "user_version", (index + 1) as u32)
+            .pragma_update(None, "user_version", next)
             .map_err(|error| sql_error("set schema version", error))?;
     }
     if app != APPLICATION_ID {

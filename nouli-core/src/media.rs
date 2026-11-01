@@ -178,6 +178,11 @@ impl Image {
     }
 
     /// Fit pixels within explicit inclusive bounds, padding extreme aspect ratios.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "scaled sides are rounded and clamped to 1..=maximum, a u32"
+    )]
     fn image_size(width: u32, height: u32, minimum: u32, maximum: u32) -> (u32, u32, u32, u32) {
         let longest = f64::from(width.max(height).max(1));
         let shortest = f64::from(width.min(height).max(1));
@@ -440,7 +445,7 @@ pub(crate) mod tests {
         let mut bytes = jpeg.into_inner();
         let exif = b"Exif\0\0II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x06\0\0\0\0\0\0\0";
         let mut segment = vec![0xff, 0xe1];
-        segment.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        segment.extend_from_slice(&u16::try_from(exif.len() + 2).unwrap().to_be_bytes());
         segment.extend_from_slice(exif);
         bytes.splice(2..2, segment);
         let picture = Image {

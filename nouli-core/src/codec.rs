@@ -258,17 +258,27 @@ fn canonical_value(value: Value) -> Value {
             )
         }
         Value::Array(values) => Value::Array(values.into_iter().map(canonical_value).collect()),
-        Value::Number(n) if n.is_f64() => {
-            let f = n.as_f64().expect("f64 number");
-            if f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64 {
-                Value::from(f as i64)
-            } else if f.fract() == 0.0 && f >= 0.0 && f < u64::MAX as f64 {
-                Value::from(f as u64)
-            } else {
-                Value::Number(n)
-            }
-        }
+        Value::Number(n) if n.is_f64() => canonical_number(n),
         other => other,
+    }
+}
+
+/// Spells an integral float as an integer when it fits in `i64` or `u64`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "the range checks admit only integral values that fit the target type; \
+              the bounds are powers of two, exact in f64"
+)]
+fn canonical_number(n: serde_json::Number) -> Value {
+    let f = n.as_f64().expect("f64 number");
+    if f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64 {
+        Value::from(f as i64)
+    } else if f.fract() == 0.0 && f >= 0.0 && f < u64::MAX as f64 {
+        Value::from(f as u64)
+    } else {
+        Value::Number(n)
     }
 }
 
@@ -426,7 +436,9 @@ mod tests {
                 let mut options = toon_format::DecodeOptions::new()
                     .with_strict(case["options"]["strict"].as_bool().unwrap_or(true));
                 if let Some(indent) = case["options"]["indentSize"].as_u64() {
-                    options = options.with_indent(toon_format::Indent::Spaces(indent as usize));
+                    options = options.with_indent(toon_format::Indent::Spaces(
+                        usize::try_from(indent).unwrap(),
+                    ));
                 }
                 let decoded = toon_format::decode::<Value>(input, &options);
                 if case["shouldError"].as_bool().unwrap_or(false) {

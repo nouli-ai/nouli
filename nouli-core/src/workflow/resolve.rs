@@ -149,6 +149,11 @@ pub fn apply(
         _ => Ok(value),
     }
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "floor is checked to lie in 0..2^64, so it converts to u64 exactly"
+)]
 fn unsigned_float(integer: u64, float: f64) -> Ordering {
     if float < 0.0 {
         return Ordering::Greater;

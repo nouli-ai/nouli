@@ -99,6 +99,22 @@ fn pad(text: &str, columns: usize) -> String {
     format!("{text}{}", " ".repeat(spaces))
 }
 
+/// The sparkline glyph for a probability.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the probability is clamped to 0..=1, so the index is 0..=7"
+)]
+fn spark(probability: f64) -> char {
+    SPARK[(probability.clamp(0.0, 1.0) * 7.0).round() as usize]
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "the probability is clamped to 0..=1 and a bar is a few dozen cells"
+)]
 fn bar(probability: f64, cells: usize) -> String {
     let eighths = (probability.clamp(0.0, 1.0) * (cells * 8) as f64).round() as usize;
     let (full, remainder) = (eighths / 8, eighths % 8);
@@ -337,9 +353,7 @@ fn question_rows(
         ) => {
             let sparkline: String = probabilities
                 .iter()
-                .map(|probability| {
-                    SPARK[((probability.clamp(0.0, 1.0) * 7.0).round() as usize).min(7)]
-                })
+                .map(|probability| spark(*probability))
                 .collect();
             let body = format!(
                 "expected {value:.2} of {}   {sparkline}",
