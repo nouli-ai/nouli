@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `nouli-core`: `protocol::OUTCOME_UNKNOWN`, `protocol::NOT_DISPATCHED`, and `protocol::OWNER_EXITED` name the error codes that recovery reads from saved attempts and workflow nodes.
+
 ### Changed
 
 - `nouli-core`: `context::projection::project_with_base`, `Ledger::record_attempt_progress`, `Ledger::record_workflow_progress`, and `Ledger::fail_workflow_attempt` take their origin or progress argument by reference, so callers no longer clone it.
+- Save each new attempt's provider error with the same category and code as the final report, such as `provider_capacity`, `provider_authentication_failed`, and `provider_transport_failed`, instead of separate attempt-only codes. Timed-out attempts keep the `provider_outcome_unknown` code under the `transport` category, and each attempt keeps its detailed message, such as the HTTP status.
 - `nouli-core`: workflow ledger methods return `WorkflowError::Conflict` instead of `WorkflowError::Storage(StorageError::Conflict)` when a run, reservation, or node changes concurrently.
 
 ### Fixed

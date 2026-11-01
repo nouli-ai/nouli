@@ -1663,7 +1663,7 @@ mod tests {
                     .progress
                     .error
                     .as_ref()
-                    .is_some_and(|error| error.code == "provider_outcome_unknown"))
+                    .is_some_and(|error| error.code == crate::protocol::OUTCOME_UNKNOWN))
                 .count(),
             2
         );
@@ -1831,7 +1831,7 @@ mod tests {
         );
         assert_eq!(
             high.progress.error.as_ref().unwrap().code,
-            "provider_outcome_unknown"
+            crate::protocol::OUTCOME_UNKNOWN
         );
         *engine.provider.publication_fault.lock().unwrap() = None;
         worker

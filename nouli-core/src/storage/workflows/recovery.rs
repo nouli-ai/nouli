@@ -45,7 +45,7 @@ use super::{
 use crate::{
     codec,
     identity::SessionSelector,
-    protocol::{ErrorCategory, ErrorReport},
+    protocol::{ErrorCategory, ErrorReport, NOT_DISPATCHED, OUTCOME_UNKNOWN, OWNER_EXITED},
     storage::{
         Ledger,
         guards::{self, GuardError},
@@ -86,7 +86,7 @@ fn unknown(attempt: &AttemptSnapshot) -> bool {
         .progress
         .error
         .as_ref()
-        .is_some_and(|error| error.code == "provider_outcome_unknown")
+        .is_some_and(|error| error.code == OUTCOME_UNKNOWN)
 }
 fn disposition(node: &NodeProgress, attempts: &[AttemptSnapshot], live: bool) -> Disposition {
     if node.status == NodeStatus::Completed {
@@ -141,7 +141,7 @@ fn settled(mut nodes: Vec<NodeProgress>) -> Vec<NodeProgress> {
             node.status = NodeStatus::Interrupted;
             node.error = Some(ErrorReport {
                 category: ErrorCategory::Interrupted,
-                code: "owner_exited".into(),
+                code: OWNER_EXITED.into(),
                 message: "Workflow owner exited before settling this node".into(),
                 retryable: false,
             });
@@ -540,9 +540,9 @@ impl RetryRound<'_> {
                 .as_ref()
                 .ok_or(WorkflowError::Snapshot)?;
             let code = if attempt.progress.state == AttemptStatus::Running {
-                "provider_outcome_unknown"
+                OUTCOME_UNKNOWN
             } else {
-                "not_dispatched"
+                NOT_DISPATCHED
             };
             let progress = AttemptProgress {
                 state: AttemptStatus::Interrupted,

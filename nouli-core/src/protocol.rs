@@ -34,6 +34,14 @@ pub enum ErrorCategory {
     Internal,
 }
 
+/// Error code for an attempt whose provider call may have reached the provider, so
+/// recovery cannot know whether the provider produced an outcome.
+pub const OUTCOME_UNKNOWN: &str = "provider_outcome_unknown";
+/// Error code for an attempt interrupted before its provider call was dispatched.
+pub const NOT_DISPATCHED: &str = "not_dispatched";
+/// Error code for a workflow node left unsettled when its owner exited.
+pub const OWNER_EXITED: &str = "owner_exited";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorReport {

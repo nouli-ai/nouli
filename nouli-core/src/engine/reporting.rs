@@ -3,7 +3,7 @@ use super::{EngineError, workflow::WorkflowEngineError};
 use crate::{
     config::ConfigError,
     context::{builder::BuildError, projection::ProjectionError},
-    protocol::{ErrorCategory as Category, ErrorReport},
+    protocol::{ErrorCategory as Category, ErrorReport, OUTCOME_UNKNOWN},
     provider::ProviderError,
     storage::{
         StorageError, guards::GuardError, replay::ReplayError, sessions::SessionError,
@@ -239,6 +239,25 @@ impl WorkflowError {
         }
     }
 }
+/// The one report for a provider failure, shared by saved attempts and final reports.
+pub(super) fn provider(error: &ProviderError) -> ErrorReport {
+    match error {
+        ProviderError::Limit(error) => limit(error),
+        ProviderError::Profile => message(Category::Configuration, "invalid_provider_profile"),
+        ProviderError::Transport(error) => match error {
+            TransportError::Authentication { .. } => {
+                message(Category::Authentication, "provider_authentication_failed")
+            }
+            TransportError::Canceled => message(Category::Interrupted, OUTCOME_UNKNOWN),
+            TransportError::Timeout => message(Category::Transport, OUTCOME_UNKNOWN),
+            TransportError::Capacity => message(Category::Capacity, "provider_capacity"),
+            TransportError::Capability => message(Category::Capability, "provider_capability"),
+            TransportError::Contract => message(Category::Contract, "provider_contract"),
+            _ => message(Category::Transport, "provider_transport_failed"),
+        },
+        _ => message(Category::Contract, "provider_contract"),
+    }
+}
 impl EngineError {
     #[must_use]
     pub fn report(&self) -> ErrorReport {
@@ -277,30 +296,7 @@ impl EngineError {
                 _ => message(Category::Input, "invalid_context"),
             },
             Self::Limit(error) => limit(error),
-            Self::Provider(error) => match error {
-                ProviderError::Limit(error) => limit(error),
-                ProviderError::Profile => {
-                    message(Category::Configuration, "invalid_provider_profile")
-                }
-                ProviderError::Transport(error) => match error {
-                    TransportError::Authentication { .. } => {
-                        message(Category::Authentication, "provider_authentication_failed")
-                    }
-                    TransportError::Canceled => {
-                        message(Category::Interrupted, "provider_outcome_unknown")
-                    }
-                    TransportError::Timeout => {
-                        message(Category::Transport, "provider_outcome_unknown")
-                    }
-                    TransportError::Capacity => message(Category::Capacity, "provider_capacity"),
-                    TransportError::Capability => {
-                        message(Category::Capability, "provider_capability")
-                    }
-                    TransportError::Contract => message(Category::Contract, "provider_contract"),
-                    _ => message(Category::Transport, "provider_transport_failed"),
-                },
-                _ => message(Category::Contract, "provider_contract"),
-            },
+            Self::Provider(error) => provider(error),
             Self::History(error) => {
                 history(error).unwrap_or_else(|| message(Category::Input, "invalid_evaluation"))
             }

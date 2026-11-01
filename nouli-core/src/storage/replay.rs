@@ -20,7 +20,7 @@ use crate::{
         SourcePoint, StandingChanges,
     },
     identity::{Id, SessionSelector},
-    protocol::{ErrorCategory, ErrorReport},
+    protocol::{ErrorCategory, ErrorReport, NOT_DISPATCHED, OUTCOME_UNKNOWN},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -271,7 +271,7 @@ fn interrupt(
                 if progress
                     .error
                     .as_ref()
-                    .is_some_and(|error| error.code == "provider_outcome_unknown")
+                    .is_some_and(|error| error.code == OUTCOME_UNKNOWN)
                 {
                     RecoveryKind::OutcomeUnknown
                 } else {
@@ -281,8 +281,8 @@ fn interrupt(
             "interrupted" => {
                 let progress: AttemptProgress = Ledger::decode_payload(&progress)?;
                 match progress.error.as_ref().map(|error| error.code.as_str()) {
-                    Some("provider_outcome_unknown") => RecoveryKind::OutcomeUnknown,
-                    Some("not_dispatched") => RecoveryKind::NeverDispatched,
+                    Some(OUTCOME_UNKNOWN) => RecoveryKind::OutcomeUnknown,
+                    Some(NOT_DISPATCHED) => RecoveryKind::NeverDispatched,
                     _ => RecoveryKind::Interrupted,
                 }
             }
@@ -294,9 +294,9 @@ fn interrupt(
         }
         if matches!(state.as_str(), "pending" | "running") {
             let code = if state == "running" {
-                "provider_outcome_unknown"
+                OUTCOME_UNKNOWN
             } else {
-                "not_dispatched"
+                NOT_DISPATCHED
             };
             let progress = AttemptProgress {
                 state: AttemptStatus::Interrupted,

@@ -17,7 +17,7 @@ use crate::{
     identity::Id,
     limits::{LimitError, ResolvedLimits, count::TokenCounter},
     outcome::{ProviderIdentity, TurnOutcome},
-    protocol::{ErrorCategory, ErrorReport},
+    protocol::ErrorReport,
     provider::ProviderError,
     storage::{
         StorageError,
@@ -386,25 +386,114 @@ fn failure_progress(error: &ProviderError, retryable: bool) -> AttemptProgress {
     }
 }
 
+/// The saved attempt error: the final report's category and code, with this attempt's
+/// retry decision and the error's own safe diagnostic text, such as its HTTP status.
 fn error_report(error: &ProviderError, retryable: bool) -> ErrorReport {
-    let (category, code) = match error {
-        ProviderError::Transport(TransportError::Canceled | TransportError::Timeout) => {
-            (ErrorCategory::Interrupted, "provider_outcome_unknown")
-        }
-        ProviderError::Transport(TransportError::Capacity) | ProviderError::Limit(_) => {
-            (ErrorCategory::Capacity, "capacity")
-        }
-        ProviderError::Transport(TransportError::Authentication { .. }) => {
-            (ErrorCategory::Authentication, "authentication")
-        }
-        ProviderError::Transport(_) => (ErrorCategory::Transport, "provider_transport"),
-        ProviderError::Profile => (ErrorCategory::Configuration, "invalid_provider_profile"),
-        _ => (ErrorCategory::Contract, "provider_contract"),
-    };
     ErrorReport {
-        category,
-        code: code.into(),
         message: error.to_string(),
         retryable,
+        ..super::reporting::provider(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        codec::CodecError,
+        decision::ContractError,
+        protocol::{ErrorCategory, OUTCOME_UNKNOWN},
+    };
+
+    fn every_provider_error() -> Vec<ProviderError> {
+        let transport = [
+            TransportError::Settings,
+            TransportError::Endpoint,
+            TransportError::Build,
+            TransportError::Canceled,
+            TransportError::Timeout,
+            TransportError::Connect,
+            TransportError::Body,
+            TransportError::Truncated,
+            TransportError::Oversize { limit: 1 },
+            TransportError::Authentication { status: 401 },
+            TransportError::RateLimited { retry_after: None },
+            TransportError::Capacity,
+            TransportError::Capability,
+            TransportError::Contract,
+            TransportError::Status {
+                status: 500,
+                retry_after: None,
+            },
+        ];
+        let limit = [
+            LimitError::InvalidBudget,
+            LimitError::Modality,
+            LimitError::Count,
+            LimitError::RequestBytes,
+            LimitError::TotalCapacity,
+            LimitError::QuestionCapacity,
+            LimitError::Overflow,
+            LimitError::Counter,
+            LimitError::Profile,
+            LimitError::Contract(ContractError::Empty("questions")),
+            LimitError::Codec(CodecError::Syntax),
+            LimitError::Codec(CodecError::ImageReferenceConflict),
+        ];
+        [
+            ProviderError::Protocol,
+            ProviderError::Profile,
+            ProviderError::Wire,
+            ProviderError::Codec(CodecError::Syntax),
+            ProviderError::Contract(ContractError::Empty("questions")),
+        ]
+        .into_iter()
+        .chain(transport.into_iter().map(ProviderError::Transport))
+        .chain(limit.into_iter().map(ProviderError::Limit))
+        .collect()
+    }
+
+    #[test]
+    fn saved_attempt_errors_match_the_final_report_for_every_provider_error() {
+        for (error, same) in every_provider_error()
+            .into_iter()
+            .zip(every_provider_error())
+        {
+            let report = EngineError::Provider(same).report();
+            for retryable in [false, true] {
+                let attempt = failure_progress(&error, retryable).error.unwrap();
+                assert_eq!(
+                    (attempt.category, attempt.code.as_str()),
+                    (report.category, report.code.as_str()),
+                    "{error:?}"
+                );
+                assert_eq!(attempt.retryable, retryable);
+                assert_eq!(attempt.message, error.to_string());
+            }
+        }
+    }
+
+    /// Recovery reads this code back from saved attempts (ADR 0001), so a call that
+    /// may have reached the provider must keep it.
+    #[test]
+    fn canceled_and_timed_out_attempts_keep_the_outcome_unknown_code() {
+        for (error, state, category) in [
+            (
+                TransportError::Canceled,
+                AttemptStatus::Interrupted,
+                ErrorCategory::Interrupted,
+            ),
+            (
+                TransportError::Timeout,
+                AttemptStatus::Failed,
+                ErrorCategory::Transport,
+            ),
+        ] {
+            let progress = failure_progress(&ProviderError::Transport(error), false);
+            assert_eq!(progress.state, state);
+            let report = progress.error.unwrap();
+            assert_eq!(report.code, OUTCOME_UNKNOWN);
+            assert_eq!(report.category, category);
+        }
     }
 }

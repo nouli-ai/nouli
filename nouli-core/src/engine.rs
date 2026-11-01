@@ -970,7 +970,7 @@ mod tests {
         assert_eq!(attempts.len(), 1);
         assert_eq!(
             attempts[0].progress.error.as_ref().unwrap().code,
-            "provider_outcome_unknown"
+            crate::protocol::OUTCOME_UNKNOWN
         );
         assert!(matches!(
             run(
