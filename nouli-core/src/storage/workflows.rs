@@ -418,8 +418,10 @@ impl Ledger {
     /// - Returns [`WorkflowError::History`] if the request has no request ID or
     ///   fails [`fingerprint`] validation, and [`WorkflowError::IntentConflict`]
     ///   if the request ID was saved for a different intent.
-    /// - Returns [`WorkflowError::Guard`] if a request, session, or run guard
-    ///   cannot be acquired for a reason other than an active writer.
+    /// - Returns [`WorkflowError::Guard`] with [`GuardError::WriterActive`] if
+    ///   another writer holds the session, or another [`WorkflowError::Guard`]
+    ///   if a guard cannot be acquired. Another process running the same
+    ///   request yields [`WorkflowDecision::InProgress`] instead.
     /// - Returns [`WorkflowError::Session`] or [`WorkflowError::Source`] if the
     ///   selected session, defaults, or sources cannot be resolved.
     /// - Returns [`WorkflowError::Storage`] if the ledger is read-only, busy, or
