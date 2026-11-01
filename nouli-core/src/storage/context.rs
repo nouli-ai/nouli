@@ -19,14 +19,10 @@ impl Ledger {
     /// query fails, or a stored row is invalid.
     pub fn context_sources(&self, session: Id) -> Result<Vec<SourcePoint>, TurnError> {
         let current = self.session(&SessionSelector::Id(session))?;
-        if current.frontier.is_empty() {
-            Ok(self.session_sources(session)?)
-        } else {
-            Ok(vec![SourcePoint {
-                session,
-                frontier: current.frontier,
-            }])
-        }
+        Ok(super::sessions::read_context_sources(
+            &self.connection,
+            &current,
+        )?)
     }
 
     /// Projects the active context records for a turn from the given sources

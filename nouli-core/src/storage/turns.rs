@@ -425,16 +425,12 @@ impl Ledger {
         )?;
         let mut manifest = prepared.input.manifest;
         manifest.provider = outcome.provider.clone();
-        let parents = if prepared.expected_frontier.is_empty() {
-            let mut seen = HashSet::new();
-            self.session_sources(prepared.session)?
-                .into_iter()
-                .flat_map(|source| source.frontier)
-                .filter(|id| seen.insert(*id))
-                .collect()
-        } else {
-            prepared.expected_frontier
-        };
+        let mut seen = HashSet::new();
+        let parents = super::sessions::read_context_sources(&self.connection, &current)?
+            .into_iter()
+            .flat_map(|source| source.frontier)
+            .filter(|id| seen.insert(*id))
+            .collect();
         let turn = FinalizedTurn {
             context_base: None,
             workflow_run: None,

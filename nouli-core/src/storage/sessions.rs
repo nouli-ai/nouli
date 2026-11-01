@@ -254,6 +254,21 @@ pub(super) fn read_sources(
     .collect()
 }
 
+/// Reads the active frontier, retaining frozen sources until the first own turn.
+pub(super) fn read_context_sources(
+    connection: &rusqlite::Connection,
+    session: &Session,
+) -> Result<Vec<SourcePoint>, SessionError> {
+    if session.frontier.is_empty() {
+        read_sources(connection, session.id)
+    } else {
+        Ok(vec![SourcePoint {
+            session: session.id,
+            frontier: session.frontier.clone(),
+        }])
+    }
+}
+
 impl Ledger {
     /// Returns the frozen source points a session was created from.
     ///

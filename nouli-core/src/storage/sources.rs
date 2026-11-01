@@ -68,14 +68,7 @@ pub(super) fn resolve_selection(
     match selection {
         SessionSelection::New { .. } => Ok(vec![]),
         SessionSelection::Continue { .. } => {
-            if current.frontier.is_empty() {
-                Ok(super::sessions::read_sources(connection, current.id)?)
-            } else {
-                Ok(vec![SourcePoint {
-                    session: current.id,
-                    frontier: current.frontier.clone(),
-                }])
-            }
+            Ok(super::sessions::read_context_sources(connection, current)?)
         }
         SessionSelection::From { sources, .. } => resolve_on(connection, sources),
     }
