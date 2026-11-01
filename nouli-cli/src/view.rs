@@ -77,10 +77,6 @@ struct Node<'a> {
     references: Vec<usize>,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<'a>>, RenderError> {
     let mut seen = HashSet::new();
     let turns = exports
@@ -89,80 +85,143 @@ fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<
         .filter(|turn| seen.insert(turn.id))
         .collect::<Vec<_>>();
     let links = references::links(&turns)?;
-    let by_id = turns
-        .iter()
-        .enumerate()
-        .map(|(index, turn)| (turn.id, index))
-        .collect::<HashMap<_, _>>();
-    let mut dependencies = vec![HashSet::new(); turns.len()];
-    for (index, turn) in turns.iter().enumerate() {
-        for parent in &turn.parents {
-            dependencies[index].insert(*by_id.get(parent).ok_or(RenderError::Protocol)?);
-        }
+    let dependencies = Dependencies::new(&turns, &links)?;
+    let mut builder = NodeBuilder {
+        links: &links,
+        split: &dependencies.split,
+        frontier,
+        turn_labels: abbreviations(turns.iter().map(|turn| turn.id)),
+        session_labels: session_labels(exports),
+        nodes: Vec::new(),
+        groups: HashMap::new(),
+    };
+    for index in dependencies.order()? {
+        builder.add_turn(turns[index])?;
     }
-    let mut split = HashSet::new();
-    for link in &links {
-        let source = *by_id.get(&link.source.turn).ok_or(RenderError::Protocol)?;
-        if turns[source].session != link.source.session
-            || !turns[source]
-                .request
-                .questions
-                .iter()
-                .any(|q| q.id == link.source.question)
-        {
-            return Err(RenderError::Protocol);
-        }
-        dependencies[*by_id.get(&link.target).ok_or(RenderError::Protocol)?].insert(source);
-        split.insert(link.source.turn);
-        split.insert(link.target);
-    }
-    let mut children = vec![Vec::new(); turns.len()];
-    let mut remaining = dependencies.iter().map(HashSet::len).collect::<Vec<_>>();
-    for (child, parents) in dependencies.iter().enumerate() {
-        for parent in parents {
-            children[*parent].push(child);
-        }
-    }
-    let mut ready = remaining
-        .iter()
-        .enumerate()
-        .filter(|(_, count)| **count == 0)
-        .map(|(index, _)| index)
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut order = Vec::new();
-    while let Some(index) = ready.pop_first() {
-        order.push(index);
-        for child in &children[index] {
-            remaining[*child] -= 1;
-            if remaining[*child] == 0 {
-                ready.insert(*child);
+    Ok(builder.nodes)
+}
+
+/// Which turns each turn depends on, through its parents or the answers it references.
+struct Dependencies {
+    /// For each turn index, the indexes of the turns it depends on.
+    parents: Vec<HashSet<usize>>,
+    /// Turns at either end of a reference, whose questions may need separate cards.
+    split: HashSet<Id>,
+}
+
+impl Dependencies {
+    fn new(turns: &[&FinalizedTurn], links: &[references::Link]) -> Result<Self, RenderError> {
+        let by_id = turns
+            .iter()
+            .enumerate()
+            .map(|(index, turn)| (turn.id, index))
+            .collect::<HashMap<_, _>>();
+        let mut parents = vec![HashSet::new(); turns.len()];
+        for (index, turn) in turns.iter().enumerate() {
+            for parent in &turn.parents {
+                parents[index].insert(*by_id.get(parent).ok_or(RenderError::Protocol)?);
             }
         }
+        let mut split = HashSet::new();
+        for link in links {
+            let source = *by_id.get(&link.source.turn).ok_or(RenderError::Protocol)?;
+            if turns[source].session != link.source.session
+                || !turns[source]
+                    .request
+                    .questions
+                    .iter()
+                    .any(|q| q.id == link.source.question)
+            {
+                return Err(RenderError::Protocol);
+            }
+            parents[*by_id.get(&link.target).ok_or(RenderError::Protocol)?].insert(source);
+            split.insert(link.source.turn);
+            split.insert(link.target);
+        }
+        Ok(Self { parents, split })
     }
-    if order.len() != turns.len() {
-        return Err(RenderError::Protocol);
+
+    /// Turn indexes with every turn after the turns it depends on, breaking
+    /// ties by index. A cycle is a protocol error.
+    fn order(&self) -> Result<Vec<usize>, RenderError> {
+        let mut children = vec![Vec::new(); self.parents.len()];
+        let mut remaining = self.parents.iter().map(HashSet::len).collect::<Vec<_>>();
+        for (child, parents) in self.parents.iter().enumerate() {
+            for parent in parents {
+                children[*parent].push(child);
+            }
+        }
+        let mut ready = remaining
+            .iter()
+            .enumerate()
+            .filter(|(_, count)| **count == 0)
+            .map(|(index, _)| index)
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut order = Vec::new();
+        while let Some(index) = ready.pop_first() {
+            order.push(index);
+            for child in &children[index] {
+                remaining[*child] -= 1;
+                if remaining[*child] == 0 {
+                    ready.insert(*child);
+                }
+            }
+        }
+        if order.len() != self.parents.len() {
+            return Err(RenderError::Protocol);
+        }
+        Ok(order)
     }
-    let labels = abbreviations(turns.iter().map(|turn| turn.id));
+}
+
+/// Each session's display name, or its abbreviated ID when it is unnamed.
+fn session_labels(exports: &[&SessionExport]) -> HashMap<Id, String> {
     let sessions = exports
         .iter()
         .flat_map(|export| &export.provenance)
         .map(|session| (session.id, session))
         .collect::<HashMap<_, _>>();
-    let session_labels = abbreviations(sessions.keys().copied());
-    let mut nodes = Vec::new();
-    let mut groups = HashMap::<Id, Vec<usize>>::new();
-    for index in order {
-        let turn = turns[index];
-        let session = sessions.get(&turn.session).ok_or(RenderError::Protocol)?;
-        let session_label = session.name.as_ref().map_or_else(
-            || format!("(unnamed {})", session_labels[&session.id]),
-            |name| name.as_str().to_owned(),
-        );
-        let latest = frontier.contains(&turn.id);
-        let questions = if split.contains(&turn.id) && turn.request.questions.len() > 1 {
-            (0..turn.request.questions.len())
-                .map(Some)
-                .collect::<Vec<_>>()
+    let abbreviated = abbreviations(sessions.keys().copied());
+    sessions
+        .into_iter()
+        .map(|(id, session)| {
+            let label = session.name.as_ref().map_or_else(
+                || format!("(unnamed {})", abbreviated[&id]),
+                |name| name.as_str().to_owned(),
+            );
+            (id, label)
+        })
+        .collect()
+}
+
+/// Builds graph nodes from turns given in dependency order.
+struct NodeBuilder<'a, 'g> {
+    links: &'g [references::Link],
+    split: &'g HashSet<Id>,
+    frontier: &'g [Id],
+    turn_labels: HashMap<Id, String>,
+    session_labels: HashMap<Id, String>,
+    nodes: Vec<Node<'a>>,
+    /// The nodes added for each turn so far.
+    groups: HashMap<Id, Vec<usize>>,
+}
+
+impl<'a> NodeBuilder<'a, '_> {
+    /// Adds a turn's node, or one node per question when a reference splits a
+    /// turn with several questions.
+    fn add_turn(&mut self, turn: &'a FinalizedTurn) -> Result<(), RenderError> {
+        let session_label = self
+            .session_labels
+            .get(&turn.session)
+            .ok_or(RenderError::Protocol)?;
+        let turn_label = self
+            .turn_labels
+            .get(&turn.id)
+            .ok_or(RenderError::Protocol)?;
+        let latest = self.frontier.contains(&turn.id);
+        let count = turn.request.questions.len();
+        let questions = if self.split.contains(&turn.id) && count > 1 {
+            (0..count).map(Some).collect::<Vec<_>>()
         } else {
             vec![None]
         };
@@ -171,43 +230,18 @@ fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<
             let mut parents = turn
                 .parents
                 .iter()
-                .flat_map(|parent| groups.get(parent).into_iter().flatten().copied())
+                .flat_map(|parent| self.groups.get(parent).into_iter().flatten().copied())
                 .collect::<Vec<_>>();
-            let mut referenced = Vec::new();
-            for link in links.iter().filter(|link| {
-                link.target == turn.id
-                    && question.is_none_or(|q| turn.request.questions[q].id == link.question)
-            }) {
-                let source = groups.get(&link.source.turn).ok_or(RenderError::Protocol)?;
-                let parent = *source
-                    .iter()
-                    .find(|node| {
-                        let source: &Node<'_> = &nodes[**node];
-                        source.question.is_none_or(|index| {
-                            source.turn.request.questions[index].id == link.source.question
-                        })
-                    })
-                    .ok_or(RenderError::Protocol)?;
-                referenced.push(parent);
-            }
-            referenced.sort_unstable();
-            referenced.dedup();
+            let referenced = self.referenced(turn, question)?;
             parents.extend(&referenced);
             parents.sort_unstable();
             parents.dedup();
-            group.push(nodes.len());
-            nodes.push(Node {
-                title: format!(
-                    "{} · {}{}{}",
-                    session_label,
-                    labels.get(&turn.id).ok_or(RenderError::Protocol)?,
-                    question.map_or_else(String::new, |q| format!(
-                        " · {}/{}",
-                        q + 1,
-                        turn.request.questions.len()
-                    )),
-                    if latest { " [latest]" } else { "" }
-                ),
+            let question_label =
+                question.map_or_else(String::new, |q| format!(" · {}/{count}", q + 1));
+            let latest_label = if latest { " [latest]" } else { "" };
+            group.push(self.nodes.len());
+            self.nodes.push(Node {
+                title: format!("{session_label} · {turn_label}{question_label}{latest_label}"),
                 latest,
                 parents,
                 turn,
@@ -215,9 +249,41 @@ fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<
                 references: referenced,
             });
         }
-        groups.insert(turn.id, group);
+        self.groups.insert(turn.id, group);
+        Ok(())
     }
-    Ok(nodes)
+
+    /// The nodes holding the answers that `turn` references, limited to one
+    /// question's references when `question` is given; sorted and deduplicated.
+    fn referenced(
+        &self,
+        turn: &FinalizedTurn,
+        question: Option<usize>,
+    ) -> Result<Vec<usize>, RenderError> {
+        let mut referenced = Vec::new();
+        for link in self.links.iter().filter(|link| {
+            link.target == turn.id
+                && question.is_none_or(|q| turn.request.questions[q].id == link.question)
+        }) {
+            let source = self
+                .groups
+                .get(&link.source.turn)
+                .ok_or(RenderError::Protocol)?;
+            let parent = *source
+                .iter()
+                .find(|node| {
+                    let source: &Node<'_> = &self.nodes[**node];
+                    source.question.is_none_or(|index| {
+                        source.turn.request.questions[index].id == link.source.question
+                    })
+                })
+                .ok_or(RenderError::Protocol)?;
+            referenced.push(parent);
+        }
+        referenced.sort_unstable();
+        referenced.dedup();
+        Ok(referenced)
+    }
 }
 
 /// Summarize a turn's questions in caller order with their typed results.
