@@ -1,9 +1,11 @@
 //! Pre-refactor frozen settings are deliberately incompatible. Historical stores
 //! remain intact and can still be opened by the matching released binary.
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 use harness::Home;
 use std::path::Path;
 

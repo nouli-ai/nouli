@@ -1,7 +1,9 @@
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 use harness::{Home, QUESTION, report, run_report, turn, workflow};
 use loopback::Server;
 use nouli_core::{
@@ -1093,6 +1095,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
 
 #[cfg(unix)]
 #[path = "support/process.rs"]
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod process;
 #[cfg(unix)]
 #[test]

@@ -1,7 +1,9 @@
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 use harness::{Home, QUESTION, report};
 use loopback::Server;
 use nouli_core::protocol::{Report, ResultEnvelope};
