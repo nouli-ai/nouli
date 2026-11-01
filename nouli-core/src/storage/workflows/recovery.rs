@@ -43,12 +43,12 @@ use super::{
     event,
 };
 use crate::{
-    codec,
     identity::SessionSelector,
     protocol::{ErrorCategory, ErrorReport, OUTCOME_UNKNOWN, OWNER_EXITED},
     storage::{
         Ledger,
         guards::{self, GuardError},
+        reservations,
         sessions::Session,
         sql_error,
         turns::{AttemptStatus, interrupt_attempt},
@@ -323,8 +323,13 @@ impl Ledger {
         if first.status == RunStatus::Completed {
             return Ok(WorkflowDecision::Saved(Box::new(first)));
         }
-        let request_lock = request_lock_key(request_key(&first)?)?;
-        let Some(request_guard) = unless_writer_active(guards::lock(self, &request_lock))? else {
+        let Some(request_guard) = reservations::lock_request(self, request_key(&first)?).map_err(
+            |error| match error {
+                reservations::LockError::Fingerprint => WorkflowError::Snapshot,
+                reservations::LockError::Guard(error) => WorkflowError::Guard(error),
+            },
+        )?
+        else {
             return Ok(WorkflowDecision::InProgress);
         };
         let Some(run_guard) = unless_writer_active(self.run_guard(run))? else {
@@ -411,13 +416,6 @@ fn request_key(run: &StoredRun) -> Result<&str, WorkflowError> {
         .request_id
         .as_deref()
         .ok_or(WorkflowError::Snapshot)
-}
-
-fn request_lock_key(key: &str) -> Result<String, WorkflowError> {
-    Ok(format!(
-        "request-{}",
-        codec::fingerprint(&key).map_err(|_| WorkflowError::Snapshot)?
-    ))
 }
 
 /// Treats an active writer as "someone else is resuming this run" rather than
@@ -602,10 +600,7 @@ impl RetryRound<'_> {
         if changed != 1 {
             return Err(WorkflowError::Conflict);
         }
-        let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow' AND state!='completed'",params![self.key,self.owner.to_string()]).map_err(|error|sql_error("renew workflow reservation",&error))?;
-        if changed != 1 {
-            return Err(WorkflowError::Conflict);
-        }
+        reservations::reclaim_workflow(tx, self.key, self.owner)?;
         tx.execute(
             "INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES(?1,?2,?3)",
             params![self.run.to_string(), self.round, self.owner.to_string()],
@@ -647,10 +642,7 @@ impl RetryRound<'_> {
             if changed != 1 {
                 return Err(WorkflowError::Conflict);
             }
-            let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow_node' AND state!='completed'",params![child_key(self.run,node),self.owner.to_string()]).map_err(|error|sql_error("renew node reservation owner",&error))?;
-            if changed != 1 {
-                return Err(WorkflowError::Conflict);
-            }
+            reservations::reclaim_node(tx, &child_key(self.run, node), self.owner)?;
         }
         Ok(())
     }

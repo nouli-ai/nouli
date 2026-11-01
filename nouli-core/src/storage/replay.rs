@@ -1,12 +1,13 @@
 //! Store-wide request reservations with frozen intent and explicit recovery.
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
     Ledger, StorageError,
     guards::{self, FileGuard, GuardError, SessionGuard},
+    reservations::{self, ReservationKind, ReservationState},
     sessions::{Session, SessionError, insert_session, read_session},
     sql_error,
     turns::{self, AttemptInput, AttemptProgress, AttemptStatus, PreparedAttempt, TurnError},
@@ -170,48 +171,43 @@ fn intent_hash(request: &EvaluationRequest) -> Result<String, ReplayError> {
 struct Reservation {
     session: Id,
     fingerprint: String,
-    state: String,
+    state: ReservationState,
     frozen: FrozenRequest,
     result: Option<String>,
     recovery: Option<RecoveryKind>,
 }
 
 fn reservation(connection: &Connection, key: &str) -> Result<Option<Reservation>, ReplayError> {
-    type ReservationRow = (
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-    );
-    let kind: Option<String> = connection
-        .query_row(
-            "SELECT kind FROM request_reservations WHERE request_id=?1",
-            [key],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| sql_error("read request kind", &error))?;
-    if kind.as_deref().is_some_and(|kind| kind != "evaluation") {
+    if reservations::matches_kind(connection, key, ReservationKind::Evaluation)?
+        .is_some_and(|matches| !matches)
+    {
         return Err(ReplayError::IntentConflict);
     }
-    let row:Option<ReservationRow>=connection.query_row("SELECT session_id,fingerprint,state,frozen_toon,result_toon,recovery_kind FROM request_reservations WHERE request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?))).optional().map_err(|error|sql_error("read request reservation",&error))?;
-    row.map(|(session, hash, state, frozen, result, recovery)| {
-        let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
-        let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
-        if frozen.session != session || intent_hash(&frozen.request)? != hash {
-            return Err(StorageError::Payload.into());
-        }
-        Ok(Reservation {
-            session,
-            fingerprint: hash,
-            state,
-            frozen,
-            result,
-            recovery: recovery.map(|s| Ledger::decode_payload(&s)).transpose()?,
-        })
-    })
+    let row = reservations::evaluation(connection, key)?;
+    row.map(
+        |reservations::EvaluationRow {
+             session,
+             fingerprint: hash,
+             state,
+             frozen,
+             result,
+             recovery,
+         }| {
+            let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
+            let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
+            if frozen.session != session || intent_hash(&frozen.request)? != hash {
+                return Err(StorageError::Payload.into());
+            }
+            Ok(Reservation {
+                session,
+                fingerprint: hash,
+                state,
+                frozen,
+                result,
+                recovery: recovery.map(|s| Ledger::decode_payload(&s)).transpose()?,
+            })
+        },
+    )
     .transpose()
 }
 
@@ -241,7 +237,7 @@ fn interrupt(
     key: &str,
     saved: &Reservation,
 ) -> Result<RecoveryKind, ReplayError> {
-    if saved.state == "interrupted" {
+    if saved.state == ReservationState::Interrupted {
         return Ok(saved.recovery.unwrap_or(RecoveryKind::Interrupted));
     }
     let mut statement=transaction.prepare("SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id").map_err(|error|sql_error("inspect orphan attempts",&error))?;
@@ -299,7 +295,7 @@ fn interrupt(
             "Request owner exited before finalization",
         )?;
     }
-    transaction.execute("UPDATE request_reservations SET state='interrupted',recovery_kind=?2 WHERE request_id=?1 AND state='pending'",params![key,Ledger::encode_payload(&kind)?]).map_err(|error|sql_error("record interrupted request",&error))?;
+    reservations::interrupt_evaluation(transaction, key, &Ledger::encode_payload(&kind)?)?;
     Ok(kind)
 }
 
@@ -311,11 +307,11 @@ pub(super) fn validate_reserved_input(
     let Some(key) = &input.request_id else {
         return Ok(());
     };
-    let row:Option<(String,String,String)>=ledger.connection.query_row("SELECT owner_id,state,frozen_toon FROM request_reservations WHERE request_id=?1 AND session_id=?2",params![key,guard.session.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error|sql_error("validate request owner",&error))?;
+    let row = reservations::owner(&ledger.connection, key, guard.session)?;
     let (owner, state, frozen) = row.ok_or(StorageError::Conflict)?;
     let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
     if owner != guard.owner.to_string()
-        || state != "pending"
+        || state != ReservationState::Pending
         || input.request != frozen.request.turn
         || input.standing != frozen.request.standing
         || input.updates != frozen.request.updates
@@ -443,11 +439,16 @@ impl Ledger {
         }
         if existing
             .as_ref()
-            .is_some_and(|saved| saved.state == "completed")
+            .is_some_and(|saved| saved.state == ReservationState::Completed)
         {
             return completed(existing.ok_or(StorageError::Payload)?);
         }
-        let Some(request_guard) = self.try_lock_request(key)? else {
+        let Some(request_guard) =
+            reservations::lock_request(self, key).map_err(|error| match error {
+                reservations::LockError::Fingerprint => ReplayError::Fingerprint,
+                reservations::LockError::Guard(error) => ReplayError::Guard(error),
+            })?
+        else {
             return Ok(RequestDecision::InProgress {
                 session: existing.map(|saved| saved.session),
             });
@@ -460,20 +461,6 @@ impl Ledger {
         }
         let settings = self.freeze_settings(settings.ok_or(StorageError::Payload)?)?;
         self.reserve_new_request(request, key, &hash, settings, request_guard)
-    }
-
-    /// Takes the store-wide lock for a request ID, or `None` when another
-    /// process already owns that request.
-    fn try_lock_request(&self, key: &str) -> Result<Option<FileGuard>, ReplayError> {
-        let lock_key = format!(
-            "request-{}",
-            codec::fingerprint(&key).map_err(|_| ReplayError::Fingerprint)?
-        );
-        match guards::lock(self, &lock_key) {
-            Ok(guard) => Ok(Some(guard)),
-            Err(GuardError::WriterActive) => Ok(None),
-            Err(error) => Err(error.into()),
-        }
     }
 
     /// Settles a reservation seen under the request lock: reports it completed
@@ -489,7 +476,7 @@ impl Ledger {
         if saved.fingerprint != hash {
             return Err(ReplayError::IntentConflict);
         }
-        if saved.state == "completed" {
+        if saved.state == ReservationState::Completed {
             return completed(saved);
         }
         let kind = self.transaction::<_, ReplayError>("recover exited owner", |transaction| {
@@ -518,7 +505,7 @@ impl Ledger {
             return Err(ReplayError::Conflict);
         }
         self.transaction::<_, StorageError>("retry original reservation", |transaction| {
-            reclaim_interrupted_reservation(transaction, key, guard.owner)
+            reservations::reclaim_evaluation(transaction, key, guard.owner)
         })?;
         Ok(accepted(key, saved.frozen, guard, request_guard))
     }
@@ -592,7 +579,14 @@ impl Ledger {
                     frontier: current.frontier,
                     revision: current.revision,
                 };
-                insert_reservation(transaction, key, hash, guard.owner, &frozen)?;
+                reservations::insert_evaluation(
+                    transaction,
+                    frozen.session,
+                    key,
+                    hash,
+                    guard.owner,
+                    &Ledger::encode_payload(&frozen)?,
+                )?;
                 Ok(frozen)
             })?;
         Ok(accepted(key, frozen, guard, request_guard))
@@ -611,29 +605,6 @@ fn accepted(
         session_guard,
         _request_guard: request_guard,
     }))
-}
-
-fn reclaim_interrupted_reservation(
-    transaction: &Transaction<'_>,
-    key: &str,
-    owner: Id,
-) -> Result<(), StorageError> {
-    let changed=transaction.execute("UPDATE request_reservations SET owner_id=?2,state='pending',recovery_kind=NULL WHERE request_id=?1 AND state='interrupted'",params![key,owner.to_string()]).map_err(|error|sql_error("reserve explicit retry",&error))?;
-    if changed != 1 {
-        return Err(StorageError::Conflict);
-    }
-    Ok(())
-}
-
-fn insert_reservation(
-    transaction: &Transaction<'_>,
-    key: &str,
-    hash: &str,
-    owner: Id,
-    frozen: &FrozenRequest,
-) -> Result<(), StorageError> {
-    transaction.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon) VALUES(?1,?2,?3,?4,'pending',?5)",params![frozen.session.to_string(),key,hash,owner.to_string(),Ledger::encode_payload(frozen)?]).map_err(|error|sql_error("reserve unique request",&error))?;
-    Ok(())
 }
 
 #[cfg(test)]

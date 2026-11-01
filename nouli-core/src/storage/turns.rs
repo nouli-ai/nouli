@@ -464,8 +464,7 @@ impl Ledger {
             let changed=transaction.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807",params![turn.session.to_string(),frontier,prepared.expected_revision]).map_err(|error|sql_error("publish session head",&error))?;
             if changed!=1 {return Err(StorageError::Conflict);}
             if let Some(key)=&prepared.input.request_id {
-                let changed=transaction.execute("UPDATE request_reservations SET state='completed',result_toon=?2 WHERE request_id=?1 AND owner_id=?3 AND session_id=?4 AND state='pending'",params![key,payload,guard.owner.to_string(),turn.session.to_string()]).map_err(|error|sql_error("complete request reservation",&error))?;
-                if changed!=1 {return Err(StorageError::Conflict);}
+                super::reservations::complete_evaluation(transaction, key, &payload, guard.owner, turn.session)?;
             }
             transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![turn.session.to_string(),event]).map_err(|error|sql_error("record finalized head",&error))?;
             Ok(())

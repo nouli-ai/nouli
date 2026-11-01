@@ -2,6 +2,7 @@
 use super::{
     Ledger, StorageError,
     replay::FrozenRequest,
+    reservations,
     sessions::{Session, SessionError},
     sql_error,
     turns::{AttemptSnapshot, TurnError},
@@ -101,23 +102,11 @@ fn requests(
     let mut selected = vec![];
     let mut seen = HashSet::new();
     if let Some(session) = session {
-        let mut statement=ledger.connection.prepare("SELECT request_id,state,frozen_toon FROM request_reservations WHERE kind='evaluation' AND session_id=?1 ORDER BY rowid").map_err(|error|sql_error("list accepted session requests",&error))?;
-        let rows = statement
-            .query_map([session.to_string()], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| sql_error("read accepted session requests", &error))?;
-        for row in rows {
-            let (key, state, payload) =
-                row.map_err(|error| sql_error("decode accepted session request", &error))?;
+        for (key, state, payload) in reservations::session_requests(&ledger.connection, session)? {
             seen.insert(key.clone());
             selected.push(AcceptedRequest {
                 request_id: key,
-                state,
+                state: state.as_str().to_owned(),
                 frozen: Ledger::decode_payload(&payload)?,
             });
         }
@@ -125,15 +114,14 @@ fn requests(
     let mut keys = keys.iter().collect::<Vec<_>>();
     keys.sort();
     for key in keys {
-        use rusqlite::OptionalExtension;
         if seen.contains(key) {
             continue;
         }
-        let row:Option<(String,String)>=ledger.connection.query_row("SELECT state,frozen_toon FROM request_reservations WHERE kind='evaluation' AND request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(|error|sql_error("read referenced accepted request",&error))?;
+        let row = reservations::referenced_request(&ledger.connection, key)?;
         if let Some((state, payload)) = row {
             selected.push(AcceptedRequest {
                 request_id: key.clone(),
-                state,
+                state: state.as_str().to_owned(),
                 frozen: Ledger::decode_payload(&payload)?,
             });
         }

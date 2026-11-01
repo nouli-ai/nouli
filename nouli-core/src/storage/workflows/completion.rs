@@ -140,8 +140,8 @@ impl Ledger {
             .ok_or(WorkflowError::Snapshot)?;
         self.transaction::<_,StorageError>("finish workflow run",|tx| {
             let changed=tx.execute("UPDATE workflow_runs SET state=?2,result_toon=?3 WHERE id=?1 AND state='running' AND owner_id=?4",params![definition.run.to_string(),run_name(result.status),Self::encode_payload(result)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("save workflow result",&error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            let state=if result.status==RunStatus::Completed {"completed"} else {"interrupted"};
-            let changed=tx.execute("UPDATE request_reservations SET state=?2,result_toon=?3 WHERE request_id=?1 AND state='pending' AND owner_id=?4",params![key,state,Self::encode_payload(result)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("save workflow replay result",&error))?;if changed!=1 {return Err(StorageError::Conflict);}
+            let state=if result.status==RunStatus::Completed {super::super::reservations::ReservationState::Completed} else {super::super::reservations::ReservationState::Interrupted};
+            super::super::reservations::finish_workflow(tx, key, state, &Self::encode_payload(result)?, owner.session_guard.owner)?;
             tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) SELECT id,?2,state,frontier_toon,published_revision,?3 FROM workflow_runs WHERE id=?1",params![definition.run.to_string(),owner.round,Self::encode_payload(result)?]).map_err(|error|sql_error("append workflow round result",&error))?;
             event(tx,definition.run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:owner.round,kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(result.status),attempt:None,turn:None})?;Ok(())
         })?;

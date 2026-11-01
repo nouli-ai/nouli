@@ -6,6 +6,7 @@ pub mod recovery;
 use super::{
     Ledger, StorageError,
     guards::{self, FileGuard, GuardError, RunGuard, SessionGuard},
+    reservations,
     sessions::{self, Session, SessionError},
     sources::{self, SourceError},
     sql_error,
@@ -278,16 +279,9 @@ fn request_run(
     key: &str,
     hash: &str,
 ) -> Result<Option<Id>, WorkflowError> {
-    let row: Option<(String, String, String)> = connection
-        .query_row(
-            "SELECT kind,fingerprint,frozen_toon FROM request_reservations WHERE request_id=?1",
-            [key],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()
-        .map_err(|error| sql_error("inspect workflow request", &error))?;
-    row.map(|(kind, saved, run)| {
-        if kind != "workflow" || saved != hash {
+    let row = reservations::workflow(connection, key)?;
+    row.map(|(matches_kind, saved, run)| {
+        if !matches_kind || saved != hash {
             return Err(WorkflowError::IntentConflict);
         }
         Ledger::decode_payload(&run).map_err(WorkflowError::from)
@@ -460,14 +454,13 @@ impl Ledger {
                 return Ok(WorkflowDecision::Saved(Box::new(saved)));
             }
         }
-        let lock_key = format!(
-            "request-{}",
-            codec::fingerprint(&key).map_err(|_| WorkflowError::Snapshot)?
-        );
-        let request_guard = match guards::lock(self, &lock_key) {
-            Ok(guard) => guard,
-            Err(GuardError::WriterActive) => return Ok(WorkflowDecision::InProgress),
-            Err(error) => return Err(error.into()),
+        let Some(request_guard) =
+            reservations::lock_request(self, key).map_err(|error| match error {
+                reservations::LockError::Fingerprint => WorkflowError::Snapshot,
+                reservations::LockError::Guard(error) => WorkflowError::Guard(error),
+            })?
+        else {
+            return Ok(WorkflowDecision::InProgress);
         };
         if let Some(run) = request_run(&self.connection, key, &hash)? {
             let saved = self.workflow_run(run)?;
@@ -476,7 +469,7 @@ impl Ledger {
             }
             self.transaction::<_,StorageError>("record exited workflow owner",|tx| {
                 tx.execute("UPDATE workflow_runs SET state='interrupted' WHERE id=?1 AND state IN ('pending','running')",[run.to_string()]).map_err(|error|sql_error("interrupt exited workflow",&error))?;
-                tx.execute("UPDATE request_reservations SET state='interrupted' WHERE request_id=?1 AND state='pending'",[key]).map_err(|error|sql_error("interrupt workflow reservation",&error))?;Ok(())
+                reservations::interrupt_workflow(tx, key)?;Ok(())
             })?;
             return Ok(WorkflowDecision::Existing {
                 run,
@@ -525,13 +518,13 @@ impl Ledger {
             if new {sessions::insert_session(tx,&mut current,&sources)?;}
             let base=ContextBase {id:run,session,sources,state:request.workflow.state.clone(),updates:request.updates.clone(),runtime_only:false};
             let definition=WorkflowDefinition {run,session,request:request.clone(),base,defaults,initial_frontier:current.frontier.clone(),initial_revision:current.revision,plan:Data::new(codec::to_value(&plan).map_err(|_|WorkflowError::Snapshot)?).map_err(|_|WorkflowError::Snapshot)?};
-            tx.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon,kind) VALUES(?1,?2,?3,?4,'pending',?5,'workflow')",params![session.to_string(),key,hash,session_guard.owner.to_string(),Self::encode_payload(&run)?]).map_err(|error|sql_error("reserve workflow request",&error))?;
+            reservations::insert_workflow(tx, session, key, &hash, session_guard.owner, &Self::encode_payload(&run)?)?;
             tx.execute("INSERT INTO workflow_runs(id,session_id,definition_toon,settings_toon,state,frontier_toon,owner_id,published_revision) VALUES(?1,?2,?3,?4,'running',?5,?6,?7)",params![run.to_string(),session.to_string(),Self::encode_payload(&definition)?,Self::encode_payload(&settings)?,Self::encode_payload(&current.frontier)?,session_guard.owner.to_string(),current.revision]).map_err(|error|sql_error("save frozen workflow",&error))?;
             tx.execute("INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES(?1,0,?2)",params![run.to_string(),session_guard.owner.to_string()]).map_err(|error|sql_error("record initial workflow round",&error))?;
             for ((index,node),order) in request.workflow.nodes.iter().enumerate().zip(0_i64..) {
                 let pending=NodeProgress {status:NodeStatus::Pending,output:None,error:None,ancestors:vec![],inputs:vec![]};
                 tx.execute("INSERT INTO workflow_nodes(run_id,node_id,declaration_order,state,payload_toon) VALUES(?1,?2,?3,'pending',?4)",params![run.to_string(),node.id,order,Self::encode_payload(&pending)?]).map_err(|error|sql_error("save pending node",&error))?;
-                tx.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon,kind) VALUES(?1,?2,?3,?4,'pending',?5,'workflow_node')",params![session.to_string(),child_key(run,index),codec::fingerprint(&(run,index)).map_err(|_|WorkflowError::Snapshot)?,session_guard.owner.to_string(),Self::encode_payload(&(run,index))?]).map_err(|error|sql_error("reserve stable node identity",&error))?;
+                reservations::insert_node(tx, session, &child_key(run,index), &codec::fingerprint(&(run,index)).map_err(|_|WorkflowError::Snapshot)?, session_guard.owner, &Self::encode_payload(&(run,index))?)?;
             }
             event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,
                     round:0,kind:WorkflowEventKind::RunStarted,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Running),attempt:None,turn:None})?;Ok(definition)

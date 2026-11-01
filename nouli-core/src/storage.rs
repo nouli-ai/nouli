@@ -7,6 +7,7 @@ pub mod guards;
 pub mod inspection;
 mod publication;
 pub mod replay;
+pub mod reservations;
 mod schema;
 pub mod sessions;
 pub mod sources;
