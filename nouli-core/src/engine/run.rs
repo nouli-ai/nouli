@@ -4,11 +4,15 @@ use super::{
     execution::{DecisionProvider, RetryClock},
 };
 use crate::{
-    config::{ConfigError, resolve::SettingsSnapshot},
+    config::{
+        ConfigError,
+        resolve::{ResolvedSettings, SettingsSnapshot},
+    },
     context::{
-        builder::{ContextBuilder, ContextInput, RequiredItem},
+        builder::{BuildError, ContextBuilder, ContextInput, ContextPlan, RequiredItem},
         compact::Staged,
     },
+    decision::TurnRequest,
     history::{EvaluationManifest, EvaluationRequest, FinalizedTurn, SourcePoint},
     identity::Id,
     limits::{LimitError, ResolvedLimits, count::TokenCounter},
@@ -186,19 +190,17 @@ impl<'a> Recorder<'a> {
         }
     }
 }
-impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T> {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
-    pub(super) async fn execute(
-        &self,
-        input: RunInput<'_>,
-        mut recorder: Recorder<'_>,
-        lookup: impl Fn(&crate::config::auth::CredentialSource) -> Option<String>,
-        cancel: &CancellationToken,
-    ) -> Result<Executed, EngineError> {
-        let required: Vec<_> = input
+/// Builds context plans for one run so capacity retries can rebuild under a smaller budget.
+struct ContextPlanner<'a, C> {
+    input: &'a RunInput<'a>,
+    required: Vec<RequiredItem>,
+    /// Pending updates are labeled pending, never assigned a persisted turn ID.
+    context_turn: Id,
+    counter: &'a C,
+}
+impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
+    fn new(input: &'a RunInput<'a>, counter: &'a C) -> Self {
+        let required = input
             .request
             .required_records
             .iter()
@@ -207,99 +209,114 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                 pointer: None,
             })
             .collect();
-        let mut limits = ResolvedLimits::for_profile(&input.settings.profile)?;
-        // Pending updates are labeled pending, never assigned a persisted turn ID.
-        let context_turn = Id::generate();
-        let build = |limits: &ResolvedLimits| {
-            ContextBuilder::build(
-                ContextInput {
-                    context_base: input.context_base,
-                    runtime_only: input.runtime_only,
-                    history: input.history,
-                    sources: input.sources,
-                    request: &input.request.turn,
-                    updates: &input.request.updates,
-                    required: &required,
-                    workflow_base: &[],
-                    session: input.session,
-                    turn: context_turn,
-                    provider: ProviderIdentity {
-                        provider: input.settings.profile_name.clone(),
-                        model: input.settings.profile.model.clone(),
-                        upstream_provider: None,
-                        request_id: None,
-                    },
+        Self {
+            input,
+            required,
+            context_turn: Id::generate(),
+            counter,
+        }
+    }
+    fn build(&self, limits: &ResolvedLimits) -> Result<ContextPlan, BuildError> {
+        let input = self.input;
+        ContextBuilder::build(
+            ContextInput {
+                context_base: input.context_base,
+                runtime_only: input.runtime_only,
+                history: input.history,
+                sources: input.sources,
+                request: &input.request.turn,
+                updates: &input.request.updates,
+                required: &self.required,
+                workflow_base: &[],
+                session: input.session,
+                turn: self.context_turn,
+                provider: ProviderIdentity {
+                    provider: input.settings.profile_name.clone(),
+                    model: input.settings.profile.model.clone(),
+                    upstream_provider: None,
+                    request_id: None,
                 },
-                limits,
-                &self.counter,
-                &Staged,
-            )
+            },
+            limits,
+            self.counter,
+            &Staged,
+        )
+    }
+    /// Rebuild `plan` under a budget of three quarters of its input tokens plus the
+    /// reserved output, lowering `limits.budget` to match only when a plan is returned.
+    ///
+    /// Returns `None` when the budget would not drop below the current budget, would not
+    /// exceed the reserved output, or the rebuilt context would be no shorter.
+    fn shrink(
+        &self,
+        plan: &ContextPlan,
+        limits: &mut ResolvedLimits,
+    ) -> Result<Option<ContextPlan>, EngineError> {
+        let effective = plan
+            .manifest
+            .input_count
+            .tokens
+            .checked_mul(3)
+            .and_then(|n| n.checked_div(4))
+            .and_then(|n| n.checked_add(limits.reserved_output_tokens))
+            .ok_or(LimitError::Overflow)?;
+        if effective >= limits.budget || effective <= limits.reserved_output_tokens {
+            return Ok(None);
+        }
+        let reduced = ResolvedLimits {
+            budget: effective,
+            ..limits.clone()
         };
-        let mut plan = build(&limits)?;
+        let smaller = self.build(&reduced)?;
+        if smaller.manifest.context_toon.len() >= plan.manifest.context_toon.len() {
+            return Ok(None);
+        }
+        *limits = reduced;
+        Ok(Some(smaller))
+    }
+}
+impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T> {
+    pub(super) async fn execute(
+        &self,
+        input: RunInput<'_>,
+        mut recorder: Recorder<'_>,
+        lookup: impl Fn(&crate::config::auth::CredentialSource) -> Option<String>,
+        cancel: &CancellationToken,
+    ) -> Result<Executed, EngineError> {
+        let planner = ContextPlanner::new(&input, &self.counter);
+        let mut limits = ResolvedLimits::for_profile(&input.settings.profile)?;
+        let mut plan = planner.build(&limits)?;
         let mut settings = input.settings.clone().with_credentials(lookup)?;
         let policy = RetryPolicy::new(&settings.snapshot.execution).map_err(ProviderError::from)?;
-        let timeout = Duration::from_secs(settings.snapshot.execution.attempt_timeout_seconds);
-        if tokio::time::Instant::now().checked_add(timeout).is_none() {
-            return Err(ConfigError::Invalid("attempt timeout").into());
-        }
-        for number in 1..=settings.snapshot.execution.max_attempts {
+        let timeout = attempt_timeout(&settings)?;
+        let max_attempts = settings.snapshot.execution.max_attempts;
+        for number in 1..=max_attempts {
             if cancel.is_cancelled() {
                 return Err(EngineError::Canceled);
             }
             recorder.begin(plan.manifest.clone()).await?;
-            let dispatched = tokio::select! {biased;
-                ()=cancel.cancelled()=>Err(ProviderError::Transport(TransportError::Canceled)),
-                result=tokio::time::timeout(timeout,self.provider.attempt(&settings,&input.request.turn,&plan.manifest.context_toon,&self.counter,cancel))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
-            };
-            let error = match dispatched {
-                Ok(outcome) => {
-                    if let Err(error) = outcome.validate(&input.request.turn) {
-                        ProviderError::Contract(error)
-                    } else {
-                        return recorder.succeed(outcome, plan.manifest).await;
-                    }
-                }
+            let error = match self
+                .attempt(&settings, &input.request.turn, &plan, timeout, cancel)
+                .await
+            {
+                Ok(outcome) => return recorder.succeed(outcome, plan.manifest).await,
                 Err(error) => error,
             };
-            let canceled = matches!(error, ProviderError::Transport(TransportError::Canceled));
-            let delay = if let ProviderError::Transport(transport) = &error {
-                policy.next_delay(number, transport, self.clock.now())
-            } else {
-                None
-            };
-            let progress = AttemptProgress {
-                state: if canceled {
-                    AttemptStatus::Interrupted
-                } else {
-                    AttemptStatus::Failed
-                },
-                error: Some(error_report(&error, delay.is_some())),
-            };
-            recorder.fail(progress).await?;
-            if canceled {
+            let delay = self.retry_delay(&policy, number, &error);
+            recorder
+                .fail(failure_progress(&error, delay.is_some()))
+                .await?;
+            if is_canceled(&error) {
                 return Err(EngineError::Canceled);
             }
-            if number < settings.snapshot.execution.max_attempts
+            if number < max_attempts
                 && matches!(error, ProviderError::Transport(TransportError::Capacity))
             {
-                let effective = plan
-                    .manifest
-                    .input_count
-                    .tokens
-                    .checked_mul(3)
-                    .and_then(|n| n.checked_div(4))
-                    .and_then(|n| n.checked_add(limits.reserved_output_tokens))
-                    .ok_or(LimitError::Overflow)?;
-                if effective >= limits.budget || effective <= limits.reserved_output_tokens {
+                let Some(smaller) = planner.shrink(&plan, &mut limits)? else {
                     return Err(error.into());
-                }
-                limits.budget = effective;
-                let smaller = build(&limits)?;
-                if smaller.manifest.context_toon.len() >= plan.manifest.context_toon.len() {
-                    return Err(error.into());
-                }
+                };
                 plan = smaller;
-                settings.snapshot.profile.context_budget_tokens = Some(effective);
+                settings.snapshot.profile.context_budget_tokens = Some(limits.budget);
                 continue;
             }
             let Some(delay) = delay else {
@@ -312,6 +329,60 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         Err(EngineError::Provider(ProviderError::Transport(
             TransportError::Settings,
         )))
+    }
+    /// Dispatch one provider attempt under the timeout and validate its outcome.
+    async fn attempt(
+        &self,
+        settings: &ResolvedSettings,
+        request: &TurnRequest,
+        plan: &ContextPlan,
+        timeout: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<TurnOutcome, ProviderError> {
+        let dispatched = tokio::select! {biased;
+            ()=cancel.cancelled()=>Err(ProviderError::Transport(TransportError::Canceled)),
+            result=tokio::time::timeout(timeout,self.provider.attempt(settings,request,&plan.manifest.context_toon,&self.counter,cancel))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
+        };
+        let outcome = dispatched?;
+        outcome.validate(request).map_err(ProviderError::Contract)?;
+        Ok(outcome)
+    }
+    /// The backoff before another attempt, if the policy permits one for this error.
+    fn retry_delay(
+        &self,
+        policy: &RetryPolicy,
+        completed_attempts: u32,
+        error: &ProviderError,
+    ) -> Option<Duration> {
+        if let ProviderError::Transport(transport) = error {
+            policy.next_delay(completed_attempts, transport, self.clock.now())
+        } else {
+            None
+        }
+    }
+}
+
+/// The per-attempt timeout, rejected when the deadline would overflow the clock.
+fn attempt_timeout(settings: &ResolvedSettings) -> Result<Duration, ConfigError> {
+    let timeout = Duration::from_secs(settings.snapshot.execution.attempt_timeout_seconds);
+    if tokio::time::Instant::now().checked_add(timeout).is_none() {
+        return Err(ConfigError::Invalid("attempt timeout"));
+    }
+    Ok(timeout)
+}
+
+fn is_canceled(error: &ProviderError) -> bool {
+    matches!(error, ProviderError::Transport(TransportError::Canceled))
+}
+
+fn failure_progress(error: &ProviderError, retryable: bool) -> AttemptProgress {
+    AttemptProgress {
+        state: if is_canceled(error) {
+            AttemptStatus::Interrupted
+        } else {
+            AttemptStatus::Failed
+        },
+        error: Some(error_report(error, retryable)),
     }
 }
 
