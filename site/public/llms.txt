@@ -18,15 +18,23 @@ Rules for driving Nouli from an agent:
 ## Full-screen TUI
 
 `nouli` starts a named session; `nouli open NAME` resumes or creates one.
-Type plain text in Context and Question. Shift-Tab cycles Yes/No, Choose one
-and Score. Tab moves fields and options. Enter sends from Context/Question;
-in Options/Levels, Enter adds an item and a second consecutive Enter sends.
-Empty options/levels reuse the prior list with
-a visible notice; Yes/No questions remain fresh. `@` finds local files under
-the launch directory and saved answers across the selected local ledger.
-Selection snapshots inputs without sending. `/rename NAME` renames the current
-session. Drag the graph divider at any time; Ctrl-G focuses graph keyboard
-navigation. Click Select text or press F6 for native drag-selection and terminal Copy. The view holds still while requests continue; Esc or F6 resumes the previous draft and focus. The host terminal's modifier also selects text in normal mode.
+Type plain text in Context and Question. Enter adds a nonempty Context row;
+Enter on a blank row advances to the next section without sending. Shift-Tab
+cycles Yes/No, Choose one and Score; Tab changes sections. Options/Levels use
+one item per row. Enter sends only from a nonempty Question; Ctrl-S sends from
+any section, including when reusing the previous question with new context.
+Empty options/levels reuse the prior list with a visible notice; Yes/No questions
+remain fresh. `@` searches files under the launch directory and saved answers
+across the local ledger. Selecting an input snapshots it without sending.
+`/rename NAME` renames the session. `/model` or Ctrl-L opens the model picker;
+choose a model, add a connection, or enter a missing API key without losing the
+draft. `/statusline` chooses saved fields or a preset for the footer. `/help`
+opens the shortcuts dialog; `/` lists session commands.
+
+Drag normally for native text selection and use terminal Copy. Ctrl-P holds the
+view while requests continue; Esc or Ctrl-P resumes. Ctrl-G enables graph
+keyboard navigation, divider dragging and mouse scrolling; Esc returns to form
+editing and native selection. There are no F5/F6 bindings.
 
 ## Published models
 
@@ -34,11 +42,11 @@ Nouli AI publishes five task-specific open-source models on Hugging Face,
 under Apache-2.0 with upstream notices. Each includes weights, a local Python
 serving recipe and a Nouli CLI workflow. Inference runs on the user's machine.
 
-- [Nouli Guard](https://nouli.ai/models/nouli-guard/): English hate-speech classification.
 - [Nouli Route](https://nouli.ai/models/nouli-route/): the 77 BANKING77 banking intents.
 - [Nouli Clause](https://nouli.ai/models/nouli-clause/): evidence and entailment for 17 fixed NDA hypotheses.
 - [Nouli Push](https://nouli.ai/models/nouli-push/): PushT keypoint control.
 - [Nouli Doom](https://nouli.ai/models/nouli-doom/): structured-state ViZDoom Deadly Corridor control.
+- [Nouli Guard](https://nouli.ai/models/nouli-guard/): English hate-speech classification.
 
 [Models](https://nouli.ai/models/) · [Hugging Face](https://huggingface.co/nouli-ai).
 Follow each model's documented input schema, quickstart and limitations.

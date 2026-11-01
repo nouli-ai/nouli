@@ -67,9 +67,21 @@ test("public TUI instructions use current fields and shortcuts", () => {
     "@budget.xlsx",
     "/rename",
     "Drag the divider",
+    "Ctrl-S",
+    "Ctrl-P",
+    "Ctrl-L",
+    "/statusline",
+    "Ctrl-G",
   ])
     assert.ok(guide.includes(text), text);
   assert.ok(!guide.includes("/whatif") && !guide.includes("<code>?</code>"));
+  assert.ok(!guide.includes("F6") && !guide.includes("second consecutive Enter"));
+  const readme = readFileSync(join(site, "../README.md"), "utf8");
+  assert.ok(!readme.includes("Enter twice") && !readme.includes("F5"));
+  const version = readFileSync(join(site, "../Cargo.toml"), "utf8").match(/^version = "([^"]+)"/m)[1];
+  for (const name of ["tui", "tui-narrow", "tui-tour"]) {
+    assert.equal(JSON.parse(read(`src/data/cli/${name}.json`)).application, `nouli ${version}`);
+  }
   assert.match(read("examples/index.html"), /Simple · start here/);
   assert.match(read("examples/index.html"), /Complex · build across sessions/);
 });

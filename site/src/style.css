@@ -387,3 +387,10 @@ footer.site { flex-wrap: wrap; line-height: 1.6; }
   .model-body table { table-layout: fixed; font-size: 10px; overflow-wrap: anywhere; }
   .model-body table th:first-child { width: 30%; }
 }
+
+/* Recorded terminal media uses the same quiet frame as the walkthroughs. */
+.ui-video { margin:24px 0; }
+.ui-video video { display:block; width:100%; height:auto; background:#15191d; }
+.ui-video figcaption { margin-top:10px; font-size:13px; line-height:1.5; }
+.replay-note { margin:0; font-size:12px; line-height:1.5; }
+.replay-note a { color:inherit; text-decoration:underline; text-underline-offset:3px; }

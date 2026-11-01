@@ -7,33 +7,33 @@
 <meta name="twitter:card" content="summary">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#0b6e63"><link rel="stylesheet" href="/src/style.css">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "CollectionPage", "name": "Nouli open-source decision models", "url": "https://nouli.ai/models/", "mainEntity": {"@type": "ItemList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Nouli Guard", "url": "https://nouli.ai/models/nouli-guard/"}, {"@type": "ListItem", "position": 2, "name": "Nouli Route", "url": "https://nouli.ai/models/nouli-route/"}, {"@type": "ListItem", "position": 3, "name": "Nouli Clause", "url": "https://nouli.ai/models/nouli-clause/"}, {"@type": "ListItem", "position": 4, "name": "Nouli Push", "url": "https://nouli.ai/models/nouli-push/"}, {"@type": "ListItem", "position": 5, "name": "Nouli Doom", "url": "https://nouli.ai/models/nouli-doom/"}]}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "CollectionPage", "name": "Nouli open-source decision models", "url": "https://nouli.ai/models/", "mainEntity": {"@type": "ItemList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Nouli Route", "url": "https://nouli.ai/models/nouli-route/"}, {"@type": "ListItem", "position": 2, "name": "Nouli Clause", "url": "https://nouli.ai/models/nouli-clause/"}, {"@type": "ListItem", "position": 3, "name": "Nouli Push", "url": "https://nouli.ai/models/nouli-push/"}, {"@type": "ListItem", "position": 4, "name": "Nouli Doom", "url": "https://nouli.ai/models/nouli-doom/"}, {"@type": "ListItem", "position": 5, "name": "Nouli Guard", "url": "https://nouli.ai/models/nouli-guard/"}]}}</script>
 </head><body class="model-site"><header class="top"><a class="mark" href="../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav aria-label="Main navigation"><a href="../models/" aria-current="page">models</a><a href="../guide/">guide</a><a href="../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header><main class="catalog"><header class="catalog-hero"><p class="eyebrow">Models from Nouli <span>Open weights · Apache-2.0</span></p><h1>Specific tasks.<br><span>Open weights.</span></h1><div class="catalog-intro"><p>Five decision models, published on <a href="https://huggingface.co/nouli-ai">Hugging Face ↗</a>. Choose a task, follow its local recipe, and run the supplied Nouli CLI workflow.</p><p>Weights, serving code, provenance and recorded comparisons. More decision models are coming.</p></div></header>
 <div class="model-toolbar"><div role="group" aria-label="Filter models"><button type="button" data-model-filter="all" aria-pressed="true">All models</button><button type="button" data-model-filter="text" aria-pressed="false">Text</button><button type="button" data-model-filter="control" aria-pressed="false">Control</button></div><span data-model-count role="status" aria-live="polite">5 models</span></div>
 <div class="model-grid"><article class="model-card" data-model-category="text">
 <div class="card-meta"><span>01 / Text classification</span><span>v1.0.0</span></div>
-<h2><a href="nouli-guard/">Guard<span aria-hidden="true">↗</span></a></h2>
-<p>Three-way hate-speech probabilities from a calibrated encoder ensemble.</p>
-<div class="model-flow"><span>English text</span><span aria-hidden="true">→</span><span>No / unclear / yes</span></div>
-<div class="card-bottom"><span>1.424B parameters</span><a href="nouli-guard/">Model details →</a></div></article><article class="model-card" data-model-category="text">
-<div class="card-meta"><span>02 / Text classification</span><span>v1.0.0</span></div>
 <h2><a href="nouli-route/">Route<span aria-hidden="true">↗</span></a></h2>
 <p>Classify English banking-support requests into the 77 BANKING77 intents.</p>
 <div class="model-flow"><span>Support request</span><span aria-hidden="true">→</span><span>One of 77 intents</span></div>
 <div class="card-bottom"><span>1.029B parameters</span><a href="nouli-route/">Model details →</a></div></article><article class="model-card" data-model-category="text">
-<div class="card-meta"><span>03 / Text classification</span><span>v1.0.0</span></div>
+<div class="card-meta"><span>02 / Text classification</span><span>v1.0.0</span></div>
 <h2><a href="nouli-clause/">Clause<span aria-hidden="true">↗</span></a></h2>
 <p>Retrieve NDA evidence and evaluate a fixed checklist of 17 hypotheses.</p>
 <div class="model-flow"><span>NDA document</span><span aria-hidden="true">→</span><span>17 fixed hypotheses</span></div>
 <div class="card-bottom"><span>1.178B parameters</span><a href="nouli-clause/">Model details →</a></div></article><article class="model-card" data-model-category="control">
-<div class="card-meta"><span>04 / Simulator control</span><span>v1.0.0</span></div>
+<div class="card-meta"><span>03 / Simulator control</span><span>v1.0.0</span></div>
 <h2><a href="nouli-push/">Push<span aria-hidden="true">↗</span></a></h2>
 <p>Forecast actions and move the T-shaped block using structured simulator state.</p>
 <div class="model-flow"><span>Keypoints + history</span><span aria-hidden="true">→</span><span>Legal XY actions</span></div>
 <div class="card-bottom"><span>2.12M parameters</span><a href="nouli-push/">Model details →</a></div></article><article class="model-card" data-model-category="control">
-<div class="card-meta"><span>05 / Simulator control</span><span>v1.0.0</span></div>
+<div class="card-meta"><span>04 / Simulator control</span><span>v1.0.0</span></div>
 <h2><a href="nouli-doom/">Doom<span aria-hidden="true">↗</span></a></h2>
 <p>A compact actor policy for ViZDoom Deadly Corridor at skill 5.</p>
 <div class="model-flow"><span>Structured game state</span><span aria-hidden="true">→</span><span>54 legal joint actions</span></div>
-<div class="card-bottom"><span>23,435 parameters</span><a href="nouli-doom/">Model details →</a></div></article></div>
+<div class="card-bottom"><span>23,435 parameters</span><a href="nouli-doom/">Model details →</a></div></article><article class="model-card" data-model-category="text">
+<div class="card-meta"><span>05 / Text classification</span><span>v1.0.0</span></div>
+<h2><a href="nouli-guard/">Guard<span aria-hidden="true">↗</span></a></h2>
+<p>Three-way hate-speech probabilities from a calibrated encoder ensemble.</p>
+<div class="model-flow"><span>English text</span><span aria-hidden="true">→</span><span>No / unclear / yes</span></div>
+<div class="card-bottom"><span>1.424B parameters</span><a href="nouli-guard/">Model details →</a></div></article></div>
 <section class="catalog-bottom"><div><p class="eyebrow">The Nouli harness</p><h2>Run model workflows<br>with Nouli.</h2></div><div class="prose"><p>Nouli's terminal app, CLI and Rust library record decisions and the facts and earlier answers they use. Each model release includes an adapter and workflow for its own task.</p><p>Hugging Face hosts the files. Inference runs on your machine; a hosted inference key is not required. The CLI and library are MIT-licensed. Model distributions are Apache-2.0 with upstream notices.</p><a href="../guide/">Meet the harness →</a></div></section></main><footer class="site"><span>Harness MIT · Models Apache-2.0</span><a href="../models/">models</a><a href="https://huggingface.co/nouli-ai">hugging face ↗</a><a href="https://github.com/nouli-ai/nouli">github ↗</a></footer><script type="module" src="/src/models.js"></script></body></html>

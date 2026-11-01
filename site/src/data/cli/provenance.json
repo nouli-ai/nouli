@@ -1,32 +1,47 @@
 {
   "wide": {
-    "application": "nouli 0.4.2",
-    "binary_sha256": "17a6794ddfd229916322bb392124c066d0748e4fcafdd78bfb607ffe955cfd46",
+    "application": "nouli 0.5.1",
+    "binary_sha256": "3209c587e21ab7d1834774d3b062932cac43f2bd8fd10c38ac95a75e55972e66",
     "capture": "Native PTY replay of saved TypeSafe answers through a local stub",
     "live_provider_calls": 0,
     "terminal": {
-      "columns": 224,
-      "lines": 46,
-      "displayed_lines": 44
+      "columns": 160,
+      "lines": 38,
+      "displayed_lines": 38
     },
     "steps": 5,
-    "updates": 882,
-    "replay_milliseconds": 46229,
-    "recorded_at": "2026-10-31T17:01:51Z"
+    "updates": 897,
+    "replay_milliseconds": 44242,
+    "recorded_at": "2026-11-01T19:48:42Z"
   },
   "narrow": {
-    "application": "nouli 0.4.2",
-    "binary_sha256": "17a6794ddfd229916322bb392124c066d0748e4fcafdd78bfb607ffe955cfd46",
+    "application": "nouli 0.5.1",
+    "binary_sha256": "3209c587e21ab7d1834774d3b062932cac43f2bd8fd10c38ac95a75e55972e66",
     "capture": "Native PTY replay of saved TypeSafe answers through a local stub",
     "live_provider_calls": 0,
     "terminal": {
       "columns": 64,
-      "lines": 46,
-      "displayed_lines": 44
+      "lines": 38,
+      "displayed_lines": 38
     },
     "steps": 5,
-    "updates": 879,
-    "replay_milliseconds": 42150,
-    "recorded_at": "2026-10-31T17:03:34Z"
+    "updates": 894,
+    "replay_milliseconds": 41861,
+    "recorded_at": "2026-11-01T19:49:37Z"
+  },
+  "tour": {
+    "application": "nouli 0.5.1",
+    "binary_sha256": "3209c587e21ab7d1834774d3b062932cac43f2bd8fd10c38ac95a75e55972e66",
+    "capture": "Native PTY replay of saved TypeSafe answers through a local stub",
+    "live_provider_calls": 0,
+    "terminal": {
+      "columns": 160,
+      "lines": 38,
+      "displayed_lines": 38
+    },
+    "steps": 5,
+    "updates": 973,
+    "replay_milliseconds": 69866,
+    "recorded_at": "2026-11-01T19:50:49Z"
   }
 }

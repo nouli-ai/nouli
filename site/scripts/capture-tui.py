@@ -47,7 +47,7 @@ class Terminal:
         self.screen = pyte.Screen(self.width, self.height)
         self.stream = pyte.Stream(self.screen)
         self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
-        self.wait(lambda: "Ready" in self.text())
+        self.wait(lambda: "Shift-Tab question type" in self.text())
 
     def text(self):
         return "\n".join(
@@ -165,20 +165,9 @@ try:
         q = step["question"]
         if not q:
             raise RuntimeError("Saved step needs one recorded question")
-        kind = next(
-            (
-                value
-                for label, value in [
-                    ("[Yes / No]", "noul"),
-                    ("[Choose one]", "choice"),
-                    ("[Score]", "score"),
-                ]
-                if label in terminal.text()
-            ),
-            None,
-        )
-        if kind is None:
-            raise RuntimeError("Cannot identify answer type: " + terminal.text())
+        heading = next(line for line in terminal.text().splitlines()
+                       if line.lstrip("─ ").startswith("Question"))
+        kind = "choice" if "Choose one" in heading else "score" if "Score" in heading else "noul"
         original_kind = kind
         while kind != q["type"]:
             terminal.send(b"\x1b[Z")
@@ -203,7 +192,7 @@ try:
         before = frontier(current)
         terminal.send(b"\x13")
         terminal.wait(
-            lambda: "Ready" in terminal.text() and frontier(current) != before
+            lambda: "Shift-Tab question type" in terminal.text() and frontier(current) != before
         )
         answer = terminal.capture()
         terminal.resize(80)

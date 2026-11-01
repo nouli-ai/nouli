@@ -28,7 +28,7 @@ import pyte
 BIN = os.environ["NOULI_BIN"]
 DIR = Path(os.environ["REPLAY_DIR"])
 STORE, CONFIG = DIR / "store", DIR / "config.toml"
-WIDTH, HEIGHT = int(os.environ.get("REPLAY_COLUMNS", "224")), 46
+WIDTH, HEIGHT = int(os.environ.get("REPLAY_COLUMNS", "160")), 38
 # At this width and wider the app shows its decision graph beside the transcript.
 GRAPH_BESIDE = 116
 
@@ -73,17 +73,19 @@ class Recorder:
         self.pid, self.fd = pty.fork()
         if not self.pid:
             os.chdir(DIR)
-            env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor")
+            env = dict(os.environ, HOME=str(DIR), TERM="xterm-256color", COLORTERM="truecolor")
             env.pop("NO_COLOR", None)
             os.execve(BIN, [BIN, "--config", str(CONFIG), "--store", str(STORE), "open", "workshop"], env)
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", HEIGHT, WIDTH, 0, 0))
-        self.wait(lambda: "Ready" in self.text())
+        self.wait(lambda: "Shift-Tab question type" in self.text())
         if WIDTH >= GRAPH_BESIDE:
-            # Drag the divider to give the transcript about two thirds of the width.
-            start, end = WIDTH * 137 // 224, WIDTH * 147 // 224
-            self.send(f"\x1b[<0;{start};3M".encode())
-            self.send(f"\x1b[<32;{end};3M".encode())
-            self.send(f"\x1b[<0;{end};3m".encode())
+            # Mouse reporting is enabled only while Ctrl-G focuses the graph.
+            self.send(b"\x07")
+            start, end = WIDTH - 64, WIDTH // 2
+            self.send(f"\x1b[<0;{start + 1};3M".encode())
+            self.send(f"\x1b[<32;{end + 1};3M".encode())
+            self.send(f"\x1b[<0;{end + 1};3m".encode())
+            self.send(b"\x1b")
         # The replay starts from the first ready screen.
         self.frames, self.previous = [], None
         self.snapshot(force=True)
@@ -138,7 +140,7 @@ class Recorder:
                 self.snapshot(force=True)
                 return
             if "error:" in self.text().lower():
-                raise RuntimeError("TUI reported an error")
+                raise RuntimeError("TUI reported an error:\n" + self.text())
         raise RuntimeError("Timed out waiting for the TUI")
 
     def send(self, data):
@@ -182,7 +184,7 @@ class Recorder:
 
 
 def main():
-    recorder, current = Recorder(), "workshop"
+    recorder, current, kind = Recorder(), "workshop", "noul"
     try:
         for index, step in enumerate(STEPS):
             name, sources = step["session"], step.get("source", [])
@@ -195,15 +197,17 @@ def main():
             elif name != current:
                 recorder.command("/use " + name)
             current = name
-            recorder.wait(lambda: "Ready" in recorder.text())
-            kind = next((k for label, k in KIND_LABELS if label in recorder.text()), None)
-            if kind is None:
-                raise RuntimeError("Unknown question type")
+            recorder.wait(lambda: "Shift-Tab question type" in recorder.text())
+            # Opening a saved source can restore its answer type.
+            heading = next(line for line in recorder.text().splitlines()
+                           if line.lstrip("─ ").startswith("Question"))
+            kind = "choice" if "Choose one" in heading else "score" if "Score" in heading else "noul"
             while kind != step.get("kind", "choice"):
                 recorder.send(b"\x1b[Z")
                 kind = NEXT_KIND[kind]
             recorder.type(step["facts"])
-            recorder.send(b"\t\x15")
+            recorder.send(b"\r")  # Queue the nonempty Context row.
+            recorder.send(b"\r")  # Blank Enter advances to Question.
             recorder.type(step["q"])
             labels = step.get("options", [])
             if labels:
@@ -216,7 +220,7 @@ def main():
             recorder.pump(0.35)
             before = frontier(current)
             recorder.send(b"\x13")
-            recorder.wait(lambda: "Ready" in recorder.text() and frontier(current) != before)
+            recorder.wait(lambda: "Shift-Tab question type" in recorder.text() and frontier(current) != before)
             recorder.mark(index, "answer", step)
             recorder.pump(1.1)
             print(f"{index + 1}/{len(STEPS)} recorded: {step['q']}", flush=True)
@@ -227,6 +231,31 @@ def main():
             recorder.send(b"\x1b[H")
             recorder.pump(2.0)
             recorder.mark(len(STEPS) - 1, "graph", STEPS[-1])
+        if os.environ.get("REPLAY_TOUR") == "1":
+            recorder.send(b"\x1b")
+            recorder.type("Keep this draft while choosing a model.")
+            recorder.send(b"\x0c")  # Ctrl-L model picker.
+            recorder.pump(4.0)
+            recorder.send(b"\x1b")
+            recorder.pump(1.0)
+            recorder.send(b"\x15")
+            recorder.command("/statusline")
+            recorder.pump(4.0)
+            recorder.send(b"\x1b")
+            recorder.command("/help")
+            recorder.pump(4.0)
+            recorder.send(b"\x1b")
+            if WIDTH >= GRAPH_BESIDE:
+                recorder.send(b"\x07")
+                start, end = WIDTH // 2, WIDTH // 2 + 10
+                recorder.send(f"\x1b[<0;{start + 1};3M".encode())
+                recorder.send(f"\x1b[<32;{end + 1};3M".encode())
+                recorder.send(f"\x1b[<0;{end + 1};3m".encode())
+                recorder.pump(2.0)
+                recorder.send(b"\x1b")
+            recorder.send(b"\x10")  # Ctrl-P holds the view.
+            recorder.pump(3.0)
+            recorder.send(b"\x1b")
         recorder.pump(1.0)
     finally:
         recorder.close()

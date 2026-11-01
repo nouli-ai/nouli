@@ -2,7 +2,7 @@
  "session": "plan",
  "nodes": [
   {
-   "id": "01a192e8-6554-750f-b28f-def9481f55c9",
+   "id": "01a198a7-8cc4-7441-a1de-84048f21966b",
    "session": "workshop",
    "turn": 1,
    "kind": "new",
@@ -21,7 +21,7 @@
    "command": "nouli new workshop '…' -q '…'"
   },
   {
-   "id": "01a192e8-88c7-74f8-b8a1-fa876cb988c6",
+   "id": "01a198a7-af8e-72ed-adc8-1f4709e70410",
    "session": "venue",
    "turn": 1,
    "kind": "branch",
@@ -59,7 +59,7 @@
    "command": "nouli new venue --from workshop '…' -q '…'"
   },
   {
-   "id": "01a192e8-b1e6-75e5-aa79-bf26cc8b55f3",
+   "id": "01a198a7-d652-70f4-965f-4c88c2833e66",
    "session": "program",
    "turn": 1,
    "kind": "branch",
@@ -97,7 +97,7 @@
    "command": "nouli new program --from workshop '…' -q '…'"
   },
   {
-   "id": "01a192e8-dadd-7770-8dac-e0f55e59901a",
+   "id": "01a198a7-fd0f-773b-807e-8784e1f13bfd",
    "session": "plan",
    "turn": 1,
    "kind": "blend",
@@ -144,7 +144,7 @@
    "command": "nouli new plan --from venue --from program '…' -q '…'"
   },
   {
-   "id": "01a192e9-0034-70c0-ba58-4fe17853b682",
+   "id": "01a198a8-1fde-72ff-8e6a-fd7de6749384",
    "session": "plan",
    "turn": 2,
    "kind": "continued",
