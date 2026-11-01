@@ -1,43 +1,34 @@
 //! Frozen durable and ephemeral workflows over the shared decision engine.
+mod prepare;
 pub mod reporting;
+mod runner;
 use super::{
     Engine, EngineError,
-    ephemeral::{ephemeral_sources, read_only_sources},
     execution::{DecisionProvider, RetryClock},
-    run::{DurableRecorder, EphemeralRecorder, Recorder, RunInput},
-    session_defaults,
 };
-use crate::history::StandingChanges;
 use crate::{
-    codec,
-    config::{
-        Config, ConfigError,
-        resolve::{RuntimeOverrides, SettingsSnapshot, select_model},
-    },
-    data::Data,
-    history::{EvaluationRequest, FinalizedTurn, ModelSelection, SourcePoint, base::ContextBase},
+    config::{Config, ConfigError, resolve::RuntimeOverrides},
+    history::SourcePoint,
     identity::Id,
     limits::count::TokenCounter,
-    protocol::{ErrorCategory, ErrorReport},
+    protocol::ErrorReport,
     storage::{
         worker::{LedgerWorker, WorkerError},
-        workflows::{
-            FrozenWorkflow, StoredRun, WorkflowDecision, WorkflowDefinition, WorkflowError,
-            WorkflowOwner,
-        },
+        workflows::{StoredRun, WorkflowError, WorkflowOwner},
     },
     workflow::{
         NodeStatus, RunMode, RunStatus, WorkflowRequest,
         compile::{self, CompileError, CompiledWorkflow},
-        node::{node_output, parent_sources, request_for},
-        schedule::{
-            self, AncestorResult, NodeCall, NodeEvaluation, NodeExecutor, NodeOutput, NodeProgress,
-            ScheduleError, ScheduleObserver, ScheduleResult,
-        },
+        schedule::{self, ScheduleError, ScheduleObserver, ScheduleResult},
     },
 };
+use prepare::{
+    Claim, EphemeralWorkflow, durable_settings, effective_request, freeze_ephemeral, max_parallel,
+    owner_or_replay,
+};
+use runner::{Runner, Target};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -104,261 +95,6 @@ fn from_stored(stored: StoredRun, replayed: bool) -> Result<WorkflowResult, Work
         result: stored.result.ok_or(WorkflowError::Snapshot)?,
     })
 }
-enum Target {
-    Durable {
-        worker: LedgerWorker,
-        owner: Arc<WorkflowOwner>,
-    },
-    Ephemeral {
-        history: Vec<FinalizedTurn>,
-        ids: Vec<Id>,
-    },
-}
-struct Runner<P, C, T, O> {
-    observer: Arc<O>,
-    engine: Arc<Engine<P, C, T>>,
-    frozen: Arc<FrozenWorkflow>,
-    graph: Arc<CompiledWorkflow>,
-    target: Target,
-    lookup: CredentialLookup,
-}
-/// What one node evaluates against and where its attempts are recorded.
-struct NodeContext<R> {
-    sources: Vec<SourcePoint>,
-    history: Vec<FinalizedTurn>,
-    recorder: R,
-}
-impl<
-    P: DecisionProvider + Send + 'static,
-    C: TokenCounter + Sync + Send + 'static,
-    T: RetryClock + Send + 'static,
-    O: ScheduleObserver,
-> ScheduleObserver for Runner<P, C, T, O>
-{
-    async fn changed(&self, node: usize, progress: NodeProgress) -> Result<(), ErrorReport> {
-        let progress = if let Target::Durable { worker, owner } = &self.target {
-            let owner = owner.clone();
-            worker
-                .call(move |ledger| {
-                    ledger.record_workflow_progress(&owner, node, &progress)?;
-                    ledger.workflow_node_progress(&owner, node)
-                })
-                .await
-                .map_err(report)?
-                .map_err(report)?
-        } else {
-            progress
-        };
-        self.observer.changed(node, progress).await
-    }
-}
-impl<
-    P: DecisionProvider + Send + 'static,
-    C: TokenCounter + Sync + Send + 'static,
-    T: RetryClock + Send + 'static,
-    O: ScheduleObserver,
-> NodeExecutor for Runner<P, C, T, O>
-{
-    async fn execute(
-        &self,
-        call: NodeCall,
-        cancel: CancellationToken,
-    ) -> Result<NodeOutput, ErrorReport> {
-        let node = call.node;
-        let request = request_for(&self.frozen, node, &call.inputs).map_err(report)?;
-        match &self.target {
-            Target::Durable { worker, owner } => {
-                let context = self.durable_context(worker, owner, &call, &request).await?;
-                let turn = self.execute_node(context, &request, node, &cancel).await?;
-                Ok(node_output(&turn))
-            }
-            Target::Ephemeral { history, ids } => {
-                let context = self.ephemeral_context(history, ids, &call)?;
-                let result = self.execute_node(context, &request, node, &cancel).await?;
-                Ok(ephemeral_node_output(result, request))
-            }
-        }
-    }
-}
-impl<
-    P: DecisionProvider + Send + 'static,
-    C: TokenCounter + Sync + Send + 'static,
-    T: RetryClock + Send + 'static,
-    O: ScheduleObserver,
-> Runner<P, C, T, O>
-{
-    /// Evaluate a node while preserving the recording policy's result type.
-    async fn execute_node<R: Recorder>(
-        &self,
-        context: NodeContext<R>,
-        request: &EvaluationRequest,
-        node: usize,
-        cancel: &CancellationToken,
-    ) -> Result<R::Output, ErrorReport> {
-        let definition = &self.frozen.definition;
-        self.engine
-            .execute(
-                RunInput {
-                    context_base: Some(&definition.base),
-                    runtime_only: definition.base.runtime_only,
-                    request,
-                    sources: &context.sources,
-                    history: &context.history,
-                    settings: self.frozen.settings[node].clone(),
-                    session: definition.session,
-                },
-                context.recorder,
-                |name| (self.lookup)(name),
-                cancel,
-            )
-            .await
-            .map_err(report)
-    }
-    /// Accept the node in the ledger and read the saved history of its parents' turns.
-    async fn durable_context<'a>(
-        &self,
-        worker: &'a LedgerWorker,
-        owner: &Arc<WorkflowOwner>,
-        call: &NodeCall,
-        request: &EvaluationRequest,
-    ) -> Result<NodeContext<DurableRecorder<'a>>, ErrorReport> {
-        let node = call.node;
-        let sources = if call.parents.is_empty() {
-            self.frozen.definition.base.sources.clone()
-        } else {
-            saved_parent_sources(call).map_err(report)?
-        };
-        let writer = owner.clone();
-        let accepted = request.clone();
-        let selected = sources.clone();
-        let intent = worker
-            .call(move |ledger| ledger.accept_workflow_node(&writer, node, &accepted, &selected))
-            .await
-            .map_err(report)?
-            .map_err(report)?;
-        let selected = sources.clone();
-        let history = worker
-            .call(move |ledger| ledger.ancestry(&selected))
-            .await
-            .map_err(report)?
-            .map_err(report)?;
-        Ok(NodeContext {
-            sources,
-            history,
-            recorder: DurableRecorder::Workflow {
-                worker,
-                owner: owner.clone(),
-                intent: Arc::new(intent),
-            },
-        })
-    }
-    /// Extend the base history with in-memory turns for every completed ancestor.
-    fn ephemeral_context(
-        &self,
-        history: &[FinalizedTurn],
-        ids: &[Id],
-        call: &NodeCall,
-    ) -> Result<NodeContext<EphemeralRecorder>, ErrorReport> {
-        let definition = &self.frozen.definition;
-        let mut selected = history.to_vec();
-        let active: HashSet<_> = call
-            .ancestors
-            .iter()
-            .map(|ancestor| ancestor.node)
-            .collect();
-        for ancestor in &call.ancestors {
-            selected.push(self.ephemeral_turn(ancestor, &active, ids)?);
-        }
-        let sources = if call.parents.is_empty() {
-            definition.base.sources.clone()
-        } else {
-            parent_sources(&call.parents, |parent| {
-                Some(SourcePoint {
-                    session: definition.session,
-                    frontier: vec![ids[parent]],
-                })
-            })
-            .ok_or_else(|| report(WorkflowError::Snapshot))?
-        };
-        Ok(NodeContext {
-            sources,
-            history: selected,
-            recorder: EphemeralRecorder,
-        })
-    }
-    /// The unsaved turn an ephemeral ancestor contributes, parented on its active
-    /// dependencies or, for a root, on the frontier of the workflow's base sources.
-    fn ephemeral_turn(
-        &self,
-        ancestor: &AncestorResult,
-        active: &HashSet<usize>,
-        ids: &[Id],
-    ) -> Result<FinalizedTurn, ErrorReport> {
-        let definition = &self.frozen.definition;
-        let evaluation = ancestor
-            .output
-            .evaluation
-            .as_ref()
-            .ok_or_else(|| report(WorkflowError::Snapshot))?;
-        let parents: Vec<_> = self.graph.nodes()[ancestor.node]
-            .dependencies
-            .iter()
-            .filter(|parent| active.contains(parent))
-            .map(|parent| ids[*parent])
-            .collect();
-        let parents = if parents.is_empty() {
-            definition
-                .base
-                .sources
-                .iter()
-                .flat_map(|source| source.frontier.iter().copied())
-                .collect()
-        } else {
-            parents
-        };
-        Ok(FinalizedTurn {
-            context_base: Some(definition.base.clone()),
-            workflow_run: Some(definition.run),
-            runtime_only: true,
-            workflow_node: Some(ancestor.id.clone()),
-            id: ids[ancestor.node],
-            session: definition.session,
-            parents,
-            request: evaluation.request.clone(),
-            outcome: ancestor.output.outcome.clone(),
-            updates: evaluation.updates.clone(),
-            standing: StandingChanges::default(),
-            manifest: evaluation.manifest.clone(),
-        })
-    }
-}
-/// The saved source each parent node published, in parent order.
-fn saved_parent_sources(call: &NodeCall) -> Result<Vec<SourcePoint>, WorkflowError> {
-    parent_sources(&call.parents, |parent| {
-        call.ancestors
-            .iter()
-            .find(|ancestor| ancestor.node == parent)
-            .and_then(|ancestor| ancestor.output.source.clone())
-    })
-    .ok_or(WorkflowError::Snapshot)
-}
-fn ephemeral_node_output(
-    (outcome, manifest): (
-        crate::outcome::TurnOutcome,
-        crate::history::EvaluationManifest,
-    ),
-    request: EvaluationRequest,
-) -> NodeOutput {
-    NodeOutput {
-        outcome,
-        source: None,
-        evaluation: Some(NodeEvaluation {
-            request: request.turn,
-            updates: request.updates,
-            manifest,
-        }),
-    }
-}
 fn reconciled(
     graph: &CompiledWorkflow,
     mut result: ScheduleResult,
@@ -373,186 +109,6 @@ fn reconciled(
         schedule::project_outputs(graph, &result.nodes).map_err(ScheduleError::from)?;
     Ok(result)
 }
-fn resolve_settings(
-    input: &WorkflowInput<'_>,
-    request: &WorkflowRequest,
-    session: &ModelSelection,
-) -> Result<(Vec<SettingsSnapshot>, ModelSelection), ConfigError> {
-    let configured = ModelSelection {
-        provider: input.config.default_provider.clone(),
-        model: input.config.default_model.clone(),
-    };
-    let defaults = select_model(&[
-        &input.overrides.selection,
-        &request.workflow.model,
-        session,
-        &configured,
-    ]);
-    let settings = request
-        .workflow
-        .nodes
-        .iter()
-        .map(|node| {
-            let mut overrides = input.overrides.clone();
-            overrides.selection = node.model.clone();
-            input
-                .config
-                .resolve_snapshot(&overrides, &request.workflow.model, session, input.home)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok((settings, defaults))
-}
-/// The request as evaluation runs it, with the caller's model override applied to the
-/// workflow's model.
-fn effective_request(input: &WorkflowInput<'_>) -> WorkflowRequest {
-    let mut request = input.request.clone();
-    request.workflow.model = select_model(&[&input.overrides.selection, &request.workflow.model]);
-    request
-}
-/// Node settings for an ephemeral run, which never continues a session.
-fn ephemeral_settings(
-    input: &WorkflowInput<'_>,
-    request: &WorkflowRequest,
-) -> Result<(Vec<SettingsSnapshot>, ModelSelection), ConfigError> {
-    resolve_settings(input, request, &ModelSelection::default())
-}
-impl<P, C, T> Engine<P, C, T> {
-    /// The settings, in node order, that evaluating `input` will use for each node,
-    /// without evaluating it: for a durable run, those frozen by an earlier acceptance
-    /// of the same request ID, or settings resolved against the continued session's
-    /// model defaults. Callers use it to prepare what those settings need, such as
-    /// credentials, ahead of evaluation.
-    ///
-    /// # Errors
-    ///
-    /// - [`WorkflowEngineError::Store`] if a durable run has no ledger worker.
-    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
-    ///   ledger cannot look up the saved run or continued session.
-    /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
-    pub async fn planned_workflow_settings(
-        &self,
-        worker: Option<&LedgerWorker>,
-        input: &WorkflowInput<'_>,
-    ) -> Result<Vec<SettingsSnapshot>, WorkflowEngineError> {
-        let request = effective_request(input);
-        let (settings, _) = if request.workflow.mode == RunMode::Ephemeral {
-            ephemeral_settings(input, &request)?
-        } else {
-            durable_settings(worker.ok_or(WorkflowEngineError::Store)?, input, &request).await?
-        };
-        Ok(settings)
-    }
-}
-/// Settings frozen by an earlier acceptance of the same request, or freshly resolved
-/// against the continued session's model defaults.
-async fn durable_settings(
-    worker: &LedgerWorker,
-    input: &WorkflowInput<'_>,
-    request: &WorkflowRequest,
-) -> Result<(Vec<SettingsSnapshot>, ModelSelection), WorkflowEngineError> {
-    let selected = request.clone();
-    let saved = worker
-        .call(move |ledger| ledger.saved_workflow(&selected))
-        .await??;
-    if let Some(saved) = saved {
-        return Ok((saved.settings, saved.definition.defaults));
-    }
-    let session = session_defaults(worker, &request.session)
-        .await?
-        .map_err(WorkflowError::from)?;
-    Ok(resolve_settings(input, request, &session)?)
-}
-/// An ephemeral workflow frozen in memory, with the read-only history it starts from.
-struct EphemeralWorkflow {
-    frozen: Arc<FrozenWorkflow>,
-    sources: Vec<SourcePoint>,
-    history: Vec<FinalizedTurn>,
-}
-/// Validate ephemeral options, read any selected sources, and freeze the definition
-/// under fresh run and session IDs that are never saved.
-async fn freeze_ephemeral(
-    worker: Option<&LedgerWorker>,
-    input: &WorkflowInput<'_>,
-    request: &WorkflowRequest,
-    graph: &CompiledWorkflow,
-) -> Result<EphemeralWorkflow, WorkflowEngineError> {
-    let selections = ephemeral_sources(&request.session, request.request_id.as_deref(), false)?;
-    let (sources, history) = if let Some(selections) = selections {
-        worker
-            .ok_or(WorkflowEngineError::Store)?
-            .call(move |ledger| read_only_sources(ledger, &selections))
-            .await??
-    } else {
-        (vec![], vec![])
-    };
-    let (settings, defaults) = ephemeral_settings(input, request)?;
-    let run = Id::generate();
-    let session = Id::generate();
-    let base = ContextBase {
-        id: run,
-        session,
-        sources: sources.clone(),
-        state: request.workflow.state.clone(),
-        updates: request.updates.clone(),
-        runtime_only: true,
-    };
-    let frozen = FrozenWorkflow {
-        definition: WorkflowDefinition {
-            run,
-            session,
-            request: request.clone(),
-            base,
-            defaults,
-            initial_frontier: vec![],
-            initial_revision: 0,
-            plan: Data::new(codec::to_value(graph).map_err(|_| WorkflowError::Snapshot)?)
-                .map_err(|_| WorkflowError::Snapshot)?,
-        },
-        settings,
-    };
-    Ok(EphemeralWorkflow {
-        frozen: Arc::new(frozen),
-        sources,
-        history,
-    })
-}
-/// The node concurrency frozen with the run's settings.
-fn max_parallel(frozen: &FrozenWorkflow) -> Result<usize, WorkflowError> {
-    Ok(frozen
-        .settings
-        .first()
-        .ok_or(WorkflowError::Snapshot)?
-        .execution
-        .max_parallel)
-}
-/// The ledger's answer to a request to own a workflow run.
-enum Claim {
-    /// The run already finished; its saved result is replayed.
-    Replayed(Box<WorkflowResult>),
-    /// This caller now owns the run and must execute it.
-    Owned(Arc<WorkflowOwner>),
-}
-/// Take an accepted run's ownership, or report a replayed run's start to `observer`;
-/// reject a run owned elsewhere or needing recovery.
-async fn owner_or_replay<O: ScheduleObserver>(
-    decision: WorkflowDecision,
-    observer: &O,
-) -> Result<Claim, WorkflowEngineError> {
-    match decision {
-        WorkflowDecision::Saved(saved) => {
-            observer
-                .started(Some(saved.frozen.definition.run))
-                .await
-                .map_err(ScheduleError::Observer)?;
-            Ok(Claim::Replayed(Box::new(from_stored(*saved, true)?)))
-        }
-        WorkflowDecision::InProgress => Err(WorkflowEngineError::InProgress),
-        WorkflowDecision::Existing { run, status } => {
-            Err(WorkflowEngineError::Existing { run, status })
-        }
-        WorkflowDecision::Accepted(owner) => Ok(Claim::Owned(Arc::<WorkflowOwner>::from(owner))),
-    }
-}
 impl<
     P: DecisionProvider + Send + 'static,
     C: TokenCounter + Sync + Send + 'static,
@@ -563,24 +119,7 @@ impl<
     ///
     /// # Errors
     ///
-    /// See [`Self::evaluate_workflow_observed`]:
-    ///
-    /// - [`WorkflowEngineError::Engine`] wrapping [`EngineError::Canceled`] if `cancel` has
-    ///   already fired, or [`EngineError::EphemeralOptions`] /
-    ///   [`EngineError::EphemeralStore`] for an invalid ephemeral run.
-    /// - [`WorkflowEngineError::Compile`] if the workflow definition does not compile, or
-    ///   [`WorkflowEngineError::Repository`] if the request intent is invalid.
-    /// - [`WorkflowEngineError::Store`] if a durable run, or an ephemeral run with sources,
-    ///   has no ledger worker.
-    /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
-    /// - [`WorkflowEngineError::Schedule`] if an ephemeral run fails to schedule.
-    /// - [`WorkflowEngineError::InProgress`] if another live owner is executing the run, or
-    ///   [`WorkflowEngineError::Existing`] if it needs explicit recovery.
-    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
-    ///   ledger cannot load, interrupt, or finish the run.
-    /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
-    /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
-    ///   run is marked interrupted first.
+    /// See [`Self::evaluate_workflow_observed`] for the errors returned by this method.
     pub async fn evaluate_workflow(
         self: &Arc<Self>,
         worker: Option<&LedgerWorker>,
@@ -661,18 +200,7 @@ impl<
     ///
     /// # Errors
     ///
-    /// See [`Self::resume_workflow_observed`]:
-    ///
-    /// - [`WorkflowEngineError::Engine`] wrapping [`EngineError::Canceled`] if `cancel` has
-    ///   already fired.
-    /// - [`WorkflowEngineError::Compile`] if the saved workflow definition does not compile.
-    /// - [`WorkflowEngineError::InProgress`] if another live owner is executing the run, or
-    ///   [`WorkflowEngineError::Existing`] if it needs explicit recovery.
-    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
-    ///   ledger cannot load, interrupt, or finish the run.
-    /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
-    /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
-    ///   run is marked interrupted first.
+    /// See [`Self::resume_workflow_observed`] for the errors returned by this method.
     pub async fn resume_workflow(
         self: &Arc<Self>,
         worker: &LedgerWorker,
@@ -842,6 +370,7 @@ impl<
     reason = "test fakes implement async traits without needing to await"
 )]
 mod tests {
+    use super::prepare::resolve_settings;
     use super::*;
     use crate::config::ConnectionSettings;
     use crate::history::StandingChanges;
@@ -859,8 +388,15 @@ mod tests {
         storage::{OpenMode, guards::GuardError, replay::ReplayError},
         workflow::WorkflowSpec,
     };
+    use crate::{
+        data::Data,
+        history::ModelSelection,
+        protocol::ErrorCategory,
+        storage::workflows::{WorkflowDecision, WorkflowDefinition},
+        workflow::schedule::NodeProgress,
+    };
     use std::{
-        collections::{BTreeMap, HashMap},
+        collections::{BTreeMap, HashMap, HashSet},
         path::PathBuf,
         sync::{
             Mutex,
