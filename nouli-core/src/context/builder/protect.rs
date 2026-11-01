@@ -2,11 +2,15 @@
 //! and the clean-ups that follow from that protection.
 use super::{BuildError, ContextEntry, EntryKind, RequiredItem};
 use crate::{
-    context::facts,
+    context::{
+        evidence::{self, DecisionReference},
+        facts,
+    },
     data::Data,
     history::{FinalizedTurn, Representation},
     identity::Id,
 };
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -20,10 +24,17 @@ fn mentions(value: &Value, reference: &str) -> bool {
     }
 }
 
-fn is_image_key(record: &Value) -> bool {
-    record["key"]
-        .as_str()
-        .is_some_and(|key| key.starts_with("image:"))
+/// The saved-answer reference in a collected entry's record, if any.
+///
+/// A record keyed and wrapped as a reference that does not parse is not a
+/// usable binding, so it is protected only as ordinary context.
+fn decision_reference(entry: &ContextEntry) -> Option<DecisionReference> {
+    let value = evidence::decision_reference_value_of(&entry.value.value()["record"])?;
+    DecisionReference::deserialize(value)
+        .inspect_err(|error| {
+            tracing::warn!(record = %entry.id, %error, "ignoring a malformed saved-answer reference");
+        })
+        .ok()
 }
 
 fn is_protected_decision(entry: &ContextEntry) -> bool {
@@ -174,9 +185,8 @@ pub(super) fn protect_linked_images(
         .filter(|entry| {
             let record = &entry.value.value()["record"];
             entry.kind == EntryKind::Context
-                && is_image_key(record)
-                && record["value"]["nouli_image"]["reference"]
-                    .as_str()
+                && evidence::image_value_of(record)
+                    .and_then(|image| image["reference"].as_str())
                     .is_some_and(|reference| {
                         !reference.is_empty() && (used.contains(&entry.id) || mentioned(reference))
                     })
@@ -212,22 +222,14 @@ pub(super) fn protect_dependencies(
 
 /// The entry itself, and any turn it cites, when the entry is in use.
 fn dependencies(entry: &ContextEntry, used: &HashSet<Id>, live: &Value) -> Vec<Id> {
-    let record = &entry.value.value()["record"];
-    if let Some(reference) = record["value"]["nouli_decision_reference"].as_object() {
-        let mentioned = reference
-            .get("reference")
-            .and_then(Value::as_str)
-            .is_some_and(|reference| mentions(live, reference));
+    if let Some(reference) = decision_reference(entry) {
+        let mentioned = mentions(live, &reference.reference);
         if !(entry.protected || used.contains(&entry.id) || mentioned) {
             return Vec::new();
         }
-        let source = reference
-            .get("source")
-            .and_then(|source| source.get("turn"))
-            .and_then(Value::as_str)
-            .and_then(|turn| Id::try_from(turn.to_owned()).ok());
-        std::iter::once(entry.id).chain(source).collect()
-    } else if is_image_key(record) && used.contains(&entry.id) {
+        vec![entry.id, reference.source.turn]
+    } else if evidence::is_image_record(&entry.value.value()["record"]) && used.contains(&entry.id)
+    {
         vec![entry.id]
     } else {
         Vec::new()
@@ -245,10 +247,7 @@ pub(super) fn collapse_ancestry_references(
     entries: &mut [ContextEntry],
     required: &[RequiredItem],
 ) -> Result<(), BuildError> {
-    let decisions: HashSet<_> = protected_decisions(entries)
-        .iter()
-        .map(ToString::to_string)
-        .collect();
+    let decisions = protected_decisions(entries);
     for entry in entries.iter_mut().filter(|entry| entry.protected) {
         let pointed = required
             .iter()
@@ -256,27 +255,15 @@ pub(super) fn collapse_ancestry_references(
         if pointed {
             continue;
         }
-        let source =
-            entry.value.value()["record"]["value"]["nouli_decision_reference"]["source"]["turn"]
-                .as_str();
-        if source.is_some_and(|source| decisions.contains(source)) {
-            entry.value = Data::new(binding_only(entry.value.value()))?;
+        if decision_reference(entry)
+            .is_some_and(|reference| decisions.contains(&reference.source.turn))
+        {
+            let mut value = entry.value.value().clone();
+            evidence::reduce_to_binding(&mut value);
+            entry.value = Data::new(value)?;
         }
     }
     Ok(())
-}
-
-/// A copy of a saved-answer reference without the content its source supplies.
-fn binding_only(value: &Value) -> Value {
-    let mut value = value.clone();
-    if let Some(reference) = value["record"]["value"]["nouli_decision_reference"].as_object_mut() {
-        reference.remove("question");
-        reference.remove("outcome");
-        reference.remove("images");
-        reference.remove("input_references");
-        reference.insert("included_in_ancestry".into(), Value::Bool(true));
-    }
-    value
 }
 
 fn is_replaced_fact(entry: &ContextEntry) -> bool {

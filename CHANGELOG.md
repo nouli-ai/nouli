@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nouli-core`: `context::evidence` types saved image and saved-answer records: `DecisionReference`, `ImageSnapshot`, `image_record`, `rebind_decision_record`, `ContextRecord::as_image`, `ContextRecord::as_decision_reference`, and the `IMAGE_KEY_PREFIX`, `DECISION_KEY_PREFIX`, `IMAGE_FIELD`, and `DECISION_REFERENCE_FIELD` constants. `storage::decisions::DecisionSource` is re-exported from there.
 - `nouli-core`: `context::evidence::marker` finds, formats, parses, and strips the inline `[image:UUID]` and `[decision:UUID]` markers that bind text to saved images and saved answers.
 - `nouli-core`: `protocol::OUTCOME_UNKNOWN`, `protocol::NOT_DISPATCHED`, and `protocol::OWNER_EXITED` name the error codes that recovery reads from saved attempts and workflow nodes.
 - `nouli-core`: `Engine::planned_settings`, `Engine::planned_ephemeral_settings`, and `Engine::planned_workflow_settings` return the settings an evaluation will use, so callers can prepare credentials for the providers it will actually call.
 
 ### Changed
 
+- `nouli-core`: `Ledger::decision_reference` reports an invalid snapshot value as `DecisionError::Evidence` instead of `DecisionError::Data`.
 - Report each `nouli connect` and terminal startup setup failure with its own error code and exit code instead of `connection_setup_failed` with exit 2. Invalid arguments, such as an unknown service, protocol, binding, connection name, model, environment variable, credential command, or key, are input errors (exit 2) with codes such as `unknown_service`, `invalid_protocol`, and `connection_exists`. Configuration problems keep their configuration codes and name the configuration file, such as `invalid_configuration_syntax`, `configuration_unreadable`, or `auth_store_insecure` (exit 2). Failures to write the configuration (`configuration_write_failed`) or the credential store (`auth_store_write_failed`, as `nouli auth login` reports) exit 6, and canceling setup reports `setup_canceled` and exits 130.
 - `nouli-core`: `context::projection::project_with_base`, `Ledger::record_attempt_progress`, `Ledger::record_workflow_progress`, and `Ledger::fail_workflow_attempt` take their origin or progress argument by reference, so callers no longer clone it.
 - Save each new attempt's provider error with the same category and code as the final report, such as `provider_capacity`, `provider_authentication_failed`, and `provider_transport_failed`, instead of separate attempt-only codes. Timed-out attempts keep the `provider_outcome_unknown` code under the `transport` category, and each attempt keeps its detailed message, such as the HTTP status.

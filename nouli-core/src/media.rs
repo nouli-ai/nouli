@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::Cursor;
 
-use crate::{codec, codec::InputFormat};
+use crate::{codec, codec::InputFormat, context::evidence};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,17 +33,7 @@ impl Evidence {
     ///   differ in format or bytes.
     pub fn read(context: &str) -> Result<Self, codec::CodecError> {
         fn extract(value: &mut Value, images: &mut Vec<Image>) -> Result<(), codec::CodecError> {
-            if let Some(image) = value
-                .get("record")
-                .filter(|record| {
-                    record
-                        .get("key")
-                        .and_then(Value::as_str)
-                        .is_some_and(|key| key.starts_with("image:"))
-                })
-                .and_then(|record| record.get("value"))
-                .and_then(|value| value.get("nouli_image"))
-            {
+            if let Some(image) = value.get("record").and_then(evidence::image_value_of) {
                 let image: Image =
                     serde_json::from_value(image.clone()).map_err(|_| codec::CodecError::Shape)?;
                 if image.reference.is_empty()
@@ -81,7 +71,7 @@ impl Evidence {
             }
             Ok(())
         }
-        if !context.contains("nouli_image") {
+        if !context.contains(evidence::IMAGE_FIELD) {
             return Ok(Self {
                 text: context.into(),
                 images: vec![],
@@ -312,8 +302,8 @@ pub(crate) mod tests {
         let b = picture(3, 3);
         let context = |other: &Image| {
             codec::encode_toon(&json!({"records":[
-                {"record":{"key":"image:a","value":{"nouli_image":a}}},
-                {"record":{"key":"image:b","value":{"nouli_image":other}}}
+                {"record":evidence::image_record(crate::identity::Id::generate(), &a)},
+                {"record":evidence::image_record(crate::identity::Id::generate(), other)}
             ]}))
             .unwrap()
         };

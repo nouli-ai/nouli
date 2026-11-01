@@ -2,7 +2,7 @@
 use super::DecisionError;
 use crate::{
     codec,
-    context::ContextRecord,
+    context::{ContextRecord, evidence},
     data::Input,
     decision::{AnswerSpace, Criterion, Question},
     history::FinalizedTurn,
@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 fn readable(value: &Value, include_state: bool) -> Value {
     if let Some(image) = value
-        .get("nouli_image")
+        .get(evidence::IMAGE_FIELD)
         .filter(|image| image.is_object() && image["data_base64"].is_string())
     {
         return json!(format!(
@@ -22,7 +22,7 @@ fn readable(value: &Value, include_state: bool) -> Value {
         ));
     }
     if let Some(reference) = value
-        .get("nouli_decision_reference")
+        .get(evidence::DECISION_REFERENCE_FIELD)
         .filter(|reference| reference["source"].is_object())
     {
         let mut shown = json!({"Referenced question":reference["question"]["prompt"],"Saved answer":reference["outcome"],"Label":reference["label"]});
@@ -164,10 +164,7 @@ pub(super) fn state(turn: &FinalizedTurn) -> Result<Vec<String>, DecisionError> 
     if let Some(records) = value["records"].as_array() {
         for entry in records {
             if let Some(record) = entry["value"].get("record") {
-                if record["key"]
-                    .as_str()
-                    .is_some_and(|key| key.starts_with("image:"))
-                {
+                if evidence::is_image_record(record) {
                     continue;
                 }
                 if entry["value"]["active"].as_bool() == Some(false) {

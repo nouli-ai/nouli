@@ -380,7 +380,10 @@ mod tests {
     use super::*;
     use crate::{
         config::Protocol,
-        context::{ContextKind, ContextRecord, PinTarget},
+        context::{
+            ContextKind, ContextRecord, PinTarget,
+            evidence::{DecisionReference, DecisionSource},
+        },
         history::CountMethod,
         limits::count::{ByteCounter, InputCounts},
     };
@@ -431,11 +434,12 @@ mod tests {
             value: Data::new(serde_json::json!("Now prefer driving")).unwrap(),
         };
         let id = Id::generate();
-        let snapshot=ContextRecord{id,key:format!("decision:{id}"),kind:ContextKind::Evidence,value:Data::new(serde_json::json!({"nouli_decision_reference":{
-            "source":{"session":source.session,"turn":source.id,"question":source.request.questions[0].id},
-            "reference":format!("[decision:{id}]"),"question":source.request.questions[0],"outcome":source.outcome.outcomes[0],"images":[],
-            "input_state":{"records":[{"value":{"record":old}}]}
-        }})).unwrap()};
+        let snapshot = reference(
+            id,
+            source,
+            source.id,
+            serde_json::json!({"records":[{"value":{"record":old}}]}),
+        );
         let updates = [
             ContextUpdate::Supersede {
                 targets: vec![old.id],
@@ -469,35 +473,46 @@ mod tests {
                 .representation,
             Representation::Omitted
         );
-        let reference = &plan
-            .entries
-            .iter()
-            .find(|e| e.id == id)
-            .unwrap()
-            .value
-            .value()["record"]["value"]["nouli_decision_reference"];
-        assert_eq!(reference["included_in_ancestry"], true);
-        assert!(reference["input_state"].to_string().contains("Namma metro"));
+        let reference = decision_reference(&plan, id);
+        assert!(reference.included_in_ancestry);
+        assert!(
+            reference
+                .input_state
+                .unwrap()
+                .to_string()
+                .contains("Namma metro")
+        );
         assert!(
             plan.manifest.context_toon.contains("Namma metro")
                 && plan.manifest.context_toon.contains("Now prefer driving")
         );
     }
-    /// A saved-answer reference record citing `question` 0 of `source`.
-    fn saved_answer(id: Id, source: &FinalizedTurn, turn: Id) -> ContextRecord {
-        ContextRecord {
+    /// A saved-answer reference record, as the ledger writes it, citing
+    /// `question` 0 of `source` as if saved in `turn`.
+    fn reference(
+        id: Id,
+        source: &FinalizedTurn,
+        turn: Id,
+        input_state: serde_json::Value,
+    ) -> ContextRecord {
+        DecisionReference::snapshot(
             id,
-            key: format!("decision:{id}"),
-            kind: ContextKind::Evidence,
-            value: Data::new(serde_json::json!({"nouli_decision_reference":{
-                "source":{"session":source.session,"turn":turn,"question":source.request.questions[0].id},
-                "reference":format!("[decision:{id}]"),
-                "question":source.request.questions[0],
-                "outcome":source.outcome.outcomes[0],
-                "images":[]
-            }}))
-            .unwrap(),
-        }
+            DecisionSource {
+                session: source.session,
+                turn,
+                question: source.request.questions[0].id.clone(),
+            },
+            source.request.questions[0].clone(),
+            source.outcome.outcomes[0].clone(),
+            source.outcome.provider.clone(),
+            Vec::new(),
+            input_state,
+        )
+        .record(id)
+        .unwrap()
+    }
+    fn saved_answer(id: Id, source: &FinalizedTurn, turn: Id) -> ContextRecord {
+        reference(id, source, turn, serde_json::json!({}))
     }
     /// Builds with a generous budget and no reduction, expecting success.
     fn build_full(input: ContextInput<'_>) -> ContextPlan {
@@ -506,8 +521,10 @@ mod tests {
     fn entry(plan: &ContextPlan, id: Id) -> &ContextEntry {
         plan.entries.iter().find(|entry| entry.id == id).unwrap()
     }
-    fn decision_reference(plan: &ContextPlan, id: Id) -> &serde_json::Value {
-        &entry(plan, id).value.value()["record"]["value"]["nouli_decision_reference"]
+    fn decision_reference(plan: &ContextPlan, id: Id) -> DecisionReference {
+        let record: ContextRecord =
+            serde_json::from_value(entry(plan, id).value.value()["record"].clone()).unwrap();
+        record.as_decision_reference().unwrap().unwrap()
     }
     #[test]
     fn selected_answers_are_required_across_sessions_and_followups_and_deduplicate_ancestry() {
@@ -534,11 +551,12 @@ mod tests {
         ));
         assert!(entry(&plan, original.id).protected);
         let binding = decision_reference(&plan, id);
-        assert_eq!(binding["included_in_ancestry"], true);
+        assert!(binding.included_in_ancestry);
         assert!(
-            binding.get("outcome").is_none(),
+            binding.outcome.is_none() && binding.question.is_none(),
             "the already-included answer is not duplicated"
         );
+        assert_eq!(binding.input_state, Some(serde_json::json!({})));
         let pointed = [RequiredItem {
             record: id,
             pointer: Some("/record/value/nouli_decision_reference/outcome".into()),
@@ -550,7 +568,7 @@ mod tests {
             &updates,
             &pointed,
         ));
-        assert!(decision_reference(&pointed_plan, id)["outcome"].is_object());
+        assert!(decision_reference(&pointed_plan, id).outcome.is_some());
         // An independent source stays a question-specific snapshot, without
         // importing or mutating the other session's ancestry or active facts.
         let record = saved_answer(id, &original, Id::generate());
@@ -564,7 +582,7 @@ mod tests {
             &updates,
             &required,
         ));
-        assert!(decision_reference(&plan, id).get("outcome").is_some());
+        assert!(decision_reference(&plan, id).outcome.is_some());
         // The next fresh question may have no literal token. Its required
         // preceding decision still retains this used reference dependency.
         history[0].updates.push(ContextUpdate::Append { record });
@@ -801,12 +819,7 @@ mod tests {
         let mut picture = crate::media::tests::picture(1568, 1568);
         picture.reference = "[photo]".into();
         let updates = [ContextUpdate::Append {
-            record: ContextRecord {
-                id,
-                key: format!("image:{id}"),
-                kind: ContextKind::Evidence,
-                value: Data::new(serde_json::json!({"nouli_image":picture})).unwrap(),
-            },
+            record: crate::context::evidence::image_record(id, &picture),
         }];
         let required = [RequiredItem {
             record: id,
