@@ -64,16 +64,31 @@ pub(super) fn validate_defaults(defaults: &ModelSelection) -> Result<(), Session
     Ok(())
 }
 
-pub(super) fn creation_error(error: StorageError, named: bool) -> SessionError {
-    if named
-        && matches!(
-            error,
-            StorageError::Sqlite {
-                code: Some(rusqlite::ErrorCode::ConstraintViolation),
-                ..
-            }
-        )
-    {
+/// Reports a constraint failure as a name collision only when another session
+/// already holds `name`; any other constraint failure stays a storage error.
+fn creation_error(
+    connection: &rusqlite::Connection,
+    session: Id,
+    name: Option<&SessionName>,
+    error: StorageError,
+) -> SessionError {
+    let constraint = matches!(
+        error,
+        StorageError::Sqlite {
+            code: Some(rusqlite::ErrorCode::ConstraintViolation),
+            ..
+        }
+    );
+    let taken = |name: &SessionName| {
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE name=?1 AND id!=?2)",
+                params![name.as_str(), session.to_string()],
+                |row| row.get::<_, bool>(0),
+            )
+            .unwrap_or(false)
+    };
+    if constraint && name.is_some_and(taken) {
         SessionError::NameCollision
     } else {
         SessionError::Storage(error)
@@ -98,7 +113,14 @@ pub(super) fn insert_session(
                 frontier
             ],
         )
-        .map_err(|error| creation_error(sql_error("insert session", &error), true))?;
+        .map_err(|error| {
+            creation_error(
+                transaction,
+                session.id,
+                session.name.as_ref(),
+                sql_error("insert session", &error),
+            )
+        })?;
     let event = Ledger::encode_payload(&HistoryEvent::SessionCreated {
         session: session.id,
         sources: sources.to_vec(),
@@ -229,7 +251,7 @@ impl Ledger {
             if session.name.as_ref()==Some(&name){return Ok(session);}
             let event=HistoryEvent::SessionRenamed{session:id,previous_name:session.name.clone(),name:name.clone()};
             transaction.execute("UPDATE sessions SET name=?2 WHERE id=?1",params![id.to_string(),name.as_str()])
-                .map_err(|error|creation_error(sql_error("rename session",&error),true))?;
+                .map_err(|error|creation_error(transaction,id,Some(&name),sql_error("rename session",&error)))?;
             transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![id.to_string(),Ledger::encode_payload(&event)?])
                 .map_err(|error|sql_error("record session rename",&error))?;
             session.name=Some(name);
@@ -391,6 +413,31 @@ mod tests {
         ));
         drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn non_name_constraint_failures_are_not_reported_as_name_collisions() {
+        let root = std::env::temp_dir().join(format!("nouli-constraint-{}", Id::generate()));
+        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let session = ledger
+            .create_session(None, ModelSelection::default())
+            .unwrap();
+        let mut duplicate_id = session.clone();
+        duplicate_id.name = Some(SessionName::try_from("Unused".to_owned()).unwrap());
+        let result = ledger.transaction("insert duplicate id", |transaction| {
+            insert_session(transaction, &mut duplicate_id, &[])
+        });
+        assert!(
+            matches!(
+                result,
+                Err(SessionError::Storage(StorageError::Sqlite {
+                    code: Some(rusqlite::ErrorCode::ConstraintViolation),
+                    ..
+                }))
+            ),
+            "{result:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
