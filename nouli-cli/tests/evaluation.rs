@@ -1316,3 +1316,75 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     assert_eq!(server.count(), 3);
     assert!(!home.store().exists());
 }
+
+#[test]
+fn workflow_continuing_a_session_runs_only_its_providers_credential_command() {
+    let server = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    let provider = |name: &str| {
+        format!(
+            "[providers.{name}]\nprotocol = \"system-one\"\nbase_url = \"{}\"\n[providers.{name}.models.offline]\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n",
+            server.url
+        )
+    };
+    std::fs::write(
+        home.0.join("config.toml"),
+        format!(
+            "default_provider = \"alpha\"\ndefault_model = \"offline\"\n[execution]\nmax_attempts = 1\nattempt_timeout_seconds = 5\n{}{}",
+            provider("alpha"),
+            provider("beta")
+        ),
+    )
+    .unwrap();
+    let runs_file = |name: &str| home.0.join(format!("{name}-runs"));
+    // Each credential command records a line per run, then prints its key.
+    for name in ["alpha", "beta"] {
+        let script = format!(
+            "echo run >> '{}'; printf KEY_{name}",
+            runs_file(name).display()
+        );
+        let login = home.run(["auth", "login", name, "--command", "sh", "-c", &script]);
+        assert!(login.status.success());
+    }
+    let runs = |name: &str| {
+        std::fs::read_to_string(runs_file(name)).map_or(0, |text| text.lines().count())
+    };
+    // The new session's model defaults name beta, not the configured alpha. First-run
+    // setup checks beta's credential too, so only the workflow's runs are counted.
+    report(
+        &home.run(
+            [
+                &["new", "Trip", "A fact", "--provider", "beta"][..],
+                &QUESTION,
+            ]
+            .concat(),
+        ),
+    );
+    assert_eq!(runs("alpha"), 0);
+    std::fs::remove_file(runs_file("beta")).unwrap();
+    let file = home.0.join("workflow.json");
+    std::fs::write(&file, serde_json::to_vec(&workflow()).unwrap()).unwrap();
+    let before = server.count();
+    let run = run_report(
+        &home.run([
+            "workflow",
+            "run",
+            file.to_str().unwrap(),
+            "--session",
+            "Trip",
+        ]),
+        0,
+    );
+    assert!(server.count() - before > 1);
+    assert!(run.session.is_some());
+    // The prefetch ran beta's command once for every node; alpha's never ran.
+    assert_eq!((runs("alpha"), runs("beta")), (0, 1));
+    assert!(
+        server
+            .authorizations
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|authorization| authorization.as_deref() == Some("Bearer KEY_beta"))
+    );
+}

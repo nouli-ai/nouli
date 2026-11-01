@@ -5,6 +5,7 @@ use super::{
     run::{Executed, Recorder, RunInput},
 };
 use crate::{
+    config::{ConfigError, resolve::SettingsSnapshot},
     decision::TurnRequest,
     history::{
         EvaluationManifest, FinalizedTurn, ModelSelection, SessionSelection, SourcePoint,
@@ -72,12 +73,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         } else {
             (vec![], vec![])
         };
-        let settings = input.config.resolve_snapshot(
-            input.overrides,
-            &request.model,
-            &ModelSelection::default(),
-            input.home,
-        )?;
+        let settings = ephemeral_settings(&input)?;
         match self
             .execute(
                 RunInput {
@@ -103,6 +99,29 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             Executed::Saved(_) => Err(crate::storage::StorageError::Payload.into()),
         }
     }
+}
+impl<P, C, T> Engine<P, C, T> {
+    /// The settings [`Self::evaluate_ephemeral`] will use for `input`, without
+    /// evaluating it. Ephemeral turns never continue a session, so these ignore any
+    /// session's model defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] if settings cannot be resolved.
+    pub fn planned_ephemeral_settings(
+        &self,
+        input: &EvaluationInput<'_>,
+    ) -> Result<SettingsSnapshot, ConfigError> {
+        ephemeral_settings(input)
+    }
+}
+fn ephemeral_settings(input: &EvaluationInput<'_>) -> Result<SettingsSnapshot, ConfigError> {
+    input.config.resolve_snapshot(
+        input.overrides,
+        &input.request.model,
+        &ModelSelection::default(),
+        input.home,
+    )
 }
 
 /// Resolve source selections and their ancestry, refusing a ledger opened for writing so

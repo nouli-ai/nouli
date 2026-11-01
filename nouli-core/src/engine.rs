@@ -7,7 +7,7 @@ pub mod workflow;
 use crate::{
     config::{
         Config, ConfigError,
-        resolve::{RuntimeOverrides, select_model},
+        resolve::{RuntimeOverrides, SettingsSnapshot, select_model},
     },
     context::builder::BuildError,
     history::{EvaluationRequest, FinalizedTurn, HistoryError, ModelSelection, SessionSelection},
@@ -112,8 +112,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         if cancel.is_cancelled() {
             return Err(EngineError::Canceled);
         }
-        let mut request = input.request.clone();
-        request.model = select_model(&[&input.overrides.selection, &request.model]);
+        let mut request = effective_request(&input);
         request.validate()?;
         let key = request
             .request_id
@@ -132,22 +131,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             let settings = if let Some(saved) = saved {
                 saved.settings
             } else {
-                let defaults = match &request.session {
-                    SessionSelection::Continue { session } => {
-                        let selector = session.clone();
-                        ledger
-                            .call(move |ledger| ledger.session(&selector))
-                            .await??
-                            .defaults
-                    }
-                    _ => ModelSelection::default(),
-                };
-                input.config.resolve_snapshot(
-                    input.overrides,
-                    &request.model,
-                    &defaults,
-                    input.home,
-                )?
+                new_request_settings(ledger, &input, &request).await?
             };
             let query = request.clone();
             ledger
@@ -201,6 +185,69 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             Executed::Ephemeral { .. } => Err(StorageError::Payload.into()),
         }
     }
+}
+impl<P, C, T> Engine<P, C, T> {
+    /// The settings [`Self::evaluate`] will use for `input`, without evaluating it:
+    /// those frozen by an earlier acceptance of the same request ID, or settings
+    /// resolved against the continued session's model defaults. Callers use it to
+    /// prepare what those settings need, such as credentials, ahead of evaluation.
+    ///
+    /// # Errors
+    ///
+    /// - [`EngineError::Worker`], [`EngineError::Replay`], or [`EngineError::Session`]
+    ///   if the ledger cannot look up the saved request or continued session.
+    /// - [`EngineError::Replay`] with [`ReplayError::MissingId`] or
+    ///   [`ReplayError::UnknownRequest`] for an interrupted retry without a saved
+    ///   request, which evaluation rejects the same way.
+    /// - [`EngineError::Config`] if settings cannot be resolved for a new request.
+    pub async fn planned_settings(
+        &self,
+        ledger: &LedgerWorker,
+        input: &EvaluationInput<'_>,
+    ) -> Result<SettingsSnapshot, EngineError> {
+        let request = effective_request(input);
+        let query = request.clone();
+        let saved = ledger
+            .call(move |ledger| ledger.saved_request(&query))
+            .await??;
+        match saved {
+            Some(saved) => Ok(saved.settings),
+            None if input.retry_interrupted => Err(if request.request_id.is_some() {
+                ReplayError::UnknownRequest
+            } else {
+                ReplayError::MissingId
+            }
+            .into()),
+            None => new_request_settings(ledger, input, &request).await,
+        }
+    }
+}
+/// The request as durable evaluation runs it, with the caller's model override applied.
+fn effective_request(input: &EvaluationInput<'_>) -> EvaluationRequest {
+    let mut request = input.request.clone();
+    request.model = select_model(&[&input.overrides.selection, &request.model]);
+    request
+}
+/// Settings for a request not accepted before, resolved against the continued
+/// session's model defaults.
+async fn new_request_settings(
+    ledger: &LedgerWorker,
+    input: &EvaluationInput<'_>,
+    request: &EvaluationRequest,
+) -> Result<SettingsSnapshot, EngineError> {
+    let defaults = match &request.session {
+        SessionSelection::Continue { session } => {
+            let selector = session.clone();
+            ledger
+                .call(move |ledger| ledger.session(&selector))
+                .await??
+                .defaults
+        }
+        _ => ModelSelection::default(),
+    };
+    Ok(input
+        .config
+        .resolve_snapshot(input.overrides, &request.model, &defaults, input.home)?)
 }
 
 #[cfg(test)]
@@ -442,6 +489,64 @@ mod tests {
             key: "budget".into(),
             value: Data::new(serde_json::json!(value)).unwrap(),
             kind: ContextKind::Commitment,
+        }
+    }
+    #[tokio::test]
+    async fn planned_settings_match_the_settings_evaluation_freezes() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let engine = make_engine(Fake::default());
+        let config = config();
+        let request = request();
+        let overrides = RuntimeOverrides::default();
+        let input = |config, retry_interrupted| EvaluationInput {
+            request: &request,
+            config,
+            overrides: &overrides,
+            home: Path::new("/unused"),
+            retry_interrupted,
+        };
+        // An interrupted retry of a request never saved is rejected, as evaluation rejects it.
+        assert!(matches!(
+            engine
+                .planned_settings(&ledger.worker, &input(&config, true))
+                .await,
+            Err(EngineError::Replay(ReplayError::UnknownRequest))
+        ));
+        let planned = engine
+            .planned_settings(&ledger.worker, &input(&config, false))
+            .await
+            .unwrap();
+        run(
+            &engine,
+            &mut ledger,
+            &config,
+            &request,
+            false,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let frozen = ledger.saved_request(&request).unwrap().unwrap();
+        // The ledger records its own path as the store; the provider choice is the plan's.
+        assert_eq!(
+            (&planned.profile_name, &planned.profile, &planned.execution),
+            (
+                &frozen.settings.profile_name,
+                &frozen.settings.profile,
+                &frozen.settings.execution
+            )
+        );
+        // A saved request keeps its frozen settings, whatever the configuration says now.
+        let changed = Config::default();
+        for retry in [false, true] {
+            assert_eq!(
+                engine
+                    .planned_settings(&ledger.worker, &input(&changed, retry))
+                    .await
+                    .unwrap(),
+                frozen.settings
+            );
         }
     }
     #[tokio::test]

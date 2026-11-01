@@ -14,7 +14,7 @@ use nouli_core::{
         Engine, EngineError, EvaluationInput,
         execution::{NativeProvider, TokioClock},
     },
-    history::{EvaluationRequest, ModelSelection, SessionSelection},
+    history::{ModelSelection, SessionSelection},
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
     storage::{Ledger, OpenMode, replay::ReplayError, worker::LedgerWorker},
@@ -65,30 +65,25 @@ pub(crate) async fn run_until(
 }
 /// Runs the command behind the turn's provider credential, if it has one,
 /// before the engine asks for it, so the wait is off the async runtime and ends
-/// on Ctrl-C. When this cannot tell which provider the turn will use, the
-/// engine's own lookup runs the command instead.
+/// on Ctrl-C. The engine plans the settings, so the provider chosen here is the
+/// one the turn uses. When the plan fails, the engine's own lookup runs the
+/// command instead.
 async fn fetch_credential(
     settings: &Settings,
-    overrides: &RuntimeOverrides,
-    request: &EvaluationRequest,
+    engine: &Engine<NativeProvider, ByteCounter, TokioClock>,
+    input: &EvaluationInput<'_>,
     worker: Option<&LedgerWorker>,
+    ephemeral: bool,
     cancel: &CancellationToken,
 ) {
-    let defaults = match (&request.session, worker) {
-        (SessionSelection::Continue { session }, Some(worker)) => {
-            let selector = session.clone();
-            match worker.call(move |ledger| ledger.session(&selector)).await {
-                Ok(Ok(session)) => session.defaults,
-                _ => return,
-            }
-        }
-        _ => ModelSelection::default(),
+    let planned = if ephemeral {
+        engine.planned_ephemeral_settings(input).ok()
+    } else if let Some(worker) = worker {
+        engine.planned_settings(worker, input).await.ok()
+    } else {
+        None
     };
-    let Ok(snapshot) =
-        settings
-            .config
-            .resolve_snapshot(overrides, &request.model, &defaults, &settings.home)
-    else {
+    let Some(snapshot) = planned else {
         return;
     };
     if snapshot.profile.api_key_env.is_some() || snapshot.profile.stored_credential {
@@ -140,7 +135,15 @@ async fn execute(
     };
     let cancel = CancellationToken::new();
     let evaluation = async {
-        fetch_credential(settings, &overrides, request, worker.as_ref(), &cancel).await;
+        fetch_credential(
+            settings,
+            &engine,
+            &input,
+            worker.as_ref(),
+            ephemeral,
+            &cancel,
+        )
+        .await;
         if ephemeral {
             let result = engine
                 .evaluate_ephemeral(

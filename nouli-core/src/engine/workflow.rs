@@ -391,6 +391,47 @@ fn resolve_settings(
         .collect::<Result<Vec<_>, _>>()?;
     Ok((settings, defaults))
 }
+/// The request as evaluation runs it, with the caller's model override applied to the
+/// workflow's model.
+fn effective_request(input: &WorkflowInput<'_>) -> WorkflowRequest {
+    let mut request = input.request.clone();
+    request.workflow.model = select_model(&[&input.overrides.selection, &request.workflow.model]);
+    request
+}
+/// Node settings for an ephemeral run, which never continues a session.
+fn ephemeral_settings(
+    input: &WorkflowInput<'_>,
+    request: &WorkflowRequest,
+) -> Result<(Vec<SettingsSnapshot>, ModelSelection), ConfigError> {
+    resolve_settings(input, request, &ModelSelection::default())
+}
+impl<P, C, T> Engine<P, C, T> {
+    /// The settings, in node order, that evaluating `input` will use for each node,
+    /// without evaluating it: for a durable run, those frozen by an earlier acceptance
+    /// of the same request ID, or settings resolved against the continued session's
+    /// model defaults. Callers use it to prepare what those settings need, such as
+    /// credentials, ahead of evaluation.
+    ///
+    /// # Errors
+    ///
+    /// - [`WorkflowEngineError::Store`] if a durable run has no ledger worker.
+    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
+    ///   ledger cannot look up the saved run or continued session.
+    /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
+    pub async fn planned_workflow_settings(
+        &self,
+        worker: Option<&LedgerWorker>,
+        input: &WorkflowInput<'_>,
+    ) -> Result<Vec<SettingsSnapshot>, WorkflowEngineError> {
+        let request = effective_request(input);
+        let (settings, _) = if request.workflow.mode == RunMode::Ephemeral {
+            ephemeral_settings(input, &request)?
+        } else {
+            durable_settings(worker.ok_or(WorkflowEngineError::Store)?, input, &request).await?
+        };
+        Ok(settings)
+    }
+}
 /// Settings frozen by an earlier acceptance of the same request, or freshly resolved
 /// against the continued session's model defaults.
 async fn durable_settings(
@@ -448,7 +489,7 @@ async fn freeze_ephemeral(
     } else {
         (vec![], vec![])
     };
-    let (settings, defaults) = resolve_settings(input, request, &ModelSelection::default())?;
+    let (settings, defaults) = ephemeral_settings(input, request)?;
     let run = Id::generate();
     let session = Id::generate();
     let base = ContextBase {
@@ -592,9 +633,7 @@ impl<
         if cancel.is_cancelled() {
             return Err(EngineError::Canceled.into());
         }
-        let mut request = input.request.clone();
-        request.workflow.model =
-            select_model(&[&input.overrides.selection, &request.workflow.model]);
+        let mut request = effective_request(&input);
         let graph = Arc::new(compile::compile(&request.workflow)?);
         crate::storage::workflows::fingerprint(&request)?;
         if request.workflow.mode == RunMode::Ephemeral {
