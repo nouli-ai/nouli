@@ -4,6 +4,7 @@ mod json;
 mod serialize;
 mod toon;
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use serde::{Serialize, de::DeserializeOwned};
@@ -185,10 +186,11 @@ pub fn encode_toon<T: Serialize>(value: &T) -> Result<String, CodecError> {
 pub fn fingerprint<T: Serialize>(value: &T) -> Result<String, CodecError> {
     let value = canonical_value(serialize::checked_value(value)?);
     let bytes = serde_json::to_vec(&value).map_err(|_| CodecError::Shape)?;
-    Ok(Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    let mut hex = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
 }
 
 fn canonical_value(value: Value) -> Value {

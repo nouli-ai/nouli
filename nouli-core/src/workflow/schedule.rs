@@ -206,7 +206,7 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
             .map(|binding| compiled_binding(binding, &self.nodes))
             .collect::<Result<Vec<_>, _>>()?;
         let required_missing = inputs.iter().any(|input| input.required_missing);
-        self.nodes[id].inputs = inputs.clone();
+        self.nodes[id].inputs.clone_from(&inputs);
         let failed_parent = plan.dependencies.iter().any(|parent| {
             matches!(
                 self.nodes[*parent].status,
@@ -255,7 +255,7 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
             .filter(|ancestor| ancestors.contains(ancestor))
             .copied()
             .collect();
-        self.nodes[id].ancestors = ordered.clone();
+        self.nodes[id].ancestors.clone_from(&ordered);
         let ancestors = ordered
             .into_iter()
             .map(|node| {
@@ -404,7 +404,7 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
                 }
                 return Err(ScheduleError::State);
             }
-            tokio::select! {biased;_=self.cancel.cancelled()=>return Ok(true),result=self.tasks.join_next_with_id()=>{let id=self.complete(result.ok_or(ScheduleError::State)?,false)?;self.observer.changed(id,self.nodes[id].clone()).await.map_err(ScheduleError::Observer)?;}}
+            tokio::select! {biased;()=self.cancel.cancelled()=>return Ok(true),result=self.tasks.join_next_with_id()=>{let id=self.complete(result.ok_or(ScheduleError::State)?,false)?;self.observer.changed(id,self.nodes[id].clone()).await.map_err(ScheduleError::Observer)?;}}
         }
     }
 }
@@ -753,7 +753,7 @@ mod tests {
             match event {
                 Event::Start(id) => executor.gates[&id].add_permits(1),
                 Event::Finish(id) if id == "final" => break,
-                _ => {}
+                Event::Finish(_) => {}
             }
         }
         let result = task.await.unwrap();

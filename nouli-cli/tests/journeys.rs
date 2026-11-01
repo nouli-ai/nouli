@@ -11,7 +11,9 @@ use nouli_core::{
     context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
     data::{Data, Input},
     decision::TurnRequest,
-    history::{EvaluationRequest, ModelSelection, Representation, SessionSelection},
+    history::{
+        EvaluationRequest, ModelSelection, Representation, SessionSelection, StandingChanges,
+    },
     identity::{Id, SessionName, SessionSelector},
     outcome::{Answer, QuestionOutcome},
     protocol::{Report, ResultEnvelope},
@@ -21,6 +23,7 @@ use nouli_core::{
     },
 };
 use serde_json::Value;
+use std::fmt::Write as _;
 fn fixture(name: &str) -> TurnRequest {
     let bytes = match name {
         "food" => include_bytes!("../../fixtures/journeys/food.json").as_slice(),
@@ -93,9 +96,11 @@ fn configure(home: &Home, jev: &Server, openai: &Server, router: &Server, attemp
         ("openai", "openai-decisions", &openai.url),
         ("router", "system-one", &router.url),
     ] {
-        text += &format!(
+        write!(
+            text,
             "[providers.{name}]\nprotocol = \"{protocol}\"\nbase_url = \"{endpoint}\"\n[providers.{name}.models.\"fixture-requested-alias\"]\ncontext_budget_tokens = 100000\ncontext_window_tokens = 100000\nreserved_output_tokens = 128\n"
-        );
+        )
+        .unwrap();
     }
     std::fs::write(home.0.join("config.toml"), text).unwrap();
 }
@@ -108,7 +113,7 @@ fn write_request(
     key: Option<&str>,
 ) -> std::path::PathBuf {
     let request = EvaluationRequest {
-        standing: Default::default(),
+        standing: StandingChanges::default(),
         turn,
         session: SessionSelection::New { name: None },
         updates,
@@ -262,7 +267,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
 
     drop(captured);
     let branch_request = EvaluationRequest {
-        standing: Default::default(),
+        standing: StandingChanges::default(),
         turn: fixture("food"),
         session: SessionSelection::New { name: None },
         updates: vec![ContextUpdate::Unpin { target: budget.id }],
@@ -338,7 +343,7 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         "openai",
     ]));
     assert_eq!(score(&blend.outcome), 1.43);
-    assert_ne!(score(&blend.outcome), (0.6 + 1.43) / 2.0);
+    assert_ne!(score(&blend.outcome), f64::midpoint(0.6, 1.43));
     let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
     let exported = ledger
         .export_session(&SessionSelector::Id(blend.session.unwrap()))

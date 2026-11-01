@@ -150,11 +150,10 @@ fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<
     for index in order {
         let turn = turns[index];
         let session = sessions.get(&turn.session).ok_or(RenderError::Protocol)?;
-        let session_label = session
-            .name
-            .as_ref()
-            .map(|name| name.as_str().to_owned())
-            .unwrap_or_else(|| format!("(unnamed {})", session_labels[&session.id]));
+        let session_label = session.name.as_ref().map_or_else(
+            || format!("(unnamed {})", session_labels[&session.id]),
+            |name| name.as_str().to_owned(),
+        );
         let latest = frontier.contains(&turn.id);
         let questions = if split.contains(&turn.id) && turn.request.questions.len() > 1 {
             (0..turn.request.questions.len())
@@ -359,7 +358,9 @@ fn draw_cards(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nouli_core::{outcome::Answer, storage::inspection::SessionProvenance};
+    use nouli_core::{
+        history::ModelSelection, outcome::Answer, storage::inspection::SessionProvenance,
+    };
 
     pub(super) fn fixture() -> SessionExport {
         let fixture: serde_json::Value =
@@ -370,7 +371,7 @@ mod tests {
         let session = nouli_core::storage::sessions::Session {
             id: turns[3].session,
             name: Some("Combined".to_owned().try_into().unwrap()),
-            defaults: Default::default(),
+            defaults: ModelSelection::default(),
             frontier: vec![turns[3].id],
             revision: 1,
         };
@@ -383,7 +384,7 @@ mod tests {
                         .try_into()
                         .unwrap(),
                 ),
-                defaults: Default::default(),
+                defaults: ModelSelection::default(),
                 sources: vec![],
             })
             .collect();
@@ -508,7 +509,7 @@ mod tests {
         new.provenance = vec![SessionProvenance {
             id: new.session.id,
             name: new.session.name.clone(),
-            defaults: Default::default(),
+            defaults: ModelSelection::default(),
             sources: vec![],
         }];
         let nodes = nodes(&[&original, &original, &new], &new.session.frontier).unwrap();
@@ -589,7 +590,7 @@ mod tests {
         else {
             panic!("noul")
         };
-        *probability = 0.00000000001;
+        *probability = 0.000_000_000_01;
         assert!(text(&export).contains("P(yes)=0.00000000001"));
     }
 

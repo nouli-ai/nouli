@@ -9,6 +9,7 @@ use nouli_core::{
     decision::{AnswerSpace, ChoiceOption, Criterion, Question},
     outcome::{Answer, OptionProbability, QuestionOutcome},
 };
+use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -51,7 +52,7 @@ impl Header {
         // What was replaced is a fact about the saved history, which a turn
         // that was not saved does not touch.
         if self.turn.is_some() && self.replaced > 0 {
-            facts.push_str(&format!(" ({} replaced, kept in history)", self.replaced));
+            let _ = write!(facts, " ({} replaced, kept in history)", self.replaced);
         }
         parts.push(facts);
         parts.push(plural(self.questions, "question"));

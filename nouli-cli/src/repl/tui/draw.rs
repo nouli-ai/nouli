@@ -874,7 +874,7 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
             let count = match &previous.question.answer_space {
                 nouli_core::decision::AnswerSpace::Choice { options } => options.len(),
                 nouli_core::decision::AnswerSpace::Score { levels } => levels.len(),
-                _ => 0,
+                nouli_core::decision::AnswerSpace::Noul => 0,
             };
             heading.push(Span::styled(
                 format!(" · using previous {count}"),
@@ -1152,7 +1152,7 @@ fn focused_hints(width: usize, row: Row) -> String {
             width,
             &["↑↓ fields", "@ reference", "Tab question", "/help"],
         ),
-        _ => hints(width),
+        Row::Input => hints(width),
     }
 }
 
@@ -1177,6 +1177,7 @@ mod tests {
     use super::*;
     use crate::repl::tui::tests::app;
     use ratatui::{Terminal, backend::TestBackend};
+    use std::fmt::Write as _;
 
     fn shown(app: &mut App, width: u16, height: u16) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -1634,9 +1635,9 @@ mod tests {
         let mut graph = Graph::default();
         let mut text = String::new();
         for row in 0..30 {
-            text.push_str(&format!("┌─ a{row} ─┐{}┌─ b ─┐\n", " ".repeat(30)));
+            writeln!(text, "┌─ a{row} ─┐{}┌─ b ─┐", " ".repeat(30)).unwrap();
         }
-        text.push_str(&format!("{}┌─ c [latest] ─┐\n", " ".repeat(20)));
+        writeln!(text, "{}┌─ c [latest] ─┐", " ".repeat(20)).unwrap();
         graph.show(&text, Some((30, 20..36)));
         // The latest card is the last row, and it fits from column 0.
         assert_eq!(place(&mut graph, 40, 10), (0, 21));

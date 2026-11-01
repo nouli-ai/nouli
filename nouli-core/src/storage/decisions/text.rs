@@ -114,7 +114,7 @@ pub(super) fn conversation(
     match &question.answer_space {
         AnswerSpace::Noul => {}
         AnswerSpace::Choice { options } => {
-            lines.extend(options.iter().map(|option| option.description.clone()))
+            lines.extend(options.iter().map(|option| option.description.clone()));
         }
         AnswerSpace::Score { levels } => {
             for value in levels {

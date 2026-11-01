@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn evaluation_metadata_rejects_empty_sources_ids_and_duplicate_requirements() {
         let mut request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: turn().request,
             session: SessionSelection::From {
                 sources: vec![],
@@ -451,7 +451,7 @@ mod tests {
     fn a_request_asks_its_own_questions_and_sets_no_standing_ones() {
         let question = turn().request.questions[0].clone();
         let mut request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: TurnRequest {
                 questions: vec![],
                 ..turn().request

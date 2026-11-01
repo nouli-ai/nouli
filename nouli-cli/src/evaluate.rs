@@ -294,13 +294,12 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
             return render_error(args, settings.config.output, input_error(&error));
         }
     };
-    let format = match render::resolve(
+    let Ok(format) = render::resolve(
         &args.output,
         settings.config.output,
         io::stdout().is_terminal(),
-    ) {
-        Ok(format) => format,
-        Err(_) => return ExitCode::from(2),
+    ) else {
+        return ExitCode::from(2);
     };
     if let Some(creation) = &draft.create {
         let result = match create(&settings, creation) {
@@ -323,12 +322,11 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
     if let Err(error) = settings::preflight::turn(&settings, &overrides, &draft.request) {
         return render_error(args, settings.config.output, error.report(&settings));
     }
-    let runtime = match tokio::runtime::Builder::new_current_thread()
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-    {
-        Ok(runtime) => runtime,
-        Err(_) => return ExitCode::from(6),
+    else {
+        return ExitCode::from(6);
     };
     let result = runtime.block_on(run(&draft, &settings));
     if format == Format::Text

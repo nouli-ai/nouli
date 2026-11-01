@@ -127,6 +127,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
         data::Data,
@@ -168,7 +169,7 @@ mod tests {
             .prepare_attempt(
                 &guard,
                 AttemptInput {
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     request: fixture.request,
                     updates,
                     manifest: fixture.manifest,
@@ -373,7 +374,7 @@ mod tests {
         let guard = ledger.session_guard(blend.id).unwrap();
         let fixture = fixture();
         let mut input = AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: fixture.request,
             manifest: fixture.manifest,
             updates: vec![],
@@ -432,7 +433,7 @@ mod tests {
         let captured = ledger.session_sources(derived.id).unwrap();
         let fixture = fixture();
         let request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: fixture.request,
             session: SessionSelection::Continue {
                 session: SessionSelector::Id(derived.id),
@@ -454,8 +455,8 @@ mod tests {
                     context_budget_tokens: Some(4096),
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 std::path::Path::new("/unused"),
             )
             .unwrap()

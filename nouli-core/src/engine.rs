@@ -190,6 +190,8 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::history::StandingChanges;
     use crate::{
         config::{
             ExecutionSettings, ModelSettings, OutputFormat, Protocol, ProviderDefinition,
@@ -265,7 +267,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: serde_json::from_str(include_str!(
                 "../../fixtures/contracts/decision-request.json"
             ))
@@ -285,7 +287,7 @@ mod tests {
     }
     fn config() -> Config {
         Config {
-            defaults: Default::default(),
+            defaults: ModelSettings::default(),
             default_provider: Some("fixture".into()),
             default_model: Some("offline".into()),
             output: OutputFormat::Json,
@@ -297,15 +299,15 @@ mod tests {
             providers: BTreeMap::from([(
                 "fixture".into(),
                 ProviderDefinition {
-                    connection: Default::default(),
-                    defaults: Default::default(),
+                    connection: ConnectionSettings::default(),
+                    defaults: ModelSettings::default(),
                     protocol: Protocol::SystemOne,
                     base_url: "http://127.0.0.1:8080".into(),
                     api_key_env: None,
                     models: BTreeMap::from([(
                         "offline".into(),
                         ModelSettings {
-                            connection: Default::default(),
+                            connection: ConnectionSettings::default(),
                             per_question_context_tokens: None,
                             max_questions: None,
                             max_choices: None,
@@ -361,14 +363,13 @@ mod tests {
                 let mut ledger = Ledger::open(path, OpenMode::ReadWriteCreate).unwrap();
                 ledger.transaction::<_,StorageError>("inject finalization failure",|tx| {tx.execute_batch("CREATE TRIGGER IF NOT EXISTS reject_engine_finalization BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();Ok(())}).unwrap();
             }
-            match self.results.lock().unwrap().pop_front() {
-                Some(result) => result,
-                None => {
-                    let mut outcome = outcome();
-                    outcome.provider.provider = settings.snapshot.profile_name.clone();
-                    outcome.provider.model = settings.snapshot.profile.model.clone();
-                    Ok(outcome)
-                }
+            if let Some(result) = self.results.lock().unwrap().pop_front() {
+                result
+            } else {
+                let mut outcome = outcome();
+                outcome.provider.provider = settings.snapshot.profile_name.clone();
+                outcome.provider.model = settings.snapshot.profile.model.clone();
+                Ok(outcome)
             }
         }
     }

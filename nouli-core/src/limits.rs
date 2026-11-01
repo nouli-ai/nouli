@@ -197,6 +197,7 @@ impl ResolvedLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::ModelSelection;
     use crate::{
         config::{Config, Protocol},
         history::CountMethod,
@@ -215,8 +216,8 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 std::path::Path::new("/home"),
             )
             .unwrap()

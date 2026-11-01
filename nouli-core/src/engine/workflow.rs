@@ -5,6 +5,7 @@ use super::{
     execution::{DecisionProvider, RetryClock},
     run::{Executed, Recorder, RunInput},
 };
+use crate::history::StandingChanges;
 use crate::{
     codec,
     config::{
@@ -238,7 +239,7 @@ impl<
                         request: evaluation.request.clone(),
                         outcome: ancestor.output.outcome.clone(),
                         updates: evaluation.updates.clone(),
-                        standing: Default::default(),
+                        standing: StandingChanges::default(),
                         manifest: evaluation.manifest.clone(),
                     });
                 }
@@ -633,6 +634,8 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::history::StandingChanges;
     use crate::{
         config::{ExecutionSettings, ModelSettings, OutputFormat, Protocol, ProviderDefinition},
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
@@ -766,7 +769,10 @@ mod tests {
                         .collect(),
                     started,
                     transient: false,
-                    fail: failed.iter().map(|id| id.to_string()).collect(),
+                    fail: failed
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
                     active: AtomicUsize::new(0),
                     peak: AtomicUsize::new(0),
                 },
@@ -778,7 +784,7 @@ mod tests {
     }
     fn config() -> Config {
         Config {
-            defaults: Default::default(),
+            defaults: ModelSettings::default(),
             default_provider: Some("fixture".into()),
             default_model: Some("offline".into()),
             output: OutputFormat::Json,
@@ -790,8 +796,8 @@ mod tests {
             providers: BTreeMap::from([(
                 "fixture".into(),
                 ProviderDefinition {
-                    connection: Default::default(),
-                    defaults: Default::default(),
+                    connection: ConnectionSettings::default(),
+                    defaults: ModelSettings::default(),
                     protocol: Protocol::SystemOne,
                     base_url: "http://127.0.0.1:8080".into(),
                     api_key_env: None,
@@ -799,7 +805,7 @@ mod tests {
                         (
                             "offline".into(),
                             ModelSettings {
-                                connection: Default::default(),
+                                connection: ConnectionSettings::default(),
                                 per_question_context_tokens: None,
                                 max_questions: None,
                                 max_choices: None,
@@ -814,7 +820,7 @@ mod tests {
                         (
                             "high-model".into(),
                             ModelSettings {
-                                connection: Default::default(),
+                                connection: ConnectionSettings::default(),
                                 per_question_context_tokens: None,
                                 max_questions: None,
                                 max_choices: None,
@@ -828,7 +834,7 @@ mod tests {
                         (
                             "low-model".into(),
                             ModelSettings {
-                                connection: Default::default(),
+                                connection: ConnectionSettings::default(),
                                 per_question_context_tokens: None,
                                 max_questions: None,
                                 max_choices: None,
@@ -842,7 +848,7 @@ mod tests {
                         (
                             "frozen-alias".into(),
                             ModelSettings {
-                                connection: Default::default(),
+                                connection: ConnectionSettings::default(),
                                 per_question_context_tokens: None,
                                 max_questions: None,
                                 max_choices: None,
@@ -879,7 +885,7 @@ mod tests {
     }
     fn ordinary() -> EvaluationRequest {
         EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: serde_json::from_str(include_str!(
                 "../../../fixtures/contracts/decision-request.json"
             ))

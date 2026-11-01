@@ -39,6 +39,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         context::{ContextKind, ContextRecord, PinTarget},
         data::Data,
@@ -63,7 +64,7 @@ mod tests {
             kind: ContextKind::Commitment,
         };
         let input = AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: fixture.request,
             manifest: fixture.manifest,
             updates: vec![ContextUpdate::Pin {

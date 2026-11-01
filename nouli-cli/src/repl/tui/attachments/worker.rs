@@ -117,7 +117,7 @@ pub(super) fn extract(bytes: Vec<u8>, extension: &str, name: &str) -> Result<Vec
             }
         }
     };
-    let written = writer.join().ok().is_some_and(|result| result.is_ok());
+    let written = writer.join().is_ok_and(|result| result.is_ok());
     let bytes = reader.join().ok().and_then(Result::ok).ok_or_else(fail)?;
     if !success || !written || bytes.len() as u64 > MAX_BYTES {
         return Err(fail());

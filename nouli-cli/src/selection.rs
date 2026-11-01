@@ -10,7 +10,7 @@ pub(crate) struct SelectionArgs {
     /// Continue an existing session by ID or unique name.
     #[arg(long,value_name="SELECTOR",value_parser=selector,conflicts_with_all=["from","name","no_session"])]
     pub session: Option<SessionSelector>,
-    /// Branch/blend from SELECTOR or a fixed SELECTOR@TURN_ID (repeatable).
+    /// Branch/blend from SELECTOR or a fixed `SELECTOR@TURN_ID` (repeatable).
     #[arg(long,value_name="SOURCE",value_parser=source)]
     pub from: Vec<SourceSelection>,
     /// Assign a unique name to a new persisted session.

@@ -355,7 +355,7 @@ impl<'a> App<'a> {
                 .ok_or(crate::connect::SetupError::Invalid)?,
         ])
         .map_err(|_| crate::connect::SetupError::Invalid)?;
-        args.env_file = self.repl.settings.env_file.clone();
+        args.env_file.clone_from(&self.repl.settings.env_file);
         args.store = Some(self.repl.settings.store.clone());
         let (verb, argument) = command.split_once(' ').unwrap_or((command, ""));
         match verb {
@@ -841,7 +841,7 @@ impl<'a> App<'a> {
             self.sync_references();
             return Flow::Continue;
         }
-        if !(self.repl.queue.is_empty() && self.form.is_empty()) && !self.warned {
+        if !(self.warned || (self.repl.queue.is_empty() && self.form.is_empty())) {
             self.warned = true;
             self.status = Some(Status::info(
                 "unsent input; press Ctrl-D again to quit and discard it",
@@ -972,14 +972,12 @@ impl<'a> App<'a> {
         };
         let question = if let Some(previous) = &inherited {
             let mut question = previous.question.clone();
-            question.prompt = prompt.trim().to_owned();
+            prompt.trim().clone_into(&mut question.prompt);
             Ok(question)
+        } else if prompt == self.form.question {
+            self.form.build_question()
         } else {
-            if prompt == self.form.question {
-                self.form.build_question()
-            } else {
-                self.form.build_question_with_prompt(prompt)
-            }
+            self.form.build_question_with_prompt(prompt)
         };
         match question {
             Ok(question) => {
@@ -1053,7 +1051,7 @@ impl<'a> App<'a> {
                 let mut text = vec![question.prompt.as_str()];
                 match &question.answer_space {
                     nouli_core::decision::AnswerSpace::Choice { options } => {
-                        text.extend(options.iter().map(|option| option.description.as_str()))
+                        text.extend(options.iter().map(|option| option.description.as_str()));
                     }
                     nouli_core::decision::AnswerSpace::Score { levels } => {
                         text.extend(levels.iter().map(|level| match level {
@@ -1061,9 +1059,9 @@ impl<'a> App<'a> {
                             nouli_core::decision::Criterion::Detailed { description, .. } => {
                                 description.as_str()
                             }
-                        }))
+                        }));
                     }
-                    _ => {}
+                    nouli_core::decision::AnswerSpace::Noul => {}
                 }
                 text
             })
@@ -1666,6 +1664,7 @@ mod tests {
     use super::*;
     use crate::{repl::tests::repl, settings::Settings};
     use nouli_core::protocol::ErrorReport;
+    use std::fmt::Write as _;
 
     pub(super) fn app(settings: &Settings) -> App<'_> {
         App::new(repl(settings, Queue::default()))
@@ -1687,10 +1686,11 @@ mod tests {
     }
 
     fn transcript(app: &App) -> String {
-        app.transcript
-            .iter()
-            .map(|line| format!("{line}\n"))
-            .collect()
+        let mut text = String::new();
+        for line in &app.transcript {
+            writeln!(text, "{line}").unwrap();
+        }
+        text
     }
 
     fn settings() -> Settings {
@@ -2533,7 +2533,7 @@ mod tests {
         let creation = crate::turns::Creation {
             name: "s".to_owned().try_into().unwrap(),
             sources: vec![],
-            defaults: Default::default(),
+            defaults: ModelSelection::default(),
         };
         let session = crate::evaluate::create(&settings, &creation)
             .unwrap()

@@ -10,7 +10,9 @@ use nouli_core::{
     codec::{self, InputFormat},
     data::Input,
     decision::TurnRequest,
-    history::{EvaluationRequest, ModelSelection, Representation, SessionSelection},
+    history::{
+        EvaluationRequest, ModelSelection, Representation, SessionSelection, StandingChanges,
+    },
     identity::SessionSelector,
     outcome::{Answer, QuestionOutcome},
     protocol::{Report, ResultEnvelope},
@@ -147,7 +149,7 @@ fn common_wire_corpus_preserves_probabilities_fractional_expectation_and_native_
                     result.outcome.provider.request_id.as_deref(),
                     Some("fixture-router-request")
                 );
-                assert_eq!(result.outcome.usage.cost, Some(0.0000123));
+                assert_eq!(result.outcome.usage.cost, Some(0.000_012_3));
             }
         }
     }
@@ -219,7 +221,7 @@ fn every_adapter_receives_compact_selected_outputs_and_preserves_full_original_l
             text: "ORIGINAL_EVIDENCE_".repeat(1500),
         });
         let request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: turn.clone(),
             session: SessionSelection::New { name: None },
             updates: vec![],

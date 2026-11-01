@@ -54,7 +54,7 @@ pub(crate) struct New {
     /// Unique, case-sensitive name for the new session.
     #[arg(value_name = "NAME", value_parser = selection::name)]
     pub name: SessionName,
-    /// Branch from SESSION, or SESSION@TURN_ID for a fixed point; repeat to blend.
+    /// Branch from SESSION, or `SESSION@TURN_ID` for a fixed point; repeat to blend.
     #[arg(long, value_name = "SOURCE", value_parser = source)]
     pub from: Vec<SourceSelection>,
     /// Facts to record on the first turn.

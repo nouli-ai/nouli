@@ -13,6 +13,7 @@ use nouli_core::{
     protocol::{ErrorReport, TurnReport},
     storage::{Ledger, OpenMode},
 };
+use std::fmt::Write as _;
 use std::{io::Write, path::Path};
 use thiserror::Error;
 
@@ -44,15 +45,12 @@ fn earlier(store: &Path, report: &TurnReport) -> Result<(Vec<FinalizedTurn>, usi
                 PresentError::History(nouli_core::engine::EngineError::Turn(error).report())
             })
         })?;
-    let own = report
-        .session
-        .map(|session| {
-            history
-                .iter()
-                .filter(|turn| turn.session == session)
-                .count()
-        })
-        .unwrap_or(0);
+    let own = report.session.map_or(0, |session| {
+        history
+            .iter()
+            .filter(|turn| turn.session == session)
+            .count()
+    });
     Ok((
         history
             .into_iter()
@@ -124,13 +122,14 @@ pub(crate) fn turn_text(
         clean(&report.outcome.provider.model)
     );
     if let Some(session) = report.session {
-        line.push_str(&format!(" · session {session}"));
+        let _ = write!(line, " · session {session}");
     }
     if let Some(turn) = report.turn {
-        line.push_str(&format!(
+        let _ = write!(
+            line,
             " · turn {turn}{}",
             if report.replayed { " (replayed)" } else { "" }
-        ));
+        );
     }
     writeln!(sink, "{}", Paint(color).apply(DIM, &line)).map_err(RenderError::from)?;
     sink.flush().map_err(RenderError::from)?;
@@ -168,10 +167,10 @@ pub(crate) fn facts_text(
                 .ok()
                 .and_then(|session| session.name)
                 .map_or_else(|| source.to_string(), |name| name.as_str().to_owned());
-            line.push_str(&format!("   (from {})", clean(&name)));
+            let _ = write!(line, "   (from {})", clean(&name));
         }
         if let Some(previous) = &fact.previous {
-            line.push_str(&format!("   (replaced; was: {})", clean(previous)));
+            let _ = write!(line, "   (replaced; was: {})", clean(previous));
         }
         writeln!(sink, "{line}")?;
     }

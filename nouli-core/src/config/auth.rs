@@ -363,7 +363,7 @@ command = ["op", "read", "op://Private/Router/credential"]
         let store = AuthStore::parse(FILE).unwrap();
         assert!(!format!("{store:?}").contains("SENTINEL_KEY_VALUE"));
         assert!(Secret::new("a\nb".into()).is_err());
-        assert!(Secret::new("".into()).is_err());
+        assert!(Secret::new(String::new()).is_err());
         assert_eq!(CredentialSource::Env("NAME".into()).to_string(), "env:NAME");
         assert_eq!(CredentialSource::Auth("p".into()).to_string(), "auth:p");
     }

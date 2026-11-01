@@ -106,14 +106,14 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
         }
         match tag {
             "t" => {
-                for text in node.children().filter(|n| n.is_text()) {
+                for text in node.children().filter(roxmltree::Node::is_text) {
                     out.push_str(text.text().unwrap_or_default());
                 }
             }
             "tab" => out.push('\t'),
             "br" => out.push('\n'),
             _ => {
-                for child in node.children().filter(|n| n.is_element()) {
+                for child in node.children().filter(roxmltree::Node::is_element) {
                     if !visit(child, out, in_cell || tag == "tc", depth + 1) {
                         return false;
                     }
@@ -153,7 +153,7 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
         let mut book = calamine::open_workbook_auto_from_rs(Cursor::new(bytes))
             .map_err(|_| unsupported(name))?;
         let mut out = String::new();
-        for sheet in book.sheet_names().to_vec() {
+        for sheet in book.sheet_names().clone() {
             let range = book
                 .worksheet_range(&sheet)
                 .map_err(|_| unsupported(name))?;
@@ -316,7 +316,7 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
     std::fs::write(&input, bytes).map_err(|_| Error::Read(name.into()))?;
     let output = if extension == "doc" { "docx" } else { "pptx" };
     let profile =
-        url::Url::from_directory_path(temp.0.join("profile")).map_err(|_| unsupported(name))?;
+        url::Url::from_directory_path(temp.0.join("profile")).map_err(|()| unsupported(name))?;
     let mut process = [
         "soffice",
         "libreoffice",
@@ -368,7 +368,7 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
                 if start.elapsed() < Duration::from_secs(10)
                     && !super::worker::group_over_memory(process.id()) =>
             {
-                thread::sleep(Duration::from_millis(10))
+                thread::sleep(Duration::from_millis(10));
             }
             _ => {
                 let _ = killpg(Pid::from_raw(process.id() as i32), Signal::SIGKILL);
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn office_extraction_preserves_unicode_entities_and_table_cells() {
-        let input = r#"<document><body><p><r><t>旅行 &amp; budget</t><t> €250</t></r></p><tbl><tr><tc><p><t>City</t></p></tc><tc><p><t>Fare</t></p></tc></tr><tr><tc><p><t>Seattle</t></p></tc><tc><p><t>42</t></p></tc></tr></tbl></body></document>"#;
+        let input = r"<document><body><p><r><t>旅行 &amp; budget</t><t> €250</t></r></p><tbl><tr><tc><p><t>City</t></p></tc><tc><p><t>Fare</t></p></tc></tr><tr><tc><p><t>Seattle</t></p></tc><tc><p><t>42</t></p></tc></tr></tbl></body></document>";
         let bytes = zipped(&[("word/document.xml", input)]);
         let result = text(bytes, "docx", "trip.docx").unwrap();
         assert_eq!(

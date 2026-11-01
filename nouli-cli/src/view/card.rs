@@ -4,7 +4,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(super) const WIDTH: usize = 36;
-pub(super) const STEP: usize = (WIDTH + 4) / 2;
+pub(super) const STEP: usize = usize::midpoint(WIDTH, 4);
 pub(super) const CENTER: usize = WIDTH / 2;
 const TEXT: usize = WIDTH - 4;
 

@@ -61,9 +61,10 @@ fn confidence(
     provider: Option<&ProviderIdentity>,
 ) -> Result<(), RenderError> {
     if let Some(value) = value {
-        let provenance = provider
-            .map(|provider| format!("{}/{}", clean(&provider.provider), clean(&provider.model)))
-            .unwrap_or_else(|| "provider not recorded".into());
+        let provenance = provider.map_or_else(
+            || "provider not recorded".into(),
+            |provider| format!("{}/{}", clean(&provider.provider), clean(&provider.model)),
+        );
         write!(
             sink,
             "  Native confidence ({provenance}, {}): ",
@@ -72,7 +73,7 @@ fn confidence(
         match value.value {
             Some(value) => write!(sink, "value={value}")?,
             None => write!(sink, "value unavailable")?,
-        };
+        }
         if let Some(probability) = value.answer_confidence {
             write!(sink, ", answer confidence={probability}")?;
         }
@@ -102,7 +103,7 @@ fn answer(
         }
         Answer::Noul { probability } => writeln!(sink, "noul: P(yes)={probability}")?,
         Answer::Score { value, .. } => {
-            writeln!(sink, "expected score: {value}, scale {}", scale(question))?
+            writeln!(sink, "expected score: {value}, scale {}", scale(question))?;
         }
     }
     Ok(())

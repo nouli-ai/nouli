@@ -142,7 +142,7 @@ fn visible_text(prompt: &str) -> String {
                 } else {
                     start
                 };
-                prompt.replace_range(from..end + 1, "");
+                prompt.replace_range(from..=end, "");
                 offset = from;
             } else {
                 offset = end + 1;
@@ -323,6 +323,7 @@ fn reference_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
 
     fn turn() -> FinalizedTurn {
         let fixture: serde_json::Value =
@@ -370,7 +371,7 @@ mod tests {
                         AttemptInput {
                             request: template.request,
                             updates: vec![],
-                            standing: Default::default(),
+                            standing: StandingChanges::default(),
                             manifest: template.manifest,
                             request_id: None,
                         },

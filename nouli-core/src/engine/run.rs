@@ -244,7 +244,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             }
             recorder.begin(plan.manifest.clone()).await?;
             let dispatched = tokio::select! {biased;
-                _=cancel.cancelled()=>Err(ProviderError::Transport(TransportError::Canceled)),
+                ()=cancel.cancelled()=>Err(ProviderError::Transport(TransportError::Canceled)),
                 result=tokio::time::timeout(timeout,self.provider.attempt(&settings,&input.request.turn,&plan.manifest.context_toon,&self.counter,cancel))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
             };
             let error = match dispatched {

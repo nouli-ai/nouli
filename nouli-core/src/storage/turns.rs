@@ -465,7 +465,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
         let turn: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
         AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: turn.request,
             updates: vec![ContextUpdate::Append {
                 record: ContextRecord {

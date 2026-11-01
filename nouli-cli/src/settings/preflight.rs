@@ -11,6 +11,7 @@ use nouli_core::{
     protocol::{ErrorCategory, ErrorReport},
     workflow::WorkflowRequest,
 };
+use std::fmt::Write as _;
 use thiserror::Error;
 #[derive(Debug, Error)]
 pub(crate) enum PreflightError {
@@ -28,10 +29,11 @@ impl PreflightError {
             Self::Limit(error) => {
                 let mut report = EngineError::Limit(error).report();
                 if report.category == ErrorCategory::Configuration {
-                    report.message.push_str(&format!(
+                    let _ = write!(
+                        report.message,
                         ". Configuration: {}",
                         settings.config_path.display()
-                    ));
+                    );
                 }
                 report
             }

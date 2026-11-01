@@ -232,6 +232,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::storage::OpenMode;
 
     #[test]
@@ -262,7 +263,7 @@ mod tests {
         let input = || AttemptInput {
             request: template.request.clone(),
             updates: vec![],
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             manifest: template.manifest.clone(),
             request_id: None,
         };

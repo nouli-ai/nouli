@@ -1,4 +1,5 @@
 //! Node intents, attempts and branch-frontier publication for one run owner.
+use crate::history::StandingChanges;
 use crate::{
     history::{EvaluationRequest, SourcePoint},
     identity::Id,
@@ -216,7 +217,7 @@ pub(crate) fn request_for(
     let settings = frozen.settings.get(node).ok_or(WorkflowError::Snapshot)?;
     Ok(EvaluationRequest {
         turn,
-        standing: Default::default(),
+        standing: StandingChanges::default(),
         session: if definition.base.runtime_only {
             crate::history::SessionSelection::New { name: None }
         } else {
@@ -421,7 +422,7 @@ impl Ledger {
             input: AttemptInput {
                 request: intent.request.turn.clone(),
                 updates: intent.request.updates.clone(),
-                standing: Default::default(),
+                standing: StandingChanges::default(),
                 manifest,
                 request_id: intent.request.request_id.clone(),
             },
@@ -531,7 +532,7 @@ impl Ledger {
             request: prepared.input.request,
             outcome,
             updates: prepared.input.updates,
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             manifest,
         };
         turn.validate()?;

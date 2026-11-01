@@ -327,7 +327,10 @@ impl Credentials {
         {
             return;
         }
-        let Some(KeySource::Command(argv)) = self.store.get(provider).map(|entry| entry.source())
+        let Some(KeySource::Command(argv)) = self
+            .store
+            .get(provider)
+            .map(nouli_core::config::auth::AuthEntry::source)
         else {
             return;
         };

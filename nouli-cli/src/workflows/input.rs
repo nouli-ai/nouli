@@ -13,7 +13,7 @@ use nouli_core::{
 use std::{io::Read, path::PathBuf};
 #[derive(Debug, Args)]
 pub(crate) struct RunArgs {
-    /// JSON/TOON workflow spec or complete WorkflowRequest, or - for stdin.
+    /// JSON/TOON workflow spec or complete `WorkflowRequest`, or - for stdin.
     #[arg(value_name = "FILE")]
     file: PathBuf,
     #[arg(long, value_enum)]

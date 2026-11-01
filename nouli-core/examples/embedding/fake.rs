@@ -37,7 +37,10 @@ impl DecisionProvider for FakeProvider {
             include_bytes!("../../../fixtures/contracts/decision-outcome.json"),
             InputFormat::Json,
         )?;
-        outcome.provider.provider = settings.snapshot.profile_name.clone();
+        outcome
+            .provider
+            .provider
+            .clone_from(&settings.snapshot.profile_name);
         outcome.provider.model = "fake-served-version-1".into();
         if let nouli_core::outcome::QuestionOutcome::Answered {
             confidence: Some(confidence),

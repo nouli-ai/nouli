@@ -3,7 +3,7 @@ use nouli_core::{
     context::ContextUpdate,
     data::Input,
     decision::{AnswerSpace, Criterion, Question, TurnRequest},
-    history::{EvaluationRequest, ModelSelection, SessionSelection},
+    history::{EvaluationRequest, ModelSelection, SessionSelection, StandingChanges},
     identity::Id,
     protocol::{Report, ResultEnvelope, TurnReport},
 };
@@ -65,7 +65,7 @@ impl Home {
             text: marker.into(),
         });
         let request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn,
             session: SessionSelection::New { name: None },
             updates,
@@ -88,12 +88,12 @@ impl Drop for Home {
         }
     }
 }
-/// The TypeSafe response for [`turn`] and [`QUESTIONS`]: score levels are plain
+/// The `TypeSafe` response for [`turn`] and [`QUESTIONS`]: score levels are plain
 /// labels, which is all the compact question grammar can write.
 pub const TYPESAFE: &str =
     include_str!("../../../fixtures/providers/typesafe/compact-response.json");
 
-/// A TypeSafe provider that answers exactly the questions it is asked: from
+/// A `TypeSafe` provider that answers exactly the questions it is asked: from
 /// [`TYPESAFE`] when it has them, and yes/no otherwise.
 pub fn typesafe(body: &serde_json::Value) -> (u16, String) {
     let mut response: serde_json::Value = serde_json::from_str(TYPESAFE).unwrap();

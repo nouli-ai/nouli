@@ -43,9 +43,8 @@ pub(crate) fn render_error(
     configured: nouli_core::config::OutputFormat,
     error: nouli_core::protocol::ErrorReport,
 ) -> ExitCode {
-    let format = match render::resolve(&args.output, configured, io::stdout().is_terminal()) {
-        Ok(format) => format,
-        Err(_) => return ExitCode::from(2),
+    let Ok(format) = render::resolve(&args.output, configured, io::stdout().is_terminal()) else {
+        return ExitCode::from(2);
     };
     let report =
         nouli_core::protocol::ResultEnvelope::new(nouli_core::protocol::Report::Error(error));

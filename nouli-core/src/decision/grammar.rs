@@ -271,7 +271,7 @@ fn items(
         out.push(value);
         while chars.next_if(|(_, c)| c.is_whitespace()).is_some() {}
         match chars.next() {
-            Some((_, ',')) => continue,
+            Some((_, ',')) => {}
             Some((i, c)) if c == close => return Ok((out, i + c.len_utf8())),
             Some((i, _)) => return Err(GrammarError::UnexpectedCharacter(offset + i)),
             None => return Err(GrammarError::Unbalanced(offset + start)),

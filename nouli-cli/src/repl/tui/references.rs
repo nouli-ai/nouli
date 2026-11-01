@@ -184,8 +184,7 @@ pub(super) fn describe_answer(
                     nouli_core::decision::AnswerSpace::Choice { options } => options
                         .iter()
                         .find(|o| &o.id == selected)
-                        .map(|o| o.description.as_str())
-                        .unwrap_or(selected),
+                        .map_or(selected.as_str(), |o| o.description.as_str()),
                     _ => selected,
                 };
                 let probability = distribution
@@ -388,7 +387,7 @@ impl App<'_> {
                 self.references.preview_scroll = self
                     .references
                     .preview_scroll
-                    .saturating_sub(self.references.preview_page.max(1))
+                    .saturating_sub(self.references.preview_page.max(1));
             }
             KeyCode::PageDown if picker.expanded => {
                 self.references.preview_scroll = self
@@ -410,10 +409,10 @@ impl App<'_> {
                 return false;
             }
             KeyCode::Char('s') if control => {
-                self.status = Some(Status::info("Choose a result, or Esc to keep the text."))
+                self.status = Some(Status::info("Choose a result, or Esc to keep the text."));
             }
             KeyCode::F(5) => {
-                self.status = Some(Status::info("Choose a result, or Esc to keep the text."))
+                self.status = Some(Status::info("Choose a result, or Esc to keep the text."));
             }
             _ => return false,
         }
@@ -691,7 +690,7 @@ mod tests {
     fn store_wide_selection_is_atomic_preserves_drafts_and_requires_bound_evidence() {
         use crate::settings::Settings;
         use nouli_core::{
-            history::{FinalizedTurn, ModelSelection},
+            history::{FinalizedTurn, ModelSelection, StandingChanges},
             storage::{OpenMode, turns::AttemptInput},
         };
         let settings = Settings::for_test(
@@ -721,7 +720,7 @@ mod tests {
                 AttemptInput {
                     request: template.request,
                     updates: vec![],
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     manifest: template.manifest,
                     request_id: None,
                 },

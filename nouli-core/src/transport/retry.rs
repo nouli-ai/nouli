@@ -70,8 +70,7 @@ impl RetryPolicy {
         let backoff = Duration::from_secs(seconds).min(self.max_delay);
         Some(
             retry_after
-                .map(|hint| hint.delay(now))
-                .unwrap_or(Duration::ZERO)
+                .map_or(Duration::ZERO, |hint| hint.delay(now))
                 .max(backoff)
                 .min(self.max_delay),
         )

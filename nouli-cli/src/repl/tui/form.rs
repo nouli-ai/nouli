@@ -274,13 +274,13 @@ impl Form {
     pub(super) fn tab(&mut self, facts: &mut Vec<String>) {
         match self.row {
             Row::Question if self.kind != Kind::Noul && !self.options.is_empty() => {
-                self.go(Row::Option(0), facts)
+                self.go(Row::Option(0), facts);
             }
             Row::Option(index) if index + 1 < self.options.len() => {
-                self.go(Row::Option(index + 1), facts)
+                self.go(Row::Option(index + 1), facts);
             }
             Row::Option(index) if self.options[index].trim().is_empty() => {
-                self.focus(Section::State, facts)
+                self.focus(Section::State, facts);
             }
             Row::Option(_) => self.add_option(facts),
             _ => self.next_section(facts),

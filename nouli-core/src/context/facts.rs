@@ -188,6 +188,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         history::{FinalizedTurn, ModelSelection, SourceSelection},
         storage::{OpenMode, turns::AttemptInput},
@@ -220,7 +221,7 @@ mod tests {
                 AttemptInput {
                     request: fixture.request,
                     updates,
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     manifest: fixture.manifest,
                     request_id: None,
                 },

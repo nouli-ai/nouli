@@ -4,7 +4,7 @@ use super::{StorageError, sql_error};
 use rusqlite::{Connection, TransactionBehavior};
 
 pub(super) const VERSION: u32 = 5;
-const APPLICATION_ID: i64 = 0x4e4f554c;
+const APPLICATION_ID: i64 = 0x4e4f_554c;
 pub(super) const MIGRATIONS: &[&str] = &[
     include_str!("schema/0001.sql"),
     include_str!("schema/0002.sql"),

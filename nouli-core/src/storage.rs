@@ -236,6 +236,8 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::resolve::RuntimeOverrides;
+    use crate::history::ModelSelection;
     use crate::identity::Id;
 
     #[test]
@@ -451,9 +453,9 @@ mod tests {
                 .unwrap();
         let settings = config
             .resolve(
-                &Default::default(),
-                &Default::default(),
-                &Default::default(),
+                &RuntimeOverrides::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
                 |_| Some("SECRET_SENTINEL".into()),
             )

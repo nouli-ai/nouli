@@ -200,7 +200,7 @@ fn pdf_text(bytes: Vec<u8>, name: &str) -> Result<String, Error> {
         match child.try_wait() {
             Ok(Some(status)) => break status.success(),
             Ok(None) if start.elapsed() < Duration::from_secs(10) => {
-                thread::sleep(Duration::from_millis(10))
+                thread::sleep(Duration::from_millis(10));
             }
             _ => {
                 let _ = child.kill();

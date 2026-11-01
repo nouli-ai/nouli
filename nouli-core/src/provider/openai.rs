@@ -1,4 +1,4 @@
-//! OpenAI Decisions' native arrays, predicate answers, and per-question refusals.
+//! `OpenAI` Decisions' native arrays, predicate answers, and per-question refusals.
 
 use std::collections::HashMap;
 
@@ -299,6 +299,7 @@ pub async fn evaluate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::ModelSelection;
     use crate::{
         config::{Config, ExecutionSettings, OutputFormat, resolve::SettingsSnapshot},
         limits::count::ByteCounter,
@@ -329,8 +330,8 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 std::path::Path::new("/unused"),
             )
             .unwrap()

@@ -1,4 +1,4 @@
-//! Complete credential-free embedding journey. All decisions use FakeProvider.
+//! Complete credential-free embedding journey. All decisions use `FakeProvider`.
 #[path = "embedding/fake.rs"]
 mod fake;
 use nouli_core::{
@@ -9,7 +9,9 @@ use nouli_core::{
     engine::{
         Engine, EngineError, EvaluationInput, execution::TokioClock, workflow::WorkflowInput,
     },
-    history::{EvaluationRequest, ModelSelection, SessionSelection, SourceSelection},
+    history::{
+        EvaluationRequest, ModelSelection, SessionSelection, SourceSelection, StandingChanges,
+    },
     identity::{Id, SessionSelector},
     limits::count::ByteCounter,
     outcome::{Answer, QuestionOutcome},
@@ -49,7 +51,7 @@ enum ExampleError {
 }
 fn request(selection: SessionSelection) -> Result<EvaluationRequest, ExampleError> {
     Ok(EvaluationRequest {
-        standing: Default::default(),
+        standing: StandingChanges::default(),
         turn: codec::decode(
             include_bytes!("../../fixtures/contracts/decision-request.json"),
             InputFormat::Json,

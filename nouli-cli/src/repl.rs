@@ -508,9 +508,8 @@ impl<W: Write> Repl<'_, W> {
     }
 
     fn use_session(&mut self, name: &str) -> io::Result<()> {
-        let selector = match selection::selector(name) {
-            Ok(selector) => selector,
-            Err(_) => return self.fail("that is not a valid session name"),
+        let Ok(selector) = selection::selector(name) else {
+            return self.fail("that is not a valid session name");
         };
         let found = self
             .ledger()
@@ -525,14 +524,11 @@ impl<W: Write> Repl<'_, W> {
     }
 
     fn create(&mut self, name: &str, sources: Vec<SourceSelection>) -> Option<Session> {
-        let name = match SessionName::try_from(name.to_owned()) {
-            Ok(name) => name,
-            Err(_) => {
-                let _ = self.fail(
-                    "a session name starts with a letter and uses letters, digits, `.`, `_` or `-`",
-                );
-                return None;
-            }
+        let Ok(name) = SessionName::try_from(name.to_owned()) else {
+            let _ = self.fail(
+                "a session name starts with a letter and uses letters, digits, `.`, `_` or `-`",
+            );
+            return None;
         };
         let creation = Creation {
             name,
@@ -559,9 +555,8 @@ impl<W: Write> Repl<'_, W> {
     }
 
     fn rename_session(&mut self, name: &str) -> io::Result<()> {
-        let name=match SessionName::try_from(name.to_owned()) {
-            Ok(name)=>name,
-            Err(_)=>return self.fail("Use a session name of up to 64 letters, digits, dots, underscores or hyphens, starting with a letter."),
+        let Ok(name) = SessionName::try_from(name.to_owned()) else {
+            return self.fail("Use a session name of up to 64 letters, digits, dots, underscores or hyphens, starting with a letter.");
         };
         let renamed = Ledger::open(&self.settings.store, OpenMode::ReadWriteCreate)
             .map_err(|error| error.report())
@@ -635,9 +630,8 @@ impl<W: Write> Repl<'_, W> {
     fn blend(&mut self, names: &[String], name: &str) -> io::Result<()> {
         let mut sources = Vec::new();
         for source in names {
-            let selector = match selection::selector(source) {
-                Ok(selector) => selector,
-                Err(_) => return self.fail("that is not a valid session name"),
+            let Ok(selector) = selection::selector(source) else {
+                return self.fail("that is not a valid session name");
             };
             let found = self
                 .ledger()

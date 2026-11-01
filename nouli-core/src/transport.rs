@@ -2,6 +2,7 @@
 
 pub mod retry;
 
+use std::collections::BTreeMap;
 use std::{fmt, time::Duration};
 
 use reqwest::{
@@ -100,7 +101,7 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
     {
         let mut segments = url
             .path_segments_mut()
-            .map_err(|_| TransportError::Endpoint)?;
+            .map_err(|()| TransportError::Endpoint)?;
         segments.pop_if_empty();
         for part in path.split('/').filter(|_| {
             profile.connection.binding != Some(crate::config::HttpBinding::CloudflareWorkersAi)
@@ -111,7 +112,7 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
     if profile.connection.binding == Some(crate::config::HttpBinding::CloudflareWorkersAi) {
         let mut parts = url
             .path_segments_mut()
-            .map_err(|_| TransportError::Endpoint)?;
+            .map_err(|()| TransportError::Endpoint)?;
         // Cloudflare model IDs use slash-separated path components.
         parts.pop_if_empty();
         for segment in profile
@@ -207,8 +208,15 @@ impl HttpTransport {
         credential: Option<&Credential>,
         cancel: &CancellationToken,
     ) -> Result<HttpResponse, TransportError> {
-        self.post_with_headers(profile, path, body, credential, &Default::default(), cancel)
-            .await
+        self.post_with_headers(
+            profile,
+            path,
+            body,
+            credential,
+            &BTreeMap::default(),
+            cancel,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -225,7 +233,7 @@ impl HttpTransport {
         let exchange = self.exchange(url, body, credential, profile, headers);
         tokio::select! {
             biased;
-            _=cancel.cancelled()=>Err(TransportError::Canceled),
+            ()=cancel.cancelled()=>Err(TransportError::Canceled),
             result=tokio::time::timeout(self.timeout,exchange)=>result.unwrap_or(Err(TransportError::Timeout)),
         }
     }
@@ -346,12 +354,14 @@ pub(crate) mod test_server;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::config::ModelSettings;
     use test_server::MockServer;
 
     fn profile(base_url: String) -> ProviderProfile {
         ProviderProfile {
-            connection: Default::default(),
-            limits: Default::default(),
+            connection: ConnectionSettings::default(),
+            limits: ModelSettings::default(),
             protocol: crate::config::Protocol::SystemOne,
             base_url,
             model: "fixture".into(),
@@ -373,7 +383,7 @@ mod tests {
         profile.connection.binding = Some(crate::config::HttpBinding::CloudflareWorkersAi);
         profile.connection.request_path = Some("custom/run".into());
         profile.connection.auth_header = Some("X-Api-Key".into());
-        profile.connection.auth_scheme = Some("".into());
+        profile.connection.auth_scheme = Some(String::new());
         profile
             .connection
             .headers

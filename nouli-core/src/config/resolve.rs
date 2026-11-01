@@ -200,8 +200,7 @@ impl Config {
     pub fn store_path(&self, home: &Path, explicit: Option<&Path>) -> Result<PathBuf, ConfigError> {
         let store = explicit
             .or(self.store.as_deref())
-            .map(Path::to_owned)
-            .unwrap_or_else(|| home.join(".nouli"));
+            .map_or_else(|| home.join(".nouli"), Path::to_owned);
         if store.as_os_str().is_empty() {
             return Err(ConfigError::Invalid("store"));
         }
@@ -339,8 +338,8 @@ x-tenant = "model"
         let resolved = config
             .resolve(
                 &RuntimeOverrides::default(),
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
                 |_| Some("Bearer SECRET_VALUE".into()),
             )
@@ -652,8 +651,8 @@ reserved_output_tokens = 256
                     context_budget_tokens: budget,
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
             )
         };
@@ -704,8 +703,8 @@ reserved_output_tokens = 256
                     selection,
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
             )
         };
@@ -753,7 +752,7 @@ reserved_output_tokens = 256
         ] {
             let selected = config
                 .resolve_snapshot(
-                    &Default::default(),
+                    &RuntimeOverrides::default(),
                     &ModelSelection {
                         provider: None,
                         model: request.map(str::to_owned),

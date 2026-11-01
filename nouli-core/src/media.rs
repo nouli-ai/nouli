@@ -107,7 +107,7 @@ impl Evidence {
         ))
     }
 
-    /// OpenAI reads ordered text/image parts. Other providers use references.
+    /// `OpenAI` reads ordered text/image parts. Other providers use references.
     pub fn openai_parts(&self, text: &str) -> Value {
         let mut rest = text;
         let mut parts = Vec::new();

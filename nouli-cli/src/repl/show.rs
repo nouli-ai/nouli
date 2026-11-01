@@ -15,6 +15,7 @@ use nouli_core::{
     protocol::{ErrorCategory, ErrorReport},
     storage::Ledger,
 };
+use std::fmt::Write as _;
 use std::io::{self, Write};
 
 pub(super) fn say(out: &mut impl Write, text: &str) -> io::Result<()> {
@@ -126,7 +127,7 @@ pub(super) fn view(
             plural(turns, "turn")
         );
         if !parents.is_empty() {
-            text.push_str(&format!("  ← {}", render::clean(&parents.join(" + "))));
+            let _ = write!(text, "  ← {}", render::clean(&parents.join(" + ")));
         }
         let text = paint.apply(if is_current { TEAL } else { DIM }, &text);
         say(out, &text)?;

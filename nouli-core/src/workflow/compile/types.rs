@@ -65,8 +65,7 @@ pub(super) fn comparable(left: ValueType, right: ValueType, comparison: Comparis
 fn index(value: &str, len: usize) -> bool {
     value
         .parse::<usize>()
-        .ok()
-        .is_some_and(|i| i < len && i.to_string() == value)
+        .is_ok_and(|i| i < len && i.to_string() == value)
 }
 fn answer_path(space: &AnswerSpace, path: &[&str]) -> Result<ValueType, CompileError> {
     Ok(match (space, path) {

@@ -5,6 +5,7 @@ mod bootstrap;
 mod environment;
 pub(crate) mod preflight;
 
+use std::fmt::Write as _;
 use std::{path::PathBuf, sync::Arc};
 
 use nouli_core::config::{Config, ConfigError};
@@ -107,9 +108,7 @@ pub(crate) fn error(args: &super::Args, error: ConfigError) -> nouli_core::proto
             .map(|home| PathBuf::from(home).join(".nouli/config.toml"))
     });
     if let Some(path) = path {
-        report
-            .message
-            .push_str(&format!(". Configuration: {}", path.display()));
+        let _ = write!(report.message, ". Configuration: {}", path.display());
     }
     report
 }

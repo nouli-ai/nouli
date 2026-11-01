@@ -68,6 +68,6 @@ impl RetryClock for TokioClock {
         SystemTime::now()
     }
     async fn wait(&self, delay: Duration, cancel: &CancellationToken) -> bool {
-        tokio::select! {biased; _=cancel.cancelled()=>false,_=tokio::time::sleep(delay)=>true}
+        tokio::select! {biased; ()=cancel.cancelled()=>false,()=tokio::time::sleep(delay)=>true}
     }
 }

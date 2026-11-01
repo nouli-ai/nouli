@@ -447,7 +447,7 @@ impl Ledger {
                 .execution
                 .validate()
                 .map_err(|_| WorkflowError::Snapshot)?;
-            setting.store = store.clone();
+            setting.store.clone_from(&store);
         }
         let (session, name, new) = match &request.session {
             SessionSelection::Continue { session } => (self.session(session)?.id, None, false),
@@ -554,8 +554,8 @@ mod tests {
                     context_budget_tokens: Some(4096),
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 std::path::Path::new("/unused"),
             )
             .unwrap()

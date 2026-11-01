@@ -129,8 +129,7 @@ pub(crate) fn run(
                         session
                             .name
                             .as_ref()
-                            .map(|name| name.as_str())
-                            .unwrap_or("(unnamed)"),
+                            .map_or("(unnamed)", nouli_core::identity::SessionName::as_str),
                         session.frontier.len()
                     )?;
                 }

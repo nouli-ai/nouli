@@ -179,6 +179,7 @@ fn compact(value: &Data) -> Result<Data, BuildError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         config::Protocol,
         context::builder::{ContextBuilder, ContextInput, RequiredItem},
@@ -414,7 +415,7 @@ mod tests {
             .prepare_attempt(
                 &guard,
                 AttemptInput {
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     request: turn.request,
                     updates: turn.updates,
                     manifest: turn.manifest,

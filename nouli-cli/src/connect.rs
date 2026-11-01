@@ -402,7 +402,7 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
     };
     let definition = ProviderDefinition {
         connection,
-        defaults: Default::default(),
+        defaults: ModelSettings::default(),
         protocol,
         base_url,
         api_key_env: None,
@@ -565,12 +565,7 @@ pub(crate) fn pick_model(
         if settings.config.default_provider.as_deref() == Some(&provider) {
             settings.config.default_model.as_deref().unwrap_or("")
         } else {
-            definition
-                .models
-                .keys()
-                .next()
-                .map(String::as_str)
-                .unwrap_or("")
+            definition.models.keys().next().map_or("", String::as_str)
         },
     )?;
     if model.trim().is_empty() {
@@ -628,8 +623,8 @@ pub(crate) fn startup(
         .config
         .resolve_snapshot(
             &overrides,
-            &Default::default(),
-            &Default::default(),
+            &ModelSelection::default(),
+            &ModelSelection::default(),
             &settings.home,
         )
         .map_err(|_| SetupError::Invalid)?;
@@ -692,8 +687,8 @@ pub(crate) fn startup(
             .config
             .resolve(
                 &overrides,
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 &settings.home,
                 |source| settings.credentials.lookup(source),
             )

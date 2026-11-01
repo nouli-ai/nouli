@@ -188,9 +188,9 @@ mod tests {
                 ImageEncoding::ImagesBase64 => assert_eq!(first["images"][0], image.data_base64),
                 ImageEncoding::ImagesDataUrls => assert_eq!(first["images"][0], image.data_url()),
                 ImageEncoding::StateImageUrls => {
-                    assert_eq!(first["state"][2]["image_url"]["url"], image.data_url())
+                    assert_eq!(first["state"][2]["image_url"]["url"], image.data_url());
                 }
-                _ => unreachable!(),
+                ImageEncoding::OpenaiContent => unreachable!(),
             }
         }
     }

@@ -10,11 +10,12 @@ use nouli_core::{
     codec,
     context::{ContextKind, ContextRecord, ContextUpdate},
     data::{Data, Input},
-    history::{EvaluationRequest, SessionSelection},
+    history::{EvaluationRequest, ModelSelection, SessionSelection, StandingChanges},
     identity::Id,
     protocol::{Report, ResultEnvelope},
     storage::{Ledger, OpenMode},
 };
+use std::fmt::Write as _;
 use std::{
     io::Write,
     process::{Command, Stdio},
@@ -108,7 +109,7 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
     let record = ContextRecord {
         id: Id::generate(),
         key: "budget".into(),
-        value: Data::new(serde_json::json!(18446744073709551615u64)).unwrap(),
+        value: Data::new(serde_json::json!(18_446_744_073_709_551_615_u64)).unwrap(),
         kind: ContextKind::Commitment,
     };
     let path = home.request(
@@ -137,12 +138,12 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert!(file.get("session").is_none());
     let request = EvaluationRequest {
-        standing: Default::default(),
+        standing: StandingChanges::default(),
         turn: serde_json::from_value(file["turn"].clone()).unwrap(),
         session: SessionSelection::New { name: None },
         updates: serde_json::from_value(file["updates"].clone()).unwrap(),
         required_records: vec![],
-        model: Default::default(),
+        model: ModelSelection::default(),
         request_id: None,
     };
     let toon = home.0.join("same.toon");
@@ -805,7 +806,11 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     let config_path = home.0.join("config.toml");
     let mut config = std::fs::read_to_string(&config_path).unwrap();
     for model in ["high-frozen-alias", "run-frozen-alias"] {
-        config.push_str(&format!("\n[providers.local.models.'{model}']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n"));
+        write!(
+            config,
+            "\n[providers.local.models.'{model}']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n"
+        )
+        .unwrap();
     }
     std::fs::write(config_path, config).unwrap();
     let file = home.0.join("parallel.json");

@@ -181,7 +181,7 @@ pub(crate) mod tests {
                 max_image_dimension: Some(1568),
                 ..Default::default()
             },
-            limits: Default::default(),
+            limits: ModelSettings::default(),
             context_budget_tokens: None,
             context_window_tokens: None,
             reserved_output_tokens: None,
@@ -190,6 +190,7 @@ pub(crate) mod tests {
         }
     }
     use super::*;
+    use crate::config::ModelSettings;
 
     #[test]
     fn images_use_separate_estimates_and_each_reference_is_counted() {

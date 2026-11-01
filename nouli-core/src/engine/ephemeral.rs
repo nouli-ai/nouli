@@ -96,6 +96,8 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::history::StandingChanges;
     use crate::{
         config::{
             Config,
@@ -172,7 +174,7 @@ mod tests {
         profile.models.insert(
             "offline".into(),
             crate::config::ModelSettings {
-                connection: Default::default(),
+                connection: ConnectionSettings::default(),
                 per_question_context_tokens: None,
                 max_questions: None,
                 max_choices: None,
@@ -192,7 +194,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: serde_json::from_str(include_str!(
                 "../../../fixtures/contracts/decision-request.json"
             ))

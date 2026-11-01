@@ -89,7 +89,7 @@ fn color_for(
     no_color: Option<&std::ffi::OsStr>,
     term: Option<&std::ffi::OsStr>,
 ) -> bool {
-    terminal && no_color.is_none_or(|value| value.is_empty()) && !plain_terminal(term)
+    terminal && no_color.is_none_or(std::ffi::OsStr::is_empty) && !plain_terminal(term)
 }
 /// Whether `TERM` names a terminal that takes no escape codes, such as an
 /// Emacs shell buffer.

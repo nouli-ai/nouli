@@ -216,7 +216,7 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
                 .map_err(|error| error.report())
         }) {
             Ok(Some(session)) => {
-                model = nouli_core::config::resolve::select_model(&[&model, &session.defaults])
+                model = nouli_core::config::resolve::select_model(&[&model, &session.defaults]);
             }
             Ok(None) => {}
             Err(error) if error.code == "invalid_session" => {}

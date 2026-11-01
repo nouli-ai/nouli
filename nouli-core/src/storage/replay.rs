@@ -494,6 +494,8 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::config::ModelSettings;
     use crate::config::{ExecutionSettings, OutputFormat, Protocol, ProviderProfile};
     use crate::history::SourceSelection;
     use crate::storage::OpenMode;
@@ -519,7 +521,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: fixture().request,
             session: SessionSelection::New { name: None },
             updates: vec![],
@@ -533,8 +535,8 @@ mod tests {
             format_version: 2,
             profile_name: "fixture".into(),
             profile: ProviderProfile {
-                connection: Default::default(),
-                limits: Default::default(),
+                connection: ConnectionSettings::default(),
+                limits: ModelSettings::default(),
                 protocol: Protocol::SystemOne,
                 base_url: "http://127.0.0.1:8080".into(),
                 model: "offline".into(),
@@ -765,7 +767,7 @@ mod tests {
             .unwrap();
         let guard = ledger.session_guard(source.id).unwrap();
         let input = || AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: fixture().request,
             updates: vec![],
             manifest: fixture().manifest,

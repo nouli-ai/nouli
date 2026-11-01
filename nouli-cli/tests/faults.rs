@@ -13,13 +13,14 @@ use loopback::Server;
 use nouli_core::{
     context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
     data::{Data, Input},
-    history::{EvaluationRequest, ModelSelection, SessionSelection},
+    history::{EvaluationRequest, ModelSelection, SessionSelection, StandingChanges},
     identity::{Id, SessionSelector},
     protocol::{Report, ResultEnvelope},
     storage::{Ledger, OpenMode, inspection::ContextView, turns::AttemptStatus},
     workflow::RunStatus,
 };
 use process::OwnedChild;
+use std::fmt::Write as _;
 use std::{
     process::{Command, Stdio},
     sync::{
@@ -50,7 +51,7 @@ fn key_request(
     let mut turn = turn();
     turn.state.push(Input::Text { text: name.into() });
     let request = EvaluationRequest {
-        standing: Default::default(),
+        standing: StandingChanges::default(),
         turn,
         session: SessionSelection::New { name: None },
         updates,
@@ -99,10 +100,12 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         "attempt_timeout_seconds = 5",
         "attempt_timeout_seconds = 30",
     );
-    text += &format!(
+    write!(
+        text,
         "[providers.other]\nprotocol=\"system-one\"\nbase_url=\"{}\"\n[providers.other.models.offline]\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n",
         other.url
-    );
+    )
+    .unwrap();
     std::fs::write(config, text).unwrap();
     let base = report(home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
     let arguments = [
@@ -187,7 +190,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         nouli_core::protocol::ErrorCategory::Interrupted
     );
     assert_eq!(primary.count(), 2);
-    let mut retry = arguments.to_vec();
+    let mut retry = arguments.clone();
     retry.push("--retry-interrupted");
     let recovered = report(home.run(&retry));
     assert_eq!(recovered.session, base.session);

@@ -272,6 +272,8 @@ pub async fn evaluate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::config::ModelSettings;
     use crate::{
         config::{ExecutionSettings, OutputFormat, resolve::SettingsSnapshot},
         limits::count::ByteCounter,
@@ -299,8 +301,8 @@ mod tests {
             format_version: 2,
             profile_name: "local-laya".into(),
             profile: crate::config::ProviderProfile {
-                connection: Default::default(),
-                limits: Default::default(),
+                connection: ConnectionSettings::default(),
+                limits: ModelSettings::default(),
                 protocol: Protocol::SystemOne,
                 base_url,
                 model: "english".into(),
