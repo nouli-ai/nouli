@@ -76,15 +76,31 @@ NOULI=../target/debug/nouli node scripts/build-hero.mjs --store /tmp/nouli-hero/
 
 Recording makes 22 model calls on your provider account, one question each. Answers can differ between recordings, so check the new results before you commit them.
 
-## README hero
+## README images
 
-`.github/readme/hero.svg`, the image at the top of the repository README, is drawn from the recall graph in the README's `nouli view --mermaid` block: every answer and probability comes from there, and its squares count each blend's earlier decisions in that graph. GitHub shows README images without fetching web fonts, so the script subsets Archivo and Martian Mono into the file. Download `Archivo[wdth,wght].ttf` and `MartianMono[wdth,wght].ttf` from [google/fonts](https://github.com/google/fonts/tree/main/ofl) into a directory, then run:
+The root README uses a recorded TUI replay in `.github/readme/tui-replay.gif`,
+with a static frame in `.github/readme/tui-poster.png` and capture details in
+`.github/readme/tui-replay-provenance.json`. The reusable brand banner uses the
+website's paper and teal palette, shared bee, and Archivo headline. The detailed
+recall diagram lives with its recorded source in
+[docs/recall-example.md](../docs/recall-example.md).
+
+Regenerate both images from this directory:
 
 ```sh
-node scripts/readme-hero.mjs --fonts DIR > ../.github/readme/hero.svg
+node scripts/readme-hero.mjs > ../.github/readme/hero.svg
+node scripts/readme-hero.mjs --recall > ../.github/readme/recall.svg
 ```
 
-The layout and its shortened labels are drawn for this one graph, so the script stops if the README's graph or one of its answers changes. `npm test` checks that the committed image still matches the README.
+The generator uses the checked-in Archivo and Martian Mono files from
+[public/fonts/](public/fonts/) and the bee in [public/brand/](public/brand/).
+It subsets the fonts into each SVG, so the images work without external font
+requests or downloads. Their SIL Open Font License notices are alongside the fonts.
+
+The recall layout reads the Mermaid block in the preserved example: answers,
+probabilities, and ancestor counts come from that graph. The script stops if the
+graph or a selected answer no longer matches its layout. `npm test` checks both
+generated assets and the recorded diagram's ancestry and answer validation.
 
 ## Replaying walkthroughs
 
