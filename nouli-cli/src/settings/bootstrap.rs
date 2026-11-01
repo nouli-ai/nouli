@@ -1,13 +1,6 @@
 //! Atomically publish a private starter file without replacing existing config.
-use nouli_core::{
-    config::{Config, ConfigError},
-    identity::Id,
-};
-use std::{
-    fs::{self, OpenOptions},
-    io::{self, Write},
-    path::{Path, PathBuf},
-};
+use nouli_core::config::{Config, ConfigError};
+use std::{io, path::Path};
 use thiserror::Error;
 const STARTER: &str = include_str!("../../config.default.toml");
 #[derive(Debug, Error)]
@@ -17,16 +10,6 @@ pub(super) enum BootstrapError {
     #[error("cannot create starter configuration")]
     Io(#[from] io::Error),
 }
-struct Temporary(PathBuf);
-impl Drop for Temporary {
-    fn drop(&mut self) {
-        if let Err(error) = fs::remove_file(&self.0)
-            && error.kind() != io::ErrorKind::NotFound
-        {
-            tracing::warn!("starter configuration temporary file cleanup failed");
-        }
-    }
-}
 pub(super) fn initialize(path: &Path) -> Result<Config, BootstrapError> {
     match Config::load(path, false) {
         Ok(config) => return Ok(config),
@@ -34,40 +17,14 @@ pub(super) fn initialize(path: &Path) -> Result<Config, BootstrapError> {
         Err(error) => return Err(error.into()),
     }
     Config::parse(STARTER)?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("configuration parent missing"))?;
-    let mut directory = fs::DirBuilder::new();
-    directory.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        directory.mode(0o700);
-    }
-    directory.create(parent)?;
-    let temporary_path = parent.join(format!(".config-{}.tmp", Id::generate()));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary_path)?;
-    let temporary = Temporary(temporary_path);
-    file.write_all(STARTER.as_bytes())?;
-    file.sync_all()?;
-    drop(file);
-    match fs::hard_link(&temporary.0, path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error.into()),
-    }
+    super::private_file::publish_new(path, STARTER.as_bytes())?;
     Ok(Config::load(path, false)?)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nouli_core::identity::Id;
+    use std::fs;
     #[test]
     fn competing_initializers_publish_one_complete_private_config_and_preserve_edits() {
         let root = std::env::temp_dir().join(format!("nouli-bootstrap-{}", Id::generate()));

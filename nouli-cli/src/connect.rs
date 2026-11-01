@@ -7,7 +7,6 @@ use nouli_core::{
         auth::{AuthEntry, KeySource},
     },
     history::ModelSelection,
-    identity::Id,
 };
 use std::{
     fs,
@@ -228,40 +227,9 @@ fn read(path: &Path) -> Result<DocumentMut, SetupError> {
         Err(e) => Err(e.into()),
     }
 }
-/// The directory holding `path`; a bare file name is in the current directory.
-fn directory_of(path: &Path) -> &Path {
-    match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    }
-}
-/// Replaces the configuration atomically. Once the rename succeeds the new
-/// configuration is in place, so a failed directory sync is only reported.
+/// Replaces the configuration atomically.
 fn publish(path: &Path, doc: &DocumentMut) -> Result<(), SetupError> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let directory = directory_of(path);
-    let temporary = directory.join(format!(".config-{}.tmp", Id::generate()));
-    let result = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)?;
-        file.write_all(doc.to_string().as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(temporary);
-        return Err(SetupError::Write);
-    }
-    if fs::File::open(directory)
-        .and_then(|d| d.sync_all())
-        .is_err()
-    {
-        tracing::warn!("configuration directory sync failed after publishing");
-    }
-    Ok(())
+    settings::private_file::publish(path, doc.to_string().as_bytes()).map_err(|_| SetupError::Write)
 }
 /// A validated connection, ready to be written to the configuration.
 struct Draft {
@@ -504,21 +472,7 @@ fn prompt_default(file: &Path) -> Result<bool, SetupError> {
 }
 /// Opens and locks the configuration's lock file, creating its directory.
 fn lock_config(file: &Path) -> Result<fs::File, SetupError> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(directory_of(file))?;
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(nix::libc::O_NOFOLLOW)
-        .open(file.with_extension("toml.lock"))?;
-    lock.lock()?;
-    Ok(lock)
+    Ok(settings::private_file::lock_beside(file)?)
 }
 /// Writes the draft under the configuration lock, storing its credential
 /// before publishing the configuration.
@@ -662,17 +616,8 @@ pub(crate) fn pick_model(
         return Err(SetupError::Invalid);
     }
     if prompt("Save as startup default? (yes/no)", "no")? == "yes" {
-        use std::os::unix::fs::OpenOptionsExt;
         let file = &settings.config_path;
-        let lock = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600)
-            .custom_flags(nix::libc::O_NOFOLLOW)
-            .open(file.with_extension("toml.lock"))?;
-        lock.lock()?;
+        let _lock = lock_config(file)?;
         let mut doc = read(file)?;
         doc["default_provider"] = value(&provider);
         doc["default_model"] = value(&model);
@@ -791,6 +736,7 @@ pub(crate) fn startup(
 mod tests {
     use super::*;
     use clap::Parser;
+    use nouli_core::identity::Id;
     struct Directory(PathBuf);
     impl Directory {
         fn new() -> Self {
@@ -933,13 +879,6 @@ no_auth = true
         let config =
             Config::parse(&fs::read_to_string(dir.0.join("config.toml")).unwrap()).unwrap();
         assert_eq!(config.providers.len(), 2);
-    }
-    #[test]
-    fn bare_file_names_live_in_the_current_directory() {
-        assert_eq!(directory_of(Path::new("config.toml")), Path::new("."));
-        assert_eq!(directory_of(Path::new("")), Path::new("."));
-        assert_eq!(directory_of(Path::new("a/config.toml")), Path::new("a"));
-        assert_eq!(directory_of(Path::new("/config.toml")), Path::new("/"));
     }
     #[test]
     fn cloudflare_wire_model_is_an_editable_exact_model_setting() {

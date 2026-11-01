@@ -2,20 +2,22 @@
 //! command sources, and answering credential lookups. A credential value is
 //! never logged, printed, or put in an error.
 
-use super::environment::{Environment, Origin};
+use super::{
+    environment::{Environment, Origin},
+    private_file,
+};
 use nix::{
     sys::signal::{Signal, killpg},
     unistd::Pid,
 };
 use nouli_core::{
     config::auth::{AuthError, AuthStore, CredentialSource, KeySource},
-    identity::Id,
     protocol::{ErrorCategory, ErrorReport},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Mutex, mpsc},
@@ -112,35 +114,9 @@ pub(crate) fn read(path: &Path) -> Result<AuthStore, AuthFileError> {
 /// temporary file is private from the moment it exists, so no wider mode is
 /// ever visible at the final path.
 pub(crate) fn write(path: &Path, store: &AuthStore) -> Result<(), AuthFileError> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let failed = || AuthFileError::Write { path: path.into() };
-    let parent = path.parent().ok_or_else(failed)?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(parent)
-        .map_err(|_| failed())?;
     let text = store.to_toml().map_err(|_| failed())?;
-    let temporary = parent.join(format!(".auth-{}.tmp", Id::generate()));
-    let written = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        file.flush()?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if written.is_err() {
-        let _ = fs::remove_file(&temporary);
-        return Err(failed());
-    }
-    if let Ok(directory) = fs::File::open(parent) {
-        let _ = directory.sync_all();
-    }
-    Ok(())
+    private_file::publish(path, text.as_bytes()).map_err(|_| failed())
 }
 
 /// Reads the store, applies `change`, and writes the result back when `change`
@@ -151,26 +127,8 @@ pub(crate) fn update<T>(
     path: &Path,
     change: impl FnOnce(&mut AuthStore) -> (T, bool),
 ) -> Result<T, AuthFileError> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-    let failed = || AuthFileError::Write { path: path.into() };
-    let parent = path.parent().ok_or_else(failed)?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(parent)
-        .map_err(|_| failed())?;
-    let mut lock_name = path.file_name().ok_or_else(failed)?.to_owned();
-    lock_name.push(".lock");
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(nix::libc::O_NOFOLLOW)
-        .open(parent.join(lock_name))
-        .map_err(|_| failed())?;
-    lock.lock().map_err(|_| failed())?;
+    let _lock =
+        private_file::lock_beside(path).map_err(|_| AuthFileError::Write { path: path.into() })?;
     let mut store = read(path)?;
     let (result, modified) = change(&mut store);
     if modified {
@@ -394,7 +352,7 @@ impl Credentials {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nouli_core::config::auth::AuthEntry;
+    use nouli_core::{config::auth::AuthEntry, identity::Id};
     use std::os::unix::fs::PermissionsExt;
 
     struct Directory(PathBuf);

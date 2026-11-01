@@ -165,7 +165,7 @@ fn relative_config_path_is_written_in_the_current_directory() {
     let leftovers = std::fs::read_dir(&home.0)
         .unwrap()
         .filter_map(|entry| entry.unwrap().file_name().into_string().ok())
-        .filter(|name| name.starts_with(".config-"))
+        .filter(|name| name.starts_with('.'))
         .count();
     assert_eq!(leftovers, 0);
 }

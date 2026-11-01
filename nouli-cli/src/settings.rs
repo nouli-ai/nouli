@@ -4,6 +4,7 @@ pub(crate) mod auth;
 mod bootstrap;
 mod environment;
 pub(crate) mod preflight;
+pub(crate) mod private_file;
 
 use std::fmt::Write as _;
 use std::{path::PathBuf, sync::Arc};
