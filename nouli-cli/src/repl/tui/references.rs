@@ -686,20 +686,21 @@ mod tests {
         assert!(app.status.is_none());
     }
 
-    #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
-    fn store_wide_selection_is_atomic_preserves_drafts_and_requires_bound_evidence() {
-        use crate::settings::Settings;
+    /// A ledger with one finalized turn saved in `source` and an empty
+    /// `target` session; the source's guard stays held for the whole test.
+    struct SavedElsewhere {
+        ledger: Ledger,
+        source: Id,
+        target: Id,
+        saved: Id,
+        guard: nouli_core::storage::guards::SessionGuard,
+    }
+
+    fn saved_elsewhere(settings: &crate::settings::Settings) -> SavedElsewhere {
         use nouli_core::{
             history::{FinalizedTurn, ModelSelection, StandingChanges},
             storage::{OpenMode, turns::AttemptInput},
         };
-        let settings = Settings::for_test(
-            std::env::temp_dir().join(format!("nouli-reference-ui-{}", Id::generate())),
-        );
         let mut ledger = Ledger::open(&settings.store, OpenMode::ReadWriteCreate).unwrap();
         let source = ledger
             .create_session(
@@ -733,27 +734,50 @@ mod tests {
         let saved = ledger
             .finalize_attempt(&guard, intent.id, template.outcome)
             .unwrap();
+        SavedElsewhere {
+            ledger,
+            source: source.id,
+            target: target.id,
+            saved: saved.id,
+            guard,
+        }
+    }
+
+    /// Sends one key, asserting that it never launches a decision turn.
+    fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        let mut running = None;
+        app.key(KeyEvent::new(code, modifiers), &mut running)
+            .unwrap();
+        assert!(
+            running.is_none(),
+            "selecting a reference never sends a decision"
+        );
+    }
+
+    #[test]
+    fn store_wide_selection_is_atomic_preserves_drafts_and_requires_bound_evidence() {
+        let settings = crate::settings::Settings::for_test(
+            std::env::temp_dir().join(format!("nouli-reference-ui-{}", Id::generate())),
+        );
+        let SavedElsewhere {
+            mut ledger,
+            source,
+            target,
+            saved,
+            guard,
+        } = saved_elsewhere(&settings);
         let mut app = super::super::tests::app(&settings);
-        app.repl.session.id = target.id;
+        app.repl.session.id = target;
         app.form.row = Row::Question;
         app.form.kind = super::super::Kind::Choice;
         app.form.options = vec!["Keep".into(), "Change".into()];
-        let press = |app: &mut App, code, modifiers| {
-            let mut running = None;
-            app.key(KeyEvent::new(code, modifiers), &mut running)
-                .unwrap();
-            assert!(
-                running.is_none(),
-                "selecting a reference never sends a decision"
-            );
-        };
         for ch in "Reconsider @Which route".chars() {
             press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE);
         }
         assert_eq!(app.references.picker.as_ref().unwrap().matches.len(), 1);
-        assert_eq!(app.references.selected().unwrap().source.session, source.id);
+        assert_eq!(app.references.selected().unwrap().source.session, source);
         ledger
-            .rename_session(source.id, "renamed-source".to_owned().try_into().unwrap())
+            .rename_session(source, "renamed-source".to_owned().try_into().unwrap())
             .unwrap();
         app.references.refresh(&ledger).unwrap();
         assert!(
@@ -790,13 +814,13 @@ mod tests {
         let record = updates[0].new_record().unwrap();
         assert_eq!(
             record.value.value()["nouli_decision_reference"]["source"]["turn"],
-            saved.id.to_string()
+            saved.to_string()
         );
         assert_ne!(record.id, app.references.bindings[0].record.id);
         let range = render::decision_tags(&text).pop().unwrap();
         assert!(!render::image_labels(&text).contains("[decision:"));
         // Session switching must preserve a still-unsent reference binding.
-        app.repl.session.id = source.id;
+        app.repl.session.id = source;
         app.restore_references();
         assert_eq!(app.references.bindings.len(), 1);
         assert!(app.reference_updates(&ledger, &[&text]).is_ok());
