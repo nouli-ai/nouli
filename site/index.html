@@ -24,7 +24,7 @@
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux",
   "license": "https://github.com/nouli-ai/nouli/blob/main/LICENSE",
-  "sameAs": "https://github.com/nouli-ai/nouli",
+  "sameAs": ["https://github.com/nouli-ai/nouli", "https://huggingface.co/nouli-ai"],
   "publisher": {
     "@type": "Organization",
     "name": "Nouli",
@@ -44,7 +44,7 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<header class="top"><a class="mark" href="./"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav><a href="guide/">guide</a><a href="examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header>
+<header class="top"><a class="mark" href="./"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav aria-label="Main navigation"><a href="./models/">models</a><a href="./guide/">guide</a><a href="./examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header>
 
 <main>
 <section class="hero" aria-labelledby="home-title">
@@ -54,6 +54,7 @@
     <p>Nouli is a <strong>ledger-backed decision network</strong> that records AI decisions and connects them to the facts and earlier answers they use.</p>
     <p>Use the terminal app, CLI, or Rust library to ask yes/no, choice, and score questions.</p>
     <p><a href="guide/#branch">Branch histories</a> to explore alternatives. <a href="guide/#branch">Blend them</a> to bring earlier decisions together.</p>
+    <p><a href="models/">Explore Nouli’s open-source models →</a></p>
     <p class="org"><a href="https://nouli.ai/"><img src="/brand/bee.svg" alt="" width="14" height="16">From Nouli · nouli.ai ↗</a></p>
   </div>
 </section>

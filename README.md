@@ -2,7 +2,7 @@
 
 **Keep the evidence. Build on the answer.**
 
-Keep the facts behind a decision, add what changes, and ask the next question without losing the earlier answer. Nouli is a terminal app, CLI, and Rust library for connected decision histories: a ledger-backed decision network. Use a compatible decision service, or follow a task-specific model’s local recipe. The harness saves the history; the models answer individual requests.
+Keep the facts behind a decision, add what changes, and ask the next question without losing the earlier answer. Nouli is a terminal app, CLI, and Rust library for connected decision histories: a ledger-backed decision network. Use a compatible decision service, or follow a task-specific model’s local recipe. Use the CLI to run individual model requests with a recorded decision history.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/nouli-ai/nouli/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/nouli-ai/nouli/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/nouli-ai/nouli?include_prereleases&sort=semver&style=flat-square&color=blue&logo=github)](https://github.com/nouli-ai/nouli/releases) [![Total downloads across all release assets](https://img.shields.io/github/downloads/nouli-ai/nouli/total?style=flat-square&color=blueviolet)](https://github.com/nouli-ai/nouli/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE) [![Rust 1.99.1+](https://img.shields.io/badge/rust-1.99.1%2B-dea584?style=flat-square&logo=rust&logoColor=white)](rust-toolchain.toml)
 
@@ -39,7 +39,7 @@ nouli connect
 nouli
 ```
 
-In the app, add context and a question, then choose **Yes / No**, **Choose one**, or **Score**. **Shift-Tab** changes the answer type; **Tab** moves between fields; **F5** sends when ready. Use `/exit` to return to your shell. [Terminal guide](docs/cli.md#full-screen-view).
+In the app, add context and a question, then choose **Yes / No**, **Choose one**, or **Score**. **Shift-Tab** changes the answer type; **Tab** moves between fields. Press **Enter** to send from Context or Question, or **Enter twice** from Options or Levels. Use `/exit` to return to your shell. [Terminal guide](docs/cli.md#full-screen-view).
 
 A service must support System One or OpenAI Decisions. Provider fees may apply to remote inference. [Connection setup](docs/configuration.md).
 

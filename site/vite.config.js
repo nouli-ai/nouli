@@ -2,15 +2,18 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
-const examples = readdirSync(resolve(import.meta.dirname, "examples"), { withFileTypes: true })
-  .filter((d) => d.isDirectory())
-  .map((d) => [`examples/${d.name}`, resolve(import.meta.dirname, "examples", d.name, "index.html")]);
+const sections = ["examples", "models"];
+const sectionPages = sections.flatMap((section) => [
+  [section, resolve(import.meta.dirname, section, "index.html")],
+  ...readdirSync(resolve(import.meta.dirname, section), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => [`${section}/${d.name}`, resolve(import.meta.dirname, section, d.name, "index.html")]),
+]);
 
 const pages = {
   main: resolve(import.meta.dirname, "index.html"),
   guide: resolve(import.meta.dirname, "guide/index.html"),
-  examples: resolve(import.meta.dirname, "examples/index.html"),
-  ...Object.fromEntries(examples),
+  ...Object.fromEntries(sectionPages),
 };
 const publishedBase = "https://nouli.ai/";
 const pageUrls = new Map(Object.entries(pages).map(([route, filename]) => [

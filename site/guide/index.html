@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<header class="top"><a class="mark" href="../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav><a href="./" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header>
+<header class="top"><a class="mark" href="../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav aria-label="Main navigation"><a href="../models/">models</a><a href="../guide/" aria-current="page">guide</a><a href="../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header>
 <h1 class="display small">Guide</h1>
 
 <div class="guide">
@@ -49,6 +49,7 @@ brew upgrade nouli-ai/tap/nouli</code></pre>
 <p>See the <a href="https://github.com/nouli-ai/nouli/blob/main/docs/release.md">installation guide</a> for selecting a version, changing the installation directory, inspecting the script, and building from source.</p>
 
 <h2 id="provider"><span class="num">02</span>Connect a model</h2>
+<p>To run one of Nouli’s five open-source models, choose it from the <a href="../models/">model catalog</a> and follow its local serving recipe and supplied workflow. Hugging Face hosts the weights; inference runs on your machine. The instructions below connect a compatible service for broader decision questions.</p>
 <p>Run <code>nouli connect</code>, choose a service, authenticate, and select a model. Shortcuts are available for OpenAI, TypeSafe, OpenRouter, Cloudflare Workers AI, Ollama and llama.cpp. Choose <code>custom</code> for another compatible server. You can type any model ID your server supports.</p>
 <pre><code>nouli connect
 nouli connect typesafe
@@ -107,7 +108,6 @@ travel › How should I travel to the meeting?
 <tr><td>Tab</td><td>Move fields; in Options/Levels, move to the next item.</td></tr>
 <tr><td>Shift-Tab</td><td>Cycle Yes / No → Choose one → Score from any field.</td></tr>
 <tr><td>Enter</td><td>Send from Context/Question when ready. In Options/Levels, add another item; a second consecutive Enter sends.</td></tr>
-<tr><td>Ctrl-S / F5</td><td>Send the complete form from any field.</td></tr>
 <tr><td>@</td><td>Find saved answers across local sessions and files under the launch folder. Enter inserts a selection without sending.</td></tr>
 <tr><td>Drag the divider</td><td>Resize the graph at any time, while keeping the current field focused.</td></tr>
 <tr><td>Ctrl-G / Esc</td><td>Focus the graph for keyboard navigation, then return to the form.</td></tr>
@@ -143,7 +143,7 @@ that arrives on time.' \
 <p>Put an option in double quotes if it contains a comma or a bracket. A question can sit in a file too: pass <code>--input request.json</code> (JSON or TOON) for the full form with rubrics and structured evidence. Answers are model judgments, not actions: Nouli never books, sends, or changes anything.</p>
 
 <h2 id="turns"><span class="num">05</span>Add a turn</h2>
-<p>A session keeps the facts you gave it and every answer. <code>nouli add</code> sends only what changed, with the next question, and the earlier facts and answers come along as history. Nothing is asked again, so <code>transport</code> keeps the answer it was given. <code>nouli ask travel -q …</code> asks without new facts:</p>
+<p>A session records the facts you gave it and every answer. <code>nouli add</code> sends only what changed, with the next question, and the earlier facts and answers come along as history. Nothing is asked again, so <code>transport</code> still has its recorded answer. <code>nouli ask travel -q …</code> asks without new facts:</p>
 <pre><code>nouli add travel \
   'The train has been cancelled. The taxi is still available at 70 USD.' \
   -q 'rebook: How should I travel to the meeting now? [Take the train, Take a taxi]'</code></pre>
@@ -156,7 +156,7 @@ that arrives on time.' \
 <p>Long histories are trimmed to fit the model's context budget: older decisions shrink to their question and answer first, then the oldest optional records drop out. The full record stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached the model for a turn.</p>
 
 <h2 id="branch"><span class="num">06</span>Branch and blend</h2>
-<p><code>--from</code> starts a new session from saved history. One <code>--from</code> branches, and the branch keeps the source's questions; several blend, and a blend starts with none:</p>
+<p><code>--from</code> starts a new session from saved history. One <code>--from</code> branches, and the branch includes the source's questions; several blend, and a blend starts with none:</p>
 <pre><code>nouli new travel-late --from travel '…' -q '…'
 nouli new plan --from travel --from budget '…' -q '…'</code></pre>
 <p>A new session captures its sources when you create it. Later turns in <code>travel</code> don't change <code>plan</code>; make a new blend to reconsider with the updated history. To start from an older point, name the turn: <code>--from travel@TURN_ID</code>.</p>
