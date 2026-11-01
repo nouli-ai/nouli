@@ -1,5 +1,6 @@
 //! CLI-owned connection recipes and configuration authoring. Execution never reads recipes.
 use crate::{Args, settings};
+use clap::ValueEnum;
 use nouli_core::{
     config::{
         Config, ConnectionSettings, HttpBinding, ImageEncoding, ModelSettings, Protocol,
@@ -34,8 +35,6 @@ pub(crate) enum SetupError {
     InvalidName,
     #[error("Unknown protocol. Choose system-one or openai-decisions")]
     InvalidProtocol,
-    #[error("Unknown binding. Choose standard or cloudflare-workers-ai")]
-    InvalidBinding,
     #[error("A Cloudflare account ID must be letters and digits only")]
     InvalidAccountId,
     #[error("Unknown authentication method. Choose one of the listed methods")]
@@ -86,7 +85,6 @@ impl SetupError {
             Self::UnknownService(_) => (Category::Input, "unknown_service"),
             Self::InvalidName => (Category::Input, "invalid_connection_name"),
             Self::InvalidProtocol => (Category::Input, "invalid_protocol"),
-            Self::InvalidBinding => (Category::Input, "invalid_binding"),
             Self::InvalidAccountId => (Category::Input, "invalid_account_id"),
             Self::InvalidCredentialSource => (Category::Input, "invalid_credential_source"),
             Self::InvalidEnvironmentVariable => (Category::Input, "invalid_environment_variable"),
@@ -109,6 +107,33 @@ impl SetupError {
         }
     }
 }
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum ProtocolArg {
+    SystemOne,
+    OpenaiDecisions,
+}
+impl From<ProtocolArg> for Protocol {
+    fn from(value: ProtocolArg) -> Self {
+        match value {
+            ProtocolArg::SystemOne => Self::SystemOne,
+            ProtocolArg::OpenaiDecisions => Self::OpenaiDecisions,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum BindingArg {
+    Standard,
+    CloudflareWorkersAi,
+}
+impl From<BindingArg> for HttpBinding {
+    fn from(value: BindingArg) -> Self {
+        match value {
+            BindingArg::Standard => Self::Standard,
+            BindingArg::CloudflareWorkersAi => Self::CloudflareWorkersAi,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, clap::Args)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -119,10 +144,10 @@ pub(crate) struct Connect {
     pub service: Option<String>,
     #[arg(long)]
     pub name: Option<String>,
-    #[arg(long)]
-    pub protocol: Option<String>,
-    #[arg(long)]
-    pub binding: Option<String>,
+    #[arg(long, value_enum)]
+    pub protocol: Option<ProtocolArg>,
+    #[arg(long, value_enum)]
+    pub binding: Option<BindingArg>,
     #[arg(long)]
     pub base_url: Option<String>,
     #[arg(long)]
@@ -349,8 +374,8 @@ pub(crate) fn configure(file: &Path, options: &Connect) -> Result<ModelSelection
     }
     let protocol = choose_protocol(options, recipe, interactive)?;
     let mut connection = recipe.map(|r| r.connection.clone()).unwrap_or_default();
-    if let Some(binding) = &options.binding {
-        connection.binding = Some(parse_binding(binding)?);
+    if let Some(binding) = options.binding {
+        connection.binding = Some(binding.into());
     }
     let base_url = choose_endpoint(options, &service, recipe, interactive)?;
     let key = choose_credential(options, &mut connection, interactive)?;
@@ -377,40 +402,26 @@ fn has_provider(doc: &DocumentMut, name: &str) -> bool {
         .and_then(|providers| providers.get(name))
         .is_some()
 }
-fn protocol_name(protocol: Protocol) -> &'static str {
-    if protocol == Protocol::SystemOne {
-        "system-one"
-    } else {
-        "openai-decisions"
-    }
-}
 fn choose_protocol(
     options: &Connect,
     recipe: Option<&Recipe>,
     interactive: bool,
 ) -> Result<Protocol, SetupError> {
-    let suggested = recipe.map(|r| protocol_name(r.protocol));
+    if let Some(protocol) = options.protocol {
+        return Ok(protocol.into());
+    }
+    if let Some(recipe) = recipe {
+        return Ok(recipe.protocol);
+    }
     let chosen = choose(
-        options
-            .protocol
-            .clone()
-            .or_else(|| suggested.map(Into::into)),
+        None,
         "Protocol (system-one or openai-decisions)",
-        suggested.unwrap_or(""),
+        "",
         interactive,
     )?;
-    match chosen.as_str() {
-        "system-one" => Ok(Protocol::SystemOne),
-        "openai-decisions" => Ok(Protocol::OpenaiDecisions),
-        _ => Err(SetupError::InvalidProtocol),
-    }
-}
-fn parse_binding(binding: &str) -> Result<HttpBinding, SetupError> {
-    match binding {
-        "standard" => Ok(HttpBinding::Standard),
-        "cloudflare-workers-ai" => Ok(HttpBinding::CloudflareWorkersAi),
-        _ => Err(SetupError::InvalidBinding),
-    }
+    ProtocolArg::from_str(&chosen, false)
+        .map(Into::into)
+        .map_err(|_| SetupError::InvalidProtocol)
 }
 /// The endpoint from the options or recipe. Interactive Cloudflare setup
 /// builds it from the account ID, since its recipe has no fixed endpoint.
@@ -813,7 +824,7 @@ mod tests {
         Connect {
             service: Some("custom".into()),
             name: Some(name.into()),
-            protocol: Some("system-one".into()),
+            protocol: Some(ProtocolArg::SystemOne),
             base_url: Some("https://arbitrary.example/prefix".into()),
             model: Some("user/model.v2".into()),
             no_auth: true,
@@ -976,11 +987,6 @@ no_auth = true
                 SetupError::InvalidProtocol,
                 Category::Input,
                 "invalid_protocol",
-            ),
-            (
-                SetupError::InvalidBinding,
-                Category::Input,
-                "invalid_binding",
             ),
             (
                 SetupError::InvalidAccountId,

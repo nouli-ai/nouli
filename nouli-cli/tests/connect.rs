@@ -241,7 +241,12 @@ fn setup_failures_report_specific_codes_and_exit_codes() {
     ] {
         let output = home.run(&arguments);
         assert_eq!(output.status.code(), Some(2), "{arguments:?}: {output:?}");
-        assert_eq!(error_code(&output), code, "{arguments:?}");
+        if matches!(code, "invalid_protocol" | "invalid_binding") {
+            assert_eq!(output.stdout, [] as [u8; 0]);
+            assert!(String::from_utf8_lossy(&output.stderr).contains("invalid value"));
+        } else {
+            assert_eq!(error_code(&output), code, "{arguments:?}");
+        }
     }
     assert!(!home.0.join("config.toml").exists());
     let output = home.run(custom(&["--no-auth"]));
@@ -313,4 +318,33 @@ fn existing_configuration_and_store_problems_keep_their_codes_and_name_the_file(
     assert_eq!(output.status.code(), Some(2), "{output:?}");
     assert_eq!(error_code(&output), "invalid_connection");
     assert!(!String::from_utf8_lossy(&output.stdout).contains("hunter2"));
+}
+
+#[test]
+fn invalid_protocol_and_binding_values_list_valid_values_before_setup() {
+    for (flag, valid) in [
+        ("--protocol", ["system-one", "openai-decisions"]),
+        ("--binding", ["standard", "cloudflare-workers-ai"]),
+    ] {
+        let home = Home::create();
+        let output = home.run([
+            "connect",
+            "custom",
+            flag,
+            "not-a-value",
+            "--non-interactive",
+        ]);
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.stdout, [] as [u8; 0]);
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            error.contains("invalid value") && error.contains(flag),
+            "{error}"
+        );
+        for value in valid {
+            assert!(error.contains(value), "{error}");
+        }
+        assert!(!home.0.join("config.toml").exists());
+        assert!(!home.0.join("auth.toml").exists());
+    }
 }
