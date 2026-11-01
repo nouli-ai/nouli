@@ -49,6 +49,7 @@ use crate::{
     storage::{
         Ledger,
         guards::{self, GuardError},
+        sessions::Session,
         sql_error,
         turns::{AttemptProgress, AttemptStatus, progress_event},
     },
@@ -57,7 +58,7 @@ use crate::{
         schedule::{NodeProgress, ScheduleResult, project_outputs},
     },
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 fn attempts(
     ledger: &Ledger,
@@ -317,37 +318,17 @@ impl Ledger {
     ///   [`WorkflowError::History`], [`WorkflowError::Compile`],
     ///   [`WorkflowError::IntentConflict`], or [`WorkflowError::Storage`] if the
     ///   session, attempts, frozen request, or ledger cannot be read or written.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
     pub fn resume_workflow(&mut self, run: Id) -> Result<WorkflowDecision, WorkflowError> {
         let first = self.workflow_run(run)?;
         if first.status == RunStatus::Completed {
             return Ok(WorkflowDecision::Saved(Box::new(first)));
         }
-        let key = first
-            .frozen
-            .definition
-            .request
-            .request_id
-            .as_deref()
-            .ok_or(WorkflowError::Snapshot)?;
-        let request_guard = match guards::lock(
-            self,
-            &format!(
-                "request-{}",
-                codec::fingerprint(&key).map_err(|_| WorkflowError::Snapshot)?
-            ),
-        ) {
-            Ok(guard) => guard,
-            Err(GuardError::WriterActive) => return Ok(WorkflowDecision::InProgress),
-            Err(error) => return Err(error.into()),
+        let request_lock = request_lock_key(request_key(&first)?)?;
+        let Some(request_guard) = unless_writer_active(guards::lock(self, &request_lock))? else {
+            return Ok(WorkflowDecision::InProgress);
         };
-        let run_guard = match self.run_guard(run) {
-            Ok(guard) => guard,
-            Err(GuardError::WriterActive) => return Ok(WorkflowDecision::InProgress),
-            Err(error) => return Err(error.into()),
+        let Some(run_guard) = unless_writer_active(self.run_guard(run))? else {
+            return Ok(WorkflowDecision::InProgress);
         };
         let session_guard = guards::acquire_session(self, first.frozen.definition.session)?;
         let stored = self.workflow_run(run)?;
@@ -355,9 +336,62 @@ impl Ledger {
             return Ok(WorkflowDecision::Saved(Box::new(stored)));
         }
         let session = self.session(&SessionSelector::Id(stored.frozen.definition.session))?;
-        if session.revision != stored.published_revision || session.frontier != stored.frontier {
-            return Err(WorkflowError::AdvancedHead);
-        }
+        ensure_head_unmoved(&session, &stored)?;
+        let retry = self.plan_retry_round(run, &stored, session_guard.owner)?;
+        self.transaction::<_, WorkflowError>("start explicit workflow retry round", |tx| {
+            retry.start(tx)
+        })?;
+        let round = retry.round;
+        Ok(WorkflowDecision::Accepted(Box::new(WorkflowOwner {
+            frozen: stored.frozen,
+            round,
+            session_guard,
+            _run_guard: run_guard,
+            _request_guard: request_guard,
+        })))
+    }
+
+    /// Reads everything the next retry round needs before its write
+    /// transaction: the round numbers, the run's attempts, and the result the
+    /// interrupted round settles to.
+    fn plan_retry_round<'a>(
+        &self,
+        run: Id,
+        stored: &'a StoredRun,
+        owner: Id,
+    ) -> Result<RetryRound<'a>, WorkflowError> {
+        let previous = self.last_round(run)?;
+        let round = previous.checked_add(1).ok_or(WorkflowError::Snapshot)?;
+        let attempts = attempts(self, &self.connection, run)?;
+        let settled_nodes = settled(stored.nodes.clone());
+        let graph = crate::workflow::compile::compile(&stored.frozen.definition.request.workflow)?;
+        let (start_order, completion_order) = super::round_order(self, run, previous)?;
+        let previous_result = if let Some(result) = &stored.result {
+            result.clone()
+        } else {
+            ScheduleResult {
+                status: RunStatus::Interrupted,
+                outputs: project_outputs(&graph, &settled_nodes)
+                    .map_err(|_| WorkflowError::Snapshot)?,
+                nodes: settled_nodes.clone(),
+                start_order,
+                completion_order,
+            }
+        };
+        Ok(RetryRound {
+            run,
+            key: request_key(stored)?,
+            stored,
+            owner,
+            previous,
+            round,
+            attempts,
+            settled_nodes,
+            previous_result,
+        })
+    }
+
+    fn last_round(&self, run: Id) -> Result<u32, WorkflowError> {
         let previous: i64 = self
             .connection
             .query_row(
@@ -366,73 +400,266 @@ impl Ledger {
                 |row| row.get(0),
             )
             .map_err(|error| sql_error("read last retry round", &error))?;
-        let previous = u32::try_from(previous).map_err(|_| WorkflowError::Snapshot)?;
-        let round = previous.checked_add(1).ok_or(WorkflowError::Snapshot)?;
-        let snapshots = attempts(self, &self.connection, run)?;
-        let old_nodes = settled(stored.nodes.clone());
-        let graph = crate::workflow::compile::compile(&stored.frozen.definition.request.workflow)?;
-        let (start_order, completion_order) = super::round_order(self, run, previous)?;
-        let old_result = if let Some(result) = &stored.result {
-            result.clone()
-        } else {
-            ScheduleResult {
-                status: RunStatus::Interrupted,
-                outputs: project_outputs(&graph, &old_nodes)
-                    .map_err(|_| WorkflowError::Snapshot)?,
-                nodes: old_nodes.clone(),
-                start_order,
-                completion_order,
+        u32::try_from(previous).map_err(|_| WorkflowError::Snapshot)
+    }
+}
+
+fn request_key(run: &StoredRun) -> Result<&str, WorkflowError> {
+    run.frozen
+        .definition
+        .request
+        .request_id
+        .as_deref()
+        .ok_or(WorkflowError::Snapshot)
+}
+
+fn request_lock_key(key: &str) -> Result<String, WorkflowError> {
+    Ok(format!(
+        "request-{}",
+        codec::fingerprint(&key).map_err(|_| WorkflowError::Snapshot)?
+    ))
+}
+
+/// Treats an active writer as "someone else is resuming this run" rather than
+/// as an error.
+fn unless_writer_active<G>(guard: Result<G, GuardError>) -> Result<Option<G>, WorkflowError> {
+    match guard {
+        Ok(guard) => Ok(Some(guard)),
+        Err(GuardError::WriterActive) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn ensure_head_unmoved(session: &Session, stored: &StoredRun) -> Result<(), WorkflowError> {
+    if session.revision != stored.published_revision || session.frontier != stored.frontier {
+        return Err(WorkflowError::AdvancedHead);
+    }
+    Ok(())
+}
+
+fn attempt_recovered(round: u32, node: usize, attempt: Id) -> WorkflowEvent {
+    WorkflowEvent {
+        version: crate::decision::CONTRACT_VERSION,
+        round,
+        kind: WorkflowEventKind::Recovered,
+        progress: None,
+        node: Some(node),
+        node_status: Some(NodeStatus::Interrupted),
+        run_status: None,
+        attempt: Some(attempt),
+        turn: None,
+    }
+}
+
+fn node_recovered(round: u32, node: usize, progress: NodeProgress) -> WorkflowEvent {
+    WorkflowEvent {
+        version: crate::decision::CONTRACT_VERSION,
+        round,
+        kind: WorkflowEventKind::Recovered,
+        node_status: Some(progress.status),
+        progress: Some(progress),
+        node: Some(node),
+        run_status: None,
+        attempt: None,
+        turn: None,
+    }
+}
+
+fn run_event(round: u32, kind: WorkflowEventKind, status: RunStatus) -> WorkflowEvent {
+    WorkflowEvent {
+        version: crate::decision::CONTRACT_VERSION,
+        round,
+        kind,
+        progress: None,
+        node: None,
+        node_status: None,
+        run_status: Some(status),
+        attempt: None,
+        turn: None,
+    }
+}
+
+/// An explicit retry round planned from a stored run, written by
+/// [`RetryRound::start`] inside one transaction.
+struct RetryRound<'a> {
+    run: Id,
+    key: &'a str,
+    stored: &'a StoredRun,
+    /// The resuming process's owner ID.
+    owner: Id,
+    /// The round being closed out.
+    previous: u32,
+    /// The round being started.
+    round: u32,
+    attempts: Vec<AttemptSnapshot>,
+    /// The stored nodes with every unsettled node marked interrupted.
+    settled_nodes: Vec<NodeProgress>,
+    /// The result recorded for the previous round if it has none yet.
+    previous_result: ScheduleResult,
+}
+
+impl RetryRound<'_> {
+    fn start(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        self.verify_unchanged(tx)?;
+        self.interrupt_orphan_attempts(tx)?;
+        self.preserve_previous_round(tx)?;
+        self.renew_run_ownership(tx)?;
+        self.reset_unsettled_nodes(tx)
+    }
+
+    /// Rechecks, under the write lock, that the session head has not moved and
+    /// that the request still points at this run.
+    fn verify_unchanged(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        let current = super::sessions::read_session(
+            tx,
+            &SessionSelector::Id(self.stored.frozen.definition.session),
+        )?;
+        ensure_head_unmoved(&current, self.stored)?;
+        let saved_run = super::request_run(
+            tx,
+            self.key,
+            &super::fingerprint(&self.stored.frozen.definition.request)?,
+        )?;
+        if saved_run != Some(self.run) {
+            return Err(WorkflowError::Snapshot);
+        }
+        Ok(())
+    }
+
+    fn interrupt_orphan_attempts(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        for attempt in &self.attempts {
+            if !matches!(
+                attempt.progress.state,
+                AttemptStatus::Pending | AttemptStatus::Running
+            ) {
+                continue;
             }
-        };
-        let key = stored
-            .frozen
-            .definition
-            .request
-            .request_id
-            .as_deref()
-            .ok_or(WorkflowError::Snapshot)?;
-        self.transaction::<_,WorkflowError>("start explicit workflow retry round",|tx| {
-            let current=super::sessions::read_session(tx,&SessionSelector::Id(session.id))?;
-            if current.revision!=stored.published_revision || current.frontier!=stored.frontier {return Err(WorkflowError::AdvancedHead);}
-            let saved_run=super::request_run(tx,key,&super::fingerprint(&stored.frozen.definition.request)?)?;
-            if saved_run!=Some(run) {return Err(WorkflowError::Snapshot);}
-            for attempt in &snapshots {if matches!(attempt.progress.state,AttemptStatus::Pending|AttemptStatus::Running) {
-                let scope=attempt.intent.workflow.as_ref().ok_or(WorkflowError::Snapshot)?;
-                let code=if attempt.progress.state==AttemptStatus::Running {"provider_outcome_unknown"} else {"not_dispatched"};
-                let progress=AttemptProgress {state:AttemptStatus::Interrupted,error:Some(ErrorReport {category:ErrorCategory::Interrupted,code:code.into(),message:"Previous workflow owner exited".into(),retryable:false})};
-                tx.execute("UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1 AND state IN ('pending','running')",[attempt.intent.id.to_string()]).map_err(|error|sql_error("recover orphan attempt",&error))?;progress_event(tx,attempt.intent.id,&progress)?;
-                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous,kind:WorkflowEventKind::Recovered,progress:None,node:Some(scope.node),node_status:Some(NodeStatus::Interrupted),run_status:None,attempt:Some(attempt.intent.id),turn:None})?;
-            }}
-            let old:Option<String>=tx.query_row("SELECT payload_toon FROM workflow_round_results WHERE run_id=?1 AND round=?2",params![run.to_string(),previous],|row|row.get(0)).optional().map_err(|error|sql_error("inspect prior round result",&error))?;
-            if old.is_none() {
-                tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES(?1,?2,'interrupted',?3,?4,?5)",params![run.to_string(),previous,Self::encode_payload(&stored.frontier)?,stored.published_revision,Self::encode_payload(&old_result)?]).map_err(|error|sql_error("preserve interrupted retry round",&error))?;
-                for (node,progress) in old_nodes.iter().enumerate() {
-                    if matches!(stored.nodes[node].status,NodeStatus::Pending|NodeStatus::Running) {
-                        event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous,kind:WorkflowEventKind::Recovered,progress:Some(progress.clone()),node:Some(node),node_status:Some(progress.status),run_status:None,attempt:None,turn:None})?;
-                    }
-                }
-                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:previous,kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Interrupted),attempt:None,turn:None})?;
+            let scope = attempt
+                .intent
+                .workflow
+                .as_ref()
+                .ok_or(WorkflowError::Snapshot)?;
+            let code = if attempt.progress.state == AttemptStatus::Running {
+                "provider_outcome_unknown"
+            } else {
+                "not_dispatched"
+            };
+            let progress = AttemptProgress {
+                state: AttemptStatus::Interrupted,
+                error: Some(ErrorReport {
+                    category: ErrorCategory::Interrupted,
+                    code: code.into(),
+                    message: "Previous workflow owner exited".into(),
+                    retryable: false,
+                }),
+            };
+            tx.execute("UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1 AND state IN ('pending','running')",[attempt.intent.id.to_string()]).map_err(|error|sql_error("recover orphan attempt",&error))?;
+            progress_event(tx, attempt.intent.id, &progress)?;
+            event(
+                tx,
+                self.run,
+                &attempt_recovered(self.previous, scope.node, attempt.intent.id),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Records the previous round's interrupted result and node outcomes,
+    /// unless that round already settled with a result of its own.
+    fn preserve_previous_round(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        let old: Option<String> = tx
+            .query_row(
+                "SELECT payload_toon FROM workflow_round_results WHERE run_id=?1 AND round=?2",
+                params![self.run.to_string(), self.previous],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| sql_error("inspect prior round result", &error))?;
+        if old.is_some() {
+            return Ok(());
+        }
+        tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES(?1,?2,'interrupted',?3,?4,?5)",params![self.run.to_string(),self.previous,Ledger::encode_payload(&self.stored.frontier)?,self.stored.published_revision,Ledger::encode_payload(&self.previous_result)?]).map_err(|error|sql_error("preserve interrupted retry round",&error))?;
+        for (node, progress) in self.settled_nodes.iter().enumerate() {
+            if matches!(
+                self.stored.nodes[node].status,
+                NodeStatus::Pending | NodeStatus::Running
+            ) {
+                event(
+                    tx,
+                    self.run,
+                    &node_recovered(self.previous, node, progress.clone()),
+                )?;
             }
-            let changed=tx.execute("UPDATE workflow_runs SET owner_id=?2,state='running',result_toon=NULL WHERE id=?1 AND state!='completed'",params![run.to_string(),session_guard.owner.to_string()]).map_err(|error|sql_error("renew workflow owner",&error))?;if changed!=1 {return Err(WorkflowError::Conflict);}
-            let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow' AND state!='completed'",params![key,session_guard.owner.to_string()]).map_err(|error|sql_error("renew workflow reservation",&error))?;if changed!=1 {return Err(WorkflowError::Conflict);}
-            tx.execute("INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES(?1,?2,?3)",params![run.to_string(),round,session_guard.owner.to_string()]).map_err(|error|sql_error("append explicit retry round",&error))?;
-            event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round,kind:WorkflowEventKind::RoundStarted,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Running),attempt:None,turn:None})?;
-            for (node,progress) in old_nodes.iter().enumerate() {
-                if matches!(progress.status,NodeStatus::Completed|NodeStatus::Skipped) {continue;}
-                let name=&stored.frozen.definition.request.workflow.nodes[node].id;
-                let pending=NodeProgress {status:NodeStatus::Pending,output:None,error:None,ancestors:vec![],inputs:vec![]};
-                event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round,kind:WorkflowEventKind::Recovered,progress:Some(pending.clone()),node:Some(node),node_status:Some(NodeStatus::Pending),run_status:None,attempt:None,turn:None})?;
-                let changed=tx.execute("UPDATE workflow_nodes SET state='pending',turn_id=NULL,payload_toon=?3 WHERE run_id=?1 AND node_id=?2 AND state!='completed'",params![run.to_string(),name,Self::encode_payload(&pending)?]).map_err(|error|sql_error("reset eligible node for explicit retry",&error))?;if changed!=1 {return Err(WorkflowError::Conflict);}
-                let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow_node' AND state!='completed'",params![child_key(run,node),session_guard.owner.to_string()]).map_err(|error|sql_error("renew node reservation owner",&error))?;if changed!=1 {return Err(WorkflowError::Conflict);}
+        }
+        event(
+            tx,
+            self.run,
+            &run_event(
+                self.previous,
+                WorkflowEventKind::RunFinished,
+                RunStatus::Interrupted,
+            ),
+        )?;
+        Ok(())
+    }
+
+    /// Hands the run and its request reservation to the new owner and opens the
+    /// new round.
+    fn renew_run_ownership(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        let changed=tx.execute("UPDATE workflow_runs SET owner_id=?2,state='running',result_toon=NULL WHERE id=?1 AND state!='completed'",params![self.run.to_string(),self.owner.to_string()]).map_err(|error|sql_error("renew workflow owner",&error))?;
+        if changed != 1 {
+            return Err(WorkflowError::Conflict);
+        }
+        let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow' AND state!='completed'",params![self.key,self.owner.to_string()]).map_err(|error|sql_error("renew workflow reservation",&error))?;
+        if changed != 1 {
+            return Err(WorkflowError::Conflict);
+        }
+        tx.execute(
+            "INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES(?1,?2,?3)",
+            params![self.run.to_string(), self.round, self.owner.to_string()],
+        )
+        .map_err(|error| sql_error("append explicit retry round", &error))?;
+        event(
+            tx,
+            self.run,
+            &run_event(
+                self.round,
+                WorkflowEventKind::RoundStarted,
+                RunStatus::Running,
+            ),
+        )?;
+        Ok(())
+    }
+
+    /// Returns every node that did not complete or skip to pending under the
+    /// new owner, so the new round can run it again.
+    fn reset_unsettled_nodes(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        for (node, progress) in self.settled_nodes.iter().enumerate() {
+            if matches!(progress.status, NodeStatus::Completed | NodeStatus::Skipped) {
+                continue;
             }
-            Ok(())
-        })?;
-        Ok(WorkflowDecision::Accepted(Box::new(WorkflowOwner {
-            frozen: stored.frozen,
-            round,
-            session_guard,
-            _run_guard: run_guard,
-            _request_guard: request_guard,
-        })))
+            let name = &self.stored.frozen.definition.request.workflow.nodes[node].id;
+            let pending = NodeProgress {
+                status: NodeStatus::Pending,
+                output: None,
+                error: None,
+                ancestors: vec![],
+                inputs: vec![],
+            };
+            event(
+                tx,
+                self.run,
+                &node_recovered(self.round, node, pending.clone()),
+            )?;
+            let changed=tx.execute("UPDATE workflow_nodes SET state='pending',turn_id=NULL,payload_toon=?3 WHERE run_id=?1 AND node_id=?2 AND state!='completed'",params![self.run.to_string(),name,Ledger::encode_payload(&pending)?]).map_err(|error|sql_error("reset eligible node for explicit retry",&error))?;
+            if changed != 1 {
+                return Err(WorkflowError::Conflict);
+            }
+            let changed=tx.execute("UPDATE request_reservations SET owner_id=?2,state='pending' WHERE request_id=?1 AND kind='workflow_node' AND state!='completed'",params![child_key(self.run,node),self.owner.to_string()]).map_err(|error|sql_error("renew node reservation owner",&error))?;
+            if changed != 1 {
+                return Err(WorkflowError::Conflict);
+            }
+        }
+        Ok(())
     }
 }
