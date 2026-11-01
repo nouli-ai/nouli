@@ -1,24 +1,23 @@
-// Draw the README's hero image from the recall graph recorded in README.md.
+// Generate the README banner and the preserved recorded recall diagram.
 //
-//   node scripts/readme-hero.mjs --fonts DIR > ../.github/readme/hero.svg
+//   node scripts/readme-hero.mjs > ../.github/readme/hero.svg
+//   node scripts/readme-hero.mjs --recall > ../.github/readme/recall.svg
 //
-// Every answer and probability comes from the README's `nouli view --mermaid` block, and the
-// squares count each blend's ancestors in that graph. The layout and the shortened labels are
-// drawn for this one graph, so the script fails if the graph or an answer changes. DIR holds
-// Archivo[wdth,wght].ttf and MartianMono[wdth,wght].ttf from github.com/google/fonts (OFL); the
-// characters the image uses are subset into it, because GitHub shows README images without
-// fetching web fonts.
+// Both images embed subsets of the checked-in website fonts. The recall diagram
+// reads docs/recall-example.md and refuses answers or ancestry its layout cannot draw.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const P = "#f4f1eb", INK = "#1d2a28", T = "#0b6e63", SOFT = "#4f5a57", TB = "#5cc8b6";
-export const README = resolve(import.meta.dirname, "../../README.md");
+export const RECALL_SOURCE = resolve(import.meta.dirname, "../../docs/recall-example.md");
+const FONT_DIR = resolve(import.meta.dirname, "../public/fonts");
+const BEE = resolve(import.meta.dirname, "../public/brand/bee.svg");
 
-/** Read the nodes and edges of the README's Mermaid block. */
+/** Read the nodes and edges of the preserved example's Mermaid block. */
 export function readGraph(readme) {
   const block = readme.match(/```mermaid\n([\s\S]*?)```/)?.[1];
-  if (!block) throw new Error("README.md has no mermaid block");
+  if (!block) throw new Error("docs/recall-example.md has no mermaid block");
   const nodes = [], seen = new Map();
   for (const [, key, label] of block.matchAll(/^\s*(t\d+)\["(.*)"\]$/gm)) {
     const [head, question, answers] = label.split("<br/><br/>");
@@ -52,7 +51,7 @@ const EXPECTED = {
 export function placeGraph(nodes) {
   const id = (n) => `${n.session} ${n.turn}`;
   const got = Object.fromEntries(nodes.map((n) => [id(n), n]));
-  if (Object.keys(got).sort().join() !== Object.keys(EXPECTED).sort().join()) throw new Error(`README graph has ${Object.keys(got).join(", ")}; update the layout in readme-hero.mjs`);
+  if (Object.keys(got).sort().join() !== Object.keys(EXPECTED).sort().join()) throw new Error(`Recall graph has ${Object.keys(got).join(", ")}; update the layout in readme-hero.mjs`);
   const ancestors = (n, out = new Set()) => { for (const p of n.parents) { out.add(p); ancestors(p, out); } return out; };
   const place = {};
   for (const [k, want] of Object.entries(EXPECTED)) {
@@ -83,14 +82,14 @@ function off(pts, d) {
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 // Faces: display and names in Archivo, everything else in Martian Mono.
 const FACES = {
-  disp: { file: "Archivo[wdth,wght].ttf", family: "nd", weight: 900, axes: { wdth: 62, wght: 900 } },
-  cond: { file: "Archivo[wdth,wght].ttf", family: "nc", weight: 800, axes: { wdth: 75, wght: 800 } },
-  mono: { file: "MartianMono[wdth,wght].ttf", family: "nm", weight: 400, axes: { wdth: 87, wght: 400 } },
-  bold: { file: "MartianMono[wdth,wght].ttf", family: "nm", weight: 700, axes: { wdth: 87, wght: 700 } },
+  disp: { file: "archivo-latin-variable.woff2", family: "nd", weight: 900, axes: { wdth: 62, wght: 900 } },
+  cond: { file: "archivo-latin-variable.woff2", family: "nc", weight: 800, axes: { wdth: 75, wght: 800 } },
+  mono: { file: "martian-mono-latin-variable.woff2", family: "nm", weight: 400, axes: { wdth: 87, wght: 400 } },
+  bold: { file: "martian-mono-latin-variable.woff2", family: "nm", weight: 700, axes: { wdth: 87, wght: 700 } },
 };
 
-/** Lay out the hero. Returns the SVG body and the text each face draws. */
-export function drawHero(graph) {
+/** Lay out the recorded diagram and collect the glyphs each face draws. */
+export function drawRecall(graph) {
   const { place, sources, layers, decisions } = graph;
   const used = Object.fromEntries(Object.keys(FACES).map((f) => [f, new Set()]));
   const text = (x, y, t, o = {}) => {
@@ -172,21 +171,14 @@ export function drawHero(graph) {
   return { body: s, used, H };
 }
 
-/** The finished SVG. With fonts, each face is subset into the file; without, the text falls back to system fonts. */
-export async function heroSvg(graph, fonts) {
-  const { body, used, H } = drawHero(graph);
-  let style = "";
-  if (fonts) {
-    const { default: subsetFont } = await import("subset-font");
-    for (const [face, f] of Object.entries(FACES)) {
-      const font = await subsetFont(readFileSync(join(fonts, f.file)), [...used[face]].sort().join(""), { targetFormat: "woff2", variationAxes: f.axes });
-      style += `@font-face{font-family:${f.family};font-weight:${f.weight};src:url(data:font/woff2;base64,${font.toString("base64")}) format("woff2")}`;
-    }
-  }
-  const alt = "Every decision has a history. Nouli is a ledger-backed decision network. The README's recall example as a line map: three source sessions blend in two layers into recall-response-updated, which is built on six earlier decisions.";
+/** Render the preserved recall diagram with its recorded answers and ancestry. */
+export async function recallSvg(graph, fonts = FONT_DIR) {
+  const { body, used, H } = drawRecall(graph);
+  const style = await fontStyles(used, fonts);
+  const alt = "Every decision has a history. Nouli is a ledger-backed decision network. The recorded recall example as a line map: three source sessions blend in two layers into recall-response-updated, which is built on six earlier decisions.";
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${H}" width="1000" height="${H}" role="img" aria-labelledby="title">
 <title id="title">${esc(alt)}</title>
-<!-- Generated by site/scripts/readme-hero.mjs from README.md. Fonts: Archivo, Copyright 2020 The Archivo Project Authors, and Martian Mono, Copyright 2021 The Martian Mono Project Authors, both under the SIL Open Font License 1.1; subset and embedded. -->
+<!-- Generated by the recall option of site/scripts/readme-hero.mjs from docs/recall-example.md. Fonts: Archivo, Copyright 2020 The Archivo Project Authors, and Martian Mono, Copyright 2021 The Martian Mono Project Authors, both under the SIL Open Font License 1.1; subset and embedded. -->
 <defs><style>${style}</style><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0"/></filter></defs>
 <rect width="1000" height="${H}" fill="${P}"/>
 ${body}
@@ -195,8 +187,49 @@ ${body}
 `;
 }
 
+/** Embed only the glyphs used by each face; SVG images do not fetch website fonts. */
+async function fontStyles(used, fonts = FONT_DIR) {
+  const { default: subsetFont } = await import("subset-font");
+  let style = "";
+  for (const [face, f] of Object.entries(FACES)) {
+    const chars = [...used[face]].sort().join("");
+    if (!chars) continue;
+    const font = await subsetFont(readFileSync(join(fonts, f.file)), chars, {
+      targetFormat: "woff2",
+      variationAxes: f.axes,
+    });
+    style += `@font-face{font-family:${f.family};font-weight:${f.weight};src:url(data:font/woff2;base64,${font.toString("base64")}) format("woff2")}`;
+  }
+  return style;
+}
+
+/** A compact banner in the website's paper, teal, Archivo, and bee identity. */
+export async function heroSvg() {
+  const lines = ["EVERY DECISION", "HAS A HISTORY."];
+  const used = Object.fromEntries(Object.keys(FACES).map((f) => [f, new Set()]));
+  for (const c of "NOULI" + lines.join("")) used.disp.add(c);
+  for (const c of "nouli.ai") used.mono.add(c);
+  const style = await fontStyles(used);
+  const bee = readFileSync(BEE, "utf8")
+    .replace(/<svg\s+/, '<svg x="28" y="12" width="23" height="27" ')
+    .replace(/\s+(?:role|aria-labelledby)="[^"]*"/g, "")
+    .replace(/<title[^>]*>[\s\S]*?<\/title>/, "");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 260" width="1000" height="260" role="img" aria-labelledby="title">
+<title id="title">Nouli. Every decision has a history.</title>
+<!-- Generated by site/scripts/readme-hero.mjs from the website's fonts and bee. Archivo: Copyright 2020 The Archivo Project Authors. Martian Mono: Copyright 2021 The Martian Mono Project Authors. Both fonts are subset and embedded under SIL OFL 1.1; notices are in site/public/fonts/. -->
+<defs><style>${style}</style></defs>
+<rect width="1000" height="260" fill="${P}"/>
+${bee}
+<text x="59" y="33" font-family="nd" font-weight="900" font-size="27" fill="${INK}">NOULI</text>
+<text x="972" y="31" text-anchor="end" font-family="nm" font-weight="400" font-size="12" fill="${T}">nouli.ai</text>
+<text x="24" y="133" font-family="nd" font-weight="900" font-size="124" fill="${INK}">${lines[0]}</text>
+<text x="24" y="230" font-family="nd" font-weight="900" font-size="124" fill="${T}">${lines[1]}</text>
+</svg>
+`;
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const args = process.argv.slice(2), at = args.indexOf("--fonts");
-  if (at < 0) throw new Error("usage: node scripts/readme-hero.mjs --fonts DIR > ../.github/readme/hero.svg");
-  process.stdout.write(await heroSvg(placeGraph(readGraph(readFileSync(README, "utf8"))), args[at + 1]));
+  process.stdout.write(process.argv.includes("--recall")
+    ? await recallSvg(placeGraph(readGraph(readFileSync(RECALL_SOURCE, "utf8"))))
+    : await heroSvg());
 }
