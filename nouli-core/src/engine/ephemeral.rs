@@ -6,11 +6,14 @@ use super::{
 };
 use crate::{
     decision::TurnRequest,
-    history::{EvaluationManifest, ModelSelection, SessionSelection},
+    history::{
+        EvaluationManifest, FinalizedTurn, ModelSelection, SessionSelection, SourcePoint,
+        SourceSelection,
+    },
     identity::Id,
     limits::count::TokenCounter,
     outcome::TurnOutcome,
-    storage::{OpenMode, worker::LedgerWorker},
+    storage::{Ledger, OpenMode, worker::LedgerWorker},
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -64,14 +67,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         let (sources, history) = if let Some(selections) = selections {
             ledger
                 .ok_or(EngineError::EphemeralStore)?
-                .call(move |ledger| {
-                    if ledger.mode() != OpenMode::ReadOnlyExisting {
-                        return Err(EngineError::EphemeralStore);
-                    }
-                    let sources = ledger.resolve_sources(&selections)?;
-                    let history = ledger.ancestry(&sources)?;
-                    Ok::<_, EngineError>((sources, history))
-                })
+                .call(move |ledger| read_only_sources(ledger, &selections))
                 .await??
         } else {
             (vec![], vec![])
@@ -107,6 +103,20 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             Executed::Saved(_) => Err(crate::storage::StorageError::Payload.into()),
         }
     }
+}
+
+/// Resolve source selections and their ancestry, refusing a ledger opened for writing so
+/// ephemeral evaluation can never mutate the store.
+pub(super) fn read_only_sources(
+    ledger: &Ledger,
+    selections: &[SourceSelection],
+) -> Result<(Vec<SourcePoint>, Vec<FinalizedTurn>), EngineError> {
+    if ledger.mode() != OpenMode::ReadOnlyExisting {
+        return Err(EngineError::EphemeralStore);
+    }
+    let sources = ledger.resolve_sources(selections)?;
+    let history = ledger.ancestry(&sources)?;
+    Ok((sources, history))
 }
 
 #[cfg(test)]
