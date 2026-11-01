@@ -52,15 +52,10 @@ fn ids(questions: &[nouli_core::decision::Question]) -> Vec<&str> {
         .collect()
 }
 
-#[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
-fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what_they_name() {
-    let server = provider();
+/// A home whose store holds session `Trip`, started with one fact and the travel question.
+fn trip(server: &Server) -> Home {
     let home = Home::create();
-    home.configure(&server, "typesafe", false);
+    home.configure(server, "typesafe", false);
     let first = report(
         &home.run(
             [
@@ -71,6 +66,29 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         ),
     );
     assert_eq!(ids(&first.questions), ["travel"]);
+    home
+}
+
+/// The texts of the facts saved for session `name`, in fact-number order.
+fn saved_facts(home: &Home, name: &str) -> Vec<String> {
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    let session = SessionSelector::Name(name.to_owned().try_into().unwrap());
+    ledger
+        .facts(&session)
+        .unwrap()
+        .into_iter()
+        .map(|fact| fact.text)
+        .collect()
+}
+
+fn ledger_bytes(home: &Home) -> Vec<u8> {
+    std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+}
+
+#[test]
+fn each_turn_asks_only_its_own_questions_and_replace_changes_only_the_fact_it_names() {
+    let server = provider();
+    let home = trip(&server);
     // A fact needs a question to go with it; nothing is asked again.
     let calls = server.count();
     let nothing = failure(
@@ -95,17 +113,10 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
             .len(),
         1
     );
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    let trip = SessionSelector::Name("Trip".to_owned().try_into().unwrap());
-    let numbered = ledger.facts(&trip).unwrap();
     assert_eq!(
-        numbered
-            .iter()
-            .map(|fact| fact.text.as_str())
-            .collect::<Vec<_>>(),
+        saved_facts(&home, "Trip"),
         ["The train costs 40 USD", "A taxi costs 70 USD"]
     );
-    drop(ledger);
     // Replacing fact 2 shows the model only the new text, and keeps its number.
     let fourth = report(&home.run([
         "add",
@@ -123,13 +134,16 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         .unwrap()
         .to_owned();
     assert!(seen.contains("140 USD") && !seen.contains("70 USD"));
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    let numbered = ledger.facts(&trip).unwrap();
+    let numbered = saved_facts(&home, "Trip");
     assert_eq!(numbered.len(), 2);
-    assert_eq!(numbered[1].text, "A taxi costs 140 USD");
-    drop(ledger);
-    // A what-if asks its own question and saves nothing.
-    let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    assert_eq!(numbered[1], "A taxi costs 140 USD");
+}
+
+#[test]
+fn whatif_asks_its_own_question_and_saves_nothing() {
+    let server = provider();
+    let home = trip(&server);
+    let before = ledger_bytes(&home);
     let calls = server.count();
     let what = report(&home.run([
         "whatif",
@@ -142,11 +156,14 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     assert!(what.session.is_none() && what.turn.is_none());
     assert_eq!(ids(&what.questions), ["extra"]);
     assert_eq!(server.count(), calls + 1);
-    assert_eq!(
-        before,
-        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
-    );
-    // Mistakes are input errors that never reach the provider.
+    assert_eq!(before, ledger_bytes(&home));
+}
+
+#[test]
+fn input_mistakes_are_errors_that_never_reach_the_provider_or_the_ledger() {
+    let server = provider();
+    let home = trip(&server);
+    let before = ledger_bytes(&home);
     let calls = server.count();
     failure(
         &home.run(["whatif", "Trip", "--json"]),
@@ -164,12 +181,9 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     let twice = home.run(["add", "Trip", "-q", "a: A?", "-q", "b: B?"]);
     assert_eq!(twice.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&twice.stderr).contains("--question"));
-    failure(
-        &home.run(["add", "Trip", "-q", "bad: What? [only one]"]),
-        "invalid_decision_input",
-    );
-    failure(
-        &home.run([
+    for args in [
+        &["add", "Trip", "-q", "bad: What? [only one]"][..],
+        &[
             "add",
             "Trip",
             "--replace",
@@ -177,22 +191,21 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
             "no such fact",
             "-q",
             "a: b",
-        ]),
-        "invalid_decision_input",
-    );
-    failure(
-        &home.run(["add", "Trip", "--replace", "one", "text"]),
-        "invalid_decision_input",
-    );
-    failure(
-        &home.run(["add", "Trip", "--input", "request.json", "-q", "a: b"]),
-        "invalid_decision_input",
-    );
-    failure(
-        &home.run(["add", "Trip", "--input", "request.json", "A fact"]),
-        "invalid_decision_input",
-    );
-    // A 0.2.0 request file with standing questions says what to change.
+        ],
+        &["add", "Trip", "--replace", "one", "text"],
+        &["add", "Trip", "--input", "request.json", "-q", "a: b"],
+        &["add", "Trip", "--input", "request.json", "A fact"],
+    ] {
+        failure(&home.run(args), "invalid_decision_input");
+    }
+    assert_request_files_say_to_use_turn_questions(&home);
+    assert_eq!(server.count(), calls);
+    assert_eq!(before, ledger_bytes(&home));
+}
+
+/// A 0.2.0 request file with standing questions, or with no questions at all,
+/// says to ask them in `turn.questions`.
+fn assert_request_files_say_to_use_turn_questions(home: &Home) {
     let question = serde_json::to_value(harness::turn()).unwrap()["questions"][0].clone();
     for (name, questions) in [
         ("standing-only", json!([])),
@@ -219,11 +232,6 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         "questions_required",
     );
     assert!(nothing.message.contains("turn.questions"));
-    assert_eq!(server.count(), calls);
-    assert_eq!(
-        before,
-        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
-    );
 }
 
 #[test]
