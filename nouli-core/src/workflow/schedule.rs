@@ -451,8 +451,6 @@ pub(crate) fn project_outputs(
 /// # Errors
 ///
 /// - Returns [`ScheduleError::Parallelism`] if `parallelism` is zero.
-/// - Returns [`ScheduleError::Observer`] if the observer rejects a progress
-///   change.
 /// - Returns [`ScheduleError::State`] if scheduler task bookkeeping becomes
 ///   inconsistent.
 /// - Returns [`ScheduleError::Resolve`] if a workflow output cannot be

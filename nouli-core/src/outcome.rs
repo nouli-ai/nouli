@@ -125,9 +125,6 @@ fn distribution(values: impl Iterator<Item = f64>) -> Result<(), ContractError> 
     Ok(())
 }
 
-/// The lowest and highest expected level index over true distributions consistent with
-/// the reported probabilities: start every level at its lower bound, then hand the
-/// remaining mass to the lowest (or highest) levels first.
 /// A score level index as a number on the score scale.
 #[expect(
     clippy::cast_precision_loss,
@@ -137,6 +134,9 @@ fn level(index: usize) -> f64 {
     index as f64
 }
 
+/// The lowest and highest expected level index over true distributions consistent with
+/// the reported probabilities: start every level at its lower bound, then hand the
+/// remaining mass to the lowest (or highest) levels first.
 fn expectation_range(probabilities: &[f64]) -> (f64, f64) {
     let lows: Vec<f64> = probabilities.iter().map(|p| bounds(*p).0).collect();
     let floor: f64 = lows.iter().enumerate().map(|(i, p)| level(i) * p).sum();
