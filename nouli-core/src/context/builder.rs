@@ -375,6 +375,10 @@ impl ContextBuilder {
     ///   an invalid compaction.
     /// - Any error the policy returns, or [`BuildError::Codec`] or [`BuildError::Data`] if evidence
     ///   cannot be encoded.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     pub fn build(
         input: ContextInput<'_>,
         limits: &ResolvedLimits,
@@ -847,6 +851,10 @@ mod tests {
         );
     }
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn selected_answers_are_required_across_sessions_and_followups_and_deduplicate_ancestry() {
         let mut history = history();
         let original = history[0].clone();

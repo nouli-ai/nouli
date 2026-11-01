@@ -317,6 +317,10 @@ impl Ledger {
     ///   [`WorkflowError::History`], [`WorkflowError::Compile`],
     ///   [`WorkflowError::IntentConflict`], or [`WorkflowError::Storage`] if the
     ///   session, attempts, frozen request, or ledger cannot be read or written.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     pub fn resume_workflow(&mut self, run: Id) -> Result<WorkflowDecision, WorkflowError> {
         let first = self.workflow_run(run)?;
         if first.status == RunStatus::Completed {

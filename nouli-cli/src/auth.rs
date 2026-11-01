@@ -107,6 +107,10 @@ fn key_source(login: &Login) -> Result<KeySource, ErrorReport> {
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
     let mut settings = match settings::load(args) {
         Ok(settings) => settings,

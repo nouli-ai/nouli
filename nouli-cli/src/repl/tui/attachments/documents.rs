@@ -141,6 +141,10 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
     Ok(out)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
     if matches!(extension, "doc" | "ppt") {
         return legacy(bytes, extension, name);

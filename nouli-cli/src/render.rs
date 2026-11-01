@@ -556,6 +556,10 @@ mod tests {
         assert!(writer.event(events.last().unwrap()).is_err());
     }
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn compiled_caller_defaults_render_as_data_consistently_without_native_answer_labels() {
         use nouli_core::{
             data::Data,

@@ -510,6 +510,10 @@ fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
     rows
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -743,6 +747,10 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
 type Composer = (Vec<Line<'static>>, Option<(usize, usize)>);
 
 /// The form as lines, with the cursor's column and row when it has the keys.
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     let form = &app.form;
     let queue = &app.repl.queue;

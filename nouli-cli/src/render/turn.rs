@@ -262,6 +262,10 @@ fn choice_rows(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn question_rows(
     paint: Paint,
     question: &Question,

@@ -59,6 +59,10 @@ pub(crate) fn render_error(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn main() -> ExitCode {
     if let Some(code) = repl::tui::attachments::maybe_worker() {
         return code;

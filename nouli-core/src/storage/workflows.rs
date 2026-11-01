@@ -808,6 +808,10 @@ mod tests {
         assert_eq!(after.result, Some(result));
     }
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn first_node_publication_rolls_back_shared_base_and_branch_head_on_failure() {
         use crate::{
             context::builder::{ContextBuilder, ContextInput},

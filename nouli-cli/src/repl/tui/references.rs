@@ -687,6 +687,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn store_wide_selection_is_atomic_preserves_drafts_and_requires_bound_evidence() {
         use crate::settings::Settings;
         use nouli_core::{

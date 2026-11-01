@@ -48,6 +48,10 @@ fn estimate(tokens: u64, multimodal: bool) -> TokenCount {
 }
 
 impl TokenCounter for ByteCounter {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn count(
         &self,
         profile: &ProviderProfile,

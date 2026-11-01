@@ -360,6 +360,10 @@ fn default_model_budget_works_and_competing_file_modes_fail_before_inference() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_later_or_unrelated_work()
  {
     use nouli_core::{
@@ -640,6 +644,10 @@ fn readonly_inspection_rejects_newer_and_migration_required_stores_without_chang
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_outputs() {
     use nouli_core::{
         protocol::{EngineEvent, EventKind, validate_events},
@@ -766,6 +774,10 @@ fn before_count(home: &Home) -> usize {
         .len()
 }
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_completed_siblings() {
     use nouli_core::{
         context::PinTarget,

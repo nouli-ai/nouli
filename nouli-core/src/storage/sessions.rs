@@ -297,6 +297,10 @@ mod tests {
     use crate::storage::OpenMode;
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn rename_is_durable_atomic_and_keeps_accepted_work_and_history_by_id() {
         use crate::{history::FinalizedTurn, storage::turns::AttemptInput};
         let root = std::env::temp_dir().join(format!("nouli-rename-{}", Id::generate()));

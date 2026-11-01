@@ -76,6 +76,10 @@ fn error(output: &std::process::Output, code: i32) -> nouli_core::protocol::Erro
     error
 }
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_session() {
     let (started, waiting) = mpsc::sync_channel(1);
     let (release, held) = mpsc::sync_channel(1);
@@ -361,6 +365,10 @@ fn record(value: i64) -> ContextRecord {
     }
 }
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_nodes() {
     use nouli_core::storage::workflows::recovery::{Disposition, WorkflowInspection};
     for mode in ["running", "completed"] {
@@ -510,6 +518,10 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
     assert!(!home.store().join("ledger.sqlite3-journal").exists());
 }
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();

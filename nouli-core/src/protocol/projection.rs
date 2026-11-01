@@ -18,6 +18,10 @@ pub enum ProjectionError {
 /// Returns [`ProjectionError::Snapshot`] if the definition does not compile, or the
 /// result or `inspection` disagrees with the definition, is unfinished, or has outputs
 /// or outcomes that do not match it.
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub fn workflow(
     definition: &WorkflowSpec,
     result: &WorkflowResult,

@@ -293,6 +293,10 @@ impl HttpTransport {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn exchange(
         &self,
         url: Url,

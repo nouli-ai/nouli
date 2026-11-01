@@ -440,6 +440,10 @@ impl Ledger {
         self.request_decision(request, None, true)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn request_decision(
         &mut self,
         request: &EvaluationRequest,

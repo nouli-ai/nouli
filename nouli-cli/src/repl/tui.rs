@@ -564,6 +564,10 @@ impl<'a> App<'a> {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn key(&mut self, key: KeyEvent, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         if self.selection.active {
@@ -1036,6 +1040,10 @@ impl<'a> App<'a> {
         Ok(self.launch_draft(draft, ephemeral, from_form))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn launch_draft(
         &mut self,
         draft: Option<Draft>,

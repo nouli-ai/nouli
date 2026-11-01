@@ -502,6 +502,10 @@ pub async fn schedule_observed<E: NodeExecutor, O: ScheduleObserver>(
 }
 
 /// Execute a repository-validated snapshot, reusing only completed and skipped nodes.
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
     graph: Arc<CompiledWorkflow>,
     executor: Arc<E>,

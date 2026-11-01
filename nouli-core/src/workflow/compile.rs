@@ -214,6 +214,10 @@ impl Scope<'_> {
 ///   [`CompileError::ConditionalMissing`], [`CompileError::DefaultType`], or
 ///   [`CompileError::ComparisonType`] if a reference or condition does not
 ///   resolve to a compatible ancestor answer.
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, CompileError> {
     spec.validate()?;
     if [&spec.model.provider, &spec.model.model]

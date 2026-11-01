@@ -249,6 +249,10 @@ fn publish(path: &Path, doc: &DocumentMut) -> Result<(), SetupError> {
     }
     result.map_err(|_| SetupError::Write)
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection, SetupError> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let interactive =

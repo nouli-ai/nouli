@@ -53,6 +53,10 @@ fn ids(questions: &[nouli_core::decision::Question]) -> Vec<&str> {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what_they_name() {
     let server = provider();
     let home = Home::create();

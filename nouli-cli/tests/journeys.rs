@@ -141,6 +141,10 @@ fn score(outcome: &nouli_core::outcome::TurnOutcome) -> f64 {
     *value
 }
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and_full_history() {
     let jev = server("typesafe");
     let openai = server("openai-decisions");
@@ -536,6 +540,10 @@ fn checked_in_json_toon_journey_payloads_are_equivalent_and_keep_native_numeric_
     }
 }
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_continuation() {
     use nouli_core::{
         data::Data,

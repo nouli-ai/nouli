@@ -152,6 +152,10 @@ impl<
     O: ScheduleObserver,
 > NodeExecutor for Runner<P, C, T, O>
 {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn execute(
         &self,
         call: NodeCall,
@@ -397,6 +401,10 @@ impl<
     /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
     /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
     ///   run is marked interrupted first.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     pub async fn evaluate_workflow_observed<O: ScheduleObserver>(
         self: &Arc<Self>,
         worker: Option<&LedgerWorker>,
@@ -1016,6 +1024,10 @@ mod tests {
         }
     }
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn durable_parallel_nodes_freeze_sources_models_and_publish_one_final_frontier() {
         let store = Store::new();
         let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
@@ -1434,6 +1446,10 @@ mod tests {
         );
     }
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn cancellation_saves_interrupted_nodes_and_releases_the_run_owner() {
         let store = Store::new();
         let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
@@ -1752,6 +1768,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn explicit_rounds_reuse_success_and_skips_preserve_failures_and_freeze_settings() {
         let store = Store::new();
         let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
@@ -2223,6 +2243,10 @@ mod tests {
         assert_eq!(inspection.nodes[0].attempts.len(), 1);
     }
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn owner_exit_between_completions_preserves_prior_round_order_and_reuses_saved_nodes() {
         let store = Store::new();
         let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
@@ -2338,6 +2362,10 @@ mod tests {
         );
     }
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn compact_reports_and_event_streams_survive_partial_resume_and_retrieve_intermediates() {
         use crate::protocol::{EventKind, Report, stream::CollectEvents, validate_events};
         let store = Store::new();

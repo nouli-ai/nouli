@@ -203,6 +203,10 @@ mod tests {
         }
     }
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     fn branches_and_blends_freeze_ordered_mixed_provider_ancestry() {
         let store = Store::new();
         let mut ledger = store.open();

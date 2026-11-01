@@ -350,6 +350,10 @@ mod tests {
         assert!(!store.0.exists());
     }
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     async fn readonly_sources_survive_success_refusal_failure_reduction_and_temporary_updates() {
         let store = Store::new();
         let writer = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)

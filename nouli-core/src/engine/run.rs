@@ -187,6 +187,10 @@ impl<'a> Recorder<'a> {
     }
 }
 impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending refactor into smaller functions"
+    )]
     pub(super) async fn execute(
         &self,
         input: RunInput<'_>,

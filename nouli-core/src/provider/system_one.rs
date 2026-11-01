@@ -100,6 +100,10 @@ pub fn request_body(
 /// - [`ProviderError::Wire`] if the response does not match the schema, or its answers
 ///   do not cover each question once with matching kinds, options, levels, and legend.
 /// - Any error from converting native confidence.
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 pub fn normalize(
     request: &TurnRequest,
     response: Value,

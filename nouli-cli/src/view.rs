@@ -77,6 +77,10 @@ struct Node<'a> {
     references: Vec<usize>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 fn nodes<'a>(exports: &[&'a SessionExport], frontier: &[Id]) -> Result<Vec<Node<'a>>, RenderError> {
     let mut seen = HashSet::new();
     let turns = exports

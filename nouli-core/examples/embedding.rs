@@ -89,6 +89,10 @@ fn sources(sessions: &[Id]) -> SessionSelection {
         name: None,
     }
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending refactor into smaller functions"
+)]
 async fn journey(root: &Path) -> Result<(), ExampleError> {
     let store = root.join("ledger");
     let ledger = LedgerWorker::open(store.clone(), OpenMode::ReadWriteCreate).await?;
