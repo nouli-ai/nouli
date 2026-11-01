@@ -2,7 +2,7 @@
 use super::{
     Ledger, StorageError,
     replay::FrozenRequest,
-    reservations,
+    reservations::{self, ReservationState},
     sessions::{Session, SessionError},
     sql_error,
     turns::{AttemptSnapshot, TurnError},
@@ -48,7 +48,7 @@ pub struct SessionProvenance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AcceptedRequest {
     pub request_id: String,
-    pub state: String,
+    pub state: ReservationState,
     pub frozen: FrozenRequest,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,7 +106,7 @@ fn requests(
             seen.insert(key.clone());
             selected.push(AcceptedRequest {
                 request_id: key,
-                state: state.as_str().to_owned(),
+                state,
                 frozen: Ledger::decode_payload(&payload)?,
             });
         }
@@ -121,7 +121,7 @@ fn requests(
         if let Some((state, payload)) = row {
             selected.push(AcceptedRequest {
                 request_id: key.clone(),
-                state: state.as_str().to_owned(),
+                state,
                 frozen: Ledger::decode_payload(&payload)?,
             });
         }

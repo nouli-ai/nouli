@@ -706,6 +706,45 @@ mod tests {
     }
 
     #[test]
+    fn accepted_request_json_matches_the_string_state_export() {
+        use super::super::inspection::AcceptedRequest;
+
+        #[derive(Serialize)]
+        struct PreviousAcceptedRequest<'a> {
+            request_id: &'a str,
+            state: &'a str,
+            frozen: &'a FrozenRequest,
+        }
+
+        let store = Store::new();
+        let mut ledger = store.open();
+        let request = request();
+        let owner = accepted(ledger.accept_request(&request, settings(&store)).unwrap());
+        for (state, previous_state) in [
+            (ReservationState::Pending, "pending"),
+            (ReservationState::Completed, "completed"),
+            (ReservationState::Interrupted, "interrupted"),
+        ] {
+            let current = AcceptedRequest {
+                request_id: "stable-request".into(),
+                state,
+                frozen: owner.frozen.clone(),
+            };
+            let previous = PreviousAcceptedRequest {
+                request_id: "stable-request",
+                state: previous_state,
+                frozen: owner.frozen(),
+            };
+            let json = serde_json::to_vec(&current).unwrap();
+            assert_eq!(json, serde_json::to_vec(&previous).unwrap());
+            assert_eq!(
+                serde_json::from_slice::<AcceptedRequest>(&json).unwrap(),
+                current
+            );
+        }
+    }
+
+    #[test]
     fn retrying_an_unknown_request_id_is_not_reported_as_missing() {
         let store = Store::new();
         let mut ledger = store.open();

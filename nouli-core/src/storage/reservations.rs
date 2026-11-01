@@ -47,7 +47,7 @@ impl ReservationState {
         }
     }
 
-    pub(super) fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::Completed => "completed",
