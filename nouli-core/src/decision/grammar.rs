@@ -113,17 +113,9 @@ pub fn format(question: &Question) -> String {
             ']',
             options.iter().map(|o| o.description.as_str()).collect(),
         ),
-        AnswerSpace::Score { levels } => group(
-            '<',
-            '>',
-            levels
-                .iter()
-                .map(|level| match level {
-                    Criterion::Text(text) => text.as_str(),
-                    Criterion::Detailed { label, .. } => label.as_str(),
-                })
-                .collect(),
-        ),
+        AnswerSpace::Score { levels } => {
+            group('<', '>', levels.iter().map(Criterion::label).collect())
+        }
     };
     format!("{}: {}{answers}", question.id, question.prompt)
 }

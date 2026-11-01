@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nouli-core`: `Criterion::label`, `Criterion::description`, `TurnOutcome::outcome_for`, `outcome::outcome_for`, `Answer::selected_probability`, `Answer::probability_of`, and `outcome::probability_of` read a criterion's text, the outcome for a question, and a choice's probabilities.
 - `nouli-core`: `context::evidence` types saved image and saved-answer records: `DecisionReference`, `ImageSnapshot`, `image_record`, `rebind_decision_record`, `ContextRecord::as_image`, `ContextRecord::as_decision_reference`, and the `IMAGE_KEY_PREFIX`, `DECISION_KEY_PREFIX`, `IMAGE_FIELD`, and `DECISION_REFERENCE_FIELD` constants. `storage::decisions::DecisionSource` is re-exported from there.
 - `nouli-core`: `context::evidence::marker` finds, formats, parses, and strips the inline `[image:UUID]` and `[decision:UUID]` markers that bind text to saved images and saved answers.
 - `nouli-core`: `protocol::OUTCOME_UNKNOWN`, `protocol::NOT_DISPATCHED`, and `protocol::OWNER_EXITED` name the error codes that recovery reads from saved attempts and workflow nodes.

@@ -156,7 +156,47 @@ fn expectation_range(probabilities: &[f64]) -> (f64, f64) {
     )
 }
 
+/// The probability `distribution` gives to `option_id`.
+#[must_use]
+pub fn probability_of(distribution: &[OptionProbability], option_id: &str) -> Option<f64> {
+    distribution
+        .iter()
+        .find(|entry| entry.option_id == option_id)
+        .map(|entry| entry.probability)
+}
+
+/// The outcome for the question with `question_id`.
+#[must_use]
+pub fn outcome_for<'a>(
+    outcomes: &'a [QuestionOutcome],
+    question_id: &str,
+) -> Option<&'a QuestionOutcome> {
+    outcomes
+        .iter()
+        .find(|outcome| outcome.question_id() == question_id)
+}
+
 impl Answer {
+    /// The probability a choice answer gives to `option_id`; `None` for
+    /// other answer types or an option outside its distribution.
+    #[must_use]
+    pub fn probability_of(&self, option_id: &str) -> Option<f64> {
+        match self {
+            Self::Choice { distribution, .. } => probability_of(distribution, option_id),
+            Self::Noul { .. } | Self::Score { .. } => None,
+        }
+    }
+
+    /// The probability a choice answer gives to its selected option; `None`
+    /// for other answer types or a selection outside its distribution.
+    #[must_use]
+    pub fn selected_probability(&self) -> Option<f64> {
+        match self {
+            Self::Choice { selected, .. } => self.probability_of(selected),
+            Self::Noul { .. } | Self::Score { .. } => None,
+        }
+    }
+
     /// Check that an answer matches the question's answer space.
     ///
     /// # Errors
@@ -268,6 +308,12 @@ impl QuestionOutcome {
 }
 
 impl TurnOutcome {
+    /// The outcome for the question with `question_id`.
+    #[must_use]
+    pub fn outcome_for(&self, question_id: &str) -> Option<&QuestionOutcome> {
+        outcome_for(&self.outcomes, question_id)
+    }
+
     /// Check that a turn outcome answers each requested question exactly once.
     ///
     /// # Errors
@@ -333,6 +379,27 @@ mod tests {
             ))
             .unwrap(),
         )
+    }
+
+    #[test]
+    fn accessors_find_outcomes_and_choice_probabilities() {
+        let (_, outcome) = fixture();
+        let travel = outcome.outcome_for("travel").unwrap();
+        assert_eq!(travel.question_id(), "travel");
+        assert!(outcome.outcome_for("missing").is_none());
+        assert_eq!(
+            outcome_for(&outcome.outcomes, "travel"),
+            Some(&outcome.outcomes[0])
+        );
+        let QuestionOutcome::Answered { answer, .. } = travel else {
+            panic!("the fixture answers travel");
+        };
+        assert_eq!(answer.selected_probability(), Some(0.7));
+        assert_eq!(answer.probability_of("flight"), Some(0.3));
+        assert_eq!(answer.probability_of("boat"), None);
+        let noul = Answer::Noul { probability: 0.4 };
+        assert_eq!(noul.selected_probability(), None);
+        assert_eq!(noul.probability_of("train"), None);
     }
 
     #[test]

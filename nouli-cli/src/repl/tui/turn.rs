@@ -226,10 +226,7 @@ fn question_texts(turn: &TurnRequest) -> impl Iterator<Item = &str> {
                 text.extend(options.iter().map(|option| option.description.as_str()));
             }
             AnswerSpace::Score { levels } => {
-                text.extend(levels.iter().map(|level| match level {
-                    Criterion::Text(text) => text.as_str(),
-                    Criterion::Detailed { description, .. } => description.as_str(),
-                }));
+                text.extend(levels.iter().map(Criterion::description));
             }
             AnswerSpace::Noul => {}
         }

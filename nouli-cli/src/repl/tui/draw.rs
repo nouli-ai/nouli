@@ -716,22 +716,21 @@ fn answer_distribution(
     entry: &nouli_core::storage::decisions::SavedDecision,
 ) -> Vec<Line<'static>> {
     use nouli_core::{
-        decision::{AnswerSpace, Criterion},
+        decision::AnswerSpace,
         outcome::{Answer, QuestionOutcome},
     };
     let mut lines = Vec::new();
     match &entry.outcome {
         QuestionOutcome::Answered {
-            answer: Answer::Choice { distribution, .. },
+            answer: answer @ Answer::Choice { .. },
             ..
         } => {
             if let AnswerSpace::Choice { options } = &entry.question.answer_space {
                 for option in options {
-                    if let Some(p) = distribution.iter().find(|p| p.option_id == option.id) {
+                    if let Some(probability) = answer.probability_of(&option.id) {
                         lines.push(Line::from(format!(
-                            "{}  {:.2}",
+                            "{}  {probability:.2}",
                             render::image_labels(&render::clean(&option.description)),
-                            p.probability
                         )));
                     }
                 }
@@ -743,10 +742,7 @@ fn answer_distribution(
         } => {
             if let AnswerSpace::Score { levels } = &entry.question.answer_space {
                 for (level, p) in levels.iter().zip(probabilities) {
-                    let label = match level {
-                        Criterion::Text(s) => s,
-                        Criterion::Detailed { description, .. } => description,
-                    };
+                    let label = level.description();
                     lines.push(Line::from(format!(
                         "{}  {p:.2}",
                         render::image_labels(&render::clean(label))

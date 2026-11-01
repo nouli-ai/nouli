@@ -186,9 +186,7 @@ impl Ledger {
             for question in &turn.request.questions {
                 let outcome = turn
                     .outcome
-                    .outcomes
-                    .iter()
-                    .find(|outcome| outcome.question_id() == question.id)
+                    .outcome_for(&question.id)
                     .ok_or(StorageError::Payload)?;
                 entries.push(SavedDecision {
                     source: DecisionSource {
@@ -285,9 +283,7 @@ fn reference_snapshot(
         .ok_or(DecisionError::Missing)?;
     let outcome = turn
         .outcome
-        .outcomes
-        .iter()
-        .find(|o| o.question_id() == source.question)
+        .outcome_for(&source.question)
         .ok_or(DecisionError::Missing)?;
     if !matches!(outcome, QuestionOutcome::Answered { .. }) {
         return Err(DecisionError::Refused);

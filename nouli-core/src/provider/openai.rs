@@ -73,10 +73,7 @@ impl NativeAnswer {
 }
 
 fn level(criterion: &Criterion) -> (&str, &str) {
-    match criterion {
-        Criterion::Text(text) => (text, text),
-        Criterion::Detailed { label, description } => (label, description),
-    }
+    (criterion.label(), criterion.description())
 }
 
 /// Build the `OpenAI` decisions request body for a turn.

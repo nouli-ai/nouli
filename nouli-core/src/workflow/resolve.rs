@@ -67,9 +67,7 @@ pub fn select(
     }
     let outcome = outcome
         .ok_or(ResolveError::Incomplete)?
-        .outcomes
-        .iter()
-        .find(|outcome| outcome.question_id() == reference.question)
+        .outcome_for(&reference.question)
         .ok_or(ResolveError::Incomplete)?;
     let value = if reference.field == ResultField::Outcome {
         codec::to_value(outcome)?
@@ -85,18 +83,10 @@ pub fn select(
             (ResultField::Selected, Answer::Choice { selected, .. }) => {
                 serde_json::Value::String(selected.clone())
             }
-            (
-                ResultField::Probability,
-                Answer::Choice {
-                    selected,
-                    distribution,
-                },
-            ) => codec::to_value(
-                &distribution
-                    .iter()
-                    .find(|entry| entry.option_id == *selected)
-                    .ok_or(ResolveError::Incomplete)?
-                    .probability,
+            (ResultField::Probability, Answer::Choice { .. }) => codec::to_value(
+                &answer
+                    .selected_probability()
+                    .ok_or(ResolveError::Incomplete)?,
             )?,
             (ResultField::Probability, Answer::Noul { probability }) => {
                 codec::to_value(probability)?

@@ -86,6 +86,26 @@ pub(crate) fn nonempty(value: &str, field: &'static str) -> Result<(), ContractE
 }
 
 impl Criterion {
+    /// The short name: the text itself, or a detailed criterion's label.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Text(text) | Self::Detailed { label: text, .. } => text,
+        }
+    }
+
+    /// The full meaning: the text itself, or a detailed criterion's
+    /// description.
+    #[must_use]
+    pub fn description(&self) -> &str {
+        match self {
+            Self::Text(text)
+            | Self::Detailed {
+                description: text, ..
+            } => text,
+        }
+    }
+
     /// Checks that the criterion's text is not blank.
     ///
     /// # Errors
@@ -176,6 +196,20 @@ impl TurnRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn criteria_name_their_label_and_description() {
+        let text = Criterion::Text("Fast".into());
+        assert_eq!((text.label(), text.description()), ("Fast", "Fast"));
+        let detailed = Criterion::Detailed {
+            label: "Time".into(),
+            description: "Minimize travel duration".into(),
+        };
+        assert_eq!(
+            (detailed.label(), detailed.description()),
+            ("Time", "Minimize travel duration")
+        );
+    }
 
     pub(crate) fn fixture() -> TurnRequest {
         serde_json::from_str(include_str!(

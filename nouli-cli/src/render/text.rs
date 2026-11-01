@@ -87,14 +87,8 @@ fn answer(
     question: Option<&Question>,
 ) -> Result<(), RenderError> {
     match value {
-        Answer::Choice {
-            selected,
-            distribution,
-        } => {
-            let probability = distribution
-                .iter()
-                .find(|entry| entry.option_id == *selected)
-                .map(|entry| entry.probability);
+        Answer::Choice { selected, .. } => {
+            let probability = value.selected_probability();
             write!(sink, "choice: {}", choice(selected, question))?;
             if let Some(probability) = probability {
                 write!(sink, ", P(selected)={probability}")?;

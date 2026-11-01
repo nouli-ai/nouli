@@ -7,7 +7,7 @@
 use super::{RenderError, clean};
 use nouli_core::{
     decision::{AnswerSpace, ChoiceOption, Criterion, Question},
-    outcome::{Answer, OptionProbability, QuestionOutcome},
+    outcome::{Answer, OptionProbability, QuestionOutcome, outcome_for, probability_of},
 };
 use std::fmt::Write as _;
 use std::io::Write;
@@ -133,26 +133,12 @@ fn moved(before: f64, now: f64) -> bool {
     (before - now).abs() >= CHANGE - 1e-9
 }
 
-fn level_label(level: &Criterion) -> &str {
-    match level {
-        Criterion::Text(text) => text,
-        Criterion::Detailed { label, .. } => label,
-    }
-}
-
 fn option_label(options: &[ChoiceOption], id: &str) -> String {
     options
         .iter()
         .find(|option| option.id == id)
         .map_or(id, |option| option.description.as_str())
         .to_owned()
-}
-
-fn chance(distribution: &[OptionProbability], id: &str) -> Option<f64> {
-    distribution
-        .iter()
-        .find(|entry| entry.option_id == id)
-        .map(|entry| entry.probability)
 }
 
 /// The change marker, shortened so the whole line stays within the column limit.
@@ -211,10 +197,10 @@ fn choice_rows(
                 layout.label_columns
             ),
             bar(
-                chance(distribution, &option.id).unwrap_or(0.0),
+                probability_of(distribution, &option.id).unwrap_or(0.0),
                 layout.bar_cells
             ),
-            percent(chance(distribution, &option.id)),
+            percent(probability_of(distribution, &option.id)),
         );
         let mut row = if chosen {
             format!(
@@ -233,9 +219,9 @@ fn choice_rows(
                     },
                 ..
             }) = previous
-            && let Some(was) = chance(earlier, before)
+            && let Some(was) = probability_of(earlier, before)
             && options.iter().any(|option| &option.id == before)
-            && let Some(now) = chance(distribution, selected)
+            && let Some(now) = probability_of(distribution, selected)
             && (before != selected || moved(was, now))
         {
             let used =
@@ -409,7 +395,7 @@ fn score_rows(
         .map(|(level, probability)| {
             format!(
                 "{} {probability:.2}",
-                clean(&super::image_labels(level_label(level)))
+                clean(&super::image_labels(level.label()))
             )
         })
         .collect::<Vec<_>>()
@@ -508,9 +494,7 @@ fn write_layout<'a>(
     )?;
     let mut rows = Vec::new();
     for question in questions {
-        let outcome = outcomes
-            .iter()
-            .find(|outcome| outcome.question_id() == question.id);
+        let outcome = outcome_for(outcomes, &question.id);
         question_rows(
             paint,
             question,
@@ -622,7 +606,7 @@ mod tests {
             header,
             questions,
             outcomes,
-            |id| previous.iter().find(|outcome| outcome.question_id() == id),
+            |id| outcome_for(previous, id),
             color,
         )
         .unwrap();
@@ -937,7 +921,7 @@ mod tests {
                 &header(Some(2)),
                 &questions,
                 &now,
-                |id| was.iter().find(|outcome| outcome.question_id() == id),
+                |id| outcome_for(&was, id),
                 false,
                 columns,
             )
@@ -955,7 +939,7 @@ mod tests {
                 &header(Some(2)),
                 &questions,
                 &now,
-                |id| was.iter().find(|outcome| outcome.question_id() == id),
+                |id| outcome_for(&was, id),
                 true,
                 columns,
             )
@@ -991,7 +975,7 @@ mod tests {
             &header(Some(1)),
             &questions,
             &now,
-            |id| was.iter().find(|outcome| outcome.question_id() == id),
+            |id| outcome_for(&was, id),
             false,
         );
         assert!(matches!(result, Err(RenderError::Write(_))));

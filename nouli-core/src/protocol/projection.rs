@@ -208,13 +208,7 @@ fn projected_output(
         .find(|question| question.id == binding.reference.question)
         .ok_or(ProjectionError::Snapshot)?;
     let output = references.output(index);
-    let outcome = output.and_then(|output| {
-        output
-            .outcome
-            .outcomes
-            .iter()
-            .find(|outcome| outcome.question_id() == question.id)
-    });
+    let outcome = output.and_then(|output| output.outcome.outcome_for(&question.id));
     Ok(ProjectedOutput {
         name: binding.name.clone(),
         value: binding.value.clone(),
@@ -239,21 +233,17 @@ fn confidence(outcome: &QuestionOutcome) -> Option<Confidence> {
 /// The chosen option of a choice answer, with the probability it was given.
 fn selected_choice(outcome: &QuestionOutcome) -> Option<SelectedChoice> {
     let QuestionOutcome::Answered {
-        answer: Answer::Choice {
-            selected,
-            distribution,
-        },
+        answer: answer @ Answer::Choice { selected, .. },
         ..
     } = outcome
     else {
         return None;
     };
-    distribution
-        .iter()
-        .find(|entry| entry.option_id == *selected)
-        .map(|entry| SelectedChoice {
+    answer
+        .selected_probability()
+        .map(|probability| SelectedChoice {
             id: selected.clone(),
-            probability: entry.probability,
+            probability,
         })
 }
 

@@ -79,12 +79,10 @@ pub(crate) fn turn_text(
 ) -> Result<(), PresentError> {
     let (history, own) = earlier(store, report)?;
     let previous = |id: &str| {
-        history.iter().rev().find_map(|turn| {
-            turn.outcome
-                .outcomes
-                .iter()
-                .find(|outcome| outcome.question_id() == id)
-        })
+        history
+            .iter()
+            .rev()
+            .find_map(|turn| turn.outcome.outcome_for(id))
     };
     let (facts, replaced) = fact_counts(updates);
     let header = Header {

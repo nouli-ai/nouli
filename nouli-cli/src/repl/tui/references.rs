@@ -192,10 +192,7 @@ pub(super) fn describe_answer(
                 };
                 format!("{value:.2} / {max}")
             }
-            Answer::Choice {
-                selected,
-                distribution,
-            } => {
+            Answer::Choice { selected, .. } => {
                 let label = match &question.answer_space {
                     nouli_core::decision::AnswerSpace::Choice { options } => options
                         .iter()
@@ -203,10 +200,7 @@ pub(super) fn describe_answer(
                         .map_or(selected.as_str(), |o| o.description.as_str()),
                     _ => selected,
                 };
-                let probability = distribution
-                    .iter()
-                    .find(|o| &o.option_id == selected)
-                    .map_or(0.0, |o| o.probability);
+                let probability = answer.selected_probability().unwrap_or(0.0);
                 format!("{label} · {probability:.2}")
             }
         },
