@@ -261,9 +261,7 @@ pub(super) fn round_order(
     }
     Ok((start_order, completion_order))
 }
-pub(super) fn child_key(run: Id, node: usize) -> String {
-    format!("{run}/node/{node}")
-}
+pub(super) use crate::workflow::node::child_key;
 pub(super) fn validate_owner(ledger: &Ledger, owner: &WorkflowOwner) -> Result<(), WorkflowError> {
     let definition = &owner.frozen.definition;
     owner.session_guard.validate(ledger, definition.session)?;

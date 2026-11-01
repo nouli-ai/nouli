@@ -1,6 +1,7 @@
 //! Caller-defined acyclic turn networks. Compilation and scheduling are separate.
 
 pub mod compile;
+pub(crate) mod node;
 pub mod reference;
 pub mod resolve;
 pub mod schedule;

@@ -24,12 +24,12 @@ use crate::{
         workflows::{
             FrozenWorkflow, StoredRun, WorkflowDecision, WorkflowDefinition, WorkflowError,
             WorkflowOwner,
-            nodes::{node_output, request_for},
         },
     },
     workflow::{
         NodeStatus, RunMode, RunStatus, WorkflowRequest,
         compile::{self, CompileError, CompiledWorkflow},
+        node::{node_output, parent_sources, request_for},
         schedule::{
             self, AncestorResult, NodeCall, NodeEvaluation, NodeExecutor, NodeOutput, NodeProgress,
             ScheduleError, ScheduleObserver, ScheduleResult,
@@ -272,13 +272,13 @@ impl<
         let sources = if call.parents.is_empty() {
             definition.base.sources.clone()
         } else {
-            call.parents
-                .iter()
-                .map(|parent| SourcePoint {
+            parent_sources(&call.parents, |parent| {
+                Some(SourcePoint {
                     session: definition.session,
-                    frontier: vec![ids[*parent]],
+                    frontier: vec![ids[parent]],
                 })
-                .collect()
+            })
+            .ok_or_else(|| report(WorkflowError::Snapshot))?
         };
         Ok(NodeContext {
             sources,
@@ -334,16 +334,13 @@ impl<
 }
 /// The saved source each parent node published, in parent order.
 fn saved_parent_sources(call: &NodeCall) -> Result<Vec<SourcePoint>, WorkflowError> {
-    call.parents
-        .iter()
-        .map(|parent| {
-            call.ancestors
-                .iter()
-                .find(|ancestor| ancestor.node == *parent)
-                .and_then(|ancestor| ancestor.output.source.clone())
-                .ok_or(WorkflowError::Snapshot)
-        })
-        .collect()
+    parent_sources(&call.parents, |parent| {
+        call.ancestors
+            .iter()
+            .find(|ancestor| ancestor.node == parent)
+            .and_then(|ancestor| ancestor.output.source.clone())
+    })
+    .ok_or(WorkflowError::Snapshot)
 }
 fn ephemeral_node_output(
     (outcome, manifest): (

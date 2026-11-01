@@ -2,6 +2,7 @@
 use super::{
     NodeStatus, RunStatus, WorkflowNode,
     compile::{CompiledBinding, CompiledReference, CompiledWorkflow},
+    node::node_scope,
     reference::{MissingPolicy, ReferenceValue, ResultField, ResultReference},
     resolve::{self, ResolveError},
 };
@@ -204,11 +205,8 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
                 return Ok(None);
             }
         }
-        let inputs = plan
-            .inputs
-            .iter()
-            .map(|binding| compiled_binding(binding, &self.nodes))
-            .collect::<Result<Vec<_>, _>>()?;
+        let scope = node_scope(self.graph, &self.nodes, id)?;
+        let inputs = scope.inputs;
         let required_missing = inputs.iter().any(|input| input.required_missing);
         self.nodes[id].inputs.clone_from(&inputs);
         let failed_parent = plan.dependencies.iter().any(|parent| {
@@ -241,24 +239,8 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
             self.nodes[id].status = NodeStatus::Skipped;
             return Ok(None);
         }
-        let parents: Vec<_> = plan
-            .dependencies
-            .iter()
-            .filter(|parent| self.nodes[**parent].status == NodeStatus::Completed)
-            .copied()
-            .collect();
-        let mut ancestors = HashSet::new();
-        for parent in &parents {
-            ancestors.insert(*parent);
-            ancestors.extend(self.nodes[*parent].ancestors.iter().copied());
-        }
-        let ordered: Vec<_> = self
-            .graph
-            .order()
-            .iter()
-            .filter(|ancestor| ancestors.contains(ancestor))
-            .copied()
-            .collect();
+        let parents = scope.parents;
+        let ordered = scope.ancestors;
         self.nodes[id].ancestors.clone_from(&ordered);
         let ancestors = ordered
             .into_iter()

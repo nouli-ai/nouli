@@ -11,16 +11,12 @@ use crate::storage::{
         interrupt_attempt, progress_event,
     },
 };
+pub(crate) use crate::workflow::node::{node_output, request_for};
 use crate::{
-    codec,
-    data::{Data, Input},
-    history::{EvaluationManifest, FinalizedTurn, HistoryEvent, ModelSelection},
+    history::{EvaluationManifest, FinalizedTurn, HistoryEvent},
     identity::SessionSelector,
     outcome::TurnOutcome,
-    workflow::{
-        NodeStatus, compile,
-        schedule::{NodeEvaluation, NodeOutput, NodeProgress, compiled_binding},
-    },
+    workflow::{NodeStatus, compile, node::node_scope, schedule::NodeProgress},
 };
 use crate::{
     history::{EvaluationRequest, SourcePoint},
@@ -93,20 +89,6 @@ fn put_progress(
     }
     Ok(())
 }
-pub(crate) fn node_output(turn: &FinalizedTurn) -> NodeOutput {
-    NodeOutput {
-        outcome: turn.outcome.clone(),
-        source: Some(SourcePoint {
-            session: turn.session,
-            frontier: vec![turn.id],
-        }),
-        evaluation: Some(NodeEvaluation {
-            request: turn.request.clone(),
-            updates: turn.updates.clone(),
-            manifest: turn.manifest.clone(),
-        }),
-    }
-}
 fn node_event(
     round: u32,
     node: usize,
@@ -158,98 +140,16 @@ fn expected_scope(
     }) {
         return Err(WorkflowError::Conflict);
     }
-    let parents: Vec<_> = declared
-        .dependencies
-        .iter()
-        .filter(|parent| states[**parent].status == NodeStatus::Completed)
-        .copied()
-        .collect();
-    let sources = if parents.is_empty() {
+    let scope = node_scope(&plan, &states, node).map_err(|_| WorkflowError::Snapshot)?;
+    let sources = if scope.parents.is_empty() {
         definition.base.sources.clone()
     } else {
-        parents
-            .iter()
-            .map(|parent| {
-                states[*parent]
-                    .output
-                    .as_ref()
-                    .and_then(|output| output.source.clone())
-                    .ok_or(WorkflowError::Snapshot)
-            })
-            .collect::<Result<Vec<_>, _>>()?
+        scope.sources.ok_or(WorkflowError::Snapshot)?
     };
-    let mut ancestors = HashSet::new();
-    for parent in parents {
-        ancestors.insert(parent);
-        ancestors.extend(states[parent].ancestors.iter().copied());
-    }
-    let ordered = plan
-        .order()
-        .iter()
-        .filter(|ancestor| ancestors.contains(ancestor))
-        .copied()
-        .collect();
-    let inputs = declared
-        .inputs
-        .iter()
-        .map(|binding| compiled_binding(binding, &states).map_err(|_| WorkflowError::Snapshot))
-        .collect::<Result<Vec<_>, _>>()?;
     Ok(ExpectedScope {
         sources,
-        ancestors: ordered,
-        inputs,
-    })
-}
-pub(crate) fn request_for(
-    frozen: &super::FrozenWorkflow,
-    node: usize,
-    inputs: &[crate::workflow::schedule::ResolvedBinding],
-) -> Result<EvaluationRequest, WorkflowError> {
-    let definition = &frozen.definition;
-    let node_definition = definition
-        .request
-        .workflow
-        .nodes
-        .get(node)
-        .ok_or(WorkflowError::Snapshot)?;
-    let mut turn = node_definition.turn.clone();
-    if !inputs.is_empty() {
-        turn.state.push(Input::Structured {
-            data: Data::new(
-                codec::to_value(&serde_json::json!({"workflow_inputs":inputs}))
-                    .map_err(|_| WorkflowError::Snapshot)?,
-            )
-            .map_err(|_| WorkflowError::Snapshot)?,
-        });
-    }
-    let mut required = definition.request.required_records.clone();
-    for id in &node_definition.required_records {
-        if !required.contains(id) {
-            required.push(*id);
-        }
-    }
-    let settings = frozen.settings.get(node).ok_or(WorkflowError::Snapshot)?;
-    Ok(EvaluationRequest {
-        turn,
-        standing: StandingChanges::default(),
-        session: if definition.base.runtime_only {
-            crate::history::SessionSelection::New { name: None }
-        } else {
-            crate::history::SessionSelection::Continue {
-                session: SessionSelector::Id(definition.session),
-            }
-        },
-        updates: node_definition.updates.clone(),
-        required_records: required,
-        model: ModelSelection {
-            provider: Some(settings.profile_name.clone()),
-            model: Some(settings.profile.model.clone()),
-        },
-        request_id: if definition.base.runtime_only {
-            None
-        } else {
-            Some(child_key(definition.run, node))
-        },
+        ancestors: scope.ancestors,
+        inputs: scope.inputs,
     })
 }
 
