@@ -112,7 +112,7 @@ fn run_without_command(args: &Args) -> ExitCode {
             );
         }
     }
-    if repl::can_draw() {
+    if !outputs && repl::can_draw() {
         return repl::run(args, repl::Target::Pick, None);
     }
     match Args::command().write_long_help(&mut io::stdout().lock()) {
