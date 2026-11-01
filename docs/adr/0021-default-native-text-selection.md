@@ -5,6 +5,10 @@ date: 2026-10-31
 
 # Give ordinary text dragging to the terminal by default
 
+The F6 binding and permanent header hint are superseded by
+[ADR 0022](0022-quiet-terminal-chrome-and-configurable-status-line.md); Ctrl-P
+now holds the view.
+
 ## Context
 
 Capturing the mouse by default in [ADR 0018](0018-unfocused-divider-dragging.md)

@@ -1,6 +1,6 @@
 //! Pane layout, shared styles, and terminal chrome.
 use super::{
-    App, Running,
+    App,
     composer::composer,
     references::{draw_references, reference_menu},
     wrap::transcript,
@@ -8,8 +8,9 @@ use super::{
 use crate::{
     render,
     repl::tui::{
-        form::{Kind, Row},
+        form::Kind,
         graph::{GRAPH_MAX, GRAPH_MIN},
+        overlay::Overlay,
     },
 };
 use ratatui::{
@@ -23,8 +24,7 @@ use unicode_width::UnicodeWidthStr;
 const TRANSCRIPT_COLUMNS: u16 = 76;
 const LIST_ROWS: usize = 8;
 const TRANSCRIPT_ROWS: u16 = 3;
-const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const HINTS: [&str; 4] = ["Tab question", "@ reference", "↑↓ fields", "/help"];
+const SELECT_TEXT: &str = " select text · Ctrl-P ";
 /// The view's styles. Without color, emphasis is bold alone.
 pub(super) struct Theme {
     pub(super) accent: Style,
@@ -85,74 +85,40 @@ pub(super) fn pane_width(total: u16, preferred: Option<u16>) -> Option<u16> {
 }
 
 pub(super) fn draw_header(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
-    let action = if app.selection.active {
-        " resume · Esc/F6 "
-    } else if app.graph_focused {
-        " select text · F6 "
-    } else {
-        " hold view · F6 "
-    };
-    let width = u16::try_from(action.width()).unwrap_or(u16::MAX);
-    let action_area = (area.width >= width + 20).then(|| Rect {
+    // The mouse belongs to the terminal unless the graph has the keys, so this
+    // control only exists while a click can reach it.
+    let width = u16::try_from(SELECT_TEXT.width()).unwrap_or(u16::MAX);
+    let action_area = (app.captures_mouse() && area.width >= width + 20).then(|| Rect {
         x: area.right() - width,
         width,
         ..area
     });
-    app.selection.button = action_area.filter(|_| app.captures_mouse());
+    app.selection.button = action_area;
+    if let Some(button) = action_area {
+        frame.render_widget(
+            Paragraph::new(Span::styled(SELECT_TEXT, theme.accent)),
+            button,
+        );
+    }
+    let label = render::clean(&app.repl.session.label);
+    let title = Line::from(vec![
+        Span::styled("nouli", theme.accent),
+        Span::styled(
+            format!(" {} · {label}", env!("CARGO_PKG_VERSION")),
+            theme.dim,
+        ),
+    ]);
     let title_area = Rect {
         width: area
             .width
             .saturating_sub(action_area.map_or(0, |area| area.width)),
         ..area
     };
-    if let Some(button) = action_area {
-        frame.render_widget(Paragraph::new(Span::styled(action, theme.accent)), button);
-    }
-    let label = render::clean(&app.repl.session.label);
-    let title = Line::from(vec![
-        Span::styled(" nouli", theme.accent),
-        Span::styled(
-            format!(" {} · {label}", env!("CARGO_PKG_VERSION")),
-            theme.dim,
-        ),
-    ]);
     frame.render_widget(Paragraph::new(title), title_area);
 }
 
-pub(super) fn draw_model(
-    frame: &mut Frame,
-    area: Rect,
-    app: &App,
-    running: Option<&Running>,
-    theme: &Theme,
-) {
-    let selection = running.map_or(&app.selected_model, |turn| &turn.model);
-    let model = match (&selection.provider, &selection.model) {
-        (Some(provider), Some(model)) => {
-            format!("{}/{}", render::clean(provider), render::clean(model))
-        }
-        _ => "Model not configured".into(),
-    };
-    let activity = match running {
-        Some(turn) if turn.cancel.is_cancelled() => "Cancelling".into(),
-        Some(turn) => format!("Asking · {}s", turn.started.elapsed().as_secs()),
-        None if !app.form.is_empty() || !app.repl.queue.is_empty() => "Draft".into(),
-        None => "Ready".into(),
-    };
-    let model = if running.is_none() {
-        app.model.as_deref().unwrap_or(&model)
-    } else {
-        &model
-    };
-    let spans = vec![
-        Span::styled(format!(" {model}"), theme.accent),
-        Span::styled(format!(" · {activity}"), theme.dim),
-    ];
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-pub(super) fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
-    let (lines, cursor) = composer(app, usize::from(area.width), theme);
+pub(super) fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, busy: bool, theme: &Theme) {
+    let (lines, cursor) = composer(app, usize::from(area.width), busy, theme);
     let tall = u16::try_from(lines.len()).unwrap_or(u16::MAX);
     let reserved = if app
         .references
@@ -209,6 +175,7 @@ pub(super) fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Th
         frame.render_widget(Clear, area);
         frame.render_widget(Paragraph::new(list), area);
     }
+    let picker_cursor = draw_picker(frame, top, app, theme);
     let shown = usize::from(bottom.height);
     if shown == 0 {
         return;
@@ -231,11 +198,41 @@ pub(super) fn draw_left(frame: &mut Frame, area: Rect, app: &mut App, theme: &Th
     app.composer_top = first;
     let window: Vec<_> = lines.into_iter().skip(first).take(shown).collect();
     frame.render_widget(Paragraph::new(window), bottom);
-    if let Some((column, row)) = cursor {
+    if let Some(position) = picker_cursor {
+        frame.set_cursor_position(position);
+    } else if let Some((column, row)) = cursor.filter(|_| app.overlay.is_none()) {
         let x = u16::try_from(column).map_or(u16::MAX, |column| bottom.x.saturating_add(column));
         let y = u16::try_from(row - first).map_or(u16::MAX, |row| bottom.y.saturating_add(row));
         frame.set_cursor_position((x.min(bottom.right().saturating_sub(1)), y));
     }
+}
+
+/// Draws the open model picker over the bottom of `area`, and says where its
+/// cursor goes.
+fn draw_picker(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) -> Option<(u16, u16)> {
+    let Some(Overlay::Models(picker)) = &app.overlay else {
+        return None;
+    };
+    let (rows, (column, row)) = super::picker::lines(app, picker, usize::from(area.width), theme);
+    let height = u16::try_from(rows.len())
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    let shown = Rect {
+        y: area.y + area.height - height,
+        height,
+        ..area
+    };
+    frame.render_widget(Clear, shown);
+    frame.render_widget(Paragraph::new(rows), shown);
+    let column = u16::try_from(column).ok()?;
+    let row = u16::try_from(row).ok().filter(|row| *row < height)?;
+    Some((
+        shown
+            .x
+            .saturating_add(column)
+            .min(shown.right().saturating_sub(1)),
+        shown.y + row,
+    ))
 }
 
 /// The open list, drawn over the bottom of the transcript: the sessions to
@@ -281,145 +278,141 @@ fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
         .collect()
 }
 
-pub(super) fn draw_footer(
-    frame: &mut Frame,
-    area: Rect,
-    app: &App,
-    running: Option<&Running>,
-    theme: &Theme,
-) {
-    if app.selection.active {
-        let hints = fit_hints(
-            area.width.into(),
-            &["Esc/F6 resume", "drag to select", "copy with terminal"],
-        );
-        frame.render_widget(Paragraph::new(Span::styled(hints, theme.accent)), area);
-        return;
-    }
-    let line = match (running, &app.status) {
-        (Some(turn), _) if turn.cancel.is_cancelled() => {
-            Line::from(Span::styled(" cancelling the turn…", theme.dim))
-        }
-        (Some(turn), _) => {
-            let elapsed = turn.started.elapsed();
-            let frame = (elapsed.as_millis() / 100) as usize % SPINNER.len();
-            Line::from(vec![
-                Span::styled(format!(" {} ", SPINNER[frame]), theme.accent),
-                Span::styled(
-                    format!("asking the model · {}s · Ctrl-C cancels", elapsed.as_secs()),
-                    theme.dim,
-                ),
-            ])
-        }
-        (None, Some(status)) => {
-            let style = if status.error { theme.error } else { theme.dim };
-            Line::from(Span::styled(format!(" {}", status.text), style))
-        }
-        (None, _) if app.references.picker.is_some() => Line::from(Span::styled(
-            if app
-                .references
-                .picker
-                .as_ref()
-                .is_some_and(|picker| picker.expanded)
-            {
-                " ↑↓ results · PgUp/PgDn preview · Enter insert · Esc close"
-            } else {
-                " ↑↓ choose · Enter insert · Esc close · Tab field · Shift-Tab type"
-            },
-            theme.dim,
-        )),
-        (None, None) if app.sessions.is_some() => Line::from(Span::styled(
-            " ↑↓ choose · Enter resumes the session · Esc closes",
-            theme.dim,
-        )),
-        (None, None) if !app.commands_shown().is_empty() => Line::from(Span::styled(
-            " ↑↓ choose · Tab completes · Enter runs · Esc hides",
-            theme.dim,
-        )),
-        (None, None) if app.graph_focused => Line::from(Span::styled(
-            if app.graph.divider.is_some() {
-                " drag divider to resize · arrows / wheel scroll · Esc returns to form"
-            } else {
-                " arrows / wheel scroll · Esc returns to form"
-            },
-            theme.dim,
-        )),
-        (None, None) => Line::from(Span::styled(
-            focused_hints(area.width.into(), app.form.row),
-            theme.dim,
-        )),
-    };
-    frame.render_widget(Paragraph::new(line), area);
-}
-
-/// As many key hints as fit in `width` columns, leaving out whole hints.
-fn hints(width: usize) -> String {
-    fit_hints(width, &HINTS)
-}
-
-fn focused_hints(width: usize, row: Row) -> String {
-    match row {
-        Row::Question => fit_hints(
-            width,
-            &["Tab next field", "@ reference", "↑↓ fields", "/help"],
-        ),
-        Row::Option(_) => fit_hints(
-            width,
-            &["Tab next item", "@ reference", "↑↓ fields", "/help"],
-        ),
-        Row::Fact(_) => fit_hints(
-            width,
-            &["↑↓ fields", "@ reference", "Tab question", "/help"],
-        ),
-        Row::Input => hints(width),
-    }
-}
-
-fn fit_hints(width: usize, hints: &[&str]) -> String {
-    let mut shown = String::new();
-    for hint in hints {
-        let next = if shown.is_empty() {
-            format!(" {hint}")
-        } else {
-            format!("{shown} · {hint}")
-        };
-        if next.width() > width {
-            break;
-        }
-        shown = next;
-    }
-    shown
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::repl::tui::draw::tests::{app, shown};
 
     #[test]
-    fn copy_controls_and_escape_hint_fit_narrow_and_wide_views() {
+    fn the_select_text_control_shows_only_while_a_click_can_reach_it() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = app(&settings);
-        for width in [24, 40, 80, 160] {
+        for width in [24, 50, 80, 160] {
             app.select_text(false);
             app.graph_focused = false;
             let normal = shown(&mut app, width, 24);
             assert!(app.selection.button.is_none());
-            if width >= 40 {
-                assert!(normal[0].contains("hold view"));
-            }
+            assert!(!normal[0].contains("Ctrl-P"), "no permanent hint");
             app.graph_focused = true;
             let focused = shown(&mut app, width, 24);
-            if width >= 40 {
-                assert!(focused[0].contains("select text"));
+            if width >= 50 {
+                assert!(focused[0].contains("select text · Ctrl-P"));
                 assert!(app.selection.button.is_some());
             } else {
                 assert!(app.selection.button.is_none());
             }
             app.select_text(true);
             let held = shown(&mut app, width, 24);
-            assert!(held.last().unwrap().contains("Esc/F6 resume"));
+            assert!(app.selection.button.is_none());
+            if width >= 50 {
+                assert!(held.last().unwrap().contains("Esc/Ctrl-P resume"));
+            }
         }
+    }
+
+    #[test]
+    fn holding_the_view_moves_no_text() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        let before = shown(&mut app, 80, 24);
+        app.select_text(true);
+        let held = shown(&mut app, 80, 24);
+        assert_eq!(before[..23], held[..23]);
+    }
+
+    #[test]
+    fn the_footer_is_the_model_and_the_question_type_hint() {
+        let mut settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        settings.config.default_provider = Some("typesafe".into());
+        settings.config.default_model = Some("jev-latest".into());
+        let mut app = app(&settings);
+        let screen = shown(&mut app, 80, 24);
+        let footer = screen.last().unwrap();
+        assert!(footer.starts_with("jev-latest · typesafe "), "{footer}");
+        let joined = screen.join("\n");
+        assert!(
+            footer.trim_end().ends_with("Shift-Tab question type"),
+            "{footer}"
+        );
+        for gone in ["Enter to send", "@ reference", "/help\n", "Ready"] {
+            assert!(!joined.contains(gone), "{gone}: {joined}");
+        }
+    }
+
+    #[test]
+    fn status_fields_follow_the_choice_and_hidden_keeps_errors_visible() {
+        use crate::repl::tui::{Status, status_line::Field};
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        let last = |app: &mut App, height| shown(app, 80, height).pop().unwrap();
+        app.status_line = vec![Field::Session, Field::Decisions, Field::Latency];
+        app.latency = Some(std::time::Duration::from_millis(842));
+        let label = app.repl.session.label.clone();
+        assert!(
+            last(&mut app, 24).starts_with(&format!("{label} · 0 decisions · 842 ms")),
+            "{}",
+            last(&mut app, 24)
+        );
+        app.status_line = vec![];
+        assert_eq!(last(&mut app, 24).trim(), "Shift-Tab question type");
+        app.status = Some(Status::failed("Could not reach model"));
+        let screen = shown(&mut app, 80, 24);
+        assert!(
+            screen[22].starts_with("! Could not reach model"),
+            "{screen:?}"
+        );
+        assert!(
+            screen[22].trim_end().ends_with("Ctrl-S retry"),
+            "{screen:?}"
+        );
+    }
+
+    #[test]
+    fn a_narrow_footer_keeps_the_fields_and_drops_the_hint() {
+        use crate::repl::tui::status_line::Field;
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        app.status_line = vec![Field::Model];
+        // The 20 columns of the model, a gap, and the 23 of the hint.
+        let footer = shown(&mut app, 44, 24).pop().unwrap();
+        assert!(footer.starts_with("Model not configured "), "{footer}");
+        assert!(footer.ends_with(" Shift-Tab question type"), "{footer}");
+        let footer = shown(&mut app, 43, 24).pop().unwrap();
+        assert!(footer.starts_with("Model not configured"), "{footer}");
+        assert!(!footer.contains("Shift-Tab"), "{footer}");
+    }
+
+    #[test]
+    fn a_long_error_wraps_instead_of_being_cut_off() {
+        use crate::repl::tui::Status;
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        app.status = Some(Status::error(format!("{}conclusion", "word ".repeat(30))));
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("conclusion"), "{screen}");
+    }
+
+    #[test]
+    fn the_decisions_pane_takes_the_full_height_beside_the_footer() {
+        let settings = crate::settings::Settings::for_test(std::env::temp_dir());
+        let mut app = app(&settings);
+        let screen = shown(&mut app, 140, 24);
+        let divider = 140 - 56;
+        assert!(
+            screen
+                .iter()
+                .all(|row| row.chars().nth(divider) == Some('│')),
+            "{screen:?}"
+        );
+        assert!(
+            screen[1].contains("│ decisions · Ctrl-G to resize"),
+            "{screen:?}"
+        );
+        assert!(!screen[0].contains("decisions"), "{screen:?}");
+        assert!(
+            screen.last().unwrap().contains("Shift-Tab question type │"),
+            "{screen:?}"
+        );
     }
 
     #[test]
@@ -486,37 +479,25 @@ mod tests {
     }
 
     #[test]
-    fn the_status_line_leaves_out_the_key_hints_that_do_not_fit() {
-        let all = hints(200);
-        assert_eq!(all, " Tab question · @ reference · ↑↓ fields · /help");
-        let narrow = hints(all.width() - 1);
-        assert_eq!(narrow, " Tab question · @ reference · ↑↓ fields");
-        assert_eq!(hints(13), " Tab question");
-        assert_eq!(hints(12), "");
-    }
-
-    #[test]
     fn model_status_is_visible_before_answers_and_refreshes_the_next_selection() {
         let mut settings = crate::settings::Settings::for_test(std::env::temp_dir());
         settings.config.default_provider = Some("typesafe".into());
         settings.config.default_model = Some("jev-latest".into());
         let mut app = app(&settings);
         let screen = shown(&mut app, 140, 24).join("\n");
-        assert!(screen.contains("typesafe/jev-latest · Ready"), "{screen}");
-        app.model = Some("typesafe/jev-1.14.0".into());
+        assert!(screen.contains("jev-latest · typesafe"), "{screen}");
+        app.model = Some("jev-1.14.0 · typesafe".into());
         assert!(
             shown(&mut app, 140, 24)
                 .join("\n")
-                .contains("typesafe/jev-1.14.0 · Ready")
+                .contains("jev-1.14.0 · typesafe")
         );
         app.repl.model.model = Some("jev-1.13.0".into());
         app.refresh_model();
         app.form.question = "A draft question?".into();
         let screen = shown(&mut app, 140, 24).join("\n");
-        assert!(screen.contains("typesafe/jev-1.13.0 · Draft"), "{screen}");
+        assert!(screen.contains("jev-1.13.0 · typesafe"), "{screen}");
         assert!(!screen.contains("last served:"), "{screen}");
-        assert!(focused_hints(140, Row::Option(0)).contains("Tab next item"));
-        assert!(focused_hints(140, Row::Question).contains("Tab next field"));
     }
 
     #[test]

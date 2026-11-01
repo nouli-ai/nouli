@@ -309,7 +309,7 @@ fn help_context_quit_and_end_of_input_with_a_queue_behave_as_documented() {
         "fact      A fact",
         "answer    q",
         "/blend A B as NAME",
-        "unknown command /nonsense · /help lists them",
+        "unknown command /nonsense · see /help",
         "usage: /replace N TEXT, where N is a number from /facts",
         "1 queued; press Ctrl-D again to quit and discard them",
         "  bye",

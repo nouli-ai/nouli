@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
 ### Added
 
+- The TUI model picker: `/model` or Ctrl-L opens a search list in the view with models from your connections, fetched from each provider where it offers a list. Add a connection or enter a missing API key without leaving the view. The model you choose stays selected in later views.
+- `nouli-core`: `provider::models::list` fetches the models a provider lists; `HttpTransport::get_with_headers` sends a GET with the same credentials as a request.
+- The TUI status line is configurable: `/statusline` chooses built-in fields or the Minimal, Session, Request, and Hidden presets, and the choice is saved in `tui.toml` beside `config.toml`.
 - `nouli-core`: `Ledger::decode_settings` decodes a frozen-settings snapshot and distinguishes missing or unsupported format versions from malformed payloads.
 - `nouli-core`: `ErrorReport::new` constructs non-retryable diagnostic reports; `RevisionOrigin::of_turn` and `RevisionOrigin::of_base` preserve durable and ephemeral context origins; `context::validate_updates` validates update shapes and rejects duplicate new-record IDs.
 - `nouli-core`: `WorkflowRequest::validate` checks workflow graphs and request intent without a ledger or fingerprint; `workflow::RequestError` distinguishes graph-compilation errors from invalid session selections, request IDs, required records, and context updates.
@@ -22,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The TUI status row shows the model before its provider, such as `jev-latest · typesafe`, so a model ID like `anthropic/claude-opus-4.8` is not mistaken for its provider.
+- TUI form navigation: Enter in Context adds a row and never sends, so send with Enter in Question or Ctrl-S. Tab moves between Context, Question, and Options/Levels, and Enter adds Options/Levels rows. Backspace on an empty Context row reopens the row above.
+- The TUI form shows which box is active: inactive headings dim, the box Tab goes to says so (`Tab to add a question`), all answer types show only in Question, and three or more Context rows fold into a count away from Context.
+- `nouli-core`: `Data` equality compares numbers by value, so a whole-number float equals the same integer and a value equals its stored copy.
+- The TUI has a quieter layout and a larger bee closer to the brand mascot. Answer types sit at the right of the Question rule, the decisions pane takes the full height, and the status row shows the chosen fields and `Shift-Tab question type`. Progress, errors, and list hints appear in their own row only when needed.
+- `/help` in the TUI opens a shortcuts dialog instead of printing to the transcript; type `/` to list commands.
+- Ctrl-P now holds and resumes the TUI view for copying; Esc also resumes.
 - `nouli-core`: `Ledger::decode_payload` consistently reports typed decoding failures as `StorageError::Payload`, including unsupported direct or nested settings snapshots. Use `Ledger::decode_settings` to distinguish unsupported snapshot versions as `StorageError::FrozenSettings`. Built-in frozen request and workflow loaders retain the `unsupported_frozen_settings` report.
 - `nouli-core`: converting `StorageError::Conflict` into `TurnError` now consistently produces `TurnError::Conflict` and the `head_conflict` report code, including outside turn writes.
 - `nouli-core`: `AcceptedRequest::state` now uses `storage::reservations::ReservationState` instead of `String`; exported JSON retains the same `pending`, `completed`, and `interrupted` values.
@@ -36,11 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- All TUI function-key bindings: F5 (use Enter or Ctrl-S) and F6 (use Ctrl-P).
+- The TUI's Enter-to-send banner, bottom shortcut legend, and Ready and Draft status words.
 - `nouli-core`: remove `media::Evidence::assets`; `provider::wire::body` prepares image assets using the connection settings. Existing protocol-specific evaluation and request-body functions remain available.
 - `nouli-core`: remove the unused `history::AttemptState`, `history::AttemptRecord`, `HistoryEvent::AttemptRecorded`, and `workflow::FrozenRun` types, and the `ContextPlan::questions` and `ContextPlan::required` fields. The ledger never wrote these types, and the context a model receives is unchanged.
 
 ### Fixed
 
+- Keep the TUI model picker responsive while credential commands run, cancel its background work when it closes, and preserve the highlighted choice as model lists arrive. Long model names now leave room for the provider column in narrow terminals.
+- Sending a question that references a saved answer containing a whole-number probability, such as 0 or 1, no longer fails with `head_conflict`.
+- Workflows no longer fail with `workflow_conflict` when a node input is a whole number, such as a probability of exactly 1.
 - Keep the terminal responsive to cancellation while native image turns assemble context and prepare request bodies. Reuse each image derivative across budgeting, context reduction, and dispatch within a plan, while retaining original saved images and wire bytes.
 - A timed-out file import now stops converter descendants as well as their launcher, so imports cannot leave converter processes running or wait indefinitely for inherited pipes.
 - Keep fact text at normal brightness when it contains phrases such as `(from x)` or `(replaced; ...)`; dim source and replacement annotations using their saved metadata.
@@ -49,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Save connection setup and startup model choices with a relative `--config` path such as `--config config.toml`, instead of reporting `connection_setup_failed` after the file was already written.
 - Report `--jsonl` on `nouli auth`, `nouli connect`, `nouli sessions`, `nouli facts`, `nouli context`, and `nouli workflow show` as the input error `unsupported_output_format` ("This command supports text, JSON, or TOON output"). `nouli auth` previously exited 2 with no output, `nouli connect` reported `connection_setup_failed`, and inspection commands reported `invalid_inspection`. Conflicting output flags given before and after any command, such as `nouli --json auth list --jsonl` or `nouli --json new Trip -q ... --jsonl`, now print `conflicting_output_options` on standard error instead of exiting silently.
 - Read `nouli connect --stdin` keys like `nouli auth login --stdin`: only the line ending is removed, so trailing spaces stay part of the key, and a line over 16 KiB is refused. `nouli auth login --stdin` now reports `credential_too_long` for such a line instead of storing a cut-off key.
-- Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
+- Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. Ctrl-P holds the view steady for copying during a request.
 - Show `--input` help for `new`, `add`, `ask`, and `whatif` without stray Markdown backticks.
 - List `/connect`, `/login`, `/logout`, and `/model` in `/help` only in the TUI, which supports them; the plain line loop no longer advertises commands it rejects.
 - Apply `nouli auth login` and `logout` rules to TUI `/login` and `/logout`: logging in to a provider whose connection disables authentication stores the key with a note instead of refusing, `/logout` removes a stored credential for a provider no longer in the configuration and says whether one was removed, and failures of TUI `/connect`, `/model`, `/login`, and `/logout` show their specific message instead of "invalid connection settings".

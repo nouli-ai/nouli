@@ -1,6 +1,7 @@
 //! One-attempt protocol adapters. Evaluation owns retry orchestration.
 
 mod confidence;
+pub mod models;
 pub mod openai;
 pub mod system_one;
 pub mod wire;

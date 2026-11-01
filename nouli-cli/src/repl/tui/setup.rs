@@ -24,10 +24,6 @@ impl App<'_> {
                 )?;
                 self.repl.model = selection;
             }
-            "/model" => {
-                let selection = crate::connect::pick_model(&self.repl.settings, argument)?;
-                self.repl.model = selection;
-            }
             "/login" | "/logout" => {
                 let provider = if argument.is_empty() {
                     self.repl
@@ -63,12 +59,18 @@ impl App<'_> {
             }
             _ => return Err(crate::connect::SetupError::UnknownCommand),
         }
+        self.reload_settings()?;
+        Ok(note)
+    }
+
+    /// Reads the configuration and credentials again after a change.
+    pub(super) fn reload_settings(&mut self) -> Result<(), crate::connect::SetupError> {
         let mut settings = self.repl.settings.reload()?;
         settings
             .load_environment()
             .map_err(crate::connect::SetupError::Report)?;
         self.repl.settings = std::borrow::Cow::Owned(settings);
-        Ok(note)
+        Ok(())
     }
 }
 

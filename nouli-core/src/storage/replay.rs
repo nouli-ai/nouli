@@ -682,6 +682,56 @@ mod tests {
             .unwrap()
     }
 
+    fn fact(id: crate::identity::Id, value: serde_json::Value) -> crate::context::ContextUpdate {
+        crate::context::ContextUpdate::Append {
+            record: crate::context::ContextRecord {
+                id,
+                key: format!("reference:{id}"),
+                value: crate::data::Data::new(value).unwrap(),
+                kind: crate::context::ContextKind::Evidence,
+            },
+        }
+    }
+
+    #[test]
+    fn a_whole_number_in_an_update_matches_its_frozen_copy() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let mut request = request();
+        let id = crate::identity::Id::generate();
+        request.updates = vec![fact(id, serde_json::json!({"probability": 1.0}))];
+        let owner = accepted(ledger.accept_request(&request, settings(&store)).unwrap());
+        let mut manifest = fixture().manifest;
+        manifest.sources = owner.frozen.sources.clone();
+        assert!(owner.prepare(&mut ledger, manifest).is_ok());
+    }
+
+    #[test]
+    fn a_changed_update_still_conflicts_with_its_frozen_copy() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let mut request = request();
+        let id = crate::identity::Id::generate();
+        request.updates = vec![fact(id, serde_json::json!({"probability": 1.0}))];
+        let owner = accepted(ledger.accept_request(&request, settings(&store)).unwrap());
+        let mut manifest = fixture().manifest;
+        manifest.sources = owner.frozen.sources.clone();
+        let result = ledger.prepare_attempt(
+            owner.guard(),
+            AttemptInput {
+                request: owner.frozen.request.turn.clone(),
+                updates: vec![fact(id, serde_json::json!({"probability": 0.5}))],
+                standing: owner.frozen.request.standing.clone(),
+                manifest,
+                request_id: Some(owner.key.clone()),
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(super::super::turns::TurnError::Conflict)
+        ));
+    }
+
     #[test]
     fn tampered_frozen_versions_keep_the_unsupported_settings_report() {
         let store = Store::new();

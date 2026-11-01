@@ -11,7 +11,7 @@ use nouli_core::{
 };
 use nouli_core::{
     decision::Question,
-    protocol::{Report, ResultEnvelope},
+    protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope},
 };
 use std::{io, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -24,6 +24,7 @@ impl<'a> App<'a> {
         if !self.prepare_input() {
             return Ok(None);
         }
+        self.settle_context();
         let inherited = self.inherited_answers().cloned();
         let prompt = if self.form.question.trim().is_empty() {
             self.prior_for_kind()
@@ -71,7 +72,7 @@ impl<'a> App<'a> {
             }
             Err(problem) => {
                 self.status = Some(Status::error(problem.message));
-                self.form.focus(problem.section, &mut self.repl.queue.facts);
+                self.form.focus(problem.section);
                 Ok(None)
             }
         }
@@ -260,6 +261,12 @@ impl PreviousQuestion {
     }
 }
 
+/// Whether the same request could succeed if sent again. This goes by the
+/// failure's kind because `retryable` is only kept on saved attempts.
+fn resending_can_help(error: &ErrorReport) -> bool {
+    matches!(error.category, ErrorCategory::Transport) || error.code == "provider_capacity"
+}
+
 impl App<'_> {
     /// Shows a finished turn as the line loop would. A saved turn has taken
     /// the queue, and its question when it came from the form.
@@ -271,6 +278,8 @@ impl App<'_> {
         from_form: bool,
     ) -> io::Result<()> {
         let saved = !ephemeral && matches!(envelope.result, Report::Turn(_));
+        // Nothing said while the turn ran still applies.
+        self.status = None;
         let next_latest = match &envelope.result {
             Report::Turn(report) if report.session == Some(self.repl.session.id) => report
                 .turn
@@ -300,19 +309,21 @@ impl App<'_> {
         if let Report::Turn(report) = &envelope.result {
             let provider = &report.outcome.provider;
             self.model = Some(format!(
-                "{}/{}",
-                render::clean(&provider.provider),
-                render::clean(&provider.model)
+                "{} · {}",
+                render::clean(&provider.model),
+                render::clean(&provider.provider)
             ));
         }
         if let Report::Error(error) = &envelope.result {
             self.status = Some(if error.code == "evaluation_canceled" {
                 Status::info("Cancelled · your input is kept")
             } else {
-                Status::error(format!(
-                    "{} · edit input or Ctrl-S to retry",
-                    render::clean(&error.message)
-                ))
+                let message = render::clean(&error.message);
+                if resending_can_help(error) {
+                    Status::failed(message)
+                } else {
+                    Status::error(message)
+                }
             });
         }
         self.repl.finish_display(
@@ -402,6 +413,50 @@ mod tests {
     };
     use crate::repl::tui::{tests::*, *};
     use nouli_core::{decision::AnswerSpace, history::ModelSelection, identity::Id};
+
+    #[test]
+    fn only_failures_a_resend_could_fix_offer_a_retry() {
+        use nouli_core::protocol::{ErrorCategory as Category, ErrorReport, Report};
+        for (category, code, retry) in [
+            (Category::Configuration, "providers_required", false),
+            (
+                Category::Authentication,
+                "provider_authentication_failed",
+                false,
+            ),
+            (Category::Capacity, "context_capacity", false),
+            (Category::Transport, "provider_transport_failed", true),
+            (Category::Capacity, "provider_capacity", true),
+        ] {
+            let settings = settings();
+            let mut app = app(&settings);
+            // The final report never carries `retryable`.
+            let report = Report::Error(ErrorReport {
+                category,
+                code: code.into(),
+                message: "It failed".into(),
+                retryable: false,
+            });
+            app.finish(ResultEnvelope::new(report), &[], false, true)
+                .unwrap();
+            assert_eq!(app.status.as_ref().unwrap().retry, retry, "{code}");
+        }
+    }
+
+    #[test]
+    fn a_finished_turn_clears_what_was_said_while_it_ran() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
+        app.finish(
+            ResultEnvelope::new(crate::repl::tests::saved_turn()),
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(app.status.is_none());
+    }
 
     #[test]
     fn empty_lists_reuse_exact_prior_answers_and_require_new_evidence() {
@@ -608,11 +663,11 @@ mod tests {
         assert_eq!(app.repl.queue.question, None);
         app.finish(failed(), &[], false, true).unwrap();
         assert_eq!(app.form.question, "b: Is this the one to send again?");
-        // Enter from Context resends the current form, including after failure.
+        // Ctrl-S from Context resends the current form after a failure.
         press(&mut app, KeyCode::Up, KeyModifiers::NONE);
         let mut running = None;
         app.key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
             &mut running,
         )
         .unwrap();

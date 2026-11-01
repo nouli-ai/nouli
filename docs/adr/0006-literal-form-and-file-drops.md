@@ -5,6 +5,9 @@ date: 2026-10-30
 
 # Accept literal questions and files in the terminal form
 
+The F5 binding is superseded by
+[ADR 0022](0022-quiet-terminal-chrome-and-configurable-status-line.md).
+
 Tab navigation and image budgeting are superseded by
 [ADR 0007](0007-continuous-graph-and-native-image-preparation.md).
 Click controls and Enter behavior are superseded by

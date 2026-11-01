@@ -110,7 +110,7 @@ mod tests {
         };
         assert!(!press(KeyCode::Null, KeyModifiers::NONE));
         assert!(press(KeyCode::Char('g'), KeyModifiers::CONTROL));
-        assert!(!press(KeyCode::F(6), KeyModifiers::NONE));
+        assert!(!press(KeyCode::Char('p'), KeyModifiers::CONTROL));
         assert!(press(KeyCode::Esc, KeyModifiers::NONE));
         assert!(!press(KeyCode::Tab, KeyModifiers::NONE));
         assert!(press(KeyCode::Char('g'), KeyModifiers::CONTROL));
@@ -171,7 +171,11 @@ mod tests {
         app.option_enter = true;
         let mut running = None;
         let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
-        app.event(key(KeyCode::F(6)), &mut running).unwrap();
+        app.event(
+            Event::Key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL)),
+            &mut running,
+        )
+        .unwrap();
         assert!(app.selection.active);
         assert!(!app.option_enter);
         for event in [

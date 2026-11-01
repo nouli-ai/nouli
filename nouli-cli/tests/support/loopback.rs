@@ -57,6 +57,7 @@ impl Server {
                     assert!(bytes.len() < 64 * 1024);
                 };
                 let header = std::str::from_utf8(&bytes[..end]).unwrap();
+                let path = header.split(' ').nth(1).unwrap_or("").to_owned();
                 captured_authorizations
                     .lock()
                     .unwrap()
@@ -72,14 +73,19 @@ impl Server {
                             .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
                             .map(|(_, value)| value.trim().parse::<usize>().unwrap())
                     })
-                    .unwrap();
+                    .unwrap_or(0);
                 assert!(length < 16 * 1024 * 1024);
                 while bytes.len() < end + length {
                     let count = stream.read(&mut buffer).unwrap();
                     assert!(count > 0);
                     bytes.extend_from_slice(&buffer[..count]);
                 }
-                let body: Value = serde_json::from_slice(&bytes[end..end + length]).unwrap();
+                // A GET has no body, so the handler gets its path instead.
+                let body: Value = if length == 0 {
+                    serde_json::json!({ "get": path })
+                } else {
+                    serde_json::from_slice(&bytes[end..end + length]).unwrap()
+                };
                 captured.lock().unwrap().push(body.clone());
                 let (status, response) = handler(&body);
                 if let Err(error) = write!(

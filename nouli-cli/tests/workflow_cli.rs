@@ -20,6 +20,36 @@ use nouli_core::{
 use std::fmt::Write as _;
 use std::process::{Command, Stdio};
 #[test]
+fn a_node_input_that_is_a_whole_number_keeps_the_run_going() {
+    use nouli_core::workflow::RunStatus;
+    let server = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    let mut definition = serde_json::to_value(workflow()).unwrap();
+    // The fixture provider answers on_time with exactly 1.0.
+    definition["nodes"][4]["inputs"] = serde_json::json!([{
+        "name": "certain",
+        "reference": {
+            "node": "initial",
+            "question": "on_time",
+            "field": "probability",
+            "pointer": null,
+            "on_missing": {"policy": "required"}
+        }
+    }]);
+    let file = home.0.join("workflow.json");
+    std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
+    let output = home.run([
+        "workflow",
+        "run",
+        file.to_str().unwrap(),
+        "--name",
+        "Travel",
+    ]);
+    assert_eq!(run_report(&output, 0).status, RunStatus::Completed);
+}
+
+#[test]
 fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_outputs() {
     use nouli_core::workflow::{NodeStatus, RunStatus};
     let server = Server::with_handler(harness::typesafe);

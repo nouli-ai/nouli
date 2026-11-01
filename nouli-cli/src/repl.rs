@@ -288,7 +288,7 @@ impl<W: Write> Repl<'_, W> {
             Command::Blend { sources, name } => self.blend(&sources, &name)?,
             Command::Usage(usage) => self.say(&format!("  usage: {usage}"))?,
             Command::Unknown(name) => self.say(&format!(
-                "  unknown command /{} · /help lists them",
+                "  unknown command /{} · see /help",
                 render::clean(&name)
             ))?,
         }

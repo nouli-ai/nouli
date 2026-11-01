@@ -7,6 +7,8 @@ date: 2026-10-30
 
 Single-Enter submission from Options/Levels and type-selection shortcuts are
 superseded by [ADR 0010](0010-consistent-tab-navigation-and-list-entry.md).
+The Enter-to-send hint and F5 are superseded by
+[ADR 0022](0022-quiet-terminal-chrome-and-configurable-status-line.md).
 
 ## Context
 

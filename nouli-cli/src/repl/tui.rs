@@ -11,11 +11,14 @@ mod form;
 mod graph;
 mod greeter;
 mod keys;
+mod model_picker;
 mod mouse;
+mod overlay;
 mod references;
 mod screen;
 mod sessions;
 mod setup;
+mod status_line;
 mod turn;
 
 use super::{Repl, Step};
@@ -30,10 +33,14 @@ use crossterm::{
 use form::{Form, Kind, Row};
 use futures_util::StreamExt;
 use graph::Graph;
-use nouli_core::{history::ModelSelection, protocol::ResultEnvelope};
+use nouli_core::{
+    history::ModelSelection,
+    protocol::{Report, ResultEnvelope},
+};
 use ratatui::{DefaultTerminal, text::Line};
 use screen::Screen;
 use std::{
+    collections::BTreeMap,
     io,
     pin::Pin,
     time::{Duration, Instant},
@@ -67,6 +74,8 @@ struct Running<'a> {
 struct Status {
     text: String,
     error: bool,
+    /// Sending again might work: the form still holds what failed.
+    retry: bool,
 }
 
 impl Status {
@@ -74,6 +83,7 @@ impl Status {
         Self {
             text: text.into(),
             error: false,
+            retry: false,
         }
     }
 
@@ -81,6 +91,15 @@ impl Status {
         Self {
             text: text.into(),
             error: true,
+            retry: false,
+        }
+    }
+
+    /// A request that failed and left its input to send again.
+    fn failed(text: impl Into<String>) -> Self {
+        Self {
+            retry: true,
+            ..Self::error(text)
         }
     }
 }
@@ -117,6 +136,16 @@ struct App<'a> {
     graph_focused: bool,
     selection: mouse::Selection,
     status: Option<Status>,
+    /// Models the providers listed, by provider, for the model picker.
+    catalog: BTreeMap<String, Vec<String>>,
+    /// Model lists on their way.
+    fetches: Option<model_picker::Fetches>,
+    /// The dialog that has the keys, if one is open.
+    overlay: Option<overlay::Overlay>,
+    /// The fields the status line shows.
+    status_line: Vec<status_line::Field>,
+    /// How long the last answered request took.
+    latency: Option<Duration>,
     /// The provider and model that answered the last turn.
     model: Option<String>,
     /// Resolved selection for the next request, available before any answer.
@@ -144,6 +173,7 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(repl: Repl<'a, Vec<u8>>) -> Self {
+        let status_line = status_line::load(&repl.settings.config_path);
         let mut app = Self {
             repl,
             pending_setup: None,
@@ -156,6 +186,11 @@ impl<'a> App<'a> {
             graph_focused: false,
             selection: mouse::Selection::default(),
             status: None,
+            catalog: BTreeMap::new(),
+            fetches: None,
+            overlay: None,
+            status_line,
+            latency: None,
             model: None,
             selected_model: ModelSelection::default(),
             warned: false,
@@ -218,7 +253,7 @@ impl<'a> App<'a> {
                     event = events.next() => Wake::Input(event),
                     done = finished(&mut running) => Wake::Done(Box::new(done)),
                     // Redraws the spinner while a turn runs.
-                    _ = tick.tick(), if !self.selection.active && (busy || self.drop_start.is_some()) => Wake::Tick,
+                    _ = tick.tick(), if !self.selection.active && (busy || self.drop_start.is_some() || self.fetches.is_some()) => Wake::Tick,
                 }
             });
             match wake {
@@ -231,6 +266,9 @@ impl<'a> App<'a> {
                 Wake::Done(done) => {
                     let (envelope, draft) = *done;
                     if let Some(turn) = running.take() {
+                        if matches!(envelope.result, Report::Turn(_)) {
+                            self.latency = Some(turn.started.elapsed());
+                        }
                         self.finish(
                             envelope,
                             &draft.request.updates,
@@ -240,6 +278,7 @@ impl<'a> App<'a> {
                     }
                 }
                 Wake::Tick => {
+                    self.poll_models();
                     if !busy
                         && self.drop_start.is_some_and(|(_, _, time)| {
                             time.elapsed() >= Duration::from_millis(150)
@@ -367,9 +406,9 @@ mod tests {
     pub(super) fn failed() -> ResultEnvelope {
         ResultEnvelope::new(Report::Error(ErrorReport {
             category: nouli_core::protocol::ErrorCategory::Transport,
-            code: "provider_transport".into(),
+            code: "provider_transport_failed".into(),
             message: "The provider did not answer".into(),
-            retryable: true,
+            retryable: false,
         }))
     }
 

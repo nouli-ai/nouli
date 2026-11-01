@@ -285,7 +285,29 @@ impl HttpTransport {
         cancel: &CancellationToken,
     ) -> Result<HttpResponse, TransportError> {
         let url = endpoint(profile, path)?;
-        let exchange = self.exchange(url, body, credential, profile, headers);
+        let exchange = self.exchange(url, Some(body), credential, profile, headers);
+        tokio::select! {
+            biased;
+            ()=cancel.cancelled()=>Err(TransportError::Canceled),
+            result=tokio::time::timeout(self.timeout,exchange)=>result.unwrap_or(Err(TransportError::Timeout)),
+        }
+    }
+
+    /// Sends one cancellable GET to the profile's endpoint.
+    ///
+    /// # Errors
+    ///
+    /// The same errors as [`Self::post_with_headers`].
+    pub async fn get_with_headers(
+        &self,
+        profile: &ProviderProfile,
+        path: &str,
+        credential: Option<&Credential>,
+        headers: &std::collections::BTreeMap<String, Credential>,
+        cancel: &CancellationToken,
+    ) -> Result<HttpResponse, TransportError> {
+        let url = endpoint(profile, path)?;
+        let exchange = self.exchange(url, None, credential, profile, headers);
         tokio::select! {
             biased;
             ()=cancel.cancelled()=>Err(TransportError::Canceled),
@@ -296,15 +318,16 @@ impl HttpTransport {
     async fn exchange(
         &self,
         url: Url,
-        body: &Value,
+        body: Option<&Value>,
         credential: Option<&Credential>,
         profile: &ProviderProfile,
         headers: &std::collections::BTreeMap<String, Credential>,
     ) -> Result<HttpResponse, TransportError> {
-        let mut response = self
-            .client
-            .post(url)
-            .json(body)
+        let request = match body {
+            Some(body) => self.client.post(url).json(body),
+            None => self.client.get(url),
+        };
+        let mut response = request
             .headers(request_headers(profile, headers, credential)?)
             .send()
             .await
@@ -569,11 +592,18 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn timeout_and_cancellation_stop_in_flight_waits() {
         for canceled in [false, true] {
             let mut server = MockServer::start().await;
-            let transport = HttpTransport::new(&ExecutionSettings::default()).unwrap();
+            // Real loopback I/O must make progress before the deadline. A
+            // paused clock can auto-advance past it before the server receives
+            // the request, leaving received() waiting for a request that died.
+            let transport = HttpTransport::new(&ExecutionSettings {
+                attempt_timeout_seconds: 1,
+                ..ExecutionSettings::default()
+            })
+            .unwrap();
             let cancel = CancellationToken::new();
             let profile = profile(server.url.clone());
             let (result, ()) = tokio::join!(
@@ -582,8 +612,6 @@ mod tests {
                     server.received().await;
                     if canceled {
                         cancel.cancel();
-                    } else {
-                        tokio::time::advance(Duration::from_secs(121)).await;
                     }
                 }
             );

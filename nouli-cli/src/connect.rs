@@ -21,7 +21,7 @@ use prompt::{
     choose, choose_credential, choose_endpoint, choose_model, choose_protocol, prompt_default,
 };
 use recipes::{Recipe, SERVICES, recipes};
-pub(crate) use startup::{pick_model, startup};
+pub(crate) use startup::startup;
 use std::{
     io::{self, IsTerminal, Write},
     path::Path,
@@ -231,6 +231,49 @@ pub(crate) fn configure(file: &Path, options: &Connect) -> Result<ModelSelection
         },
         default,
         options.replace,
+    )
+}
+
+/// The services that set up with at most a key, and whether they need one.
+pub(crate) fn quick_services() -> Vec<(&'static str, bool)> {
+    recipes()
+        .iter()
+        .filter(|recipe| !recipe.url.is_empty() && !recipe.models.is_empty())
+        .map(|recipe| (recipe.name, recipe.connection.no_auth != Some(true)))
+        .collect()
+}
+
+/// Adds a quick service under its own name, as the default, without prompting.
+pub(crate) fn add_service(
+    file: &Path,
+    service: &str,
+    key: Option<nouli_core::config::auth::Secret>,
+) -> Result<ModelSelection, SetupError> {
+    let recipe = recipes()
+        .into_iter()
+        .find(|recipe| recipe.name == service)
+        .ok_or_else(|| SetupError::UnknownService(service.to_owned()))?;
+    let model = recipe
+        .models
+        .first()
+        .copied()
+        .ok_or_else(|| SetupError::UnknownService(service.to_owned()))?;
+    let mut connection = recipe.connection.clone();
+    if key.is_some() {
+        connection.no_auth = Some(false);
+    }
+    let definition =
+        provider_definition(connection, recipe.protocol, recipe.url.to_owned(), model)?;
+    save(
+        file,
+        Draft {
+            name: service.to_owned(),
+            model: model.to_owned(),
+            definition,
+            key: key.map(nouli_core::config::auth::KeySource::Key),
+        },
+        true,
+        false,
     )
 }
 
