@@ -141,7 +141,7 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
     Ok(out)
 }
 
-pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
+pub(crate) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
     if matches!(extension, "doc" | "ppt") {
         return legacy(bytes, extension, name);
     }
@@ -303,7 +303,7 @@ fn pixels(side: f32, scale: f32) -> u32 {
     (side * scale).ceil().max(1.0) as u32
 }
 
-pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
+pub(crate) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -336,19 +336,11 @@ pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
 
 /// Optional converter runs in its own temporary directory and user profile.
 fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
-    use nix::{
-        sys::{
-            resource::{Resource, setrlimit},
-            signal::{Signal, killpg},
-        },
-        unistd::Pid,
-    };
-    use std::os::unix::fs::DirBuilderExt;
-    use std::os::unix::process::CommandExt;
+    use crate::process::{Limits, RunError, run_bounded};
     use std::{
+        os::unix::fs::DirBuilderExt,
         process::{Command, Stdio},
-        thread,
-        time::{Duration, Instant},
+        time::Duration,
     };
     struct Temp(std::path::PathBuf);
     impl Drop for Temp {
@@ -369,7 +361,7 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
     let output = if extension == "doc" { "docx" } else { "pptx" };
     let profile =
         url::Url::from_directory_path(temp.0.join("profile")).map_err(|()| unsupported(name))?;
-    let mut process = [
+    [
         "soffice",
         "libreoffice",
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
@@ -382,58 +374,23 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
             .args(["--headless", "--convert-to", output, "--outdir"])
             .arg(&temp.0)
             .arg(&input)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(0);
-        // SAFETY: only async-signal-safe setrlimit calls run between fork/exec.
-        unsafe {
-            command.pre_exec(|| {
-                for (kind, limit) in [
-                    (Resource::RLIMIT_CORE, 0),
-                    (Resource::RLIMIT_CPU, 8),
-                    (Resource::RLIMIT_FSIZE, MAX_BYTES),
-                ] {
-                    setrlimit(kind, limit, limit).map_err(std::io::Error::from)?;
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    setrlimit(Resource::RLIMIT_DATA, 512 * 1024 * 1024, 512 * 1024 * 1024)
-                        .map_err(std::io::Error::from)?;
-                    setrlimit(Resource::RLIMIT_AS, 512 * 1024 * 1024, 512 * 1024 * 1024)
-                        .map_err(std::io::Error::from)?;
-                }
-                Ok(())
-            });
+            .stdout(Stdio::null());
+        match run_bounded(
+            &mut command,
+            None,
+            Duration::from_secs(10),
+            MAX_BYTES,
+            None,
+            Some(Limits::Office {
+                max_file_bytes: MAX_BYTES,
+            }),
+        ) {
+            Err(RunError::Spawn(_)) => None,
+            result => Some(result),
         }
-        command.spawn().ok()
     })
-    .ok_or_else(|| Error::OfficeUnavailable(name.into()))?;
-    let start = Instant::now();
-    loop {
-        match process.try_wait() {
-            Ok(Some(status)) if status.success() => {
-                if let Ok(pid) = i32::try_from(process.id()) {
-                    let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
-                }
-                break;
-            }
-            Ok(None)
-                if start.elapsed() < Duration::from_secs(10)
-                    && !super::worker::group_over_memory(process.id()) =>
-            {
-                thread::sleep(Duration::from_millis(10));
-            }
-            _ => {
-                if let Ok(pid) = i32::try_from(process.id()) {
-                    let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
-                }
-                let _ = process.kill();
-                let _ = process.wait();
-                return Err(unsupported(name));
-            }
-        }
-    }
+    .ok_or_else(|| Error::OfficeUnavailable(name.into()))?
+    .map_err(|_| unsupported(name))?;
     Ok(super::load(&temp.0.join(format!("input.{output}")))?.text)
 }
 

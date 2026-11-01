@@ -11,12 +11,14 @@ mod input;
 mod inspect;
 mod palette;
 mod present;
+mod process;
 mod render;
 mod repl;
 mod selection;
 mod settings;
 mod turns;
 mod view;
+mod worker;
 mod workflows;
 
 /// A decision harness for structured callers.
@@ -61,7 +63,7 @@ pub(crate) fn render_error(
 }
 
 fn main() -> ExitCode {
-    if let Some(code) = repl::tui::attachments::maybe_worker() {
+    if let Some(code) = worker::maybe_worker() {
         return code;
     }
     match Args::try_parse() {

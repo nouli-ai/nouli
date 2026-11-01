@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Keep the terminal responsive to cancellation while native image turns assemble context and prepare request bodies. Reuse each image derivative across budgeting, context reduction, and dispatch within a plan, while retaining original saved images and wire bytes.
+- A timed-out file import now stops converter descendants as well as their launcher, so imports cannot leave converter processes running or wait indefinitely for inherited pipes.
 
 - In the terminal view, a saved-answer reference recorded without a display label, such as one a `nouli-core` caller wrote, is usable as `@saved answer` instead of being reported unavailable when a draft cites it. A malformed saved-answer reference is reported as an error when the terminal view restores a session, and fails the terminal graph and `nouli view` with a message naming it, instead of being skipped silently.
 - Run only the credential commands of the providers a turn or `workflow run` uses. A `workflow run` that continues a session whose model defaults name a different provider from the configured default no longer runs the default provider's command, and runs the session provider's command once before the run instead of once per node during it. A turn that replays an earlier `--request-id` prepares the credential of the provider saved with that request, not the current default.
