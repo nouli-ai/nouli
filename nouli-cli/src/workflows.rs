@@ -220,12 +220,13 @@ pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 
             .and_then(|inspection| {
                 let value =
                     codec::to_value(&inspection).map_err(crate::inspect::InspectError::from)?;
-                crate::inspect::write(
+                render::labelled(
                     "Saved workflow, recovery receipts, and ordered history",
                     &value,
                     &mut std::io::stdout().lock(),
                     format,
                 )
+                .map_err(crate::inspect::InspectError::from)
             });
         return match result {
             Ok(()) => 0,

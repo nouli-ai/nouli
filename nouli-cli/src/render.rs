@@ -15,6 +15,7 @@ use nouli_core::{
     },
     workflow::RunStatus,
 };
+use serde::Serialize;
 use std::io::Write;
 pub(crate) use text::clean;
 use thiserror::Error;
@@ -165,6 +166,31 @@ pub(crate) fn diagnostic(sink: &mut impl Write, error: &ErrorReport) -> Result<(
     )?;
     Ok(())
 }
+pub(crate) fn labelled(
+    label: &str,
+    value: &impl Serialize,
+    sink: &mut impl Write,
+    format: Format,
+) -> Result<(), RenderError> {
+    // JSON keeps declaration/insertion order; TOON canonicalizes keys itself.
+    match format {
+        Format::Json => {
+            serde_json::to_writer(&mut *sink, value)?;
+            sink.write_all(b"\n")?;
+        }
+        Format::Toon | Format::Text => {
+            if format == Format::Text {
+                writeln!(sink, "{label}")?;
+            }
+            sink.write_all(codec::encode_toon(value)?.as_bytes())?;
+            sink.write_all(b"\n")?;
+        }
+        Format::Auto | Format::Jsonl => return Err(RenderError::Modes),
+    }
+    sink.flush()?;
+    Ok(())
+}
+
 fn json_value(sink: &mut impl Write, value: &serde_json::Value) -> Result<(), RenderError> {
     serde_json::to_writer(&mut *sink, &value)?;
     sink.write_all(b"\n")?;
@@ -802,6 +828,29 @@ mod tests {
                     validate_events(&events).unwrap();
                 }
                 Format::Auto | Format::Toon => unreachable!(),
+            }
+        }
+    }
+    #[test]
+    fn labelled_values_preserve_historical_json_toon_and_text_bytes() {
+        let connection = serde_json::json!({"version":1,"configured":true,"provider":"gateway","model":"user/model"});
+        // workflow show has already passed its inspection through codec::to_value.
+        let workflow = codec::to_value(&serde_json::json!({"version":1,"header":{"status":"completed","id":"run"},"nodes":[{"node":"check","status":"completed"}]})).unwrap();
+        for value in [connection, workflow] {
+            for format in [Format::Json, Format::Toon, Format::Text] {
+                let mut expected = Vec::new();
+                if format == Format::Json {
+                    serde_json::to_writer(&mut expected, &value).unwrap();
+                } else {
+                    if format == Format::Text {
+                        expected.extend_from_slice(b"Saved output\n");
+                    }
+                    expected.extend_from_slice(codec::encode_toon(&value).unwrap().as_bytes());
+                }
+                expected.push(b'\n');
+                let mut actual = Vec::new();
+                labelled("Saved output", &value, &mut actual, format).unwrap();
+                assert_eq!(actual, expected, "{format:?}");
             }
         }
     }

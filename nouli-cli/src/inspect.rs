@@ -162,30 +162,5 @@ pub(crate) fn run(
             codec::to_value(&ledger.inspect_session_turn(session, *turn)?)?,
         ),
     };
-    write(label, &value, sink, format)
-}
-pub(crate) fn write(
-    label: &str,
-    value: &serde_json::Value,
-    sink: &mut impl Write,
-    format: Format,
-) -> Result<(), InspectError> {
-    match format {
-        Format::Json => {
-            serde_json::to_writer(&mut *sink, &value).map_err(render::RenderError::from)?;
-            sink.write_all(b"\n")?;
-        }
-        Format::Toon => {
-            sink.write_all(codec::encode_toon(&value)?.as_bytes())?;
-            sink.write_all(b"\n")?;
-        }
-        Format::Text => {
-            writeln!(sink, "{label}")?;
-            sink.write_all(codec::encode_toon(&value)?.as_bytes())?;
-            sink.write_all(b"\n")?;
-        }
-        Format::Auto | Format::Jsonl => return Err(render::RenderError::Modes.into()),
-    }
-    sink.flush()?;
-    Ok(())
+    render::labelled(label, &value, sink, format).map_err(InspectError::from)
 }

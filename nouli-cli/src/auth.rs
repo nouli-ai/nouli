@@ -1,7 +1,7 @@
 //! `nouli auth`: store, remove, and list provider credentials. Values are
 //! never printed, logged, or put in an error.
 use crate::{
-    Args, inspect, render, render_error,
+    Args, render, render_error,
     settings::{self, Settings, auth as store},
 };
 use clap::{Args as ClapArgs, Subcommand};
@@ -12,6 +12,7 @@ use nouli_core::{
     },
     protocol::{ErrorCategory, ErrorReport},
 };
+use serde::Serialize;
 use std::{
     collections::BTreeSet,
     io::{self, BufRead, IsTerminal},
@@ -143,8 +144,49 @@ fn key_source(login: &Login) -> Result<KeySource, ErrorReport> {
     })
 }
 
-/// A completed auth command: its structured-output label and its report.
-pub(crate) type Outcome = (&'static str, serde_json::Value);
+// Field declaration order preserves the historical JSON object order.
+#[derive(Serialize)]
+pub(crate) struct LoginOutcome {
+    version: u32,
+    provider: String,
+    source: &'static str,
+    authentication_disabled_for_default_model: bool,
+    path: String,
+}
+#[derive(Serialize)]
+pub(crate) struct LogoutOutcome {
+    version: u32,
+    provider: String,
+    pub(crate) removed: bool,
+}
+#[derive(Serialize)]
+struct CredentialRow {
+    provider: String,
+    configured: bool,
+    stored: Option<&'static str>,
+    source: &'static str,
+}
+#[derive(Serialize)]
+struct CredentialsOutcome {
+    version: u32,
+    providers: Vec<CredentialRow>,
+}
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Outcome {
+    Login(LoginOutcome),
+    Logout(LogoutOutcome),
+    List(CredentialsOutcome),
+}
+impl Outcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Login(_) => "Stored credential",
+            Self::Logout(_) => "Removed credential",
+            Self::List(_) => "Credentials",
+        }
+    }
+}
 
 pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
     let mut settings = match settings::load(args) {
@@ -167,18 +209,18 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
     };
     let path = store::path_for(&settings.config_path);
     let outcome = match command {
-        Command::Login(login) => log_in(&settings, &path, login),
-        Command::Logout { provider } => log_out(&path, provider),
-        Command::List => list(&mut settings),
+        Command::Login(login) => log_in(&settings, &path, login).map(Outcome::Login),
+        Command::Logout { provider } => log_out(&path, provider).map(Outcome::Logout),
+        Command::List => list(&mut settings).map(Outcome::List),
     };
     match outcome {
-        Ok(outcome) => write_outcome(command, &outcome, format),
+        Ok(outcome) => write_outcome(&outcome, format),
         Err(error) => render_error(args, settings.config.output, error),
     }
 }
 
 /// Stores a key source for a configured provider.
-fn log_in(settings: &Settings, path: &Path, login: &Login) -> Result<Outcome, ErrorReport> {
+fn log_in(settings: &Settings, path: &Path, login: &Login) -> Result<LoginOutcome, ErrorReport> {
     let login_check = check_login(settings, &login.provider)?;
     store_key(path, &login.provider, &key_source(login)?, login_check)
 }
@@ -207,39 +249,37 @@ pub(crate) fn store_key(
     provider: &str,
     source: &KeySource,
     authentication_disabled: bool,
-) -> Result<Outcome, ErrorReport> {
+) -> Result<LoginOutcome, ErrorReport> {
     store::update(path, |entries| {
         entries.insert(provider.to_owned(), AuthEntry::ApiKey(source.clone()));
         ((), true)
     })
     .map_err(|error| error.report())?;
-    Ok((
-        "Stored credential",
-        serde_json::json!({
-            "version": 1,
-            "provider": provider,
-            "source": source.kind(),
-            "authentication_disabled_for_default_model": authentication_disabled,
-            "path": path.display().to_string(),
-        }),
-    ))
+    Ok(LoginOutcome {
+        version: 1,
+        provider: provider.to_owned(),
+        source: source.kind(),
+        authentication_disabled_for_default_model: authentication_disabled,
+        path: path.display().to_string(),
+    })
 }
 
 /// Removes a provider's stored credential, reporting whether one existed.
-pub(crate) fn log_out(path: &Path, provider: &str) -> Result<Outcome, ErrorReport> {
+pub(crate) fn log_out(path: &Path, provider: &str) -> Result<LogoutOutcome, ErrorReport> {
     let removed = store::update(path, |entries| {
         let removed = entries.remove(provider);
         (removed, removed)
     })
     .map_err(|error| error.report())?;
-    Ok((
-        "Removed credential",
-        serde_json::json!({"version": 1, "provider": provider, "removed": removed}),
-    ))
+    Ok(LogoutOutcome {
+        version: 1,
+        provider: provider.to_owned(),
+        removed,
+    })
 }
 
 /// Lists every configured or stored provider with the source that supplies its key.
-fn list(settings: &mut Settings) -> Result<Outcome, ErrorReport> {
+fn list(settings: &mut Settings) -> Result<CredentialsOutcome, ErrorReport> {
     settings.load_environment()?;
     let mut names: BTreeSet<&str> = settings
         .config
@@ -252,16 +292,16 @@ fn list(settings: &mut Settings) -> Result<Outcome, ErrorReport> {
         .into_iter()
         .map(|name| credential_row(settings, name))
         .collect();
-    Ok((
-        "Credentials",
-        serde_json::json!({"version": 1, "providers": rows}),
-    ))
+    Ok(CredentialsOutcome {
+        version: 1,
+        providers: rows,
+    })
 }
 
 /// One provider's listing: whether it is configured, its stored source, and
 /// the source that supplies its key (or `disabled` when the default model
 /// turns authentication off).
-fn credential_row(settings: &Settings, name: &str) -> serde_json::Value {
+fn credential_row(settings: &Settings, name: &str) -> CredentialRow {
     let credentials = &settings.credentials;
     let definition = settings.config.providers.get(name);
     let variable = definition.and_then(|d| d.api_key_env.as_deref());
@@ -274,20 +314,23 @@ fn credential_row(settings: &Settings, name: &str) -> serde_json::Value {
     } else {
         credentials.winner(name, variable)
     };
-    serde_json::json!({
-        "provider": name,
-        "configured": definition.is_some(),
-        "stored": credentials.store().get(name).map(|e| e.source().kind()),
-        "source": source,
-    })
+    CredentialRow {
+        provider: name.to_owned(),
+        configured: definition.is_some(),
+        stored: credentials
+            .store()
+            .get(name)
+            .map(|entry| entry.source().kind()),
+        source,
+    }
 }
 
-fn write_outcome(command: &Command, (label, value): &Outcome, format: render::Format) -> ExitCode {
+fn write_outcome(outcome: &Outcome, format: render::Format) -> ExitCode {
     let mut sink = io::stdout().lock();
     let written = if format == render::Format::Text {
-        text(&mut sink, command, value)
+        text(&mut sink, outcome).map_err(render::RenderError::from)
     } else {
-        inspect::write(label, value, &mut sink, format).map_err(|_| io::Error::other("output"))
+        render::labelled(outcome.label(), outcome, &mut sink, format)
     };
     match written {
         Ok(()) => ExitCode::SUCCESS,
@@ -295,18 +338,17 @@ fn write_outcome(command: &Command, (label, value): &Outcome, format: render::Fo
     }
 }
 
-fn text(sink: &mut impl io::Write, command: &Command, value: &serde_json::Value) -> io::Result<()> {
-    let word = |key: &str| render::clean(value[key].as_str().unwrap_or(""));
-    match command {
-        Command::Login(_) => {
+fn text(sink: &mut impl io::Write, outcome: &Outcome) -> io::Result<()> {
+    match outcome {
+        Outcome::Login(value) => {
             writeln!(
                 sink,
                 "Stored the {} credential for {} in {}",
-                word("source"),
-                word("provider"),
-                word("path")
+                render::clean(value.source),
+                render::clean(&value.provider),
+                render::clean(&value.path)
             )?;
-            if value["authentication_disabled_for_default_model"] == true {
+            if value.authentication_disabled_for_default_model {
                 writeln!(
                     sink,
                     "Primary authentication is disabled for the default model; this source is available to models that enable it"
@@ -314,34 +356,38 @@ fn text(sink: &mut impl io::Write, command: &Command, value: &serde_json::Value)
             }
             Ok(())
         }
-        Command::Logout { .. } => {
-            if value["removed"] == true {
+        Outcome::Logout(value) => {
+            if value.removed {
                 writeln!(
                     sink,
                     "Removed the stored credential for {}",
-                    word("provider")
+                    render::clean(&value.provider)
                 )
             } else {
-                writeln!(sink, "No stored credential for {}", word("provider"))
+                writeln!(
+                    sink,
+                    "No stored credential for {}",
+                    render::clean(&value.provider)
+                )
             }
         }
-        Command::List => {
-            let rows = value["providers"].as_array().map_or(&[][..], Vec::as_slice);
+        Outcome::List(value) => {
+            let rows = &value.providers;
             if rows.is_empty() {
                 writeln!(sink, "No providers are configured")?;
             }
             for row in rows {
-                let name = render::clean(row["provider"].as_str().unwrap_or(""));
-                let stored = row["stored"].as_str().unwrap_or("-");
-                let note = if row["configured"] == false {
-                    "  (not in the configuration)"
-                } else {
+                let name = render::clean(&row.provider);
+                let stored = row.stored.unwrap_or("-");
+                let note = if row.configured {
                     ""
+                } else {
+                    "  (not in the configuration)"
                 };
                 writeln!(
                     sink,
                     "{name:<16} stored: {stored:<8} using: {}{note}",
-                    row["source"].as_str().unwrap_or("none")
+                    row.source
                 )?;
             }
             Ok(())
@@ -383,5 +429,99 @@ mod tests {
             assert!(matches!(error, KeyLineError::TooLong));
             assert_eq!(error.report().code, "credential_too_long");
         }
+    }
+    fn assert_bytes(outcome: &Outcome, historical: &serde_json::Value, expected_text: &str) {
+        for format in [render::Format::Json, render::Format::Toon] {
+            let mut actual = Vec::new();
+            render::labelled(outcome.label(), outcome, &mut actual, format).unwrap();
+            let mut expected = if format == render::Format::Json {
+                serde_json::to_vec(historical).unwrap()
+            } else {
+                nouli_core::codec::encode_toon(historical)
+                    .unwrap()
+                    .into_bytes()
+            };
+            expected.push(b'\n');
+            assert_eq!(actual, expected, "{format:?}");
+        }
+        let mut actual = Vec::new();
+        text(&mut actual, outcome).unwrap();
+        assert_eq!(actual, expected_text.as_bytes());
+    }
+
+    #[test]
+    fn login_serialized_keys_and_text_keep_their_historical_bytes() {
+        for disabled in [false, true] {
+            let outcome = Outcome::Login(LoginOutcome {
+                version: 1,
+                provider: "gateway".into(),
+                source: "env",
+                authentication_disabled_for_default_model: disabled,
+                path: "/tmp/auth.toml".into(),
+            });
+            let old = serde_json::json!({"version":1,"provider":"gateway","source":"env","authentication_disabled_for_default_model":disabled,"path":"/tmp/auth.toml"});
+            let mut expected =
+                "Stored the env credential for gateway in /tmp/auth.toml\n".to_owned();
+            if disabled {
+                expected.push_str("Primary authentication is disabled for the default model; this source is available to models that enable it\n");
+            }
+            assert_bytes(&outcome, &old, &expected);
+        }
+    }
+
+    #[test]
+    fn logout_serialized_keys_and_text_keep_their_historical_bytes() {
+        for removed in [false, true] {
+            let outcome = Outcome::Logout(LogoutOutcome {
+                version: 1,
+                provider: "gateway".into(),
+                removed,
+            });
+            let old = serde_json::json!({"version":1,"provider":"gateway","removed":removed});
+            assert_bytes(
+                &outcome,
+                &old,
+                if removed {
+                    "Removed the stored credential for gateway\n"
+                } else {
+                    "No stored credential for gateway\n"
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn credential_rows_keep_nulls_key_order_and_text_bytes() {
+        let outcome = Outcome::List(CredentialsOutcome {
+            version: 1,
+            providers: vec![
+                CredentialRow {
+                    provider: "configured".into(),
+                    configured: true,
+                    stored: Some("env"),
+                    source: "disabled",
+                },
+                CredentialRow {
+                    provider: "orphan".into(),
+                    configured: false,
+                    stored: None,
+                    source: "none",
+                },
+            ],
+        });
+        let old = serde_json::json!({"version":1,"providers":[{"provider":"configured","configured":true,"stored":"env","source":"disabled"},{"provider":"orphan","configured":false,"stored":null,"source":"none"}]});
+        let text = format!(
+            "{:<16} stored: {:<8} using: disabled\n{:<16} stored: {:<8} using: none  (not in the configuration)\n",
+            "configured", "env", "orphan", "-"
+        );
+        assert_bytes(&outcome, &old, &text);
+        assert_bytes(
+            &Outcome::List(CredentialsOutcome {
+                version: 1,
+                providers: vec![],
+            }),
+            &serde_json::json!({"version":1,"providers":[]}),
+            "No providers are configured\n",
+        );
     }
 }

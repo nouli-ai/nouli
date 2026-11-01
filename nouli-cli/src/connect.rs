@@ -609,9 +609,14 @@ pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
                     selection.provider.as_deref().unwrap_or_default(),
                     selection.model.as_deref().unwrap_or_default()
                 )
+                .map_err(crate::render::RenderError::from)
             } else {
-                crate::inspect::write("Connection", &serde_json::json!({"version":1,"configured":true,"provider":selection.provider,"model":selection.model}), &mut sink, format)
-                    .map_err(|_| io::Error::other("output"))
+                crate::render::labelled(
+                    "Connection",
+                    &serde_json::json!({"version":1,"configured":true,"provider":selection.provider,"model":selection.model}),
+                    &mut sink,
+                    format,
+                )
             };
             if written.is_ok() {
                 ExitCode::SUCCESS

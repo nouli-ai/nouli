@@ -1554,6 +1554,7 @@ dependencies = [
  "roxmltree 0.21.2",
  "rpassword",
  "rusqlite",
+ "serde",
  "serde_json",
  "shlex",
  "thiserror",

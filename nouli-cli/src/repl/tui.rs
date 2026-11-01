@@ -392,8 +392,8 @@ impl<'a> App<'a> {
                 let auth = crate::settings::auth::path_for(&self.repl.settings.config_path);
                 let report = crate::connect::SetupError::Report;
                 if verb == "/logout" {
-                    let (_, outcome) = crate::auth::log_out(&auth, &provider).map_err(report)?;
-                    note = if outcome["removed"] == true {
+                    let outcome = crate::auth::log_out(&auth, &provider).map_err(report)?;
+                    note = if outcome.removed {
                         "credential removed"
                     } else {
                         "no stored credential to remove"
