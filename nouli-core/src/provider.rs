@@ -12,6 +12,8 @@ use thiserror::Error;
 pub enum ProviderError {
     #[error("provider protocol does not match the selected adapter")]
     Protocol,
+    #[error("provider profile is invalid")]
+    Profile,
     #[error("provider response does not match its documented schema")]
     Wire,
     #[error(transparent)]

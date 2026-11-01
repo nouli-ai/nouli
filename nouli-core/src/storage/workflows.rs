@@ -126,6 +126,8 @@ pub enum WorkflowError {
     Conflict,
     #[error("workflow snapshot is inconsistent")]
     Snapshot,
+    #[error("only durable workflows can be saved to the ledger")]
+    NotDurable,
 }
 fn validate(request: &WorkflowRequest) -> Result<(), WorkflowError> {
     compile::compile(&request.workflow)?;
@@ -413,8 +415,9 @@ impl Ledger {
     ///
     /// # Errors
     ///
-    /// - Returns [`WorkflowError::Snapshot`] if the workflow is not durable, the
-    ///   settings do not match the compiled nodes, or a setting is invalid.
+    /// - Returns [`WorkflowError::NotDurable`] if the workflow is not durable.
+    /// - Returns [`WorkflowError::Snapshot`] if the settings do not match the
+    ///   compiled nodes, or a setting is invalid.
     /// - Returns [`WorkflowError::History`] if the request has no request ID or
     ///   fails [`fingerprint`] validation, and [`WorkflowError::IntentConflict`]
     ///   if the request ID was saved for a different intent.
@@ -433,7 +436,7 @@ impl Ledger {
         defaults: ModelSelection,
     ) -> Result<WorkflowDecision, WorkflowError> {
         if request.workflow.mode != crate::workflow::RunMode::Durable {
-            return Err(WorkflowError::Snapshot);
+            return Err(WorkflowError::NotDurable);
         }
         let hash = fingerprint(request)?;
         let key = request
@@ -712,6 +715,18 @@ mod tests {
         assert_eq!(count, 7);
         assert_eq!(ledger.workflow_run(run).unwrap(), completed);
     }
+    #[test]
+    fn ephemeral_workflows_are_rejected_as_not_durable() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let mut request = request();
+        request.workflow.mode = crate::workflow::RunMode::Ephemeral;
+        assert!(matches!(
+            ledger.accept_workflow(&request, settings(&request), ModelSelection::default()),
+            Err(WorkflowError::NotDurable)
+        ));
+    }
+
     #[test]
     fn aggregate_read_keeps_header_nodes_and_result_in_one_snapshot() {
         let store = Store::new();

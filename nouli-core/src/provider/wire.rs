@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 ///
 /// # Errors
 ///
-/// - [`ProviderError::Protocol`] if the profile is invalid.
+/// - [`ProviderError::Profile`] if the profile is invalid.
 /// - Any error from the protocol's request body builder.
 /// - [`ProviderError::Codec`] if image evidence is malformed or an image cannot be prepared.
 /// - [`ProviderError::Limit`] with [`LimitError::RequestBytes`](crate::limits::LimitError::RequestBytes)
@@ -25,7 +25,7 @@ pub fn body(
     request: &TurnRequest,
     context: &str,
 ) -> Result<Value, ProviderError> {
-    profile.validate().map_err(|_| ProviderError::Protocol)?;
+    profile.validate().map_err(|_| ProviderError::Profile)?;
     let model = profile
         .connection
         .wire_model
@@ -178,6 +178,16 @@ mod tests {
         .unwrap();
         request.questions.truncate(3);
         request
+    }
+
+    #[test]
+    fn an_invalid_profile_is_reported_as_a_profile_error() {
+        let mut profile = crate::limits::count::tests::profile(Protocol::SystemOne, "anything");
+        profile.model = " ".into();
+        assert_eq!(
+            body(&profile, &request(), &crate::media::tests::context()),
+            Err(ProviderError::Profile)
+        );
     }
 
     #[test]

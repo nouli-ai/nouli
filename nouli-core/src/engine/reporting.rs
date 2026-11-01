@@ -232,6 +232,7 @@ impl WorkflowError {
             Self::Conflict => message(Category::Conflict, "workflow_conflict"),
             Self::AdvancedHead => message(Category::Conflict, "advanced_session_head"),
             Self::Snapshot => message(Category::Storage, "invalid_saved_workflow"),
+            Self::NotDurable => message(Category::Input, "workflow_not_durable"),
             Self::UnknownRun => message(Category::Input, "unknown_workflow"),
             Self::Compile(_) | Self::History(_) => message(Category::Input, "invalid_workflow"),
         }
@@ -276,6 +277,9 @@ impl EngineError {
             Self::Limit(error) => limit(error),
             Self::Provider(error) => match error {
                 ProviderError::Limit(error) => limit(error),
+                ProviderError::Profile => {
+                    message(Category::Configuration, "invalid_provider_profile")
+                }
                 ProviderError::Transport(error) => match error {
                     TransportError::Authentication { .. } => {
                         message(Category::Authentication, "provider_authentication_failed")
