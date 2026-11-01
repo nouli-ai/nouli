@@ -18,6 +18,7 @@ use std::{
     path::Path,
     process::ExitCode,
 };
+use thiserror::Error;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
@@ -62,14 +63,48 @@ fn input(code: &str, message: &str) -> ErrorReport {
     }
 }
 
-/// One line from the reader, without its line ending.
-fn line(reader: &mut impl BufRead) -> Option<String> {
-    let mut text = String::new();
-    let mut limited = io::Read::take(reader, 16 * 1024);
-    if limited.read_line(&mut text).ok()? == 0 {
-        return None;
+/// The longest line, ending included, accepted as a key on standard input.
+const MAX_KEY_LINE: u64 = 16 * 1024;
+
+/// Why no key could be read from standard input. The key itself is never
+/// part of the error.
+#[derive(Debug, Error)]
+pub(crate) enum KeyLineError {
+    #[error("No key was read from standard input")]
+    Missing,
+    #[error("Could not read the key from standard input")]
+    Read,
+    #[error("The key on standard input is longer than 16 KiB")]
+    TooLong,
+}
+
+impl KeyLineError {
+    pub(crate) fn report(&self) -> ErrorReport {
+        let code = match self {
+            Self::Missing | Self::Read => "credential_required",
+            Self::TooLong => "credential_too_long",
+        };
+        input(code, &self.to_string())
     }
-    Some(text.trim_end_matches(['\n', '\r']).to_owned())
+}
+
+/// One key line from the reader, without its line ending. Only carriage
+/// returns and line feeds are removed, so other trailing characters are part
+/// of the key. A line over the limit is an error rather than a cut-off key.
+pub(crate) fn key_line(reader: &mut impl BufRead) -> Result<String, KeyLineError> {
+    let mut bytes = Vec::new();
+    let mut limited = io::Read::take(reader, MAX_KEY_LINE + 1);
+    let read = limited
+        .read_until(b'\n', &mut bytes)
+        .map_err(|_| KeyLineError::Read)?;
+    if read as u64 > MAX_KEY_LINE {
+        return Err(KeyLineError::TooLong);
+    }
+    if read == 0 {
+        return Err(KeyLineError::Missing);
+    }
+    let text = String::from_utf8(bytes).map_err(|_| KeyLineError::Read)?;
+    Ok(text.trim_end_matches(['\n', '\r']).to_owned())
 }
 
 fn key_source(login: &Login) -> Result<KeySource, ErrorReport> {
@@ -90,8 +125,7 @@ fn key_source(login: &Login) -> Result<KeySource, ErrorReport> {
         });
     }
     let key = if login.stdin {
-        line(&mut io::stdin().lock())
-            .ok_or_else(|| input("credential_required", "No key was read from standard input"))?
+        key_line(&mut io::stdin().lock()).map_err(|error| error.report())?
     } else if io::stdin().is_terminal() {
         rpassword::prompt_password(format!("API key for {}: ", login.provider))
             .map_err(|_| input("credential_required", "Could not read the key"))?
@@ -311,6 +345,43 @@ fn text(sink: &mut impl io::Write, command: &Command, value: &serde_json::Value)
                 )?;
             }
             Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_line_strips_only_the_line_ending() {
+        for (input, key) in [
+            ("key  \n", "key  "),
+            ("key\r\n", "key"),
+            (" key\t", " key\t"),
+            ("key\nnext\n", "key"),
+        ] {
+            assert_eq!(key_line(&mut input.as_bytes()).unwrap(), key, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn key_line_rejects_missing_and_oversized_input() {
+        assert!(matches!(
+            key_line(&mut &b""[..]),
+            Err(KeyLineError::Missing)
+        ));
+        let limit = usize::try_from(MAX_KEY_LINE).unwrap();
+        let longest = format!("{}\n", "k".repeat(limit - 1));
+        assert_eq!(key_line(&mut longest.as_bytes()).unwrap().len(), limit - 1);
+        for oversized in [
+            "k".repeat(limit + 1),
+            format!("{}\n", "k".repeat(limit)),
+            "\u{e9}".repeat(limit),
+        ] {
+            let error = key_line(&mut oversized.as_bytes()).unwrap_err();
+            assert!(matches!(error, KeyLineError::TooLong));
+            assert_eq!(error.report().code, "credential_too_long");
         }
     }
 }

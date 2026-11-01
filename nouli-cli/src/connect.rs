@@ -31,6 +31,8 @@ pub(crate) enum SetupError {
     #[error("cannot update configuration; any stored credential can be reused by repeating setup")]
     Write,
     #[error(transparent)]
+    Key(#[from] crate::auth::KeyLineError),
+    #[error(transparent)]
     Io(#[from] io::Error),
     #[error("{}", .0.message)]
     Report(nouli_core::protocol::ErrorReport),
@@ -376,12 +378,8 @@ fn choose_credential(
     } else if !options.command.is_empty() {
         KeySource::command(options.command.clone()).map_err(|_| SetupError::Invalid)?
     } else if options.stdin {
-        let mut s = String::new();
-        io::stdin().read_line(&mut s)?;
-        KeySource::Key(
-            nouli_core::config::auth::Secret::new(s.trim_end().into())
-                .map_err(|_| SetupError::Invalid)?,
-        )
+        let key = crate::auth::key_line(&mut io::stdin().lock())?;
+        KeySource::Key(nouli_core::config::auth::Secret::new(key).map_err(|_| SetupError::Invalid)?)
     } else if connection.no_auth != Some(true) {
         if !interactive {
             return Err(SetupError::Terminal);

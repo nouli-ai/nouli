@@ -372,6 +372,67 @@ fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
 }
 
 #[test]
+fn login_and_connect_read_standard_input_keys_the_same_way() {
+    let server = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    let oversized = format!("{}\n", "k".repeat(16 * 1024));
+    for arguments in [
+        &["auth", "login", "local", "--stdin"][..],
+        &[
+            "connect",
+            "custom",
+            "--name",
+            "gateway",
+            "--protocol",
+            "system-one",
+            "--base-url",
+            "https://arbitrary.example/api",
+            "--model",
+            "any-model",
+            "--stdin",
+            "--non-interactive",
+        ][..],
+    ] {
+        let output = with_stdin(&home, arguments, &oversized);
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("longer than 16 KiB"),
+            "{output:?}"
+        );
+        assert!(!auth_file(&home).exists());
+    }
+    let output = with_stdin(
+        &home,
+        &["auth", "login", "local", "--stdin"],
+        "spaced key  \r\n",
+    );
+    assert!(output.status.success(), "{output:?}");
+    let output = with_stdin(
+        &home,
+        &[
+            "connect",
+            "custom",
+            "--name",
+            "gateway",
+            "--protocol",
+            "system-one",
+            "--base-url",
+            "https://arbitrary.example/api",
+            "--model",
+            "any-model",
+            "--stdin",
+            "--non-interactive",
+        ],
+        "connect key  \n",
+    );
+    assert!(output.status.success(), "{output:?}");
+    let stored = fs::read_to_string(auth_file(&home)).unwrap();
+    assert!(stored.contains("\"spaced key  \""), "{stored}");
+    assert!(stored.contains("\"connect key  \""), "{stored}");
+}
+
+#[test]
 fn a_resumed_workflow_uses_the_stored_key_as_it_is_now() {
     use nouli_core::workflow::RunStatus;
     let failed_once = AtomicBool::new(true);
