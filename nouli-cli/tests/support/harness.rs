@@ -181,3 +181,30 @@ pub fn run_report(output: &Output, expected: u8) -> nouli_core::protocol::RunRep
     };
     report
 }
+/// The ledger database's bytes, to show an operation left the store unchanged.
+pub fn ledger_bytes(home: &Home) -> Vec<u8> {
+    std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+}
+pub fn context_record(
+    key: &str,
+    value: serde_json::Value,
+    kind: nouli_core::context::ContextKind,
+) -> nouli_core::context::ContextRecord {
+    nouli_core::context::ContextRecord {
+        id: Id::generate(),
+        key: key.into(),
+        value: nouli_core::data::Data::new(value).unwrap(),
+        kind,
+    }
+}
+/// The engine events a `--jsonl` command wrote, checked to form a valid
+/// stream. Callers check the exit status themselves.
+pub fn jsonl_events(output: &Output) -> Vec<nouli_core::protocol::EngineEvent> {
+    let events = std::str::from_utf8(&output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect::<Vec<_>>();
+    nouli_core::protocol::validate_events(&events).unwrap();
+    events
+}

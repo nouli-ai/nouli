@@ -4,7 +4,9 @@ mod harness;
 #[path = "support/loopback.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod loopback;
-use harness::{Home, QUESTION, report, run_report, turn, workflow};
+use harness::{
+    Home, QUESTION, context_record, jsonl_events, ledger_bytes, report, run_report, turn, workflow,
+};
 use loopback::Server;
 use nouli_core::{
     codec,
@@ -66,12 +68,12 @@ fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engi
         ),
     );
     assert_eq!(blend.manifest.sources.len(), 2);
-    let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    let bytes = ledger_bytes(&home);
     let ephemeral = report(&home.run([&["whatif", "Blend", "TEMPORARY"][..], &QUESTION].concat()));
     assert!(ephemeral.session.is_none());
     assert!(ephemeral.turn.is_none());
     assert!(
-        bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap(),
+        bytes == ledger_bytes(&home),
         "Read-only operations changed ledger bytes"
     );
     // A what-if needs a saved session, and never creates a store to look for one.
@@ -359,27 +361,6 @@ fn default_model_budget_works_and_competing_file_modes_fail_before_inference() {
     assert_eq!(before_count(&home), 2);
 }
 
-fn context_record(key: &str, value: serde_json::Value, kind: ContextKind) -> ContextRecord {
-    ContextRecord {
-        id: Id::generate(),
-        key: key.into(),
-        value: Data::new(value).unwrap(),
-        kind,
-    }
-}
-fn ledger_bytes(home: &Home) -> Vec<u8> {
-    std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
-}
-/// The engine events a `--jsonl` command wrote, checked to form a valid stream.
-fn jsonl_events(output: &std::process::Output) -> Vec<nouli_core::protocol::EngineEvent> {
-    let events = String::from_utf8(output.stdout.clone())
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect::<Vec<_>>();
-    nouli_core::protocol::validate_events(&events).unwrap();
-    events
-}
 /// Runs a command with the provider credential in its environment.
 fn keyed(home: &Home, args: &[&str]) -> std::process::Output {
     home.command()
@@ -669,15 +650,12 @@ fn readonly_inspection_rejects_newer_and_migration_required_stores_without_chang
             })
             .unwrap();
         drop(ledger);
-        let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+        let before = ledger_bytes(&home);
         let output = home.run(["sessions", "list", "--json"]);
         assert_eq!(output.status.code(), Some(6));
         let error: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
         assert!(matches!(error.result,Report::Error(error) if error.code==code));
-        assert_eq!(
-            before,
-            std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
-        );
+        assert_eq!(before, ledger_bytes(&home));
     }
 }
 
@@ -969,17 +947,14 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
         ),
     );
     let count = server.count();
-    let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    let bytes = ledger_bytes(&home);
     let conflict = home.run(["workflow", "resume", &run.to_string()]);
     assert_eq!(conflict.status.code(), Some(5));
     let error: ResultEnvelope = serde_json::from_slice(&conflict.stdout).unwrap();
     assert!(matches!(error.result,Report::Error(error) if error.code=="advanced_session_head"));
     assert_eq!(error.recovery.unwrap().run, Some(run));
     assert_eq!(server.count(), count);
-    assert_eq!(
-        bytes,
-        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
-    );
+    assert_eq!(bytes, ledger_bytes(&home));
     for args in [
         vec![
             "workflow",
@@ -1008,12 +983,7 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
     let output = home.run(["workflow", "run", file.to_str().unwrap(), "--jsonl"]);
     assert_eq!(output.status.code(), Some(2));
-    let events = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<nouli_core::protocol::EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    nouli_core::protocol::validate_events(&events).unwrap();
+    jsonl_events(&output);
     assert_eq!(server.count(), count);
 }
 #[test]

@@ -4,7 +4,7 @@ mod harness;
 #[path = "support/loopback.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod loopback;
-use harness::{Home, QUESTION, report};
+use harness::{Home, QUESTION, ledger_bytes, report};
 use loopback::Server;
 use nouli_core::{
     identity::SessionSelector,
@@ -79,10 +79,6 @@ fn saved_facts(home: &Home, name: &str) -> Vec<String> {
         .into_iter()
         .map(|fact| fact.text)
         .collect()
-}
-
-fn ledger_bytes(home: &Home) -> Vec<u8> {
-    std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
 }
 
 #[test]

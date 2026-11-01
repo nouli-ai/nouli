@@ -4,7 +4,7 @@ mod harness;
 #[path = "support/loopback.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod loopback;
-use harness::{Home, report, run_report};
+use harness::{Home, context_record, jsonl_events, ledger_bytes, report, run_report};
 use loopback::Server;
 use nouli_core::{
     codec,
@@ -140,14 +140,6 @@ fn score(outcome: &nouli_core::outcome::TurnOutcome) -> f64 {
     };
     *value
 }
-fn context_record(key: &str, value: Value, kind: ContextKind) -> ContextRecord {
-    ContextRecord {
-        id: Id::generate(),
-        key: key.into(),
-        value: Data::new(value).unwrap(),
-        kind,
-    }
-}
 fn has_record(
     manifest: &nouli_core::history::EvaluationManifest,
     record: Id,
@@ -168,9 +160,6 @@ fn dispatched_record(context: &str, id: Id) -> Value {
         .find(|record| record["id"] == id.to_string())
         .unwrap()
         .clone()
-}
-fn ledger_bytes(home: &Home) -> Vec<u8> {
-    std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
 }
 #[test]
 fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and_full_history() {
@@ -621,17 +610,6 @@ fn mixed_provider_graph() -> nouli_core::workflow::WorkflowSpec {
     });
     graph
 }
-/// The validated engine events a successful `--jsonl` command wrote.
-fn jsonl_events(output: &std::process::Output) -> Vec<nouli_core::protocol::EngineEvent> {
-    assert!(output.status.success());
-    let events = String::from_utf8(output.stdout.clone())
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect::<Vec<_>>();
-    nouli_core::protocol::validate_events(&events).unwrap();
-    events
-}
 fn provider_counts(jev: &Server, openai: &Server, router: &Server) -> (usize, usize, usize) {
     (jev.count(), openai.count(), router.count())
 }
@@ -691,8 +669,8 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     assert_native_providers_and_refusal(&home, &done);
     continue_from_the_final_head(&home, &jev, &done);
     // A run that keeps no session leaves the ledger untouched.
-    let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let events = jsonl_events(&home.run([
+    let bytes = ledger_bytes(&home);
+    let output = home.run([
         "workflow",
         "run",
         path.to_str().unwrap(),
@@ -700,12 +678,11 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
         &done.session.unwrap().to_string(),
         "--no-session",
         "--jsonl",
-    ]));
+    ]);
+    assert!(output.status.success());
+    let events = jsonl_events(&output);
     assert!(events.iter().all(|event| event.run.is_none()));
-    assert_eq!(
-        bytes,
-        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
-    );
+    assert_eq!(bytes, ledger_bytes(&home));
     assert_eq!(provider_counts(&jev, &openai, &router), (5, 4, 4));
 }
 /// Resumes the partial run and checks it completes while keeping finished turns.
@@ -723,19 +700,20 @@ fn resume_completes_only_unfinished_nodes(
         &partial.run.unwrap().to_string(),
         "--jsonl",
     ]);
+    assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let events = jsonl_events(&output);
-    let EventKind::Terminal { result } = &events.last().unwrap().event else {
+    let mut events = jsonl_events(&output);
+    let EventKind::Terminal { result } = events.pop().unwrap().event else {
         panic!("terminal")
     };
-    let Report::Run(done) = &result.result else {
+    let Report::Run(done) = result.result else {
         panic!("run")
     };
     assert_eq!(done.status, RunStatus::Completed);
     assert_eq!(done.nodes[0].turn, partial.nodes[0].turn);
     assert_eq!(done.nodes[2].turn, partial.nodes[2].turn);
     assert_eq!(done.nodes[5].status, NodeStatus::Skipped);
-    done.clone()
+    done
 }
 /// Each node kept its own provider's model, native confidence, and refusal.
 fn assert_native_providers_and_refusal(home: &Home, done: &nouli_core::protocol::RunReport) {
@@ -837,6 +815,7 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
     report(&home.run(["whatif", "Meal", "--input", file_arg, "--json"]));
     report(&home.run(["whatif", "Meal", "--input", file_arg, "--format", "auto"]));
     let output = home.run(["whatif", "Meal", "--input", file_arg, "--jsonl"]);
+    assert!(output.status.success());
     let events = jsonl_events(&output);
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(

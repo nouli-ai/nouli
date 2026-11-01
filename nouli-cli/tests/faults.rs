@@ -590,19 +590,11 @@ fn conflicting_branches(
         })
         .collect()
 }
-fn export_sessions(
-    home: &Home,
-    sessions: &[nouli_core::protocol::TurnReport],
-) -> Vec<nouli_core::storage::inspection::SessionExport> {
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    sessions
-        .iter()
-        .map(|source| {
-            ledger
-                .export_session(&SessionSelector::Id(source.session.unwrap()))
-                .unwrap()
-        })
-        .collect()
+fn export_session(home: &Home, session: Id) -> nouli_core::storage::inspection::SessionExport {
+    Ledger::open(&home.store(), OpenMode::ReadOnlyExisting)
+        .unwrap()
+        .export_session(&SessionSelector::Id(session))
+        .unwrap()
 }
 #[test]
 fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
@@ -623,8 +615,14 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
     let left = record(12);
     let right = record(16);
     let sources = conflicting_branches(&home, base.session.unwrap(), &original, &left, &right);
-    let before = export_sessions(&home, &sources);
-    let blend = |name: &str, path: &std::path::Path| {
+    let export_sources = || {
+        sources
+            .iter()
+            .map(|source| export_session(&home, source.session.unwrap()))
+            .collect::<Vec<_>>()
+    };
+    let before = export_sources();
+    let run_blend = |name: &str, path: &std::path::Path| {
         let mut arguments = vec![
             "new".to_owned(),
             name.to_owned(),
@@ -637,7 +635,7 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
         home.run(arguments)
     };
     let path = home.request("conflict.json", "CONFLICT", vec![]);
-    error(&blend("Conflict", &path), 5);
+    error(&run_blend("Conflict", &path), 5);
     assert_eq!(server.count(), 3);
     let resolved = record(11);
     let path = home.request(
@@ -649,10 +647,10 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
             pinned: None,
         }],
     );
-    let blend = report(&blend("Resolved", &path));
+    let blend = report(&run_blend("Resolved", &path));
     assert_eq!(server.count(), 4);
-    assert_eq!(export_sessions(&home, &sources), before);
-    let export = export_sessions(&home, std::slice::from_ref(&blend)).remove(0);
+    assert_eq!(export_sources(), before);
+    let export = export_session(&home, blend.session.unwrap());
     assert_eq!(export.turns.len(), 4);
     let ContextView::Resolved { records } = export.context else {
         panic!("explicitly resolved context")
