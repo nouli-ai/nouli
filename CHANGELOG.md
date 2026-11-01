@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
 - Show `--input` help for `new`, `add`, `ask`, and `whatif` without stray Markdown backticks.
+- List `/connect`, `/login`, `/logout`, and `/model` in `/help` only in the TUI, which supports them; the plain line loop no longer advertises commands it rejects.
+- Apply `nouli auth login` and `logout` rules to TUI `/login` and `/logout`: logging in to a provider whose connection disables authentication stores the key with a note instead of refusing, `/logout` removes a stored credential for a provider no longer in the configuration, and failures show their specific message.
 - Report `session_name_exists` only when another session holds the name; other ledger constraint failures during session creation or rename now report as storage errors.
 - Report retrying an unknown request ID as `unknown_request` instead of `invalid_request`.
 - Report a concurrent workflow ownership or node change as `workflow_conflict` whether it is found before or during a ledger write, instead of sometimes `ledger_conflict`.

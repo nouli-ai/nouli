@@ -25,10 +25,6 @@ pub(crate) enum SetupError {
     Cancelled,
     #[error("connection setup needs a terminal or complete noninteractive arguments")]
     Terminal,
-    #[error(
-        "authentication is disabled in this connection; set connection.no_auth = false in config.toml before logging in"
-    )]
-    AuthDisabled,
     #[error("invalid connection settings")]
     Invalid,
     #[error("connection already exists; choose another name or use --replace")]
@@ -37,6 +33,8 @@ pub(crate) enum SetupError {
     Write,
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error("{}", .0.message)]
+    Report(nouli_core::protocol::ErrorReport),
 }
 #[derive(Debug, Default, Clone, clap::Args)]
 #[expect(

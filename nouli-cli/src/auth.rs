@@ -110,7 +110,7 @@ fn key_source(login: &Login) -> Result<KeySource, ErrorReport> {
 }
 
 /// A completed auth command: its structured-output label and its report.
-type Outcome = (&'static str, serde_json::Value);
+pub(crate) type Outcome = (&'static str, serde_json::Value);
 
 pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
     let mut settings = match settings::load(args) {
@@ -145,21 +145,37 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
 
 /// Stores a key source for a configured provider.
 fn log_in(settings: &Settings, path: &Path, login: &Login) -> Result<Outcome, ErrorReport> {
+    let login_check = check_login(settings, &login.provider)?;
+    store_key(path, &login.provider, &key_source(login)?, login_check)
+}
+
+/// Whether a credential can be stored for `provider`: it must be configured.
+/// Checked before any prompt. Returns whether the default model's connection
+/// has authentication disabled, which is reported but does not block login.
+pub(crate) fn check_login(settings: &Settings, provider: &str) -> Result<bool, ErrorReport> {
     if settings.config.providers.is_empty() {
         return Err(settings.config_error(ConfigError::NoProviders));
     }
-    if !settings.config.providers.contains_key(&login.provider) {
+    if !settings.config.providers.contains_key(provider) {
         return Err(settings.config_error(ConfigError::UnknownProvider));
     }
-    let authentication_disabled = settings
+    Ok(settings
         .config
-        .connection_settings(&login.provider, settings.config.default_model.as_deref())
+        .connection_settings(provider, settings.config.default_model.as_deref())
         .map_err(|error| settings.config_error(error))?
         .no_auth
-        == Some(true);
-    let source = key_source(login)?;
+        == Some(true))
+}
+
+/// Stores `source` as `provider`'s credential.
+pub(crate) fn store_key(
+    path: &Path,
+    provider: &str,
+    source: &KeySource,
+    authentication_disabled: bool,
+) -> Result<Outcome, ErrorReport> {
     store::update(path, |entries| {
-        entries.insert(login.provider.clone(), AuthEntry::ApiKey(source.clone()));
+        entries.insert(provider.to_owned(), AuthEntry::ApiKey(source.clone()));
         ((), true)
     })
     .map_err(|error| error.report())?;
@@ -167,7 +183,7 @@ fn log_in(settings: &Settings, path: &Path, login: &Login) -> Result<Outcome, Er
         "Stored credential",
         serde_json::json!({
             "version": 1,
-            "provider": login.provider,
+            "provider": provider,
             "source": source.kind(),
             "authentication_disabled_for_default_model": authentication_disabled,
             "path": path.display().to_string(),
@@ -176,7 +192,7 @@ fn log_in(settings: &Settings, path: &Path, login: &Login) -> Result<Outcome, Er
 }
 
 /// Removes a provider's stored credential, reporting whether one existed.
-fn log_out(path: &Path, provider: &str) -> Result<Outcome, ErrorReport> {
+pub(crate) fn log_out(path: &Path, provider: &str) -> Result<Outcome, ErrorReport> {
     let removed = store::update(path, |entries| {
         let removed = entries.remove(provider);
         (removed, removed)

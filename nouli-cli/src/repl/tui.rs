@@ -352,7 +352,8 @@ impl<'a> App<'a> {
         app
     }
 
-    fn setup_command(&mut self, command: &str) -> Result<(), crate::connect::SetupError> {
+    /// Runs a setup command; returns the status line to show on success.
+    fn setup_command(&mut self, command: &str) -> Result<&'static str, crate::connect::SetupError> {
         use clap::Parser;
         let mut args = crate::Args::try_parse_from([
             "nouli",
@@ -367,6 +368,7 @@ impl<'a> App<'a> {
         args.env_file.clone_from(&self.repl.settings.env_file);
         args.store = Some(self.repl.settings.store.clone());
         let (verb, argument) = command.split_once(' ').unwrap_or((command, ""));
+        let mut note = "connection settings updated";
         match verb {
             "/connect" => {
                 let selection = crate::connect::configure(
@@ -397,44 +399,20 @@ impl<'a> App<'a> {
                 } else {
                     argument.into()
                 };
-                if !self.repl.settings.config.providers.contains_key(&provider) {
-                    return Err(crate::connect::SetupError::Invalid);
-                }
                 let auth = crate::settings::auth::path_for(&self.repl.settings.config_path);
+                let report = crate::connect::SetupError::Report;
                 if verb == "/logout" {
-                    crate::settings::auth::update(&auth, |store| {
-                        let removed = store.remove(&provider);
-                        ((), removed)
-                    })
-                    .map_err(|_| crate::connect::SetupError::Write)?;
+                    crate::auth::log_out(&auth, &provider).map_err(report)?;
                 } else {
-                    let model = self.repl.model.model.as_deref().or(self
-                        .repl
-                        .settings
-                        .config
-                        .default_model
-                        .as_deref());
-                    if self
-                        .repl
-                        .settings
-                        .config
-                        .connection_settings(&provider, model)?
-                        .no_auth
-                        == Some(true)
-                    {
-                        return Err(crate::connect::SetupError::AuthDisabled);
-                    }
+                    let disabled =
+                        crate::auth::check_login(&self.repl.settings, &provider).map_err(report)?;
                     let key = crate::connect::read_key("API key: ")?;
-                    crate::settings::auth::update(&auth, |store| {
-                        store.insert(
-                            provider,
-                            nouli_core::config::auth::AuthEntry::ApiKey(
-                                nouli_core::config::auth::KeySource::Key(key),
-                            ),
-                        );
-                        ((), true)
-                    })
-                    .map_err(|_| crate::connect::SetupError::Write)?;
+                    let source = nouli_core::config::auth::KeySource::Key(key);
+                    crate::auth::store_key(&auth, &provider, &source, disabled).map_err(report)?;
+                    if disabled {
+                        note =
+                            "credential stored; authentication is disabled for the default model";
+                    }
                 }
             }
             _ => return Err(crate::connect::SetupError::Invalid),
@@ -445,7 +423,7 @@ impl<'a> App<'a> {
             .load_environment()
             .map_err(|_| crate::connect::SetupError::Invalid)?;
         self.repl.settings = std::borrow::Cow::Owned(settings);
-        Ok(())
+        Ok(note)
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal, runtime: &Runtime) -> io::Result<()> {
@@ -467,7 +445,7 @@ impl<'a> App<'a> {
                 mouse_capture = false;
                 events = EventStream::new();
                 self.status = Some(match result {
-                    Ok(()) => Status::info("connection settings updated"),
+                    Ok(note) => Status::info(note),
                     Err(e) => Status::error(e.to_string()),
                 });
                 self.refresh_model();
@@ -1597,6 +1575,40 @@ mod tests {
             assert!(app.repl.queue.question.is_none());
         }
     }
+    #[test]
+    fn logout_removes_a_stored_credential_for_an_unconfigured_provider_like_auth_logout() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("nouli-tui-logout-{}", Id::generate()));
+        std::fs::create_dir_all(&root).unwrap();
+        let config = root.join("config.toml");
+        std::fs::write(
+            &config,
+            "default_provider = \"local\"\ndefault_model = \"offline\"\n[providers.local]\nprotocol = \"system-one\"\nbase_url = \"http://127.0.0.1:9\"\n[providers.local.models.offline]\ncontext_budget_tokens = 100000\nreserved_output_tokens = 128\n",
+        )
+        .unwrap();
+        let auth = crate::settings::auth::path_for(&config);
+        std::fs::write(
+            &auth,
+            "[providers.ghost]\ntype = \"api_key\"\nkey = \"secret\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&auth, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut settings = Settings::for_test(root.join("store"));
+        settings.config_path.clone_from(&config);
+        let mut app = app(&settings);
+        assert_eq!(
+            app.setup_command("/logout ghost").unwrap(),
+            "connection settings updated"
+        );
+        let remaining = crate::settings::auth::update(&auth, |store| {
+            let present = store.remove("ghost");
+            (present, false)
+        })
+        .unwrap();
+        assert!(!remaining, "ghost's credential was not removed");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn image_labels_edit_as_attachments_without_exposing_reference_characters() {
         let settings = settings();
