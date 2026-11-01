@@ -1,6 +1,7 @@
 //! Frozen workflow ownership and short durable repository operations.
 mod completion;
 pub mod events;
+mod inspection;
 pub mod nodes;
 pub mod recovery;
 use super::{
