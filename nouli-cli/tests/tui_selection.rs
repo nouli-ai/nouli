@@ -1,10 +1,13 @@
 #![cfg(unix)]
 
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 #[path = "support/pty.rs"]
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod pty;
 
 use harness::Home;
@@ -20,8 +23,21 @@ fn contains(output: &[u8], bytes: &[u8]) -> bool {
     output.windows(bytes.len()).any(|window| window == bytes)
 }
 
+const DRAFT: &[u8] = b"selection-draft-proof";
+
 fn check_selection(entry: &[u8]) {
     let home = Home::create();
+    let mut terminal = launch(&home);
+    paste_draft(&mut terminal);
+    let held = enter_selection(&mut terminal, entry);
+    assert_selection_holds_the_view(&mut terminal, held);
+    leave_selection_for_native_dragging(&mut terminal, held);
+    assert_resize_keeps_draft_and_native_selection(&mut terminal);
+    assert_exit_restores_terminal(&mut terminal);
+}
+
+/// Opens the TUI in a PTY and checks the terminal owns dragging at startup.
+fn launch(home: &Home) -> Terminal {
     std::fs::write(
         home.0.join("config.toml"),
         "default_provider = \"local\"\ndefault_model = \"offline\"\n\
@@ -43,16 +59,23 @@ fn check_selection(entry: &[u8]) {
         !contains(terminal.output_since(0), MOUSE_ON),
         "ordinary dragging must belong to the terminal at startup"
     );
+    terminal
+}
 
-    let draft = b"selection-draft-proof";
+fn paste_draft(terminal: &mut Terminal) {
     terminal
         .send(b"\x1b[200~selection-draft-proof\x1b[201~")
         .unwrap();
-    terminal.wait_for(draft, 0, "pasted draft").unwrap();
+    terminal.wait_for(DRAFT, 0, "pasted draft").unwrap();
     assert!(
         !contains(terminal.output_since(0), MOUSE_ON),
         "editing must preserve native dragging"
     );
+}
+
+/// Focuses the graph, then enters selection with `entry`; returns the output
+/// mark once the held view is drawn.
+fn enter_selection(terminal: &mut Terminal, entry: &[u8]) -> usize {
     let start = terminal.mark();
     terminal.send(b"\x07").unwrap(); // Ctrl-G enables graph mouse controls.
     terminal
@@ -67,13 +90,18 @@ fn check_selection(entry: &[u8]) {
         .wait_for(b"Esc/F6 resume", start, "selection instructions")
         .unwrap();
     terminal.pump(Duration::from_millis(100)).unwrap();
-    let held = terminal.mark();
+    terminal.mark()
+}
+
+fn assert_selection_holds_the_view(terminal: &mut Terminal, held: usize) {
     terminal
         .send(b"z\t\r\x1b[200~do-not-paste\x1b[201~")
         .unwrap();
     terminal.pump(Duration::from_millis(250)).unwrap();
     assert_eq!(terminal.mark(), held, "selection must hold the view");
+}
 
+fn leave_selection_for_native_dragging(terminal: &mut Terminal, held: usize) {
     terminal.send(b"\x1b").unwrap();
     terminal
         .wait_for(MOUSE_ON, held, "mouse reporting after Escape")
@@ -87,6 +115,9 @@ fn check_selection(entry: &[u8]) {
             "native selection after leaving graph focus",
         )
         .unwrap();
+}
+
+fn assert_resize_keeps_draft_and_native_selection(terminal: &mut Terminal) {
     let start = terminal.mark();
     terminal.send(F6).unwrap();
     terminal
@@ -95,7 +126,7 @@ fn check_selection(entry: &[u8]) {
     let start = terminal.mark();
     terminal.resize(100, 24).unwrap();
     terminal
-        .wait_for(draft, start, "preserved draft after resize")
+        .wait_for(DRAFT, start, "preserved draft after resize")
         .unwrap();
     assert!(
         !contains(terminal.output_since(start), MOUSE_ON),
@@ -105,7 +136,9 @@ fn check_selection(entry: &[u8]) {
         !contains(terminal.output_since(start), b"do-not-paste"),
         "selection must ignore paste and preserve the original draft"
     );
+}
 
+fn assert_exit_restores_terminal(terminal: &mut Terminal) {
     terminal.send(b"\x03\x03").unwrap();
     assert!(
         terminal.wait_for_exit().unwrap().success(),
