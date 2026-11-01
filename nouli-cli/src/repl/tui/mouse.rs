@@ -67,12 +67,12 @@ impl App<'_> {
             }
             MouseEventKind::Drag(MouseButton::Left) if self.graph.dragging => {
                 let body = self.graph.body;
-                if body.width >= 80 {
-                    self.graph.preferred_width = Some(
-                        body.right()
-                            .saturating_sub(event.column)
-                            .clamp(40, body.width - 40),
-                    );
+                if body.width >= super::graph::GRAPH_MIN * 2 {
+                    self.graph.preferred_width =
+                        Some(body.right().saturating_sub(event.column).clamp(
+                            super::graph::GRAPH_MIN,
+                            body.width - super::graph::GRAPH_MIN,
+                        ));
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => self.graph.dragging = false,

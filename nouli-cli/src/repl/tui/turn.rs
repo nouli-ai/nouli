@@ -1,13 +1,17 @@
 //! Launching a turn: the form's question or a typed one becomes a draft, the
 //! draft gains the attachments and references its text uses, and it runs
 //! until it finishes or is cancelled.
-use super::{App, Row, Running, Status};
+use super::{App, Kind, Row, Running, Status};
 use crate::{evaluate, render, turns::Draft};
 use nouli_core::{
     context::{ContextUpdate, evidence::marker},
     decision::{AnswerSpace, Criterion, TurnRequest},
     history::{ModelSelection, SessionSelection},
     identity::Id,
+};
+use nouli_core::{
+    decision::Question,
+    protocol::{Report, ResultEnvelope},
 };
 use std::{io, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -244,12 +248,159 @@ fn require(required: &mut Vec<Id>, ids: impl IntoIterator<Item = Id>) {
     }
 }
 
+#[derive(Clone)]
+pub(super) struct PreviousQuestion {
+    pub(super) turn: Id,
+    pub(super) question: Question,
+}
+
+impl PreviousQuestion {
+    pub(super) fn kind(&self) -> Kind {
+        Kind::from(&self.question.answer_space)
+    }
+}
+
+impl App<'_> {
+    /// Shows a finished turn as the line loop would. A saved turn has taken
+    /// the queue, and its question when it came from the form.
+    pub(super) fn finish(
+        &mut self,
+        envelope: ResultEnvelope,
+        updates: &[ContextUpdate],
+        ephemeral: bool,
+        from_form: bool,
+    ) -> io::Result<()> {
+        let saved = !ephemeral && matches!(envelope.result, Report::Turn(_));
+        let next_latest = match &envelope.result {
+            Report::Turn(report) if report.session == Some(self.repl.session.id) => report
+                .turn
+                .zip(report.questions.last())
+                .map(|(turn, question)| PreviousQuestion {
+                    turn,
+                    question: question.clone(),
+                }),
+            _ => None,
+        };
+        let next_previous = match &envelope.result {
+            Report::Turn(report) if report.session == Some(self.repl.session.id) => {
+                match (report.turn, report.questions.as_slice()) {
+                    (Some(turn), [question])
+                        if !matches!(question.answer_space, AnswerSpace::Noul) =>
+                    {
+                        Some(PreviousQuestion {
+                            turn,
+                            question: question.clone(),
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        if let Report::Turn(report) = &envelope.result {
+            let provider = &report.outcome.provider;
+            self.model = Some(format!(
+                "{}/{}",
+                render::clean(&provider.provider),
+                render::clean(&provider.model)
+            ));
+        }
+        if let Report::Error(error) = &envelope.result {
+            self.status = Some(if error.code == "evaluation_canceled" {
+                Status::info("Cancelled · your input is kept")
+            } else {
+                Status::error(format!(
+                    "{} · edit input or Ctrl-S to retry",
+                    render::clean(&error.message)
+                ))
+            });
+        }
+        self.repl.finish_display(
+            envelope.result,
+            updates,
+            ephemeral,
+            Some(self.transcript_width),
+        )?;
+        self.drain();
+        if saved {
+            self.previous_question = next_previous;
+            self.latest_question = next_latest;
+            self.form.sent(from_form);
+            self.images.clear();
+            self.restore_references();
+            self.refresh_graph();
+        }
+        Ok(())
+    }
+
+    pub(super) fn prior_for_kind(&self) -> Option<&PreviousQuestion> {
+        self.previous_question
+            .as_ref()
+            .filter(|previous| previous.kind() == self.form.kind && self.form.kind != Kind::Noul)
+    }
+
+    pub(super) fn inherited_answers(&self) -> Option<&PreviousQuestion> {
+        if self.form.labels().next().is_some() {
+            None
+        } else {
+            self.prior_for_kind()
+        }
+    }
+
+    pub(super) fn refresh_previous_question(&mut self) {
+        self.restore_references();
+        self.previous_question = None;
+        self.latest_question = None;
+        let Some(export) = self
+            .repl
+            .ledger()
+            .ok()
+            .and_then(|ledger| ledger.export_session(&self.repl.selector()).ok())
+        else {
+            return;
+        };
+        self.latest_question = export.turns.iter().rev().find_map(|turn| {
+            turn.request
+                .questions
+                .last()
+                .map(|question| PreviousQuestion {
+                    turn: turn.id,
+                    question: question.clone(),
+                })
+        });
+        let [head] = export.session.frontier.as_slice() else {
+            return;
+        };
+        let Some(turn) = export
+            .turns
+            .iter()
+            .find(|turn| turn.id == *head && turn.session == self.repl.session.id)
+        else {
+            return;
+        };
+        let [question] = turn.request.questions.as_slice() else {
+            return;
+        };
+        let previous = PreviousQuestion {
+            turn: turn.id,
+            question: question.clone(),
+        };
+        if self.form.is_empty() {
+            self.form.kind = previous.kind();
+        }
+        if previous.kind() != Kind::Noul {
+            self.previous_question = Some(previous);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{
         Kind,
         tests::{app, draft_from, failed, previous, settings},
     };
+    use crate::repl::tui::{tests::*, *};
     use nouli_core::{decision::AnswerSpace, history::ModelSelection, identity::Id};
 
     #[test]
@@ -373,5 +524,143 @@ mod tests {
         let running = app.launch_draft(Some(draft), true, true).unwrap();
         assert_eq!(running.model.provider.as_deref(), Some("configured"));
         assert_eq!(running.model.model.as_deref(), Some("configured-model"));
+    }
+
+    #[test]
+    fn only_saved_answers_replace_the_previous_question() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let previous = previous(Kind::Score);
+        app.previous_question = Some(previous.clone());
+        app.form.kind = Kind::Score;
+        app.form.question = "A new judgment?".into();
+        app.finish(failed(), &[], false, true).unwrap();
+        assert_eq!(app.previous_question.as_ref().unwrap().turn, previous.turn);
+        assert_eq!(app.form.question, "A new judgment?");
+        let Report::Turn(mut report) = crate::repl::tests::saved_turn() else {
+            unreachable!()
+        };
+        report.session = Some(app.repl.session.id);
+        report.questions = vec![previous.question.clone()];
+        app.finish(
+            ResultEnvelope::new(Report::Turn(report.clone())),
+            &[],
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(app.previous_question.as_ref().unwrap().turn, previous.turn);
+        assert_eq!(app.form.question, "A new judgment?");
+        app.finish(
+            ResultEnvelope::new(Report::Turn(report.clone())),
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            app.previous_question.as_ref().unwrap().turn,
+            report.turn.unwrap()
+        );
+        assert_eq!(app.form.kind, Kind::Score);
+        assert!(app.form.is_empty());
+        report.questions[0].answer_space = AnswerSpace::Noul;
+        app.finish(ResultEnvelope::new(Report::Turn(report)), &[], false, true)
+            .unwrap();
+        assert!(app.previous_question.is_none());
+        app.previous_question = Some(previous);
+        // Missing/empty sessions cannot retain another session's definition.
+        app.repl.session.id = Id::generate();
+        app.refresh_previous_question();
+        assert!(app.previous_question.is_none());
+    }
+
+    #[test]
+    fn a_saved_turn_empties_the_form_and_a_failed_one_keeps_it() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let fill = |app: &mut App| {
+            app.repl.queue.facts.push("a fact".into());
+            app.form.question = "q: Is it?".into();
+            app.form.row = Row::Question;
+        };
+        fill(&mut app);
+        app.finish(failed(), &[], false, true).unwrap();
+        assert_eq!(app.form.question, "q: Is it?");
+        assert_eq!(app.repl.queue.facts.len(), 1);
+        assert!(transcript(&app).contains("provider_transport"));
+        let saved = ResultEnvelope::new(crate::repl::tests::saved_turn());
+        app.finish(saved, &[], false, true).unwrap();
+        assert_eq!(app.form.question, "");
+        assert!(app.repl.queue.is_empty());
+        assert_eq!(app.form.row, Row::Input);
+        assert!(app.model.is_some());
+    }
+
+    #[test]
+    fn a_question_sent_from_the_form_replaces_one_a_failed_turn_left() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.question = Some("a: Is the first one still waiting?".into());
+        app.form.question = "b: Is this the one to send again?".into();
+        app.form.row = Row::Question;
+        assert!(app.send_form(false).unwrap().is_some());
+        assert_eq!(app.repl.queue.question, None);
+        app.finish(failed(), &[], false, true).unwrap();
+        assert_eq!(app.form.question, "b: Is this the one to send again?");
+        // Enter from Context resends the current form, including after failure.
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        let mut running = None;
+        app.key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut running,
+        )
+        .unwrap();
+        let draft = draft_from(running.unwrap());
+        assert_eq!(draft.request.turn.questions[0].prompt, app.form.question);
+    }
+
+    #[test]
+    fn ctrl_c_ends_a_turn_whose_provider_never_answers() {
+        // A provider that takes the connection and never answers.
+        let provider = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut settings = settings();
+        settings.config = nouli_core::config::Config::parse(&format!(
+            "default_provider = 'local'\ndefault_model = 'offline'\n\
+             [providers.local]\nprotocol = 'system-one'\nbase_url = 'http://{}'\n\
+             [providers.local.models.offline]\ncontext_budget_tokens = 100000\n\
+             context_window_tokens = 100000\nreserved_output_tokens = 128\n",
+            provider.local_addr().unwrap()
+        ))
+        .unwrap();
+        let creation = crate::turns::Creation {
+            name: "s".to_owned().try_into().unwrap(),
+            sources: vec![],
+            defaults: ModelSelection::default(),
+        };
+        let session = crate::evaluate::create(&settings, &creation).unwrap().id;
+        let mut app = app(&settings);
+        app.repl.session.id = session;
+        app.form.question = "late: Is the train late?".into();
+        app.form.row = Row::Question;
+        let mut running = None;
+        let key = |code, modifiers| KeyEvent::new(code, modifiers);
+        app.key(key(KeyCode::Enter, KeyModifiers::NONE), &mut running)
+            .unwrap();
+        app.key(key(KeyCode::Char('c'), KeyModifiers::CONTROL), &mut running)
+            .unwrap();
+        let turn = running.expect("Enter on the question sends it").turn;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ended =
+            runtime.block_on(async { tokio::time::timeout(Duration::from_secs(30), turn).await });
+        let (envelope, _) = ended.expect("Ctrl-C ends the turn before the provider answers");
+        let Report::Error(error) = envelope.result else {
+            panic!("a cancelled turn saves nothing");
+        };
+        assert_eq!(error.code, "evaluation_canceled");
+        let _ = std::fs::remove_dir_all(&settings.store);
     }
 }

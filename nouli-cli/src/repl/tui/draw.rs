@@ -15,11 +15,11 @@ use unicode_width::UnicodeWidthStr;
 
 /// Turn results are laid out in 74 columns; the transcript keeps room for them.
 const TRANSCRIPT_COLUMNS: u16 = 76;
+/// Two cards side by side, as the blend of two sessions draws them.
+use super::graph::GRAPH_MAX;
 /// A decision card is 36 columns, so the pane holds one with its border and
 /// the column that keeps the two apart.
-const GRAPH_MIN: u16 = 40;
-/// Two cards side by side, as the blend of two sessions draws them.
-const GRAPH_MAX: u16 = 80;
+use super::graph::GRAPH_MIN;
 /// Rows a list over the transcript shows at once.
 const LIST_ROWS: usize = 8;
 /// Rows the transcript keeps however tall the form grows.
