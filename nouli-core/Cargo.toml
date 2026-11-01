@@ -1,9 +1,18 @@
 [package]
 name = "nouli-core"
+description = "Rust library for Nouli, a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use."
 version.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories = ["science::ml"]
+
+[lints]
+workspace = true
 
 [dependencies]
 base64 = "0.23.1"

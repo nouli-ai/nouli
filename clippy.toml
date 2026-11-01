@@ -1,0 +1,1 @@
+allowed-duplicate-crates = ["getrandom", "miniz_oxide", "syn", "windows-sys"]

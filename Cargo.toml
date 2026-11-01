@@ -7,4 +7,12 @@ license = "MIT"
 version = "0.4.3"
 edition = "2024"
 rust-version = "1.99.1"
+repository = "https://github.com/nouli-ai/nouli"
+homepage = "https://nouli.ai/"
+readme = "README.md"
+keywords = ["decision", "ledger", "llm", "ai", "history"]
 
+[workspace.lints.clippy]
+cargo = "warn"
+pedantic = "warn"
+mod_module_files = "warn"
