@@ -351,6 +351,27 @@ mod tests {
     }
     use super::*;
     #[test]
+    fn specific_errors_keep_their_codes_ahead_of_catch_all_arms() {
+        for (report, code) in [
+            (
+                EngineError::Replay(ReplayError::UnknownRequest).report(),
+                "unknown_request",
+            ),
+            (
+                EngineError::Provider(ProviderError::Profile).report(),
+                "invalid_provider_profile",
+            ),
+            (WorkflowError::NotDurable.report(), "workflow_not_durable"),
+            (
+                turn(&TurnError::WorkflowAttempt),
+                "workflow_attempt_misrouted",
+            ),
+        ] {
+            assert_eq!(report.code, code);
+        }
+    }
+
+    #[test]
     fn configuration_reports_identify_setup_errors_without_echoing_private_details() {
         for (error, code) in [
             (ConfigError::NoProviders, "providers_required"),

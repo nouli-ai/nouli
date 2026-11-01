@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `nouli-core`: `context::projection::project_with_base`, `Ledger::record_attempt_progress`, `Ledger::record_workflow_progress`, and `Ledger::fail_workflow_attempt` take their origin or progress argument by reference, so callers no longer clone it.
+- `nouli-core`: workflow ledger methods return `WorkflowError::Conflict` instead of `WorkflowError::Storage(StorageError::Conflict)` when a run, reservation, or node changes concurrently.
 
 ### Fixed
 

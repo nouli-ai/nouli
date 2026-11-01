@@ -86,6 +86,9 @@ fn creation_error(
                 params![name.as_str(), session.to_string()],
                 |row| row.get::<_, bool>(0),
             )
+            .inspect_err(|error| {
+                tracing::warn!(%error, "session name lookup failed after a constraint violation");
+            })
             .unwrap_or(false)
     };
     if constraint && name.is_some_and(taken) {

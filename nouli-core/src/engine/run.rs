@@ -323,6 +323,7 @@ fn error_report(error: &ProviderError, retryable: bool) -> ErrorReport {
             (ErrorCategory::Authentication, "authentication")
         }
         ProviderError::Transport(_) => (ErrorCategory::Transport, "provider_transport"),
+        ProviderError::Profile => (ErrorCategory::Configuration, "invalid_provider_profile"),
         _ => (ErrorCategory::Contract, "provider_contract"),
     };
     ErrorReport {
