@@ -293,10 +293,6 @@ impl HttpTransport {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
     async fn exchange(
         &self,
         url: Url,
@@ -305,88 +301,17 @@ impl HttpTransport {
         profile: &ProviderProfile,
         headers: &std::collections::BTreeMap<String, Credential>,
     ) -> Result<HttpResponse, TransportError> {
-        let mut resolved_headers = HeaderMap::new();
-        for (name, value) in &profile.connection.headers {
-            let mut v = HeaderValue::from_str(value).map_err(|_| TransportError::Settings)?;
-            v.set_sensitive(true);
-            resolved_headers.insert(
-                HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?,
-                v,
-            );
-        }
-        for (name, value) in headers {
-            let mut v =
-                HeaderValue::from_str(value.expose()).map_err(|_| TransportError::Settings)?;
-            v.set_sensitive(true);
-            resolved_headers.insert(
-                HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?,
-                v,
-            );
-        }
-        if let Some(credential) = credential {
-            let mut header = HeaderValue::from_str(&format!(
-                "{}{}{}",
-                profile
-                    .connection
-                    .auth_scheme
-                    .as_deref()
-                    .unwrap_or("Bearer"),
-                if profile.connection.auth_scheme.as_deref() == Some("") {
-                    ""
-                } else {
-                    " "
-                },
-                credential.expose()
-            ))
-            .map_err(|_| TransportError::Settings)?;
-            header.set_sensitive(true);
-            resolved_headers.insert(
-                HeaderName::from_bytes(
-                    profile
-                        .connection
-                        .auth_header
-                        .as_deref()
-                        .unwrap_or("Authorization")
-                        .as_bytes(),
-                )
-                .map_err(|_| TransportError::Settings)?,
-                header,
-            );
-        }
         let mut response = self
             .client
             .post(url)
             .json(body)
-            .headers(resolved_headers)
+            .headers(request_headers(profile, headers, credential)?)
             .send()
             .await
             .map_err(|error| network_error(&error))?;
         let status = response.status().as_u16();
         let headers = response.headers().clone();
-        let expected = response.content_length();
-        if expected.is_some_and(|length| length > self.max_response_bytes as u64) {
-            return Err(TransportError::Oversize {
-                limit: self.max_response_bytes,
-            });
-        }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|error| {
-            if expected.is_some() && !error.is_timeout() {
-                TransportError::Truncated
-            } else {
-                network_error(&error)
-            }
-        })? {
-            if chunk.len() > self.max_response_bytes - bytes.len() {
-                return Err(TransportError::Oversize {
-                    limit: self.max_response_bytes,
-                });
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        if expected.is_some_and(|length| length != bytes.len() as u64) {
-            return Err(TransportError::Truncated);
-        }
+        let bytes = self.read_body(&mut response).await?;
         tracing::debug!(
             status,
             body_bytes = bytes.len(),
@@ -405,6 +330,90 @@ impl HttpTransport {
             body: bytes,
         })
     }
+
+    /// Reads the whole response body, rejecting it as soon as it exceeds the
+    /// size limit, and as truncated when it falls short of a declared length.
+    async fn read_body(&self, response: &mut reqwest::Response) -> Result<Vec<u8>, TransportError> {
+        let oversize = TransportError::Oversize {
+            limit: self.max_response_bytes,
+        };
+        let expected = response.content_length();
+        if expected.is_some_and(|length| length > self.max_response_bytes as u64) {
+            return Err(oversize);
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            if expected.is_some() && !error.is_timeout() {
+                TransportError::Truncated
+            } else {
+                network_error(&error)
+            }
+        })? {
+            if chunk.len() > self.max_response_bytes - bytes.len() {
+                return Err(oversize);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if expected.is_some_and(|length| length != bytes.len() as u64) {
+            return Err(TransportError::Truncated);
+        }
+        Ok(bytes)
+    }
+}
+
+/// Builds the attempt's headers, all marked sensitive: the profile's literal
+/// headers, then the resolved extra headers, then the credential, each later
+/// one replacing an earlier header of the same name.
+fn request_headers(
+    profile: &ProviderProfile,
+    headers: &std::collections::BTreeMap<String, Credential>,
+    credential: Option<&Credential>,
+) -> Result<HeaderMap, TransportError> {
+    let mut resolved = HeaderMap::new();
+    for (name, value) in &profile.connection.headers {
+        let (name, value) = sensitive_header(name, value)?;
+        resolved.insert(name, value);
+    }
+    for (name, value) in headers {
+        let (name, value) = sensitive_header(name, value.expose())?;
+        resolved.insert(name, value);
+    }
+    if let Some(credential) = credential {
+        let (name, value) = authorization_header(profile, credential)?;
+        resolved.insert(name, value);
+    }
+    Ok(resolved)
+}
+
+/// The credential header: `Authorization: Bearer <key>` unless the profile
+/// names another header or scheme. An empty scheme sends the bare key.
+fn authorization_header(
+    profile: &ProviderProfile,
+    credential: &Credential,
+) -> Result<(HeaderName, HeaderValue), TransportError> {
+    let scheme = profile
+        .connection
+        .auth_scheme
+        .as_deref()
+        .unwrap_or("Bearer");
+    let separator = if profile.connection.auth_scheme.as_deref() == Some("") {
+        ""
+    } else {
+        " "
+    };
+    let name = profile
+        .connection
+        .auth_header
+        .as_deref()
+        .unwrap_or("Authorization");
+    sensitive_header(name, &format!("{scheme}{separator}{}", credential.expose()))
+}
+
+fn sensitive_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), TransportError> {
+    let mut value = HeaderValue::from_str(value).map_err(|_| TransportError::Settings)?;
+    value.set_sensitive(true);
+    let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?;
+    Ok((name, value))
 }
 
 #[cfg(test)]
