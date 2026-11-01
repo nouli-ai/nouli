@@ -70,8 +70,9 @@ impl Ledger {
     ///   match the stored nodes or the request has no request ID, and
     ///   [`WorkflowError::Compile`] if the frozen workflow does not compile.
     /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read or
-    ///   written, including [`StorageError::Conflict`] when the run or
-    ///   reservation changed owner or state concurrently.
+    ///   written.
+    /// - Returns [`WorkflowError::Conflict`] if the run or reservation changed
+    ///   owner or state concurrently.
     pub fn finish_workflow(
         &mut self,
         owner: &WorkflowOwner,

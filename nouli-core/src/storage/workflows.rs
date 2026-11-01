@@ -103,7 +103,7 @@ pub enum WorkflowDecision {
 #[derive(Debug, Error)]
 pub enum WorkflowError {
     #[error(transparent)]
-    Storage(#[from] StorageError),
+    Storage(StorageError),
     #[error(transparent)]
     Session(#[from] SessionError),
     #[error(transparent)]
@@ -128,6 +128,17 @@ pub enum WorkflowError {
     Snapshot,
     #[error("only durable workflows can be saved to the ledger")]
     NotDurable,
+}
+
+/// A concurrent change found inside a ledger transaction is the same workflow
+/// conflict as one found before it, so callers match a single variant.
+impl From<StorageError> for WorkflowError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::Conflict => Self::Conflict,
+            error => Self::Storage(error),
+        }
+    }
 }
 fn validate(request: &WorkflowRequest) -> Result<(), WorkflowError> {
     compile::compile(&request.workflow)?;
@@ -715,6 +726,18 @@ mod tests {
         assert_eq!(count, 7);
         assert_eq!(ledger.workflow_run(run).unwrap(), completed);
     }
+    #[test]
+    fn storage_conflicts_become_workflow_conflicts() {
+        assert!(matches!(
+            WorkflowError::from(StorageError::Conflict),
+            WorkflowError::Conflict
+        ));
+        assert!(matches!(
+            WorkflowError::from(StorageError::Busy),
+            WorkflowError::Storage(StorageError::Busy)
+        ));
+    }
+
     #[test]
     fn ephemeral_workflows_are_rejected_as_not_durable() {
         let store = Store::new();

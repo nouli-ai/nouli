@@ -279,7 +279,8 @@ impl Ledger {
     ///   progress is inconsistent, or running progress does not match the
     ///   expected ancestors and inputs.
     /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read or
-    ///   written, including [`StorageError::Conflict`] when the node row changed.
+    ///   written.
+    /// - Returns [`WorkflowError::Conflict`] if the node row changed.
     pub fn record_workflow_progress(
         &mut self,
         owner: &WorkflowOwner,
@@ -344,8 +345,9 @@ impl Ledger {
     ///   request, sources, ancestors, or inputs differ from the expected scope.
     /// - Returns [`WorkflowError::Conflict`] if a parent node has not settled.
     /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read or
-    ///   written, including [`StorageError::Conflict`] when a different intent
-    ///   was already saved for this round.
+    ///   written.
+    /// - Returns [`WorkflowError::Conflict`] if a different intent was already
+    ///   saved for this round.
     pub fn accept_workflow_node(
         &mut self,
         owner: &WorkflowOwner,
@@ -404,9 +406,9 @@ impl Ledger {
     ///   the node's frozen provider settings, or the required records.
     /// - Returns [`WorkflowError::Turn`] or [`WorkflowError::Session`] if the
     ///   source history cannot be read or projected.
-    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be written,
-    ///   including [`StorageError::Conflict`] when the saved intent differs or
-    ///   the node already has a live attempt.
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be written.
+    /// - Returns [`WorkflowError::Conflict`] if the saved intent differs or the
+    ///   node already has a live attempt.
     pub fn prepare_workflow_attempt(
         &mut self,
         owner: &WorkflowOwner,
@@ -503,8 +505,8 @@ impl Ledger {
     /// - Returns [`WorkflowError::Conflict`] if the attempt belongs to another
     ///   owner, run, or round, is no longer live, or `progress` is not a failed
     ///   or interrupted state with an error.
-    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be written,
-    ///   including [`StorageError::Conflict`] when the attempt settled
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be written.
+    /// - Returns [`WorkflowError::Conflict`] if the attempt settled
     ///   concurrently.
     pub fn fail_workflow_attempt(
         &mut self,
@@ -551,8 +553,8 @@ impl Ledger {
     /// - Returns [`WorkflowError::Turn`] or [`WorkflowError::History`] if the
     ///   attempt or source history cannot be read or projected, or the turn is
     ///   invalid.
-    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be written,
-    ///   including [`StorageError::Conflict`] when the session revision or node
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be written.
+    /// - Returns [`WorkflowError::Conflict`] if the session revision or node
     ///   identity changed concurrently.
     pub fn finalize_workflow_attempt(
         &mut self,
