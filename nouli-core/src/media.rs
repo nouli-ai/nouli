@@ -4,7 +4,10 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use image::ImageDecoder;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::io::Cursor;
+use std::{
+    io::Cursor,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use crate::{codec, codec::InputFormat, context::evidence};
 
@@ -20,6 +23,124 @@ pub struct Image {
 pub struct Evidence {
     pub text: String,
     pub images: Vec<Image>,
+}
+
+/// Plan-local image preparation shared by budgeting and native wire construction.
+/// Clones share the same cache; create a fresh value for each new context plan.
+/// No prepared bytes or cache state are serialized into the ledger.
+#[derive(Clone, Default)]
+pub struct PreparedImages {
+    inner: Arc<Mutex<PreparationCache>>,
+}
+#[derive(Default)]
+struct PreparationCache {
+    context: Option<(String, Arc<Evidence>)>,
+    settings: Option<crate::config::ConnectionSettings>,
+    images: Vec<CachedImage>,
+    #[cfg(test)]
+    preparations: usize,
+}
+struct CachedImage {
+    original: Arc<Evidence>,
+    index: usize,
+    prepared: Arc<PreparedImage>,
+}
+/// A connection-specific derivative and its lazily cached pixel dimensions.
+pub struct PreparedImage {
+    pub(crate) image: Image,
+    dimensions: OnceLock<Result<(u32, u32), ()>>,
+}
+impl PreparedImage {
+    /// Read cached derivative bytes. Use the current evidence for display names.
+    #[must_use]
+    pub fn image(&self) -> &Image {
+        &self.image
+    }
+    /// Read cached dimensions, decoding the header once when preparation did not resize.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`codec::CodecError::Shape`] if the image header cannot be decoded.
+    pub fn dimensions(&self) -> Result<(u32, u32), codec::CodecError> {
+        (*self
+            .dimensions
+            .get_or_init(|| self.image.dimensions().map_err(|_| ())))
+        .map_err(|()| codec::CodecError::Shape)
+    }
+}
+impl PreparedImages {
+    // Only complete entries are published. A panic cannot leave a partial image
+    // in the cache, so a poisoned lock can safely retain its completed entries.
+    fn cache(&self) -> std::sync::MutexGuard<'_, PreparationCache> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    /// Read context evidence once for identical serialized input.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`Evidence::read`] error.
+    pub fn evidence(&self, context: &str) -> Result<Arc<Evidence>, codec::CodecError> {
+        let mut cache = self.cache();
+        if let Some((previous, evidence)) = &cache.context
+            && previous == context
+        {
+            return Ok(evidence.clone());
+        }
+        let evidence = Arc::new(Evidence::read(context)?);
+        cache.context = Some((context.to_owned(), evidence.clone()));
+        Ok(evidence)
+    }
+    /// Reuse a derivative only for identical source bytes/reference and connection settings.
+    /// The current evidence retains its own display name independently of cached pixels.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`codec::CodecError::Shape`] for an invalid index or any image-preparation error.
+    pub fn image(
+        &self,
+        evidence: &Arc<Evidence>,
+        index: usize,
+        settings: &crate::config::ConnectionSettings,
+    ) -> Result<Arc<PreparedImage>, codec::CodecError> {
+        let mut cache = self.cache();
+        if cache.settings.as_ref() != Some(settings) {
+            cache.images.clear();
+            cache.settings = Some(settings.clone());
+        }
+        let image = evidence.images.get(index).ok_or(codec::CodecError::Shape)?;
+        if let Some(existing) = cache.images.iter().find(|entry| {
+            let original = &entry.original.images[entry.index];
+            original.reference == image.reference
+                && original.format == image.format
+                && original.data_base64 == image.data_base64
+        }) {
+            return Ok(existing.prepared.clone());
+        }
+        #[cfg(test)]
+        {
+            cache.preparations += 1;
+        }
+        let (image, dimensions) = image.prepare_with_dimensions(settings)?;
+        let prepared = Arc::new(PreparedImage {
+            image,
+            dimensions: OnceLock::new(),
+        });
+        if let Some(dimensions) = dimensions {
+            let _ = prepared.dimensions.set(Ok(dimensions));
+        }
+        cache.images.push(CachedImage {
+            original: evidence.clone(),
+            index,
+            prepared: prepared.clone(),
+        });
+        Ok(prepared)
+    }
+    #[cfg(test)]
+    pub(crate) fn preparations(&self) -> usize {
+        self.cache().preparations
+    }
 }
 
 impl Evidence {
@@ -181,8 +302,14 @@ impl Image {
         &self,
         settings: &crate::config::ConnectionSettings,
     ) -> Result<Self, codec::CodecError> {
+        Ok(self.prepare_with_dimensions(settings)?.0)
+    }
+    fn prepare_with_dimensions(
+        &self,
+        settings: &crate::config::ConnectionSettings,
+    ) -> Result<(Self, Option<(u32, u32)>), codec::CodecError> {
         if settings.min_image_dimension.is_none() && settings.max_image_dimension.is_none() {
-            return Ok(self.clone());
+            return Ok((self.clone(), None));
         }
         let reader = image::ImageReader::new(Cursor::new(self.bytes()?))
             .with_guessed_format()
@@ -223,11 +350,14 @@ impl Image {
         if output.get_ref().len() > 16 * 1024 * 1024 {
             return Err(codec::CodecError::Shape);
         }
-        Ok(Self {
-            data_base64: BASE64_STANDARD.encode(output.into_inner()),
-            format: "png".into(),
-            ..self.clone()
-        })
+        Ok((
+            Self {
+                data_base64: BASE64_STANDARD.encode(output.into_inner()),
+                format: "png".into(),
+                ..self.clone()
+            },
+            Some((canvas_width, canvas_height)),
+        ))
     }
 }
 
@@ -433,5 +563,36 @@ pub(crate) mod tests {
                 .unwrap(),
             (600, 300)
         );
+    }
+    #[test]
+    fn preparation_cache_respects_settings_bytes_and_current_display_names() {
+        use crate::{
+            config::{ImageEncoding, Protocol},
+            provider::wire,
+        };
+        let mut profile = crate::limits::count::tests::profile(Protocol::SystemOne, "fixture");
+        profile.connection.image_encoding = Some(ImageEncoding::StateImageUrls);
+        let mut request: crate::decision::TurnRequest = serde_json::from_str(include_str!(
+            "../../fixtures/contracts/decision-request.json"
+        ))
+        .unwrap();
+        request.questions.truncate(3);
+        let images = PreparedImages::default();
+        let context = context();
+        wire::body_prepared(&profile, &request, &context, &images).unwrap();
+        let mut value = codec::decode_value(context.as_bytes(), InputFormat::Toon).unwrap();
+        value["records"][0]["record"]["value"]["nouli_image"]["name"] = json!("renamed.png");
+        let renamed = codec::encode_toon(&value).unwrap();
+        let body = wire::body_prepared(&profile, &request, &renamed, &images).unwrap();
+        assert_eq!(images.preparations(), 1);
+        assert_eq!(body["state"][1], "Image renamed.png: [photo #123]");
+        profile.connection.max_image_dimension = Some(512);
+        wire::body_prepared(&profile, &request, &renamed, &images).unwrap();
+        assert_eq!(images.preparations(), 2);
+        value["records"][0]["record"]["value"]["nouli_image"] =
+            serde_json::to_value(picture(281, 280)).unwrap();
+        let changed = codec::encode_toon(&value).unwrap();
+        wire::body_prepared(&profile, &request, &changed, &images).unwrap();
+        assert_eq!(images.preparations(), 3);
     }
 }

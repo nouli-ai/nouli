@@ -24,6 +24,20 @@ pub trait DecisionProvider: Sync {
         counter: &C,
         cancel: &CancellationToken,
     ) -> impl Future<Output = Result<TurnOutcome, ProviderError>> + Send;
+    /// Evaluate using the current plan's prepared-image cache. Existing providers
+    /// keep their original attempt behavior; native providers reuse this cache
+    /// while building the request off the async executor.
+    fn attempt_prepared<C: TokenCounter + Sync>(
+        &self,
+        settings: &ResolvedSettings,
+        request: &TurnRequest,
+        evidence: &str,
+        counter: &C,
+        cancel: &CancellationToken,
+        _images: &crate::media::PreparedImages,
+    ) -> impl Future<Output = Result<TurnOutcome, ProviderError>> + Send {
+        self.attempt(settings, request, evidence, counter, cancel)
+    }
 }
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NativeProvider;
@@ -38,6 +52,21 @@ impl DecisionProvider for NativeProvider {
     ) -> Result<TurnOutcome, ProviderError> {
         let transport = HttpTransport::new(&settings.snapshot.execution)?;
         provider::evaluate(&transport, settings, request, evidence, counter, cancel).await
+    }
+    async fn attempt_prepared<C: TokenCounter + Sync>(
+        &self,
+        settings: &ResolvedSettings,
+        request: &TurnRequest,
+        evidence: &str,
+        counter: &C,
+        cancel: &CancellationToken,
+        images: &crate::media::PreparedImages,
+    ) -> Result<TurnOutcome, ProviderError> {
+        let transport = HttpTransport::new(&settings.snapshot.execution)?;
+        provider::evaluate_prepared(
+            &transport, settings, request, evidence, counter, cancel, images,
+        )
+        .await
     }
 }
 

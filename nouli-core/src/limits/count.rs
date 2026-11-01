@@ -6,7 +6,7 @@ use crate::{
     config::{ConnectionSettings, ImageEncoding, Protocol, ProviderProfile},
     decision::Question,
     history::{CountMethod, TokenCount},
-    media::{Evidence, Image},
+    media::{PreparedImage, PreparedImages},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +31,21 @@ pub trait TokenCounter {
         context_toon: &str,
         questions: &[Question],
     ) -> Result<InputCounts, LimitError>;
+    /// Count with plan-local image reuse. Existing counters keep their original
+    /// behavior unless they opt into the prepared evidence seam.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::count`].
+    fn count_prepared(
+        &self,
+        profile: &ProviderProfile,
+        context_toon: &str,
+        questions: &[Question],
+        _images: &PreparedImages,
+    ) -> Result<InputCounts, LimitError> {
+        self.count(profile, context_toon, questions)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -71,12 +86,11 @@ fn images_shared_only(encoding: ImageEncoding) -> bool {
 
 /// The estimated cost of sending one image once, from its pixel patches when
 /// the connection declares a patch size, otherwise from its encoded bytes.
-fn image_cost(image: &Image, connection: &ConnectionSettings) -> Result<u64, LimitError> {
-    let prepared = image.prepare(connection)?;
+fn image_cost(image: &PreparedImage, connection: &ConnectionSettings) -> Result<u64, LimitError> {
     let Some(patch) = connection.pixel_patch_size else {
-        return Ok(byte_tokens(prepared.data_base64.len()));
+        return Ok(byte_tokens(image.image.data_base64.len()));
     };
-    let (width, height) = prepared.dimensions()?;
+    let (width, height) = image.dimensions()?;
     u64::from(width.div_ceil(patch))
         .checked_mul(u64::from(height.div_ceil(patch)))
         .and_then(|n| n.checked_mul(connection.pixel_multiplier.unwrap_or(4)))
@@ -91,14 +105,16 @@ struct SharedContext<'a> {
 }
 impl<'a> SharedContext<'a> {
     fn count(
-        evidence: &'a Evidence,
+        evidence: &'a std::sync::Arc<crate::media::Evidence>,
+        images: &PreparedImages,
         connection: &ConnectionSettings,
         shared_only: bool,
     ) -> Result<Self, LimitError> {
         let mut tokens = byte_tokens(evidence.text.len());
         let mut image_costs = Vec::with_capacity(evidence.images.len());
-        for image in &evidence.images {
-            let cost = image_cost(image, connection)?;
+        for (index, image) in evidence.images.iter().enumerate() {
+            let prepared = images.image(evidence, index, connection)?;
+            let cost = image_cost(&prepared, connection)?;
             let uses = if shared_only {
                 1
             } else {
@@ -172,10 +188,19 @@ impl TokenCounter for ByteCounter {
         context_toon: &str,
         questions: &[Question],
     ) -> Result<InputCounts, LimitError> {
+        self.count_prepared(profile, context_toon, questions, &PreparedImages::default())
+    }
+    fn count_prepared(
+        &self,
+        profile: &ProviderProfile,
+        context_toon: &str,
+        questions: &[Question],
+        images: &PreparedImages,
+    ) -> Result<InputCounts, LimitError> {
         let shared_only = images_shared_only(profile.image_encoding());
-        let evidence = Evidence::read(context_toon)?;
+        let evidence = images.evidence(context_toon)?;
         let multimodal = !evidence.images.is_empty();
-        let shared = SharedContext::count(&evidence, &profile.connection, shared_only)?;
+        let shared = SharedContext::count(&evidence, images, &profile.connection, shared_only)?;
         // These are explicit estimates, not asserted provider token constants.
         let envelope = match profile.protocol {
             Protocol::SystemOne | Protocol::OpenaiDecisions => 32,

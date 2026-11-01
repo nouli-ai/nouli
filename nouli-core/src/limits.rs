@@ -171,7 +171,21 @@ impl ResolvedLimits {
         request: &TurnRequest,
         counter: &impl TokenCounter,
     ) -> Result<BudgetAssessment, LimitError> {
-        let evidence = crate::media::Evidence::read(context_toon)?;
+        self.assess_prepared(
+            context_toon,
+            request,
+            counter,
+            &crate::media::PreparedImages::default(),
+        )
+    }
+    pub(crate) fn assess_prepared(
+        &self,
+        context_toon: &str,
+        request: &TurnRequest,
+        counter: &(impl TokenCounter + ?Sized),
+        images: &crate::media::PreparedImages,
+    ) -> Result<BudgetAssessment, LimitError> {
+        let evidence = images.evidence(context_toon)?;
         self.validate_request(
             request,
             if evidence.images.is_empty() {
@@ -183,7 +197,7 @@ impl ResolvedLimits {
         let InputCounts {
             total,
             per_question,
-        } = counter.count(&self.profile, context_toon, &request.questions)?;
+        } = counter.count_prepared(&self.profile, context_toon, &request.questions, images)?;
         if per_question.len() != request.questions.len()
             || !total.is_consistent()
             || total.method == crate::history::CountMethod::ProviderReported

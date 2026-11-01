@@ -20,6 +20,19 @@ pub fn body(
     request: &TurnRequest,
     context: &str,
 ) -> Result<Value, ProviderError> {
+    body_prepared(
+        profile,
+        request,
+        context,
+        &crate::media::PreparedImages::default(),
+    )
+}
+pub(crate) fn body_prepared(
+    profile: &ProviderProfile,
+    request: &TurnRequest,
+    context: &str,
+    images: &crate::media::PreparedImages,
+) -> Result<Value, ProviderError> {
     profile.validate().map_err(|_| ProviderError::Profile)?;
     let model = profile
         .connection
@@ -28,39 +41,40 @@ pub fn body(
         .unwrap_or(&profile.model);
     request.validate()?;
     crate::decision::nonempty(model, "model")?;
-    let evidence = crate::media::Evidence::read(context)?;
+    let evidence = images.evidence(context)?;
     let mut body = match profile.protocol {
         Protocol::OpenaiDecisions => super::openai::body_from_evidence(request, &evidence, model)?,
         Protocol::SystemOne => super::system_one::body_from_evidence(request, &evidence, model),
     };
     let encoding = profile.image_encoding();
     if !evidence.images.is_empty() {
-        let prepared = evidence
-            .images
-            .iter()
-            .map(|i| i.prepare(&profile.connection))
+        let prepared = (0..evidence.images.len())
+            .map(|index| images.image(&evidence, index, &profile.connection))
             .collect::<Result<Vec<_>, _>>()?;
         match encoding {
             ImageEncoding::Assets => {
-                body["assets"] = assets(&prepared);
+                body["assets"] = assets_iter(prepared.iter().map(|image| &image.image));
             }
             ImageEncoding::ImagesBase64 | ImageEncoding::ImagesDataUrls => {
                 body["images"] = json!(
                     prepared
                         .iter()
                         .map(|i| if encoding == ImageEncoding::ImagesBase64 {
-                            i.data_base64.clone()
+                            i.image.data_base64.clone()
                         } else {
-                            i.data_url()
+                            i.image.data_url()
                         })
                         .collect::<Vec<_>>()
                 );
             }
             ImageEncoding::StateImageUrls => {
                 let mut state = vec![json!(evidence.text)];
-                for i in prepared {
-                    state.push(json!(format!("Image {}: {}", i.name, i.reference)));
-                    state.push(json!({"type":"image_url","image_url":{"url":i.data_url()}}));
+                for (original, i) in evidence.images.iter().zip(&prepared) {
+                    state.push(json!(format!(
+                        "Image {}: {}",
+                        original.name, original.reference
+                    )));
+                    state.push(json!({"type":"image_url","image_url":{"url":i.image.data_url()}}));
                 }
                 body["state"] = json!(state);
             }
@@ -82,7 +96,7 @@ pub fn body(
                     }
                 }
                 for (original, prepared) in evidence.images.iter().zip(prepared.iter()) {
-                    replace(&mut body, &original.data_url(), &prepared.data_url());
+                    replace(&mut body, &original.data_url(), &prepared.image.data_url());
                 }
             }
         }
@@ -104,9 +118,11 @@ pub fn body(
 /// Shared asset representation for prepared wire images and the public raw
 /// `SystemOne` request-body compatibility entry point.
 pub(super) fn assets(images: &[crate::media::Image]) -> Value {
+    assets_iter(images.iter())
+}
+fn assets_iter<'a>(images: impl Iterator<Item = &'a crate::media::Image>) -> Value {
     Value::Object(
         images
-            .iter()
             .map(|image| {
                 (
                     image.reference.clone(),

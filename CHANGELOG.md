@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nouli-core`: `Ledger::decode_settings` decodes a frozen-settings snapshot and distinguishes missing or unsupported format versions from malformed payloads.
 - `nouli-core`: `ErrorReport::new` constructs non-retryable diagnostic reports; `RevisionOrigin::of_turn` and `RevisionOrigin::of_base` preserve durable and ephemeral context origins; `context::validate_updates` validates update shapes and rejects duplicate new-record IDs.
 - `nouli-core`: `WorkflowRequest::validate` checks workflow graphs and request intent without a ledger or fingerprint; `workflow::RequestError` distinguishes graph-compilation errors from invalid session selections, request IDs, required records, and context updates.
+- `nouli-core`: plan-local `media::PreparedImages`/`PreparedImage` reuse image derivatives and dimensions. `TokenCounter::count_prepared` supports prepared counting; `DecisionProvider::attempt_prepared` defaults to the existing attempt method.
 - `nouli-core`: `provider::evaluate` sends a decision through the selected protocol; `ProviderProfile::image_encoding` returns the configured or protocol-default image encoding.
 - `nouli-core`: `Criterion::label`, `Criterion::description`, `TurnOutcome::outcome_for`, `outcome::outcome_for`, `Answer::selected_probability`, `Answer::probability_of`, and `outcome::probability_of` read a criterion's text, the outcome for a question, and a choice's probabilities.
 - `nouli-core`: `context::evidence` types saved image and saved-answer records: `DecisionReference`, `ImageSnapshot`, `image_record`, `rebind_decision_record`, `ContextRecord::as_image`, `ContextRecord::as_decision_reference`, and the `IMAGE_KEY_PREFIX`, `DECISION_KEY_PREFIX`, `IMAGE_FIELD`, and `DECISION_REFERENCE_FIELD` constants. `storage::decisions::DecisionSource` is re-exported from there.
@@ -39,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nouli-core`: remove the unused `history::AttemptState`, `history::AttemptRecord`, `HistoryEvent::AttemptRecorded`, and `workflow::FrozenRun` types, and the `ContextPlan::questions` and `ContextPlan::required` fields. The ledger never wrote these types, and the context a model receives is unchanged.
 
 ### Fixed
+
+- Reuse each image derivative across budgeting, context reduction, and dispatch within a plan, while retaining original saved images and wire bytes.
 
 - In the terminal view, a saved-answer reference recorded without a display label, such as one a `nouli-core` caller wrote, is usable as `@saved answer` instead of being reported unavailable when a draft cites it. A malformed saved-answer reference is reported as an error when the terminal view restores a session, and fails the terminal graph and `nouli view` with a message naming it, instead of being skipped silently.
 - Run only the credential commands of the providers a turn or `workflow run` uses. A `workflow run` that continues a session whose model defaults name a different provider from the configured default no longer runs the default provider's command, and runs the session provider's command once before the run instead of once per node during it. A turn that replays an earlier `--request-id` prepares the credential of the provider saved with that request, not the current default.

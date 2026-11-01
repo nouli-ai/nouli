@@ -183,6 +183,20 @@ impl Recorder for EphemeralRecorder {
         )
     }
 }
+/// The serialized plan stays separate from its disposable image cache.
+struct PlannedContext {
+    plan: ContextPlan,
+    images: crate::media::PreparedImages,
+}
+fn build_plan(
+    input: ContextInput<'_>,
+    limits: &ResolvedLimits,
+    counter: &(impl TokenCounter + ?Sized),
+) -> Result<PlannedContext, BuildError> {
+    let images = crate::media::PreparedImages::default();
+    let plan = ContextBuilder::build_prepared(input, limits, counter, &Staged, &images)?;
+    Ok(PlannedContext { plan, images })
+}
 /// Builds context plans for one run so capacity retries can rebuild under a smaller budget.
 struct ContextPlanner<'a, C> {
     input: &'a RunInput<'a>,
@@ -209,9 +223,9 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
             counter,
         }
     }
-    fn build(&self, limits: &ResolvedLimits) -> Result<ContextPlan, BuildError> {
+    fn build(&self, limits: &ResolvedLimits) -> Result<PlannedContext, BuildError> {
         let input = self.input;
-        ContextBuilder::build(
+        build_plan(
             ContextInput {
                 context_base: input.context_base,
                 runtime_only: input.runtime_only,
@@ -232,7 +246,6 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
             },
             limits,
             self.counter,
-            &Staged,
         )
     }
     /// Rebuild `plan` under a budget of three quarters of its input tokens plus the
@@ -242,10 +255,11 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
     /// exceed the reserved output, or the rebuilt context would be no shorter.
     fn shrink(
         &self,
-        plan: &ContextPlan,
+        plan: &PlannedContext,
         limits: &mut ResolvedLimits,
-    ) -> Result<Option<ContextPlan>, EngineError> {
+    ) -> Result<Option<PlannedContext>, EngineError> {
         let effective = plan
+            .plan
             .manifest
             .input_count
             .tokens
@@ -261,7 +275,7 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
             ..limits.clone()
         };
         let smaller = self.build(&reduced)?;
-        if smaller.manifest.context_toon.len() >= plan.manifest.context_toon.len() {
+        if smaller.plan.manifest.context_toon.len() >= plan.plan.manifest.context_toon.len() {
             return Ok(None);
         }
         *limits = reduced;
@@ -287,12 +301,12 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             if cancel.is_cancelled() {
                 return Err(EngineError::Canceled);
             }
-            let attempt = recorder.begin(plan.manifest.clone()).await?;
+            let attempt = recorder.begin(plan.plan.manifest.clone()).await?;
             let error = match self
                 .attempt(&settings, &input.request.turn, &plan, timeout, cancel)
                 .await
             {
-                Ok(outcome) => return recorder.succeed(attempt, outcome, plan.manifest).await,
+                Ok(outcome) => return recorder.succeed(attempt, outcome, plan.plan.manifest).await,
                 Err(error) => error,
             };
             let delay = self.retry_delay(&policy, number, &error);
@@ -328,13 +342,13 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         &self,
         settings: &ResolvedSettings,
         request: &TurnRequest,
-        plan: &ContextPlan,
+        plan: &PlannedContext,
         timeout: Duration,
         cancel: &CancellationToken,
     ) -> Result<TurnOutcome, ProviderError> {
         let dispatched = tokio::select! {biased;
             ()=cancel.cancelled()=>Err(ProviderError::Transport(TransportError::Canceled)),
-            result=tokio::time::timeout(timeout,self.provider.attempt(settings,request,&plan.manifest.context_toon,&self.counter,cancel))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
+            result=tokio::time::timeout(timeout,self.provider.attempt_prepared(settings,request,&plan.plan.manifest.context_toon,&self.counter,cancel,&plan.images))=>result.unwrap_or(Err(ProviderError::Transport(TransportError::Timeout))),
         };
         let outcome = dispatched?;
         outcome.validate(request).map_err(ProviderError::Contract)?;
@@ -397,6 +411,116 @@ mod tests {
         decision::ContractError,
         protocol::{ErrorCategory, OUTCOME_UNKNOWN},
     };
+
+    fn reducible_history() -> FinalizedTurn {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
+        let mut saved: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
+        saved.request.state.push(crate::data::Input::Text {
+            text: "optional history ".repeat(4000),
+        });
+        saved
+    }
+
+    #[test]
+    fn each_plan_prepares_an_image_once_across_reduction_assessment_and_wire() {
+        use crate::{
+            config::Protocol,
+            context::{ContextKind, ContextRecord, ContextUpdate},
+            data::{Data, Input},
+            history::{ModelSelection, SessionSelection, StandingChanges},
+            limits::count::ByteCounter,
+            media::PreparedImages,
+        };
+        let saved = reducible_history();
+        let image = crate::media::tests::picture(280, 280);
+        let record = ContextRecord {
+            id: Id::generate(),
+            key: "image:plan".into(),
+            value: Data::new(serde_json::json!({"nouli_image":image})).unwrap(),
+            kind: ContextKind::Evidence,
+        };
+        let mut request = saved.request.clone();
+        request.state = vec![Input::Text {
+            text: "Inspect [photo #123]".into(),
+        }];
+        let profile = crate::limits::count::tests::profile(Protocol::SystemOne, "fixture");
+        let mut limits = ResolvedLimits::for_profile(&profile).unwrap();
+        limits.budget = 4000;
+        let sources = vec![SourcePoint {
+            session: saved.session,
+            frontier: vec![saved.id],
+        }];
+        let history = vec![saved];
+        let evaluation = EvaluationRequest {
+            turn: request,
+            updates: vec![ContextUpdate::Append { record }],
+            standing: StandingChanges::default(),
+            session: SessionSelection::New { name: None },
+            model: ModelSelection::default(),
+            required_records: vec![],
+            request_id: None,
+        };
+        for _ in 0..2 {
+            let images = PreparedImages::default();
+            let plan = ContextBuilder::build_prepared(
+                ContextInput {
+                    context_base: None,
+                    runtime_only: true,
+                    history: &history,
+                    sources: &sources,
+                    request: &evaluation.turn,
+                    updates: &evaluation.updates,
+                    required: &[],
+                    workflow_base: &[],
+                    session: Id::generate(),
+                    turn: Id::generate(),
+                    provider: ProviderIdentity {
+                        provider: "fixture".into(),
+                        model: "fixture".into(),
+                        upstream_provider: None,
+                        request_id: None,
+                    },
+                },
+                &limits,
+                &ByteCounter,
+                &Staged,
+                &images,
+            )
+            .unwrap();
+            assert!(
+                plan.entries
+                    .iter()
+                    .any(|entry| entry.representation != crate::history::Representation::Full)
+            );
+            limits
+                .assess_prepared(
+                    &plan.manifest.context_toon,
+                    &evaluation.turn,
+                    &ByteCounter,
+                    &images,
+                )
+                .unwrap();
+            let cached = crate::provider::wire::body_prepared(
+                &profile,
+                &evaluation.turn,
+                &plan.manifest.context_toon,
+                &images,
+            )
+            .unwrap();
+            assert_eq!(images.preparations(), 1);
+            let independent = crate::provider::wire::body(
+                &profile,
+                &evaluation.turn,
+                &plan.manifest.context_toon,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::to_vec(&cached).unwrap(),
+                serde_json::to_vec(&independent).unwrap()
+            );
+        }
+    }
 
     fn every_provider_error() -> Vec<ProviderError> {
         let transport = [

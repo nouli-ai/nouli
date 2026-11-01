@@ -109,6 +109,26 @@ pub async fn evaluate(
     counter: &impl TokenCounter,
     cancel: &CancellationToken,
 ) -> Result<TurnOutcome, ProviderError> {
+    evaluate_prepared(
+        transport,
+        settings,
+        request,
+        context_toon,
+        counter,
+        cancel,
+        &crate::media::PreparedImages::default(),
+    )
+    .await
+}
+pub(crate) async fn evaluate_prepared(
+    transport: &HttpTransport,
+    settings: &ResolvedSettings,
+    request: &TurnRequest,
+    context_toon: &str,
+    counter: &impl TokenCounter,
+    cancel: &CancellationToken,
+    images: &crate::media::PreparedImages,
+) -> Result<TurnOutcome, ProviderError> {
     type Normalize =
         fn(&TurnRequest, Value, &str, HttpBinding) -> Result<TurnOutcome, ProviderError>;
     let profile = &settings.snapshot.profile;
@@ -116,8 +136,7 @@ pub async fn evaluate(
         Protocol::SystemOne => ("v1/systemone", wire::normalize),
         Protocol::OpenaiDecisions => ("v1/decisions", wire::normalize_openai),
     };
-    ResolvedLimits::for_profile(profile)?.assess(context_toon, request, counter)?;
-    let body = wire::body(profile, request, context_toon)?;
+    let body = prepared_body(profile, request, context_toon, counter, images)?;
     let response = transport
         .post_with_headers(
             profile,
@@ -138,6 +157,17 @@ pub async fn evaluate(
         &settings.snapshot.profile_name,
         profile.connection.binding.unwrap_or_default(),
     )
+}
+
+fn prepared_body(
+    profile: &crate::config::ProviderProfile,
+    request: &TurnRequest,
+    context: &str,
+    counter: &impl TokenCounter,
+    images: &crate::media::PreparedImages,
+) -> Result<Value, ProviderError> {
+    ResolvedLimits::for_profile(profile)?.assess_prepared(context, request, counter, images)?;
+    wire::body_prepared(profile, request, context, images)
 }
 
 #[cfg(test)]

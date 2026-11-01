@@ -252,10 +252,11 @@ fn ensure_mandatory_fits(
     input: &ContextInput<'_>,
     entries: &[ContextEntry],
     limits: &ResolvedLimits,
-    counter: &impl TokenCounter,
+    counter: &(impl TokenCounter + ?Sized),
+    images: &crate::media::PreparedImages,
 ) -> Result<(), BuildError> {
     let mandatory = render(input, entries, true)?;
-    match limits.assess(&mandatory, input.request, counter) {
+    match limits.assess_prepared(&mandatory, input.request, counter, images) {
         Ok(_) => Ok(()),
         Err(error) if capacity(&error) => Err(BuildError::ProtectedCapacity),
         Err(error) => Err(error.into()),
@@ -267,12 +268,13 @@ fn fit_to_budget(
     input: ContextInput<'_>,
     mut entries: Vec<ContextEntry>,
     limits: &ResolvedLimits,
-    counter: &impl TokenCounter,
+    counter: &(impl TokenCounter + ?Sized),
     policy: &impl ContextPolicy,
+    images: &crate::media::PreparedImages,
 ) -> Result<ContextPlan, BuildError> {
     loop {
         let context = render(&input, &entries, false)?;
-        match limits.assess(&context, input.request, counter) {
+        match limits.assess_prepared(&context, input.request, counter, images) {
             Ok(assessment) => return plan(input, entries, limits, assessment.total, context),
             Err(error) if capacity(&error) => {}
             Err(error) => return Err(error.into()),
@@ -364,14 +366,29 @@ impl ContextBuilder {
     pub fn build(
         input: ContextInput<'_>,
         limits: &ResolvedLimits,
-        counter: &impl TokenCounter,
+        counter: &(impl TokenCounter + ?Sized),
         policy: &impl ContextPolicy,
+    ) -> Result<ContextPlan, BuildError> {
+        Self::build_prepared(
+            input,
+            limits,
+            counter,
+            policy,
+            &crate::media::PreparedImages::default(),
+        )
+    }
+    pub(crate) fn build_prepared(
+        input: ContextInput<'_>,
+        limits: &ResolvedLimits,
+        counter: &(impl TokenCounter + ?Sized),
+        policy: &impl ContextPolicy,
+        images: &crate::media::PreparedImages,
     ) -> Result<ContextPlan, BuildError> {
         validate(&input, limits)?;
         let mut entries = collect_entries(&input)?;
         protect_entries(&input, &mut entries)?;
-        ensure_mandatory_fits(&input, &entries, limits, counter)?;
-        fit_to_budget(input, entries, limits, counter, policy)
+        ensure_mandatory_fits(&input, &entries, limits, counter, images)?;
+        fit_to_budget(input, entries, limits, counter, policy, images)
     }
 }
 
