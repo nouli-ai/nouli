@@ -89,6 +89,7 @@ pub struct WorkflowOwner {
     _request_guard: FileGuard,
 }
 impl WorkflowOwner {
+    #[must_use]
     pub fn frozen(&self) -> &FrozenWorkflow {
         &self.frozen
     }

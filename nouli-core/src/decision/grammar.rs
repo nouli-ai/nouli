@@ -90,6 +90,7 @@ pub fn parse(line: &str) -> Result<Question, GrammarError> {
 /// For any question produced by [`parse`], `parse(&format(&q))` returns `q`.
 /// Detailed score levels are written by label, and choice option IDs are not
 /// written, so other questions may not round-trip exactly.
+#[must_use]
 pub fn format(question: &Question) -> String {
     let group = |open: char, close: char, items: Vec<&str>| {
         let items: Vec<String> = items.into_iter().map(item).collect();
@@ -120,6 +121,7 @@ pub fn format(question: &Question) -> String {
 /// Derive a choice option ID from its label: letters and digits of any script
 /// are lowercased, and every other run of characters becomes one `_`. The ID is
 /// at most `MAX_ID` bytes.
+#[must_use]
 pub fn option_id(label: &str) -> String {
     let mut id = String::new();
     let mut gap = false;

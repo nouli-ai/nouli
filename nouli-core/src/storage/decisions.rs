@@ -40,10 +40,12 @@ pub struct SavedDecision {
 }
 
 impl SavedDecision {
+    #[must_use]
     pub fn answered(&self) -> bool {
         matches!(self.outcome, QuestionOutcome::Answered { .. })
     }
 
+    #[must_use]
     pub fn matches(&self, query: &str) -> bool {
         let searchable = format!(
             "{} {} {} {} {}",

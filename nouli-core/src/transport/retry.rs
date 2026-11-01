@@ -46,6 +46,7 @@ impl RetryPolicy {
     }
     /// Completed attempts are one-based. The returned delay permits one next
     /// attempt; attempt zero and exhausted rounds never start extra calls.
+    #[must_use]
     pub fn next_delay(
         &self,
         completed_attempts: u32,

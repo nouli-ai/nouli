@@ -161,6 +161,7 @@ pub struct ResultEnvelope {
 }
 
 impl ResultEnvelope {
+    #[must_use]
     pub fn new(result: Report) -> Self {
         Self {
             version: CONTRACT_VERSION,

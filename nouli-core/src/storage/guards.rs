@@ -130,6 +130,7 @@ pub(super) fn acquire_session(ledger: &Ledger, id: Id) -> Result<SessionGuard, G
 }
 
 impl SessionGuard {
+    #[must_use]
     pub fn session(&self) -> Id {
         self.session
     }

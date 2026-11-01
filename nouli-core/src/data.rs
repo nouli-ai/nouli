@@ -46,6 +46,7 @@ impl Data {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn value(&self) -> &Value {
         &self.0
     }

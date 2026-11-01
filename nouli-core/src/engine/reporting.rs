@@ -52,16 +52,19 @@ fn storage(error: &StorageError) -> ErrorReport {
     }
 }
 impl StorageError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         storage(self)
     }
 }
 impl SessionError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         session(self)
     }
 }
 impl crate::storage::inspection::InspectionError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         use crate::storage::inspection::InspectionError;
         match self {
@@ -217,6 +220,7 @@ fn limit(error: &crate::limits::LimitError) -> ErrorReport {
     }
 }
 impl WorkflowError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
             Self::Storage(error) => storage(error),
@@ -234,6 +238,7 @@ impl WorkflowError {
     }
 }
 impl EngineError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
             Self::Workflow(error) => error.report(),
@@ -309,6 +314,7 @@ fn schedule(error: &crate::workflow::schedule::ScheduleError) -> ErrorReport {
     }
 }
 impl WorkflowEngineError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
             Self::Engine(error) => error.report(),

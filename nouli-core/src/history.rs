@@ -65,6 +65,7 @@ pub struct StandingChanges {
 }
 
 impl StandingChanges {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.set.is_empty() && self.drop.is_empty()
     }
@@ -123,6 +124,7 @@ pub enum CountMethod {
 }
 
 impl TokenCount {
+    #[must_use]
     pub fn is_consistent(&self) -> bool {
         self.exact
             == matches!(

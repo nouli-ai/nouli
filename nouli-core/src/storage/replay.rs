@@ -66,9 +66,11 @@ pub struct RequestOwner {
 }
 
 impl RequestOwner {
+    #[must_use]
     pub fn frozen(&self) -> &FrozenRequest {
         &self.frozen
     }
+    #[must_use]
     pub fn guard(&self) -> &SessionGuard {
         &self.session_guard
     }

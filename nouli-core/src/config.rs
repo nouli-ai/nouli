@@ -57,6 +57,7 @@ pub struct ConnectionSettings {
     pub pixel_overhead: Option<u64>,
 }
 impl ConnectionSettings {
+    #[must_use]
     pub fn overlay(&self, other: &Self) -> Self {
         let mut result = self.clone();
         macro_rules! overlay { ($($field:ident),*) => { $(if other.$field.is_some() {result.$field.clone_from(&other.$field);})* }; }
@@ -172,6 +173,7 @@ impl ConnectionSettings {
     }
 }
 impl ModelSettings {
+    #[must_use]
     pub fn overlay(&self, other: &Self) -> Self {
         let mut r = self.clone();
         r.connection = self.connection.overlay(&other.connection);

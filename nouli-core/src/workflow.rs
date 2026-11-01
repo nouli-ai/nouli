@@ -113,6 +113,7 @@ pub enum NodeStatus {
 }
 
 impl NodeStatus {
+    #[must_use]
     pub fn can_transition_to(self, next: Self) -> bool {
         matches!(
             (self, next),
@@ -128,6 +129,7 @@ impl NodeStatus {
             )
         )
     }
+    #[must_use]
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
@@ -148,6 +150,7 @@ pub enum RunStatus {
 }
 
 impl RunStatus {
+    #[must_use]
     pub fn can_transition_to(self, next: Self) -> bool {
         matches!(
             (self, next),

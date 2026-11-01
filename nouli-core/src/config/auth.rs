@@ -38,6 +38,7 @@ impl Secret {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -80,6 +81,7 @@ impl KeySource {
     }
 
     /// A word for listings; never the value.
+    #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Key(_) => "key",
@@ -97,6 +99,7 @@ pub enum AuthEntry {
 }
 
 impl AuthEntry {
+    #[must_use]
     pub fn source(&self) -> &KeySource {
         match self {
             Self::ApiKey(source) => source,
@@ -242,6 +245,7 @@ impl AuthStore {
         toml::to_string(&root).map_err(|_| AuthError::Syntax)
     }
 
+    #[must_use]
     pub fn get(&self, provider: &str) -> Option<&AuthEntry> {
         self.entries.get(provider)
     }

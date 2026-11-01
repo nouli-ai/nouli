@@ -41,21 +41,27 @@ pub struct CompiledWorkflow {
     fallback_outputs: Vec<usize>,
 }
 impl CompiledWorkflow {
+    #[must_use]
     pub fn definition(&self) -> &WorkflowSpec {
         &self.spec
     }
+    #[must_use]
     pub fn nodes(&self) -> &[NodePlan] {
         &self.nodes
     }
+    #[must_use]
     pub fn order(&self) -> &[usize] {
         &self.order
     }
+    #[must_use]
     pub fn outputs(&self) -> &[CompiledBinding] {
         &self.outputs
     }
+    #[must_use]
     pub fn fallback_outputs(&self) -> &[usize] {
         &self.fallback_outputs
     }
+    #[must_use]
     pub fn base_state(&self) -> &[Input] {
         &self.spec.state
     }

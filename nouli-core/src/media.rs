@@ -108,6 +108,7 @@ impl Evidence {
     }
 
     /// `OpenAI` reads ordered text/image parts. Other providers use references.
+    #[must_use]
     pub fn openai_parts(&self, text: &str) -> Value {
         let mut rest = text;
         let mut parts = Vec::new();
@@ -135,6 +136,7 @@ impl Evidence {
 }
 
 impl Image {
+    #[must_use]
     pub fn data_url(&self) -> String {
         format!("data:image/{};base64,{}", self.format, self.data_base64)
     }

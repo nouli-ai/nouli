@@ -204,6 +204,7 @@ impl Answer {
 }
 
 impl QuestionOutcome {
+    #[must_use]
     pub fn question_id(&self) -> &str {
         match self {
             Self::Answered { question_id, .. } | Self::Refused { question_id, .. } => question_id,

@@ -82,6 +82,7 @@ impl ContextRecord {
 }
 
 impl ContextUpdate {
+    #[must_use]
     pub fn new_record(&self) -> Option<&ContextRecord> {
         match self {
             Self::Append { record }

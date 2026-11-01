@@ -32,6 +32,7 @@ impl Credential {
         }
         Ok(Self(value))
     }
+    #[must_use]
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -101,6 +102,7 @@ pub struct ResolvedSettings {
 
 /// Layers are ordered highest first. Provider and model overrides are independent
 /// fields, including the final configuration defaults layer.
+#[must_use]
 pub fn select_model(layers: &[&ModelSelection]) -> ModelSelection {
     ModelSelection {
         provider: layers.iter().find_map(|layer| layer.provider.clone()),

@@ -18,6 +18,7 @@ pub enum ValueType {
     NullableObject,
 }
 impl ValueType {
+    #[must_use]
     pub fn of(value: &serde_json::Value) -> Self {
         match value {
             serde_json::Value::Number(_) => Self::Number,
@@ -28,6 +29,7 @@ impl ValueType {
             serde_json::Value::Array(_) => Self::Array,
         }
     }
+    #[must_use]
     pub fn accepts(self, value: &serde_json::Value) -> bool {
         let actual = Self::of(value);
         self == actual
