@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
 - Show `--input` help for `new`, `add`, `ask`, and `whatif` without stray Markdown backticks.
+- Report `session_name_exists` only when another session holds the name; other ledger constraint failures during session creation or rename now report as storage errors.
+- Report retrying an unknown request ID as `unknown_request` instead of `invalid_request`.
+- Report a concurrent workflow ownership or node change as `workflow_conflict` whether it is found before or during a ledger write, instead of sometimes `ledger_conflict`.
+- `nouli-core`: report invalid credential sources from `KeySource::env` and `KeySource::command` as `AuthError::InvalidEnvName` and `AuthError::InvalidCommandWords` instead of errors naming an empty provider.
+- `nouli-core`: report a non-durable workflow passed to `Ledger::accept_workflow` as `WorkflowError::NotDurable`, an invalid provider profile in request building as `ProviderError::Profile`, and finalizing a workflow attempt through `Ledger::finalize_attempt` as `TurnError::WorkflowAttempt`, instead of unrelated snapshot, protocol, and conflict errors.
 
 ## [0.4.3] - 2026-10-31
 
