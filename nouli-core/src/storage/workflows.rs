@@ -807,23 +807,10 @@ mod tests {
         );
         assert_eq!(after.result, Some(result));
     }
-    #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
-    fn first_node_publication_rolls_back_shared_base_and_branch_head_on_failure() {
-        use crate::{
-            context::builder::{ContextBuilder, ContextInput},
-            context::compact::Staged,
-            context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
-            history::SourcePoint,
-            limits::{ResolvedLimits, count::ByteCounter},
-            outcome::{ProviderIdentity, TurnOutcome},
-            storage::turns::AttemptStatus,
-        };
-        let store = Store::new();
-        let mut ledger = store.open();
+    /// A request whose first node always runs and whose submitted updates pin
+    /// one new commitment, returned alongside that record.
+    fn request_adopting_record() -> (WorkflowRequest, crate::context::ContextRecord) {
+        use crate::context::{ContextKind, ContextRecord, ContextUpdate, PinTarget};
         let mut request = request();
         request.workflow.nodes[0].when = None;
         let record = ContextRecord {
@@ -837,28 +824,33 @@ mod tests {
                 record: record.clone(),
             },
         }];
-        let owner = owner(&mut ledger, &request);
-        let definition = &owner.frozen.definition;
-        let main = definition.session;
-        let run = definition.run;
-        ledger
-            .record_workflow_progress(
-                &owner,
-                0,
-                &NodeProgress {
-                    status: NodeStatus::Running,
-                    output: None,
-                    error: None,
-                    ancestors: vec![],
-                    inputs: vec![],
-                },
-            )
-            .unwrap();
+        (request, record)
+    }
+    /// Marks the first node running, reserves its evaluation, and prepares an
+    /// attempt whose manifest is built from the run's frozen context base.
+    fn prepare_first_node_attempt(
+        ledger: &mut Ledger,
+        owner: &WorkflowOwner,
+    ) -> crate::storage::turns::PreparedAttempt {
+        use crate::{
+            context::builder::{ContextBuilder, ContextInput},
+            context::compact::Staged,
+            limits::{ResolvedLimits, count::ByteCounter},
+            outcome::ProviderIdentity,
+        };
+        let running = NodeProgress {
+            status: NodeStatus::Running,
+            output: None,
+            error: None,
+            ancestors: vec![],
+            inputs: vec![],
+        };
+        ledger.record_workflow_progress(owner, 0, &running).unwrap();
         let evaluation = nodes::request_for(&owner.frozen, 0, &[]).unwrap();
         let intent = ledger
-            .accept_workflow_node(&owner, 0, &evaluation, &[])
+            .accept_workflow_node(owner, 0, &evaluation, &[])
             .unwrap();
-        let settings = &owner.frozen.settings[0];
+        let definition = &owner.frozen.definition;
         let plan = ContextBuilder::build(
             ContextInput {
                 context_base: Some(&definition.base),
@@ -869,7 +861,7 @@ mod tests {
                 updates: &evaluation.updates,
                 required: &[],
                 workflow_base: &[],
-                session: main,
+                session: definition.session,
                 turn: Id::generate(),
                 provider: ProviderIdentity {
                     provider: "fixture".into(),
@@ -878,14 +870,35 @@ mod tests {
                     request_id: None,
                 },
             },
-            &ResolvedLimits::for_profile(&settings.profile).unwrap(),
+            &ResolvedLimits::for_profile(&owner.frozen.settings[0].profile).unwrap(),
             &ByteCounter,
             &Staged,
         )
         .unwrap();
-        let attempt = ledger
-            .prepare_workflow_attempt(&owner, &intent, plan.manifest)
-            .unwrap();
+        ledger
+            .prepare_workflow_attempt(owner, &intent, plan.manifest)
+            .unwrap()
+    }
+    fn context_base_count(ledger: &Ledger, run: Id) -> i64 {
+        ledger
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM context_bases WHERE id=?1",
+                [run.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+    #[test]
+    fn first_node_publication_rolls_back_shared_base_and_branch_head_on_failure() {
+        use crate::{history::SourcePoint, outcome::TurnOutcome, storage::turns::AttemptStatus};
+        let store = Store::new();
+        let mut ledger = store.open();
+        let (request, record) = request_adopting_record();
+        let owner = owner(&mut ledger, &request);
+        let main = owner.frozen.definition.session;
+        let run = owner.frozen.definition.run;
+        let attempt = prepare_first_node_attempt(&mut ledger, &owner);
         let outcome: TurnOutcome = serde_json::from_str(include_str!(
             "../../../fixtures/contracts/decision-outcome.json"
         ))
@@ -894,21 +907,14 @@ mod tests {
             ledger.finalize_attempt(&owner.session_guard, attempt.id, outcome.clone()),
             Err(TurnError::WorkflowAttempt)
         ));
+
         ledger.connection.execute_batch("CREATE TRIGGER reject_workflow_publication BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
         assert!(
             ledger
                 .finalize_workflow_attempt(&owner, attempt.id, outcome.clone())
                 .is_err()
         );
-        let count: i64 = ledger
-            .connection
-            .query_row(
-                "SELECT COUNT(*) FROM context_bases WHERE id=?1",
-                [run.to_string()],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 0);
+        assert_eq!(context_base_count(&ledger, run), 0);
         assert_eq!(
             ledger.session(&SessionSelector::Id(main)).unwrap().frontier,
             [] as [crate::identity::Id; 0]
@@ -921,6 +927,7 @@ mod tests {
             ledger.workflow_run(run).unwrap().nodes[0].status,
             NodeStatus::Running
         );
+
         ledger
             .connection
             .execute_batch("DROP TRIGGER reject_workflow_publication")
