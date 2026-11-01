@@ -1,8 +1,11 @@
 //! Read-only branch projections used before preparing or publishing a turn.
+use std::collections::HashMap;
+
 use super::{Ledger, turns::TurnError};
 use crate::{
     context::{
-        ContextUpdate,
+        ContextKind, ContextUpdate,
+        facts::{Fact, KEY_PREFIX},
         projection::{self, ActiveRecord},
     },
     history::SourcePoint,
@@ -45,6 +48,102 @@ impl Ledger {
         Ok(projection::project(
             &history, sources, updates, session, turn,
         )?)
+    }
+}
+
+impl Ledger {
+    /// The active facts at the session's head. They follow the order in which
+    /// each fact was first added, so a replacement keeps its predecessor's
+    /// number. A blend lists the facts of every source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::Session`] if the session cannot be selected, [`TurnError::Projection`]
+    /// if its context cannot be projected, or another [`TurnError`] if reading its context sources
+    /// or ancestry fails.
+    pub fn facts(&self, selector: &SessionSelector) -> Result<Vec<Fact>, TurnError> {
+        let session = self.session(selector)?;
+        let sources = self.context_sources(session.id)?;
+        let history = self.ancestry(&sources)?;
+        let mut rank: HashMap<&str, usize> = HashMap::new();
+        let mut versions: HashMap<&str, Vec<&str>> = HashMap::new();
+        for turn in &history {
+            for update in &turn.updates {
+                if let Some(record) = update.new_record()
+                    && record.key.starts_with(KEY_PREFIX)
+                {
+                    let next = rank.len();
+                    rank.entry(record.key.as_str()).or_insert(next);
+                    if let Some(text) = record.value.value().as_str() {
+                        versions.entry(record.key.as_str()).or_default().push(text);
+                    }
+                }
+            }
+        }
+        let active = projection::project(&history, &sources, &[], session.id, session.id)?;
+        // Group the active versions by key; blended branches that replaced the
+        // same fact leave several, which stay together as one numbered fact.
+        let mut groups: Vec<(&str, Vec<&projection::ActiveRecord>)> = Vec::new();
+        for record in active.iter().filter(|active| {
+            active.record.kind == ContextKind::Evidence
+                && active.record.key.starts_with(KEY_PREFIX)
+                && active.record.value.value().is_string()
+        }) {
+            match groups
+                .iter_mut()
+                .find(|(key, _)| *key == record.record.key.as_str())
+            {
+                Some((_, members)) => members.push(record),
+                None => groups.push((record.record.key.as_str(), vec![record])),
+            }
+        }
+        let mut facts: Vec<_> = groups
+            .into_iter()
+            .filter_map(|(key, members)| {
+                let texts: Vec<String> = members
+                    .iter()
+                    .filter_map(|active| active.record.value.value().as_str().map(str::to_owned))
+                    .collect();
+                let projection::RevisionOrigin::Turn {
+                    session: origin_session,
+                    turn,
+                } = &members[0].origin
+                else {
+                    return None;
+                };
+                let (origin_session, turn) = (*origin_session, *turn);
+                let previous = if members.len() == 1 {
+                    versions
+                        .get(key)
+                        .and_then(|texts| texts.iter().rev().nth(1))
+                        .map(|text| (*text).to_owned())
+                } else {
+                    None
+                };
+                Some((
+                    rank.get(key).copied()?,
+                    Fact {
+                        number: 0,
+                        records: members.iter().map(|active| active.record.id).collect(),
+                        key: key.to_owned(),
+                        text: texts.join(" | "),
+                        alternatives: if texts.len() > 1 { texts } else { Vec::new() },
+                        turn,
+                        source_session: (origin_session != session.id).then_some(origin_session),
+                        previous,
+                    },
+                ))
+            })
+            .collect();
+        facts.sort_by_key(|(rank, _)| *rank);
+        Ok(facts
+            .into_iter()
+            .enumerate()
+            .map(|(index, (_, mut fact))| {
+                fact.number = index + 1;
+                fact
+            })
+            .collect())
     }
 }
 
