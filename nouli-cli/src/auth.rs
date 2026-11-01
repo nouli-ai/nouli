@@ -2,7 +2,7 @@
 //! never printed, logged, or put in an error.
 use crate::{
     Args, inspect, render, render_error,
-    settings::{self, auth as store},
+    settings::{self, Settings, auth as store},
 };
 use clap::{Args as ClapArgs, Subcommand};
 use nouli_core::{
@@ -13,7 +13,9 @@ use nouli_core::{
     protocol::{ErrorCategory, ErrorReport},
 };
 use std::{
+    collections::BTreeSet,
     io::{self, BufRead, IsTerminal},
+    path::Path,
     process::ExitCode,
 };
 
@@ -107,10 +109,9 @@ fn key_source(login: &Login) -> Result<KeySource, ErrorReport> {
     })
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
+/// A completed auth command: its structured-output label and its report.
+type Outcome = (&'static str, serde_json::Value);
+
 pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
     let mut settings = match settings::load(args) {
         Ok(settings) => settings,
@@ -131,88 +132,112 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
         _ => return ExitCode::from(2),
     };
     let path = store::path_for(&settings.config_path);
-    let outcome = (|| -> Result<(&'static str, serde_json::Value), ErrorReport> {
-        match command {
-            Command::Login(login) => {
-                if settings.config.providers.is_empty() {
-                    return Err(settings.config_error(ConfigError::NoProviders));
-                }
-                if !settings.config.providers.contains_key(&login.provider) {
-                    return Err(settings.config_error(ConfigError::UnknownProvider));
-                }
-                let authentication_disabled = settings
-                    .config
-                    .connection_settings(&login.provider, settings.config.default_model.as_deref())
-                    .map_err(|error| settings.config_error(error))?
-                    .no_auth
-                    == Some(true);
-                let source = key_source(login)?;
-                store::update(&path, |entries| {
-                    entries.insert(login.provider.clone(), AuthEntry::ApiKey(source.clone()));
-                    ((), true)
-                })
-                .map_err(|error| error.report())?;
-                Ok((
-                    "Stored credential",
-                    serde_json::json!({
-                        "version": 1,
-                        "provider": login.provider,
-                        "source": source.kind(),
-                        "authentication_disabled_for_default_model": authentication_disabled,
-                        "path": path.display().to_string(),
-                    }),
-                ))
-            }
-            Command::Logout { provider } => {
-                let removed = store::update(&path, |entries| {
-                    let removed = entries.remove(provider);
-                    (removed, removed)
-                })
-                .map_err(|error| error.report())?;
-                Ok((
-                    "Removed credential",
-                    serde_json::json!({"version": 1, "provider": provider, "removed": removed}),
-                ))
-            }
-            Command::List => {
-                settings.load_environment()?;
-                let credentials = settings.credentials.clone();
-                let mut names: std::collections::BTreeSet<&str> = settings
-                    .config
-                    .providers
-                    .keys()
-                    .map(String::as_str)
-                    .collect();
-                names.extend(credentials.store().providers());
-                let rows: Vec<_> = names
-                    .into_iter()
-                    .map(|name| {
-                        let definition = settings.config.providers.get(name);
-                        let variable = definition.and_then(|d| d.api_key_env.as_deref());
-                        serde_json::json!({
-                            "provider": name,
-                            "configured": definition.is_some(),
-                            "stored": credentials.store().get(name).map(|e| e.source().kind()),
-                            "source": if settings.config.connection_settings(name, settings.config.default_model.as_deref()).is_ok_and(|connection| connection.no_auth == Some(true)) { "disabled" } else { credentials.winner(name, variable) },
-                        })
-                    })
-                    .collect();
-                Ok((
-                    "Credentials",
-                    serde_json::json!({"version": 1, "providers": rows}),
-                ))
-            }
-        }
-    })();
-    let (label, value) = match outcome {
-        Ok(outcome) => outcome,
-        Err(error) => return render_error(args, settings.config.output, error),
+    let outcome = match command {
+        Command::Login(login) => log_in(&settings, &path, login),
+        Command::Logout { provider } => log_out(&path, provider),
+        Command::List => list(&mut settings),
     };
+    match outcome {
+        Ok(outcome) => write_outcome(command, &outcome, format),
+        Err(error) => render_error(args, settings.config.output, error),
+    }
+}
+
+/// Stores a key source for a configured provider.
+fn log_in(settings: &Settings, path: &Path, login: &Login) -> Result<Outcome, ErrorReport> {
+    if settings.config.providers.is_empty() {
+        return Err(settings.config_error(ConfigError::NoProviders));
+    }
+    if !settings.config.providers.contains_key(&login.provider) {
+        return Err(settings.config_error(ConfigError::UnknownProvider));
+    }
+    let authentication_disabled = settings
+        .config
+        .connection_settings(&login.provider, settings.config.default_model.as_deref())
+        .map_err(|error| settings.config_error(error))?
+        .no_auth
+        == Some(true);
+    let source = key_source(login)?;
+    store::update(path, |entries| {
+        entries.insert(login.provider.clone(), AuthEntry::ApiKey(source.clone()));
+        ((), true)
+    })
+    .map_err(|error| error.report())?;
+    Ok((
+        "Stored credential",
+        serde_json::json!({
+            "version": 1,
+            "provider": login.provider,
+            "source": source.kind(),
+            "authentication_disabled_for_default_model": authentication_disabled,
+            "path": path.display().to_string(),
+        }),
+    ))
+}
+
+/// Removes a provider's stored credential, reporting whether one existed.
+fn log_out(path: &Path, provider: &str) -> Result<Outcome, ErrorReport> {
+    let removed = store::update(path, |entries| {
+        let removed = entries.remove(provider);
+        (removed, removed)
+    })
+    .map_err(|error| error.report())?;
+    Ok((
+        "Removed credential",
+        serde_json::json!({"version": 1, "provider": provider, "removed": removed}),
+    ))
+}
+
+/// Lists every configured or stored provider with the source that supplies its key.
+fn list(settings: &mut Settings) -> Result<Outcome, ErrorReport> {
+    settings.load_environment()?;
+    let mut names: BTreeSet<&str> = settings
+        .config
+        .providers
+        .keys()
+        .map(String::as_str)
+        .collect();
+    names.extend(settings.credentials.store().providers());
+    let rows: Vec<_> = names
+        .into_iter()
+        .map(|name| credential_row(settings, name))
+        .collect();
+    Ok((
+        "Credentials",
+        serde_json::json!({"version": 1, "providers": rows}),
+    ))
+}
+
+/// One provider's listing: whether it is configured, its stored source, and
+/// the source that supplies its key (or `disabled` when the default model
+/// turns authentication off).
+fn credential_row(settings: &Settings, name: &str) -> serde_json::Value {
+    let credentials = &settings.credentials;
+    let definition = settings.config.providers.get(name);
+    let variable = definition.and_then(|d| d.api_key_env.as_deref());
+    let authentication_disabled = settings
+        .config
+        .connection_settings(name, settings.config.default_model.as_deref())
+        .is_ok_and(|connection| connection.no_auth == Some(true));
+    let source = if authentication_disabled {
+        "disabled"
+    } else {
+        credentials.winner(name, variable)
+    };
+    serde_json::json!({
+        "provider": name,
+        "configured": definition.is_some(),
+        "stored": credentials.store().get(name).map(|e| e.source().kind()),
+        "source": source,
+    })
+}
+
+fn write_outcome(command: &Command, (label, value): &Outcome, format: render::Format) -> ExitCode {
     let mut sink = io::stdout().lock();
     let written = if format == render::Format::Text {
-        text(&mut sink, command, &value)
+        text(&mut sink, command, value)
     } else {
-        inspect::write(label, &value, &mut sink, format).map_err(|_| io::Error::other("output"))
+        inspect::write(label, value, &mut sink, format).map_err(|_| io::Error::other("output"))
     };
     match written {
         Ok(()) => ExitCode::SUCCESS,
