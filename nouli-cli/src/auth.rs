@@ -208,7 +208,7 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
     let written = if format == render::Format::Text {
         text(&mut sink, command, &value)
     } else {
-        inspect::write(label, value, &mut sink, format).map_err(|_| io::Error::other("output"))
+        inspect::write(label, &value, &mut sink, format).map_err(|_| io::Error::other("output"))
     };
     match written {
         Ok(()) => ExitCode::SUCCESS,

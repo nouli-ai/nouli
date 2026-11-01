@@ -34,6 +34,10 @@ fn provider() -> Server {
     })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership of a finished process output"
+)]
 fn failure(output: Output, code: &str) -> ErrorReport {
     assert_eq!(output.status.code(), Some(2), "{code}");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");

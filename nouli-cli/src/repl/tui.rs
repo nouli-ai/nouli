@@ -265,6 +265,10 @@ impl PreviousQuestion {
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags track independent pieces of interface state"
+)]
 struct App<'a> {
     repl: Repl<'a, Vec<u8>>,
     pending_setup: Option<String>,
@@ -1012,7 +1016,7 @@ impl<'a> App<'a> {
                         }
                     }
                 }
-                self.launch_draft(draft, ephemeral, true)
+                Ok(self.launch_draft(draft, ephemeral, true))
             }
             Err(problem) => {
                 self.status = Some(Status::error(problem.message));
@@ -1029,7 +1033,7 @@ impl<'a> App<'a> {
         from_form: bool,
     ) -> io::Result<Option<Running<'a>>> {
         let draft = self.repl.draft(question, ephemeral)?;
-        self.launch_draft(draft, ephemeral, from_form)
+        Ok(self.launch_draft(draft, ephemeral, from_form))
     }
 
     fn launch_draft(
@@ -1037,11 +1041,9 @@ impl<'a> App<'a> {
         draft: Option<Draft>,
         ephemeral: bool,
         from_form: bool,
-    ) -> io::Result<Option<Running<'a>>> {
+    ) -> Option<Running<'a>> {
         self.drain();
-        let Some(mut draft) = draft else {
-            return Ok(None);
-        };
+        let mut draft = draft?;
         let used_question = draft
             .request
             .turn
@@ -1103,7 +1105,7 @@ impl<'a> App<'a> {
                 }
                 Err(message) => {
                     self.status = Some(Status::error(render::clean(&message)));
-                    return Ok(None);
+                    return None;
                 }
             }
         }
@@ -1159,7 +1161,7 @@ impl<'a> App<'a> {
             &defaults,
         ]);
         self.status = None;
-        Ok(Some(Running {
+        Some(Running {
             turn: Box::pin(async move {
                 let interrupt = async move {
                     stop.cancelled().await;
@@ -1173,7 +1175,7 @@ impl<'a> App<'a> {
             from_form,
             started: Instant::now(),
             model,
-        }))
+        })
     }
 
     fn paste_text(&mut self, text: &str) {
@@ -2017,7 +2019,7 @@ mod tests {
             }],
             name: None,
         };
-        let running = app.launch_draft(Some(draft), true, true).unwrap().unwrap();
+        let running = app.launch_draft(Some(draft), true, true).unwrap();
         assert_eq!(running.model.provider.as_deref(), Some("configured"));
         assert_eq!(running.model.model.as_deref(), Some("configured-model"));
     }

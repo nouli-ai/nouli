@@ -69,6 +69,10 @@ fn index(value: &str, len: usize) -> bool {
         .parse::<usize>()
         .is_ok_and(|i| i < len && i.to_string() == value)
 }
+#[expect(
+    clippy::match_same_arms,
+    reason = "one arm per selector path keeps the schema table readable"
+)]
 fn answer_path(space: &AnswerSpace, path: &[&str]) -> Result<ValueType, CompileError> {
     Ok(match (space, path) {
         (_, []) => ValueType::Object,
@@ -100,6 +104,10 @@ fn answer_path(space: &AnswerSpace, path: &[&str]) -> Result<ValueType, CompileE
 ///
 /// Returns [`CompileError::Selector`] if the pointer is malformed or the field
 /// or pointer does not apply to the question's answer space.
+#[expect(
+    clippy::match_same_arms,
+    reason = "one arm per selector path keeps the schema table readable"
+)]
 pub fn reference_type(
     reference: &ResultReference,
     question: &Question,

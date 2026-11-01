@@ -127,8 +127,8 @@ fn write_request(
     std::fs::write(&path, serde_json::to_vec_pretty(&file).unwrap()).unwrap();
     path
 }
-fn named(name: &str) -> Option<SessionName> {
-    Some(SessionName::try_from(name.to_owned()).unwrap())
+fn named(name: &str) -> nouli_core::identity::SessionName {
+    SessionName::try_from(name.to_owned()).unwrap()
 }
 fn score(outcome: &nouli_core::outcome::TurnOutcome) -> f64 {
     let QuestionOutcome::Answered {
@@ -363,10 +363,10 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         )
     );
     let dinner = ledger
-        .export_session(&SessionSelector::Name(named("Dinner").unwrap()))
+        .export_session(&SessionSelector::Name(named("Dinner")))
         .unwrap();
     let relaxed = ledger
-        .export_session(&SessionSelector::Name(named("Relaxed").unwrap()))
+        .export_session(&SessionSelector::Name(named("Relaxed")))
         .unwrap();
     let ContextView::Resolved {
         records: dinner_records,

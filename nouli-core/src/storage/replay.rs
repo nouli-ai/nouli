@@ -175,17 +175,6 @@ struct Reservation {
 }
 
 fn reservation(connection: &Connection, key: &str) -> Result<Option<Reservation>, ReplayError> {
-    let kind: Option<String> = connection
-        .query_row(
-            "SELECT kind FROM request_reservations WHERE request_id=?1",
-            [key],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| sql_error("read request kind", error))?;
-    if kind.as_deref().is_some_and(|kind| kind != "evaluation") {
-        return Err(ReplayError::IntentConflict);
-    }
     type ReservationRow = (
         String,
         String,
@@ -194,7 +183,18 @@ fn reservation(connection: &Connection, key: &str) -> Result<Option<Reservation>
         Option<String>,
         Option<String>,
     );
-    let row:Option<ReservationRow>=connection.query_row("SELECT session_id,fingerprint,state,frozen_toon,result_toon,recovery_kind FROM request_reservations WHERE request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?))).optional().map_err(|error|sql_error("read request reservation",error))?;
+    let kind: Option<String> = connection
+        .query_row(
+            "SELECT kind FROM request_reservations WHERE request_id=?1",
+            [key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| sql_error("read request kind", &error))?;
+    if kind.as_deref().is_some_and(|kind| kind != "evaluation") {
+        return Err(ReplayError::IntentConflict);
+    }
+    let row:Option<ReservationRow>=connection.query_row("SELECT session_id,fingerprint,state,frozen_toon,result_toon,recovery_kind FROM request_reservations WHERE request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?))).optional().map_err(|error|sql_error("read request reservation",&error))?;
     row.map(|(session, hash, state, frozen, result, recovery)| {
         let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
         let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
@@ -242,7 +242,7 @@ fn interrupt(
     if saved.state == "interrupted" {
         return Ok(saved.recovery.unwrap_or(RecoveryKind::Interrupted));
     }
-    let mut statement=transaction.prepare("SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id").map_err(|error|sql_error("inspect orphan attempts",error))?;
+    let mut statement=transaction.prepare("SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id").map_err(|error|sql_error("inspect orphan attempts",&error))?;
     let rows = statement
         .query_map([saved.session.to_string()], |row| {
             Ok((
@@ -252,9 +252,9 @@ fn interrupt(
                 row.get::<_, String>(3)?,
             ))
         })
-        .map_err(|error| sql_error("read orphan attempts", error))?
+        .map_err(|error| sql_error("read orphan attempts", &error))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| sql_error("read orphan rows", error))?;
+        .map_err(|error| sql_error("read orphan rows", &error))?;
     drop(statement);
     let mut kind = RecoveryKind::NeverDispatched;
     for (id, intent, state, progress) in rows {
@@ -310,11 +310,11 @@ fn interrupt(
                     "UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1",
                     [&id],
                 )
-                .map_err(|error| sql_error("mark orphan attempt", error))?;
-            transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![id,Ledger::encode_payload(&progress)?]).map_err(|error|sql_error("record orphan attempt",error))?;
+                .map_err(|error| sql_error("mark orphan attempt", &error))?;
+            transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![id,Ledger::encode_payload(&progress)?]).map_err(|error|sql_error("record orphan attempt",&error))?;
         }
     }
-    transaction.execute("UPDATE request_reservations SET state='interrupted',recovery_kind=?2 WHERE request_id=?1 AND state='pending'",params![key,Ledger::encode_payload(&kind)?]).map_err(|error|sql_error("record interrupted request",error))?;
+    transaction.execute("UPDATE request_reservations SET state='interrupted',recovery_kind=?2 WHERE request_id=?1 AND state='pending'",params![key,Ledger::encode_payload(&kind)?]).map_err(|error|sql_error("record interrupted request",&error))?;
     Ok(kind)
 }
 
@@ -326,7 +326,7 @@ pub(super) fn validate_reserved_input(
     let Some(key) = &input.request_id else {
         return Ok(());
     };
-    let row:Option<(String,String,String)>=ledger.connection.query_row("SELECT owner_id,state,frozen_toon FROM request_reservations WHERE request_id=?1 AND session_id=?2",params![key,guard.session.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error|sql_error("validate request owner",error))?;
+    let row:Option<(String,String,String)>=ledger.connection.query_row("SELECT owner_id,state,frozen_toon FROM request_reservations WHERE request_id=?1 AND session_id=?2",params![key,guard.session.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error|sql_error("validate request owner",&error))?;
     let (owner, state, frozen) = row.ok_or(StorageError::Conflict)?;
     let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
     if owner != guard.owner.to_string()
@@ -500,7 +500,7 @@ impl Ledger {
                 return Err(ReplayError::Conflict);
             }
             self.transaction::<_,StorageError>("retry original reservation",|transaction| {
-                let changed=transaction.execute("UPDATE request_reservations SET owner_id=?2,state='pending',recovery_kind=NULL WHERE request_id=?1 AND state='interrupted'",params![key,guard.owner.to_string()]).map_err(|error|sql_error("reserve explicit retry",error))?;
+                let changed=transaction.execute("UPDATE request_reservations SET owner_id=?2,state='pending',recovery_kind=NULL WHERE request_id=?1 AND state='interrupted'",params![key,guard.owner.to_string()]).map_err(|error|sql_error("reserve explicit retry",&error))?;
                 if changed!=1 {return Err(StorageError::Conflict);}
                 Ok(())
             })?;
@@ -541,7 +541,7 @@ impl Ledger {
             let captured=super::sources::resolve_selection(transaction,&request.session,&current)?;
             if new {insert_session(transaction,&mut current,&captured)?;}
             let frozen=FrozenRequest {request:request.clone(),settings,sources:captured,session:id,frontier:current.frontier,revision:current.revision};
-            transaction.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon) VALUES(?1,?2,?3,?4,'pending',?5)",params![id.to_string(),key,hash,guard.owner.to_string(),Ledger::encode_payload(&frozen)?]).map_err(|error|sql_error("reserve unique request",error))?;
+            transaction.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon) VALUES(?1,?2,?3,?4,'pending',?5)",params![id.to_string(),key,hash,guard.owner.to_string(),Ledger::encode_payload(&frozen)?]).map_err(|error|sql_error("reserve unique request",&error))?;
             Ok(frozen)
         })?;
         Ok(RequestDecision::Accepted(Box::new(RequestOwner {
@@ -630,7 +630,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 attempt.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -721,7 +721,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 pending.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -757,7 +757,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 a.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -767,7 +767,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 a.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Failed,
                     error: Some(ErrorReport {
                         category: ErrorCategory::Transport,
@@ -793,7 +793,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 b.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },

@@ -46,7 +46,7 @@ pub(super) fn resolve_on(
                         |row| row.get(0),
                     )
                     .optional()
-                    .map_err(|error| sql_error("validate source membership", error))?;
+                    .map_err(|error| sql_error("validate source membership", &error))?;
                 if owner.as_deref() != Some(session.id.to_string().as_str()) {
                     return Err(HistoryError::ForeignHead.into());
                 }
@@ -98,11 +98,11 @@ impl Ledger {
         let transaction = self
             .connection
             .unchecked_transaction()
-            .map_err(|error| sql_error("begin source snapshot", error))?;
+            .map_err(|error| sql_error("begin source snapshot", &error))?;
         let sources = resolve_on(&transaction, selections)?;
         transaction
             .commit()
-            .map_err(|error| sql_error("finish source snapshot", error))?;
+            .map_err(|error| sql_error("finish source snapshot", &error))?;
         Ok(sources)
     }
 

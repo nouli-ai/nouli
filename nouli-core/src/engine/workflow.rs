@@ -133,7 +133,7 @@ impl<
             let owner = owner.clone();
             worker
                 .call(move |ledger| {
-                    ledger.record_workflow_progress(&owner, node, progress)?;
+                    ledger.record_workflow_progress(&owner, node, &progress)?;
                     ledger.workflow_node_progress(&owner, node)
                 })
                 .await
@@ -1215,9 +1215,9 @@ mod tests {
         assert!(active.iter().any(|active| active.record == adoption));
         assert!(active.iter().any(|active| active.record == left));
         assert!(active.iter().any(|active| active.record == right));
-        let observed = observer.events.lock().unwrap().clone();
+        let node_events = observer.events.lock().unwrap().clone();
         assert_eq!(
-            observed
+            node_events
                 .iter()
                 .filter(|(_, status)| *status == NodeStatus::Completed)
                 .count(),
@@ -2131,6 +2131,7 @@ mod tests {
     }
     #[tokio::test]
     async fn recorded_failed_call_is_never_reported_as_never_dispatched_during_retry_backoff() {
+        use crate::storage::workflows::recovery::Disposition;
         let store = Store::new();
         let worker = LedgerWorker::open(store.0.clone(), OpenMode::ReadWriteCreate)
             .await
@@ -2183,7 +2184,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        use crate::storage::workflows::recovery::Disposition;
         assert_eq!(inspection.nodes[0].disposition, Disposition::RetryWaiting);
         assert_eq!(inspection.nodes[0].attempts.len(), 1);
         assert_eq!(

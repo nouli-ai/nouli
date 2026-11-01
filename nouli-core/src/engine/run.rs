@@ -95,7 +95,7 @@ impl<'a> Recorder<'a> {
                             ledger.record_attempt_progress(
                                 writer.guard(),
                                 attempt.id,
-                                AttemptProgress {
+                                &AttemptProgress {
                                     state: AttemptStatus::Running,
                                     error: None,
                                 },
@@ -132,7 +132,7 @@ impl<'a> Recorder<'a> {
                 let attempt = self.attempt.ok_or(StorageError::Payload)?;
                 worker
                     .call(move |ledger| {
-                        ledger.record_attempt_progress(writer.guard(), attempt, progress)
+                        ledger.record_attempt_progress(writer.guard(), attempt, &progress)
                     })
                     .await??;
             }
@@ -140,7 +140,7 @@ impl<'a> Recorder<'a> {
                 let writer = owner.clone();
                 let attempt = self.attempt.ok_or(StorageError::Payload)?;
                 worker
-                    .call(move |ledger| ledger.fail_workflow_attempt(&writer, attempt, progress))
+                    .call(move |ledger| ledger.fail_workflow_attempt(&writer, attempt, &progress))
                     .await??;
             }
             Target::Ephemeral => {}

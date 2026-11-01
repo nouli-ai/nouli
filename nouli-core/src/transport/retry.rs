@@ -64,8 +64,8 @@ impl RetryPolicy {
         }
         let retry_after = match error {
             TransportError::Connect | TransportError::Timeout => None,
-            TransportError::RateLimited { retry_after } => *retry_after,
-            TransportError::Status {
+            TransportError::RateLimited { retry_after }
+            | TransportError::Status {
                 status: 500 | 502 | 503 | 504 | 524 | 529,
                 retry_after,
             } => *retry_after,

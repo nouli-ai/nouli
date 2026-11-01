@@ -88,11 +88,11 @@ pub(super) fn assign(connection: &Connection, session: &mut Session) -> Result<(
     let start = search_start(session.id).ok_or(StorageError::Payload)?;
     let mut statement = connection
         .prepare("SELECT EXISTS(SELECT 1 FROM sessions WHERE name=?1)")
-        .map_err(|error| sql_error("prepare automatic session name", error))?;
+        .map_err(|error| sql_error("prepare automatic session name", &error))?;
     session.name = Some(available(start, |name| {
         statement
             .query_row([name], |row| row.get(0))
-            .map_err(|error| sql_error("check automatic session name", error))
+            .map_err(|error| sql_error("check automatic session name", &error))
     })?);
     Ok(())
 }

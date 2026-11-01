@@ -126,7 +126,7 @@ pub(crate) fn diagnostic(sink: &mut impl Write, error: &ErrorReport) -> Result<(
     )?;
     Ok(())
 }
-fn json_value(sink: &mut impl Write, value: serde_json::Value) -> Result<(), RenderError> {
+fn json_value(sink: &mut impl Write, value: &serde_json::Value) -> Result<(), RenderError> {
     serde_json::to_writer(&mut *sink, &value)?;
     sink.write_all(b"\n")?;
     sink.flush()?;
@@ -148,7 +148,7 @@ pub(crate) fn result(
             Report::Error(error) => diagnostic(stderr, error)?,
             _ => text::result(stdout, result)?,
         },
-        Format::Json => json_value(stdout, encoded)?,
+        Format::Json => json_value(stdout, &encoded)?,
         Format::Toon => {
             stdout.write_all(codec::encode_toon(&encoded)?.as_bytes())?;
             stdout.write_all(b"\n")?;
@@ -222,7 +222,7 @@ impl<W: Write> JsonlWriter<W> {
         };
         let value = codec::to_value(event)?;
         self.next = self.next.checked_add(1).ok_or(RenderError::Protocol)?;
-        if let Err(error) = json_value(&mut self.sink, value) {
+        if let Err(error) = json_value(&mut self.sink, &value) {
             self.failed = true;
             return Err(error);
         }

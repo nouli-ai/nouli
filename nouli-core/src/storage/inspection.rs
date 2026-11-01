@@ -101,7 +101,7 @@ fn requests(
     let mut selected = vec![];
     let mut seen = HashSet::new();
     if let Some(session) = session {
-        let mut statement=ledger.connection.prepare("SELECT request_id,state,frozen_toon FROM request_reservations WHERE kind='evaluation' AND session_id=?1 ORDER BY rowid").map_err(|error|sql_error("list accepted session requests",error))?;
+        let mut statement=ledger.connection.prepare("SELECT request_id,state,frozen_toon FROM request_reservations WHERE kind='evaluation' AND session_id=?1 ORDER BY rowid").map_err(|error|sql_error("list accepted session requests",&error))?;
         let rows = statement
             .query_map([session.to_string()], |row| {
                 Ok((
@@ -110,10 +110,10 @@ fn requests(
                     row.get::<_, String>(2)?,
                 ))
             })
-            .map_err(|error| sql_error("read accepted session requests", error))?;
+            .map_err(|error| sql_error("read accepted session requests", &error))?;
         for row in rows {
             let (key, state, payload) =
-                row.map_err(|error| sql_error("decode accepted session request", error))?;
+                row.map_err(|error| sql_error("decode accepted session request", &error))?;
             seen.insert(key.clone());
             selected.push(AcceptedRequest {
                 request_id: key,
@@ -125,11 +125,11 @@ fn requests(
     let mut keys = keys.iter().collect::<Vec<_>>();
     keys.sort();
     for key in keys {
+        use rusqlite::OptionalExtension;
         if seen.contains(key) {
             continue;
         }
-        use rusqlite::OptionalExtension;
-        let row:Option<(String,String)>=ledger.connection.query_row("SELECT state,frozen_toon FROM request_reservations WHERE kind='evaluation' AND request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(|error|sql_error("read referenced accepted request",error))?;
+        let row:Option<(String,String)>=ledger.connection.query_row("SELECT state,frozen_toon FROM request_reservations WHERE kind='evaluation' AND request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(|error|sql_error("read referenced accepted request",&error))?;
         if let Some((state, payload)) = row {
             selected.push(AcceptedRequest {
                 request_id: key.clone(),
@@ -152,7 +152,7 @@ fn node_intents(
             && seen.insert((scope.run, scope.node, scope.round))
         {
             let node = i64::try_from(scope.node).map_err(|_| StorageError::Payload)?;
-            let payload:String=ledger.connection.query_row("SELECT i.payload_toon FROM workflow_node_intents i JOIN workflow_nodes n ON n.run_id=i.run_id AND n.node_id=i.node_id WHERE i.run_id=?1 AND n.declaration_order=?2 AND i.round=?3",rusqlite::params![scope.run.to_string(),node,scope.round],|row|row.get(0)).map_err(|error|sql_error("read accepted node metadata",error))?;
+            let payload:String=ledger.connection.query_row("SELECT i.payload_toon FROM workflow_node_intents i JOIN workflow_nodes n ON n.run_id=i.run_id AND n.node_id=i.node_id WHERE i.run_id=?1 AND n.declaration_order=?2 AND i.round=?3",rusqlite::params![scope.run.to_string(),node,scope.round],|row|row.get(0)).map_err(|error|sql_error("read accepted node metadata",&error))?;
             intents.push(Ledger::decode_payload(&payload)?);
         }
     }
@@ -203,10 +203,10 @@ impl Ledger {
         let tx = self
             .connection
             .unchecked_transaction()
-            .map_err(|error| sql_error("begin turn inspection", error))?;
+            .map_err(|error| sql_error("begin turn inspection", &error))?;
         let result = self.inspect_turn_record(self.turn(id)?)?;
         tx.commit()
-            .map_err(|error| sql_error("finish turn inspection", error))?;
+            .map_err(|error| sql_error("finish turn inspection", &error))?;
         Ok(result)
     }
     /// Inspects the given turn of a session, or the session's single head turn
@@ -227,7 +227,7 @@ impl Ledger {
         let tx = self
             .connection
             .unchecked_transaction()
-            .map_err(|error| sql_error("begin selected turn inspection", error))?;
+            .map_err(|error| sql_error("begin selected turn inspection", &error))?;
         let session = self.session(selector)?;
         let id = match turn {
             Some(id) => id,
@@ -240,7 +240,7 @@ impl Ledger {
         }
         let result = self.inspect_turn_record(turn)?;
         tx.commit()
-            .map_err(|error| sql_error("finish selected turn inspection", error))?;
+            .map_err(|error| sql_error("finish selected turn inspection", &error))?;
         Ok(result)
     }
     fn inspect_turn_record(&self, turn: FinalizedTurn) -> Result<TurnInspection, InspectionError> {
@@ -298,7 +298,7 @@ impl Ledger {
         let tx = self
             .connection
             .unchecked_transaction()
-            .map_err(|error| sql_error("begin complete session export", error))?;
+            .map_err(|error| sql_error("begin complete session export", &error))?;
         let session = self.session(selector)?;
         let sources = self.session_sources(session.id)?;
         let heads = if session.frontier.is_empty() {
@@ -348,12 +348,12 @@ impl Ledger {
         }
         let mut statement = tx
             .prepare("SELECT id FROM workflow_runs WHERE session_id=?1 ORDER BY rowid")
-            .map_err(|error| sql_error("list session workflow records", error))?;
+            .map_err(|error| sql_error("list session workflow records", &error))?;
         let owned = statement
             .query_map([session.id.to_string()], |row| row.get::<_, String>(0))
-            .map_err(|error| sql_error("read session workflow IDs", error))?
+            .map_err(|error| sql_error("read session workflow IDs", &error))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| sql_error("decode session workflow IDs", error))?;
+            .map_err(|error| sql_error("decode session workflow IDs", &error))?;
         drop(statement);
         let mut workflows = vec![];
         for id in owned {
@@ -373,7 +373,7 @@ impl Ledger {
             .collect::<Result<_, _>>()?;
         let context = context(self, &heads, session.id)?;
         tx.commit()
-            .map_err(|error| sql_error("finish complete session export", error))?;
+            .map_err(|error| sql_error("finish complete session export", &error))?;
         Ok(SessionExport {
             version: CONTRACT_VERSION,
             session,

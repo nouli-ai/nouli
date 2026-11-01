@@ -69,7 +69,7 @@ impl fmt::Debug for HttpResponse {
         f.debug_struct("HttpResponse")
             .field("status", &self.status)
             .field("body_bytes", &self.body.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -146,7 +146,7 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
     Ok(url)
 }
 
-fn network_error(error: reqwest::Error) -> TransportError {
+fn network_error(error: &reqwest::Error) -> TransportError {
     if error.is_timeout() {
         TransportError::Timeout
     } else if error.is_connect() {
@@ -356,7 +356,7 @@ impl HttpTransport {
             .headers(resolved_headers)
             .send()
             .await
-            .map_err(network_error)?;
+            .map_err(|error| network_error(&error))?;
         let status = response.status().as_u16();
         let headers = response.headers().clone();
         let expected = response.content_length();
@@ -370,7 +370,7 @@ impl HttpTransport {
             if expected.is_some() && !error.is_timeout() {
                 TransportError::Truncated
             } else {
-                network_error(error)
+                network_error(&error)
             }
         })? {
             if chunk.len() > self.max_response_bytes - bytes.len() {

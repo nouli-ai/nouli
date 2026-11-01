@@ -16,10 +16,10 @@ pub(super) const MIGRATIONS: &[&str] = &[
 fn identity(connection: &Connection) -> Result<(i64, u32), StorageError> {
     let app = connection
         .pragma_query_value(None, "application_id", |row| row.get(0))
-        .map_err(|error| sql_error("read application identity", error))?;
+        .map_err(|error| sql_error("read application identity", &error))?;
     let version = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(|error| sql_error("read schema version", error))?;
+        .map_err(|error| sql_error("read schema version", &error))?;
     Ok((app, version))
 }
 
@@ -39,7 +39,7 @@ pub(super) fn check_read_only(connection: &Connection) -> Result<(), StorageErro
     }
     let journal: String = connection
         .pragma_query_value(None, "journal_mode", |row| row.get(0))
-        .map_err(|error| sql_error("read journal mode", error))?;
+        .map_err(|error| sql_error("read journal mode", &error))?;
     if !journal.eq_ignore_ascii_case("delete") {
         return Err(StorageError::WrongStore);
     }
@@ -52,7 +52,7 @@ pub(super) fn migrate(
 ) -> Result<(), StorageError> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|error| sql_error("begin migration", error))?;
+        .map_err(|error| sql_error("begin migration", &error))?;
     let (app, version) = identity(&transaction)?;
     let supported = u32::try_from(migrations.len()).expect("migration count fits in u32");
     if version > supported {
@@ -71,7 +71,7 @@ pub(super) fn migrate(
                 [],
                 |row| row.get(0),
             )
-            .map_err(|error| sql_error("inspect empty ledger", error))?;
+            .map_err(|error| sql_error("inspect empty ledger", &error))?;
         if tables != 0 || version != 0 {
             return Err(StorageError::WrongStore);
         }
@@ -79,19 +79,19 @@ pub(super) fn migrate(
     for (next, sql) in (1_u32..).zip(migrations).skip(version as usize) {
         transaction
             .execute_batch(sql)
-            .map_err(|error| sql_error("migrate schema", error))?;
+            .map_err(|error| sql_error("migrate schema", &error))?;
         transaction
             .pragma_update(None, "user_version", next)
-            .map_err(|error| sql_error("set schema version", error))?;
+            .map_err(|error| sql_error("set schema version", &error))?;
     }
     if app != APPLICATION_ID {
         transaction
             .pragma_update(None, "application_id", APPLICATION_ID)
-            .map_err(|error| sql_error("set ledger identity", error))?;
+            .map_err(|error| sql_error("set ledger identity", &error))?;
     }
     transaction
         .commit()
-        .map_err(|error| sql_error("commit migration", error))
+        .map_err(|error| sql_error("commit migration", &error))
 }
 
 #[cfg(test)]

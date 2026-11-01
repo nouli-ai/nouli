@@ -82,8 +82,6 @@ fn xml(
 }
 
 fn office_text(xml: &str, name: &str) -> Result<String, Error> {
-    let doc = roxmltree::Document::parse(xml).map_err(|_| unsupported(name))?;
-    let mut out = String::new();
     fn visit(node: roxmltree::Node<'_, '_>, out: &mut String, in_cell: bool, depth: usize) -> bool {
         if depth > 128 {
             return false;
@@ -135,6 +133,8 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
         }
         out.len() as u64 <= MAX_BYTES
     }
+    let doc = roxmltree::Document::parse(xml).map_err(|_| unsupported(name))?;
+    let mut out = String::new();
     if !visit(doc.root_element(), &mut out, false, 0) {
         return Err(unsupported(name));
     }
@@ -292,6 +292,15 @@ pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
 
 /// Optional converter runs in its own temporary directory and user profile.
 fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
+    use nix::{
+        sys::{
+            resource::{Resource, setrlimit},
+            signal::{Signal, killpg},
+        },
+        unistd::Pid,
+    };
+    use std::os::unix::fs::DirBuilderExt;
+    use std::os::unix::process::CommandExt;
     use std::{
         process::{Command, Stdio},
         thread,
@@ -307,15 +316,6 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
         "nouli-office-{}",
         nouli_core::identity::Id::generate()
     )));
-    use nix::{
-        sys::{
-            resource::{Resource, setrlimit},
-            signal::{Signal, killpg},
-        },
-        unistd::Pid,
-    };
-    use std::os::unix::fs::DirBuilderExt;
-    use std::os::unix::process::CommandExt;
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&temp.0)

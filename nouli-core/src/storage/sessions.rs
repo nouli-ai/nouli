@@ -98,7 +98,7 @@ pub(super) fn insert_session(
                 frontier
             ],
         )
-        .map_err(|error| creation_error(sql_error("insert session", error), true))?;
+        .map_err(|error| creation_error(sql_error("insert session", &error), true))?;
     let event = Ledger::encode_payload(&HistoryEvent::SessionCreated {
         session: session.id,
         sources: sources.to_vec(),
@@ -108,9 +108,9 @@ pub(super) fn insert_session(
             "INSERT INTO session_events(session_id,sequence,payload_toon) VALUES(?1,0,?2)",
             params![session.id.to_string(), event],
         )
-        .map_err(|error| sql_error("record session creation", error))?;
+        .map_err(|error| sql_error("record session creation", &error))?;
     for (position, source) in (0_i64..).zip(sources) {
-        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",error))?;
+        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",&error))?;
     }
     Ok(())
 }
@@ -140,7 +140,7 @@ pub(super) fn read_session(
             ))
         })
         .optional()
-        .map_err(|error| sql_error("read session", error))?;
+        .map_err(|error| sql_error("read session", &error))?;
     decode(row.ok_or(SessionError::UnknownSession)?)
 }
 
@@ -148,14 +148,14 @@ pub(super) fn read_sources(
     connection: &rusqlite::Connection,
     id: Id,
 ) -> Result<Vec<SourcePoint>, SessionError> {
-    let mut statement=connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",error))?;
+    let mut statement=connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",&error))?;
     let rows = statement
         .query_map([id.to_string()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-        .map_err(|error| sql_error("read source rows", error))?;
+        .map_err(|error| sql_error("read source rows", &error))?;
     rows.map(|row| {
-        let (session, frontier) = row.map_err(|error| sql_error("decode source row", error))?;
+        let (session, frontier) = row.map_err(|error| sql_error("decode source row", &error))?;
         Ok(SourcePoint {
             session: Id::try_from(session).map_err(|_| StorageError::Payload)?,
             frontier: Ledger::decode_payload(&frontier)?,
@@ -229,9 +229,9 @@ impl Ledger {
             if session.name.as_ref()==Some(&name){return Ok(session);}
             let event=HistoryEvent::SessionRenamed{session:id,previous_name:session.name.clone(),name:name.clone()};
             transaction.execute("UPDATE sessions SET name=?2 WHERE id=?1",params![id.to_string(),name.as_str()])
-                .map_err(|error|creation_error(sql_error("rename session",error),true))?;
+                .map_err(|error|creation_error(sql_error("rename session",&error),true))?;
             transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![id.to_string(),Ledger::encode_payload(&event)?])
-                .map_err(|error|sql_error("record session rename",error))?;
+                .map_err(|error|sql_error("record session rename",&error))?;
             session.name=Some(name);
             Ok(session)
         })
@@ -248,7 +248,7 @@ impl Ledger {
             .prepare(
                 "SELECT id,name,defaults_toon,frontier_toon,revision FROM sessions ORDER BY id",
             )
-            .map_err(|error| sql_error("list sessions", error))?;
+            .map_err(|error| sql_error("list sessions", &error))?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -259,8 +259,8 @@ impl Ledger {
                     row.get(4)?,
                 ))
             })
-            .map_err(|error| sql_error("list sessions", error))?;
-        rows.map(|row| decode(row.map_err(|error| sql_error("decode session row", error))?))
+            .map_err(|error| sql_error("list sessions", &error))?;
+        rows.map(|row| decode(row.map_err(|error| sql_error("decode session row", &error))?))
             .collect()
     }
 }

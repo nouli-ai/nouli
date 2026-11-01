@@ -124,7 +124,7 @@ pub(crate) struct Whatif {
     pub common: Common,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Verb<'a> {
     New(&'a New),
     Add(&'a Add),

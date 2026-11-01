@@ -185,7 +185,7 @@ impl Ledger {
     ) -> Result<(Vec<Id>, Vec<SavedDecision>), DecisionError> {
         let mut statement = self.connection.prepare(
             "SELECT t.id, COALESCE(s.name,s.id), t.ordinal, t.rowid FROM turns t JOIN sessions s ON s.id=t.session_id ORDER BY t.rowid DESC"
-        ).map_err(|error| sql_error("list saved decisions", error))?;
+        ).map_err(|error| sql_error("list saved decisions", &error))?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -195,12 +195,12 @@ impl Ledger {
                     row.get::<_, i64>(3)?,
                 ))
             })
-            .map_err(|error| sql_error("read decision catalog", error))?;
+            .map_err(|error| sql_error("read decision catalog", &error))?;
         let mut ids = Vec::new();
         let mut entries = Vec::new();
         for row in rows {
             let (id, session_name, ordinal, sequence) =
-                row.map_err(|error| sql_error("read decision entry", error))?;
+                row.map_err(|error| sql_error("read decision entry", &error))?;
             let id = Id::try_from(id).map_err(|_| StorageError::Payload)?;
             if known.contains(&id) {
                 continue;
@@ -256,7 +256,7 @@ impl Ledger {
         let (name,ordinal):(String,i64)=self.connection.query_row(
             "SELECT COALESCE(s.name,s.id),t.ordinal FROM turns t JOIN sessions s ON s.id=t.session_id WHERE t.id=?1",
             [source.turn.to_string()],|row|Ok((row.get(0)?,row.get(1)?)))
-            .map_err(|e|sql_error("read reference source label",e))?;
+            .map_err(|e|sql_error("read reference source label",&e))?;
         let prompt = &turn
             .request
             .questions

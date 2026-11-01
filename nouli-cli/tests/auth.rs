@@ -230,12 +230,12 @@ fn the_shell_beats_the_env_file_and_the_env_file_beats_the_store() {
 
 #[test]
 fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable() {
-    let server = Server::with_handler(harness::typesafe);
-    let home = Home::create();
-    home.configure(&server, "typesafe", false);
     fn create(name: &str) -> Vec<&str> {
         [&["new", name, "A fact"][..], &QUESTION].concat()
     }
+    let server = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
     // An env source names a variable, and the variable's value is the key.
     let stored = home.run(["auth", "login", "local", "--env", "CUSTOM_SOURCE_VARIABLE"]);
     assert!(stored.status.success());

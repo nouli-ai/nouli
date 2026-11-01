@@ -24,7 +24,7 @@ pub(super) fn insert_turn(
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| sql_error("read shared context base", error))?;
+            .map_err(|error| sql_error("read shared context base", &error))?;
         if let Some(existing) = existing {
             if existing != payload {
                 return Err(StorageError::Conflict);
@@ -34,10 +34,10 @@ pub(super) fn insert_turn(
                 "INSERT INTO context_bases(id,session_id,payload_toon) VALUES(?1,?2,?3)",
                 params![base.id.to_string(), base.session.to_string(), payload],
             )
-            .map_err(|error| sql_error("publish shared context base", error))?;
+            .map_err(|error| sql_error("publish shared context base", &error))?;
             for update in &base.updates {
                 if let Some(record) = update.new_record() {
-                    tx.execute("INSERT INTO context_records(id,base_id,record_key,payload_toon) VALUES(?1,?2,?3,?4)",params![record.id.to_string(),base.id.to_string(),record.key,Ledger::encode_payload(record)?]).map_err(|error|sql_error("publish shared context record",error))?;
+                    tx.execute("INSERT INTO context_records(id,base_id,record_key,payload_toon) VALUES(?1,?2,?3,?4)",params![record.id.to_string(),base.id.to_string(),record.key,Ledger::encode_payload(record)?]).map_err(|error|sql_error("publish shared context record",&error))?;
                 }
             }
         }
@@ -51,13 +51,13 @@ pub(super) fn insert_turn(
             Ledger::encode_payload(turn)?
         ],
     )
-    .map_err(|error| sql_error("insert finalized turn", error))?;
+    .map_err(|error| sql_error("insert finalized turn", &error))?;
     for (position, parent) in (0_i64..).zip(&turn.parents) {
         tx.execute(
             "INSERT INTO turn_parents(turn_id,parent_id,position) VALUES(?1,?2,?3)",
             params![turn.id.to_string(), parent.to_string(), position],
         )
-        .map_err(|error| sql_error("record ancestry", error))?;
+        .map_err(|error| sql_error("record ancestry", &error))?;
     }
     for (position, update) in (0_i64..).zip(&turn.updates) {
         tx.execute(
@@ -68,17 +68,17 @@ pub(super) fn insert_turn(
                 Ledger::encode_payload(update)?
             ],
         )
-        .map_err(|error| sql_error("record context event", error))?;
+        .map_err(|error| sql_error("record context event", &error))?;
         if let Some(record) = update.new_record() {
-            tx.execute("INSERT INTO context_records(id,turn_id,record_key,payload_toon) VALUES(?1,?2,?3,?4)",params![record.id.to_string(),turn.id.to_string(),record.key,Ledger::encode_payload(record)?]).map_err(|error|sql_error("insert context record",error))?;
+            tx.execute("INSERT INTO context_records(id,turn_id,record_key,payload_toon) VALUES(?1,?2,?3,?4)",params![record.id.to_string(),turn.id.to_string(),record.key,Ledger::encode_payload(record)?]).map_err(|error|sql_error("insert context record",&error))?;
         }
     }
     tx.execute(
         "INSERT INTO manifests(turn_id,payload_toon) VALUES(?1,?2)",
         params![turn.id.to_string(), Ledger::encode_payload(&turn.manifest)?],
     )
-    .map_err(|error| sql_error("record manifest", error))?;
-    let changed=tx.execute("UPDATE attempt_states SET state='completed',finalized_turn=?2 WHERE attempt_id=?1 AND state IN ('pending','running')",params![attempt.to_string(),turn.id.to_string()]).map_err(|error|sql_error("complete attempt",error))?;
+    .map_err(|error| sql_error("record manifest", &error))?;
+    let changed=tx.execute("UPDATE attempt_states SET state='completed',finalized_turn=?2 WHERE attempt_id=?1 AND state IN ('pending','running')",params![attempt.to_string(),turn.id.to_string()]).map_err(|error|sql_error("complete attempt",&error))?;
     if changed != 1 {
         return Err(StorageError::Conflict);
     }

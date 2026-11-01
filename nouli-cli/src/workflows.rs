@@ -250,7 +250,7 @@ pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 
                     codec::to_value(&inspection).map_err(crate::inspect::InspectError::from)?;
                 crate::inspect::write(
                     "Saved workflow, recovery receipts, and ordered history",
-                    value,
+                    &value,
                     &mut std::io::stdout().lock(),
                     format,
                 )

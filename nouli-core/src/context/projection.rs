@@ -104,7 +104,7 @@ impl Projector {
         &mut self,
         heads: &mut Vec<usize>,
         updates: &[ContextUpdate],
-        origin: RevisionOrigin,
+        origin: &RevisionOrigin,
     ) -> Result<(), ProjectionError> {
         for (index, update) in updates.iter().enumerate() {
             update.validate()?;
@@ -202,7 +202,7 @@ pub fn project(
         sources,
         None,
         updates,
-        RevisionOrigin::Pending {
+        &RevisionOrigin::Pending {
             session: Some(session),
             token: turn,
         },
@@ -276,7 +276,7 @@ fn apply_base(
             run: base.id,
         }
     };
-    projector.apply(&mut heads, &base.updates, origin)?;
+    projector.apply(&mut heads, &base.updates, &origin)?;
     cache.insert(base.id, (base.clone(), heads.clone()));
     Ok(heads)
 }
@@ -297,7 +297,7 @@ pub fn project_with_base(
     sources: &[SourcePoint],
     base: Option<&ContextBase>,
     updates: &[ContextUpdate],
-    origin: RevisionOrigin,
+    origin: &RevisionOrigin,
 ) -> Result<Vec<ActiveRecord>, ProjectionError> {
     let ordered = canonical_history(turns, sources)?;
     let index: HashMap<_, _> = ordered.iter().map(|turn| (turn.id, *turn)).collect();
@@ -331,7 +331,7 @@ pub fn project_with_base(
                 turn: turn.id,
             }
         };
-        projector.apply(&mut heads, &turn.updates, origin)?;
+        projector.apply(&mut heads, &turn.updates, &origin)?;
         projector.ensure_resolved(&heads)?;
         states.insert(turn.id, heads);
     }

@@ -22,6 +22,10 @@ fn configure(home: &Home, server: &Server) {
     fs::write(path, config).unwrap();
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership of a finished process output"
+)]
 fn failure(output: Output, code: &str) {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
@@ -43,6 +47,10 @@ fn create(name: &str) -> Vec<&str> {
     [&["new", name][..], &QUESTION].concat()
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership of a finished process output"
+)]
 fn missing_credential(output: Output) {
     assert_eq!(output.status.code(), Some(3));
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();

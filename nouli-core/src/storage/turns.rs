@@ -125,7 +125,7 @@ pub(super) fn progress_event(
     progress: &AttemptProgress,
 ) -> Result<(), StorageError> {
     let payload = Ledger::encode_payload(progress)?;
-    transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![attempt.to_string(),payload]).map_err(|error|sql_error("append attempt event",error))?;
+    transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![attempt.to_string(),payload]).map_err(|error|sql_error("append attempt event",&error))?;
     Ok(())
 }
 
@@ -203,13 +203,13 @@ impl Ledger {
                         payload
                     ],
                 )
-                .map_err(|error| sql_error("insert accepted intent", error))?;
+                .map_err(|error| sql_error("insert accepted intent", &error))?;
             transaction
                 .execute(
                     "INSERT INTO attempt_states(attempt_id,state) VALUES(?1,'pending')",
                     [prepared.id.to_string()],
                 )
-                .map_err(|error| sql_error("insert pending state", error))?;
+                .map_err(|error| sql_error("insert pending state", &error))?;
             progress_event(
                 transaction,
                 prepared.id,
@@ -230,7 +230,7 @@ impl Ledger {
     /// [`TurnError::Storage`] if the SQLite query fails or the stored attempt is
     /// invalid or inconsistent.
     pub fn attempt(&self, id: Id) -> Result<AttemptSnapshot, TurnError> {
-        let row:Option<(String,String,Option<String>,String)>=self.connection.query_row("SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1",[id.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))).optional().map_err(|error|sql_error("read attempt",error))?;
+        let row:Option<(String,String,Option<String>,String)>=self.connection.query_row("SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1",[id.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))).optional().map_err(|error|sql_error("read attempt",&error))?;
         let (intent, state, turn, progress) = row.ok_or(TurnError::UnknownAttempt)?;
         let intent: PreparedAttempt = Self::decode_payload(&intent)?;
         let progress: AttemptProgress = Self::decode_payload(&progress)?;
@@ -259,12 +259,12 @@ impl Ledger {
         let mut statement = self
             .connection
             .prepare("SELECT id FROM attempts WHERE session_id=?1 ORDER BY rowid")
-            .map_err(|error| sql_error("list attempts", error))?;
+            .map_err(|error| sql_error("list attempts", &error))?;
         let ids = statement
             .query_map([session.to_string()], |row| row.get::<_, String>(0))
-            .map_err(|error| sql_error("list attempts", error))?
+            .map_err(|error| sql_error("list attempts", &error))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| sql_error("read attempt ids", error))?;
+            .map_err(|error| sql_error("read attempt ids", &error))?;
         ids.into_iter()
             .map(|id| self.attempt(Id::try_from(id).map_err(|_| StorageError::Payload)?))
             .collect()
@@ -284,7 +284,7 @@ impl Ledger {
         &mut self,
         guard: &SessionGuard,
         id: Id,
-        progress: AttemptProgress,
+        progress: &AttemptProgress,
     ) -> Result<(), TurnError> {
         let snapshot = self.attempt(id)?;
         guard
@@ -312,11 +312,11 @@ impl Ledger {
                     "UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state=?3",
                     params![id.to_string(), progress.state.name(), previous.name()],
                 )
-                .map_err(|error| sql_error("advance attempt state", error))?;
+                .map_err(|error| sql_error("advance attempt state", &error))?;
             if changed != 1 {
                 return Err(StorageError::Conflict);
             }
-            progress_event(transaction, id, &progress)
+            progress_event(transaction, id, progress)
         })
         .map_err(write_error)
     }
@@ -406,16 +406,16 @@ impl Ledger {
             frontier: vec![turn.id],
         })?;
         self.transaction::<_, StorageError>("finalize turn",|transaction| {
-            let current:i64=transaction.query_row("SELECT revision FROM sessions WHERE id=?1",[turn.session.to_string()],|row|row.get(0)).map_err(|error|sql_error("check expected head",error))?;
+            let current:i64=transaction.query_row("SELECT revision FROM sessions WHERE id=?1",[turn.session.to_string()],|row|row.get(0)).map_err(|error|sql_error("check expected head",&error))?;
             if current!=prepared.expected_revision {return Err(StorageError::Conflict);}
             super::publication::insert_turn(transaction,&turn,id,prepared.expected_revision)?;
-            let changed=transaction.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807",params![turn.session.to_string(),frontier,prepared.expected_revision]).map_err(|error|sql_error("publish session head",error))?;
+            let changed=transaction.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807",params![turn.session.to_string(),frontier,prepared.expected_revision]).map_err(|error|sql_error("publish session head",&error))?;
             if changed!=1 {return Err(StorageError::Conflict);}
             if let Some(key)=&prepared.input.request_id {
-                let changed=transaction.execute("UPDATE request_reservations SET state='completed',result_toon=?2 WHERE request_id=?1 AND owner_id=?3 AND session_id=?4 AND state='pending'",params![key,payload,guard.owner.to_string(),turn.session.to_string()]).map_err(|error|sql_error("complete request reservation",error))?;
+                let changed=transaction.execute("UPDATE request_reservations SET state='completed',result_toon=?2 WHERE request_id=?1 AND owner_id=?3 AND session_id=?4 AND state='pending'",params![key,payload,guard.owner.to_string(),turn.session.to_string()]).map_err(|error|sql_error("complete request reservation",&error))?;
                 if changed!=1 {return Err(StorageError::Conflict);}
             }
-            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![turn.session.to_string(),event]).map_err(|error|sql_error("record finalized head",error))?;
+            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![turn.session.to_string(),event]).map_err(|error|sql_error("record finalized head",&error))?;
             Ok(())
         }).map_err(write_error)?;
         Ok(turn)
@@ -437,7 +437,7 @@ impl Ledger {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| sql_error("read turn", error))?;
+            .map_err(|error| sql_error("read turn", &error))?;
         let turn: FinalizedTurn = Self::decode_payload(&payload.ok_or(TurnError::UnknownTurn)?)?;
         if turn.id != id {
             return Err(StorageError::Payload.into());
@@ -462,7 +462,7 @@ impl Ledger {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| sql_error("read manifest", error))?;
+            .map_err(|error| sql_error("read manifest", &error))?;
         let manifest: EvaluationManifest =
             Self::decode_payload(&payload.ok_or(TurnError::UnknownTurn)?)?;
         manifest.validate()?;
@@ -648,14 +648,14 @@ mod tests {
             }),
         };
         ledger
-            .record_attempt_progress(&guard, failure.id, progress.clone())
+            .record_attempt_progress(&guard, failure.id, &progress)
             .unwrap();
         let interrupted = ledger.prepare_attempt(&guard, input()).unwrap();
         ledger
             .record_attempt_progress(
                 &guard,
                 interrupted.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -665,7 +665,7 @@ mod tests {
             .record_attempt_progress(
                 &guard,
                 interrupted.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Interrupted,
                     error: None,
                 },
@@ -701,7 +701,7 @@ mod tests {
             .unwrap();
         let guard = ledger.session_guard(session.id).unwrap();
         let attempt = ledger.prepare_attempt(&guard, input()).unwrap();
-        ledger.transaction::<_, StorageError>("inject failure",|transaction| {transaction.execute_batch("CREATE TRIGGER fail_publish BEFORE UPDATE ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected failure'); END;").map_err(|error|sql_error("inject finalization failure",error))}).unwrap();
+        ledger.transaction::<_, StorageError>("inject failure",|transaction| {transaction.execute_batch("CREATE TRIGGER fail_publish BEFORE UPDATE ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected failure'); END;").map_err(|error|sql_error("inject finalization failure",&error))}).unwrap();
         assert!(
             ledger
                 .finalize_attempt(&guard, attempt.id, outcome())
@@ -731,7 +731,7 @@ mod tests {
             .transaction::<_, StorageError>("remove failure", |transaction| {
                 transaction
                     .execute_batch("DROP TRIGGER fail_publish")
-                    .map_err(|error| sql_error("remove failure injection", error))
+                    .map_err(|error| sql_error("remove failure injection", &error))
             })
             .unwrap();
         ledger

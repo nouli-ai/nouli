@@ -22,6 +22,10 @@ fn command(home: &Home) -> Command {
         .current_dir(&home.0);
     command
 }
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership of a finished process output"
+)]
 fn error(output: Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {
     assert_eq!(output.status.code(), Some(exit));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");

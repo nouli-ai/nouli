@@ -243,11 +243,11 @@ impl EngineError {
         match self {
             Self::Workflow(error) => error.report(),
             Self::Config(error) => config(error),
-            Self::Storage(error) => storage(error),
+            Self::Storage(error)
+            | Self::Worker(crate::storage::worker::WorkerError::Storage(error)) => storage(error),
             Self::Session(error) => session(error),
             Self::Source(error) => source(error),
             Self::Turn(error) => turn(error),
-            Self::Worker(crate::storage::worker::WorkerError::Storage(error)) => storage(error),
             Self::Worker(_) => message(Category::Storage, "ledger_worker_stopped"),
             Self::Replay(error) => match error {
                 ReplayError::Storage(error) => storage(error),

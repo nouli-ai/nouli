@@ -108,19 +108,6 @@ impl TokenCounter for ByteCounter {
         let mut total = base;
         let mut per_question = Vec::with_capacity(questions.len());
         for question in questions {
-            let serialized = codec::encode_toon(question)?;
-            let mut question_tokens = (serialized.len().div_ceil(4) as u64)
-                .checked_add(16)
-                .ok_or(LimitError::Overflow)?;
-            let values = if shared_only {
-                serde_json::Value::Null
-            } else if protocol == Protocol::OpenaiDecisions {
-                serde_json::to_value((&question.prompt, &question.criteria))
-                    .map_err(|_| crate::codec::CodecError::Shape)?
-            } else {
-                serde_json::to_value((&question.prompt, &question.criteria, &question.answer_space))
-                    .map_err(|_| crate::codec::CodecError::Shape)?
-            };
             fn occurrences(value: &serde_json::Value, reference: &str) -> u64 {
                 match value {
                     serde_json::Value::String(text) => text.matches(reference).count() as u64,
@@ -135,6 +122,19 @@ impl TokenCounter for ByteCounter {
                     _ => 0,
                 }
             }
+            let serialized = codec::encode_toon(question)?;
+            let mut question_tokens = (serialized.len().div_ceil(4) as u64)
+                .checked_add(16)
+                .ok_or(LimitError::Overflow)?;
+            let values = if shared_only {
+                serde_json::Value::Null
+            } else if protocol == Protocol::OpenaiDecisions {
+                serde_json::to_value((&question.prompt, &question.criteria))
+                    .map_err(|_| crate::codec::CodecError::Shape)?
+            } else {
+                serde_json::to_value((&question.prompt, &question.criteria, &question.answer_space))
+                    .map_err(|_| crate::codec::CodecError::Shape)?
+            };
             for (reference, cost) in &image_costs {
                 question_tokens = question_tokens
                     .checked_add(

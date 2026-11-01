@@ -16,5 +16,7 @@ keywords = ["decision", "ledger", "llm", "ai", "history"]
 cargo = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 mod_module_files = "warn"
+# Async trait impls stay `async fn` so their work runs when awaited, not when called.
+unused_async_trait_impl = "allow"
 # Temporarily allowed while the other pedantic findings are fixed.
 too_many_lines = "allow"

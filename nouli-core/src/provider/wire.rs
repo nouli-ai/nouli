@@ -135,6 +135,16 @@ pub fn normalize(
     name: &str,
     binding: HttpBinding,
 ) -> Result<TurnOutcome, ProviderError> {
+    #[derive(serde::Deserialize)]
+    struct Cost {
+        cost: Option<f64>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Metadata {
+        id: Option<String>,
+        provider: Option<String>,
+        usage: Option<Cost>,
+    }
     if binding == HttpBinding::CloudflareWorkersAi {
         if response.get("success").and_then(Value::as_bool) != Some(true) {
             return Err(ProviderError::Wire);
@@ -146,16 +156,6 @@ pub fn normalize(
             }
             response = response.get("result").cloned().ok_or(ProviderError::Wire)?;
         }
-    }
-    #[derive(serde::Deserialize)]
-    struct Metadata {
-        id: Option<String>,
-        provider: Option<String>,
-        usage: Option<Cost>,
-    }
-    #[derive(serde::Deserialize)]
-    struct Cost {
-        cost: Option<f64>,
     }
     let metadata: Metadata =
         serde_json::from_value(response.clone()).map_err(|_| ProviderError::Wire)?;

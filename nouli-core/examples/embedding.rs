@@ -410,7 +410,7 @@ async fn main() -> Result<(), ExampleError> {
     std::fs::create_dir(&root)?;
     let directory = ExampleDirectory(root);
     let canonical = std::fs::canonicalize(&directory.0)?;
-    let result = journey(&canonical).await;
+    let result = Box::pin(journey(&canonical)).await;
     let cleanup = std::fs::remove_dir_all(&directory.0);
     result?;
     cleanup?;

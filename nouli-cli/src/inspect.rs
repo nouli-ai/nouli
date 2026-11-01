@@ -165,11 +165,11 @@ pub(crate) fn run(
             codec::to_value(&ledger.inspect_session_turn(session, *turn)?)?,
         ),
     };
-    write(label, value, sink, format)
+    write(label, &value, sink, format)
 }
 pub(crate) fn write(
     label: &str,
-    value: serde_json::Value,
+    value: &serde_json::Value,
     sink: &mut impl Write,
     format: Format,
 ) -> Result<(), InspectError> {

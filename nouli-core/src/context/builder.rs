@@ -381,6 +381,19 @@ impl ContextBuilder {
         counter: &impl TokenCounter,
         policy: &impl ContextPolicy,
     ) -> Result<ContextPlan, BuildError> {
+        /// Whether any string inside the value contains the reference.
+        fn mentions(value: &serde_json::Value, reference: &str) -> bool {
+            match value {
+                serde_json::Value::String(text) => text.contains(reference),
+                serde_json::Value::Array(values) => {
+                    values.iter().any(|value| mentions(value, reference))
+                }
+                serde_json::Value::Object(values) => {
+                    values.values().any(|value| mentions(value, reference))
+                }
+                _ => false,
+            }
+        }
         limits.validate_request(input.request, crate::limits::Modality::Text)?;
         if input.provider.provider.trim().is_empty() || input.provider.model != limits.model {
             return Err(BuildError::Provider);
@@ -402,12 +415,21 @@ impl ContextBuilder {
             input.sources,
             input.context_base,
             input.updates,
-            pending_origin.clone(),
+            &pending_origin,
         )?;
         let mut entries = Vec::new();
         let mut context_ids = HashSet::new();
         let mut base_ids = HashSet::new();
         for turn in ordered {
+            #[derive(Serialize)]
+            struct Decision<'a> {
+                session: Option<Id>,
+                turn: Option<Id>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                workflow_node: Option<&'a str>,
+                request: &'a TurnRequest,
+                outcome: &'a crate::outcome::TurnOutcome,
+            }
             if let Some(base) = &turn.context_base {
                 append_base(
                     base,
@@ -430,15 +452,6 @@ impl ContextBuilder {
                     turn: turn.id,
                 }
             };
-            #[derive(Serialize)]
-            struct Decision<'a> {
-                session: Option<Id>,
-                turn: Option<Id>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                workflow_node: Option<&'a str>,
-                request: &'a TurnRequest,
-                outcome: &'a crate::outcome::TurnOutcome,
-            }
             entries.push(ContextEntry {
                 id: turn.id,
                 kind: EntryKind::Decision,
@@ -498,18 +511,6 @@ impl ContextBuilder {
         }
         // Explicitly reusing a saved image is current evidence, even when the
         // original file has gone. Protect that dependency before reduction.
-        fn mentions(value: &serde_json::Value, reference: &str) -> bool {
-            match value {
-                serde_json::Value::String(text) => text.contains(reference),
-                serde_json::Value::Array(values) => {
-                    values.iter().any(|value| mentions(value, reference))
-                }
-                serde_json::Value::Object(values) => {
-                    values.values().any(|value| mentions(value, reference))
-                }
-                _ => false,
-            }
-        }
         let live = data(&(input.request, input.updates))?;
         for required in input.required {
             let entry = entries
@@ -1327,6 +1328,14 @@ mod tests {
     }
     #[test]
     fn mandatory_and_optional_overflow_differ_and_protected_policy_edits_fail() {
+        struct RemoveAll;
+        impl ContextPolicy for RemoveAll {
+            fn next(&self, entries: &[ContextEntry]) -> Result<Option<ContextAction>, BuildError> {
+                Ok(Some(ContextAction::Omit {
+                    record: entries[0].id,
+                }))
+            }
+        }
         let mut history = history();
         history[0].updates.clear();
         let turn = history[0].clone();
@@ -1361,14 +1370,6 @@ mod tests {
             ),
             Err(BuildError::ProtectedCapacity)
         ));
-        struct RemoveAll;
-        impl ContextPolicy for RemoveAll {
-            fn next(&self, entries: &[ContextEntry]) -> Result<Option<ContextAction>, BuildError> {
-                Ok(Some(ContextAction::Omit {
-                    record: entries[0].id,
-                }))
-            }
-        }
         let required = [RequiredItem {
             record: turn.id,
             pointer: None,

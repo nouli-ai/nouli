@@ -66,6 +66,10 @@ fn key_request(
     std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
     path
 }
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership of a finished process output"
+)]
 fn error(output: std::process::Output, code: i32) -> nouli_core::protocol::ErrorReport {
     assert_eq!(output.status.code(), Some(code));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");

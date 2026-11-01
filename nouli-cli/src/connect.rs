@@ -39,6 +39,10 @@ pub(crate) enum SetupError {
     Io(#[from] io::Error),
 }
 #[derive(Debug, Default, Clone, clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent command-line flag"
+)]
 pub(crate) struct Connect {
     /// Setup shortcut, or custom.
     pub service: Option<String>,
@@ -246,6 +250,7 @@ fn publish(path: &Path, doc: &DocumentMut) -> Result<(), SetupError> {
     result.map_err(|_| SetupError::Write)
 }
 pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection, SetupError> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let interactive =
         !options.non_interactive && io::stdin().is_terminal() && io::stdout().is_terminal();
     let file = path(args)?;
@@ -421,7 +426,6 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
                     "no"
                 },
             )? == "yes");
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -488,7 +492,7 @@ pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
                     selection.model.as_deref().unwrap_or_default()
                 )
             } else {
-                crate::inspect::write("Connection", serde_json::json!({"version":1,"configured":true,"provider":selection.provider,"model":selection.model}), &mut sink, format)
+                crate::inspect::write("Connection", &serde_json::json!({"version":1,"configured":true,"provider":selection.provider,"model":selection.model}), &mut sink, format)
                     .map_err(|_| io::Error::other("output"))
             };
             if written.is_ok() {

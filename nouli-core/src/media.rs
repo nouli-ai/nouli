@@ -32,14 +32,6 @@ impl Evidence {
     /// - [`codec::CodecError::ImageReferenceConflict`] if two images share a reference but
     ///   differ in format or bytes.
     pub fn read(context: &str) -> Result<Self, codec::CodecError> {
-        if !context.contains("nouli_image") {
-            return Ok(Self {
-                text: context.into(),
-                images: vec![],
-            });
-        }
-        let mut value = codec::decode_value(context.as_bytes(), InputFormat::Toon)?;
-        let mut images = Vec::new();
         fn extract(value: &mut Value, images: &mut Vec<Image>) -> Result<(), codec::CodecError> {
             if let Some(image) = value
                 .get("record")
@@ -89,6 +81,14 @@ impl Evidence {
             }
             Ok(())
         }
+        if !context.contains("nouli_image") {
+            return Ok(Self {
+                text: context.into(),
+                images: vec![],
+            });
+        }
+        let mut value = codec::decode_value(context.as_bytes(), InputFormat::Toon)?;
+        let mut images = Vec::new();
         extract(&mut value, &mut images)?;
         let text = if images.is_empty() {
             context.to_owned()

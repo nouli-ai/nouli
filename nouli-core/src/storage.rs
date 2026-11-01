@@ -65,7 +65,7 @@ pub enum StorageError {
     Conflict,
 }
 
-pub(super) fn sql_error(operation: &'static str, error: rusqlite::Error) -> StorageError {
+pub(super) fn sql_error(operation: &'static str, error: &rusqlite::Error) -> StorageError {
     let code = error.sqlite_error_code();
     if matches!(
         code,
@@ -161,16 +161,16 @@ impl Ledger {
         };
         let mut connection =
             Connection::open_with_flags(&path, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX)
-                .map_err(|error| sql_error("open", error))?;
+                .map_err(|error| sql_error("open", &error))?;
         connection
             .busy_timeout(Duration::from_secs(2))
-            .map_err(|error| sql_error("set busy timeout", error))?;
+            .map_err(|error| sql_error("set busy timeout", &error))?;
         connection
             .pragma_update(None, "foreign_keys", true)
-            .map_err(|error| sql_error("enable foreign keys", error))?;
+            .map_err(|error| sql_error("enable foreign keys", &error))?;
         connection
             .pragma_update(None, "recursive_triggers", true)
-            .map_err(|error| sql_error("enable immutable replacement guards", error))?;
+            .map_err(|error| sql_error("enable immutable replacement guards", &error))?;
         match mode {
             OpenMode::ReadWriteCreate => {
                 schema::migrate(&mut connection, schema::MIGRATIONS)?;
@@ -178,13 +178,13 @@ impl Ledger {
                 // sidecars. Short writes still permit independent model calls.
                 let journal: String = connection
                     .pragma_update_and_check(None, "journal_mode", "DELETE", |row| row.get(0))
-                    .map_err(|error| sql_error("set journal mode", error))?;
+                    .map_err(|error| sql_error("set journal mode", &error))?;
                 if !journal.eq_ignore_ascii_case("delete") {
                     return Err(StorageError::WrongStore);
                 }
                 connection
                     .pragma_update(None, "synchronous", "FULL")
-                    .map_err(|error| sql_error("set durability", error))?;
+                    .map_err(|error| sql_error("set durability", &error))?;
             }
             OpenMode::ReadOnlyExisting => schema::check_read_only(&connection)?,
         }
@@ -224,11 +224,11 @@ impl Ledger {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|error| E::from(sql_error(operation, error)))?;
+            .map_err(|error| E::from(sql_error(operation, &error)))?;
         let result = write(&transaction)?;
         transaction
             .commit()
-            .map_err(|error| E::from(sql_error("commit", error)))?;
+            .map_err(|error| E::from(sql_error("commit", &error)))?;
         Ok(result)
     }
 
@@ -411,7 +411,7 @@ mod tests {
         let store = Store::new();
         let mut ledger = store.open();
         let failure=ledger.transaction::<_, StorageError>("test rollback",|transaction| {
-            transaction.execute("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('fixture','{}','[]')",[]).map_err(|error|sql_error("insert test session",error))?;
+            transaction.execute("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('fixture','{}','[]')",[]).map_err(|error|sql_error("insert test session",&error))?;
             Err::<(),_>(StorageError::Payload)
         });
         assert!(matches!(failure, Err(StorageError::Payload)));
@@ -421,7 +421,7 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
         assert!(ledger.transaction::<_, StorageError>("foreign key",|transaction| {
-            transaction.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('turn','missing',0,'{}')",[]).map_err(|error|sql_error("insert test turn",error))?;
+            transaction.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('turn','missing',0,'{}')",[]).map_err(|error|sql_error("insert test turn",&error))?;
             Ok(())
         }).is_err());
     }
@@ -431,7 +431,7 @@ mod tests {
         let store = Store::new();
         let mut ledger = store.open();
         ledger.transaction::<_, StorageError>("insert fixture",|transaction| {
-            transaction.execute_batch("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]'); INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'original');").map_err(|error|sql_error("insert fixtures",error))?;
+            transaction.execute_batch("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]'); INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'original');").map_err(|error|sql_error("insert fixtures",&error))?;
             Ok(())
         }).unwrap();
         for sql in [
@@ -444,7 +444,7 @@ mod tests {
                     .transaction::<_, StorageError>("immutable write", |transaction| {
                         transaction
                             .execute(sql, [])
-                            .map_err(|error| sql_error("immutable test", error))?;
+                            .map_err(|error| sql_error("immutable test", &error))?;
                         Ok(())
                     })
                     .is_err()
@@ -461,7 +461,7 @@ mod tests {
             .transaction::<_, StorageError>("mutable projection", |transaction| {
                 transaction
                     .execute("UPDATE sessions SET revision=revision+1 WHERE id='s'", [])
-                    .map_err(|error| sql_error("update projection", error))?;
+                    .map_err(|error| sql_error("update projection", &error))?;
                 Ok(())
             })
             .unwrap();
