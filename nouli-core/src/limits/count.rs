@@ -3,9 +3,10 @@
 use super::LimitError;
 use crate::{
     codec,
-    config::{ImageEncoding, Protocol, ProviderProfile},
+    config::{ConnectionSettings, ImageEncoding, Protocol, ProviderProfile},
     decision::Question,
     history::{CountMethod, TokenCount},
+    media::{Evidence, Image},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,112 +48,161 @@ fn estimate(tokens: u64, multimodal: bool) -> TokenCount {
     }
 }
 
+/// Bytes are estimated at four per token.
+fn byte_tokens(bytes: usize) -> u64 {
+    bytes.div_ceil(4) as u64
+}
+
+/// Adds `cost` charged `uses` times to `total`, failing on overflow.
+fn add_uses(total: u64, cost: u64, uses: u64) -> Result<u64, LimitError> {
+    cost.checked_mul(uses)
+        .and_then(|charge| total.checked_add(charge))
+        .ok_or(LimitError::Overflow)
+}
+
+/// The configured image encoding, or the protocol's default.
+fn image_encoding(profile: &ProviderProfile) -> ImageEncoding {
+    profile
+        .connection
+        .image_encoding
+        .unwrap_or(if profile.protocol == Protocol::SystemOne {
+            ImageEncoding::Assets
+        } else {
+            ImageEncoding::OpenaiContent
+        })
+}
+
+/// Whether the encoding sends each image once with the shared context, rather
+/// than wherever its reference appears.
+fn images_shared_only(encoding: ImageEncoding) -> bool {
+    matches!(
+        encoding,
+        ImageEncoding::ImagesBase64 | ImageEncoding::ImagesDataUrls | ImageEncoding::StateImageUrls
+    )
+}
+
+/// The estimated cost of sending one image once, from its pixel patches when
+/// the connection declares a patch size, otherwise from its encoded bytes.
+fn image_cost(image: &Image, connection: &ConnectionSettings) -> Result<u64, LimitError> {
+    let prepared = image.prepare(connection)?;
+    let Some(patch) = connection.pixel_patch_size else {
+        return Ok(byte_tokens(prepared.data_base64.len()));
+    };
+    let (width, height) = prepared.dimensions()?;
+    u64::from(width.div_ceil(patch))
+        .checked_mul(u64::from(height.div_ceil(patch)))
+        .and_then(|n| n.checked_mul(connection.pixel_multiplier.unwrap_or(4)))
+        .and_then(|n| n.checked_add(connection.pixel_overhead.unwrap_or(256)))
+        .ok_or(LimitError::Overflow)
+}
+
+/// The shared context's estimate and the per-use cost of each image it carries.
+struct SharedContext<'a> {
+    tokens: u64,
+    image_costs: Vec<(&'a str, u64)>,
+}
+impl<'a> SharedContext<'a> {
+    fn count(
+        evidence: &'a Evidence,
+        connection: &ConnectionSettings,
+        shared_only: bool,
+    ) -> Result<Self, LimitError> {
+        let mut tokens = byte_tokens(evidence.text.len());
+        let mut image_costs = Vec::with_capacity(evidence.images.len());
+        for image in &evidence.images {
+            let cost = image_cost(image, connection)?;
+            let uses = if shared_only {
+                1
+            } else {
+                evidence.text.matches(&image.reference).count() as u64
+            };
+            tokens = add_uses(tokens, cost, uses)?;
+            image_costs.push((image.reference.as_str(), cost));
+        }
+        Ok(Self {
+            tokens,
+            image_costs,
+        })
+    }
+}
+
+/// How many times the reference appears across every string inside the value.
+fn occurrences(value: &serde_json::Value, reference: &str) -> u64 {
+    match value {
+        serde_json::Value::String(text) => text.matches(reference).count() as u64,
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(|value| occurrences(value, reference))
+            .sum(),
+        serde_json::Value::Object(values) => values
+            .values()
+            .map(|value| occurrences(value, reference))
+            .sum(),
+        _ => 0,
+    }
+}
+
+/// The parts of a question in which the protocol sends referenced images.
+fn image_bearing_fields(
+    question: &Question,
+    protocol: Protocol,
+    shared_only: bool,
+) -> Result<serde_json::Value, LimitError> {
+    if shared_only {
+        return Ok(serde_json::Value::Null);
+    }
+    let fields = if protocol == Protocol::OpenaiDecisions {
+        serde_json::to_value((&question.prompt, &question.criteria))
+    } else {
+        serde_json::to_value((&question.prompt, &question.criteria, &question.answer_space))
+    };
+    Ok(fields.map_err(|_| codec::CodecError::Shape)?)
+}
+
+/// The question's own estimate, including images its fields reference.
+fn question_tokens(
+    question: &Question,
+    protocol: Protocol,
+    shared: &SharedContext<'_>,
+    shared_only: bool,
+) -> Result<u64, LimitError> {
+    let serialized = codec::encode_toon(question)?;
+    let mut tokens = byte_tokens(serialized.len())
+        .checked_add(16)
+        .ok_or(LimitError::Overflow)?;
+    let fields = image_bearing_fields(question, protocol, shared_only)?;
+    for (reference, cost) in &shared.image_costs {
+        tokens = add_uses(tokens, *cost, occurrences(&fields, reference))?;
+    }
+    Ok(tokens)
+}
+
 impl TokenCounter for ByteCounter {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
     fn count(
         &self,
         profile: &ProviderProfile,
         context_toon: &str,
         questions: &[Question],
     ) -> Result<InputCounts, LimitError> {
-        let protocol = profile.protocol;
-        let encoding =
-            profile
-                .connection
-                .image_encoding
-                .unwrap_or(if protocol == Protocol::SystemOne {
-                    ImageEncoding::Assets
-                } else {
-                    ImageEncoding::OpenaiContent
-                });
-        let shared_only = matches!(
-            encoding,
-            ImageEncoding::ImagesBase64
-                | ImageEncoding::ImagesDataUrls
-                | ImageEncoding::StateImageUrls
-        );
-        let evidence = crate::media::Evidence::read(context_toon)?;
+        let shared_only = images_shared_only(image_encoding(profile));
+        let evidence = Evidence::read(context_toon)?;
         let multimodal = !evidence.images.is_empty();
-        let mut shared = evidence.text.len().div_ceil(4) as u64;
-        let mut image_costs = Vec::new();
-        for image in &evidence.images {
-            let cost = if let Some(patch) = profile.connection.pixel_patch_size {
-                let prepared = image.prepare(&profile.connection)?;
-                let (width, height) = prepared.dimensions()?;
-                u64::from(width.div_ceil(patch))
-                    .checked_mul(u64::from(height.div_ceil(patch)))
-                    .and_then(|n| n.checked_mul(profile.connection.pixel_multiplier.unwrap_or(4)))
-                    .and_then(|n| n.checked_add(profile.connection.pixel_overhead.unwrap_or(256)))
-                    .ok_or(LimitError::Overflow)?
-            } else {
-                image
-                    .prepare(&profile.connection)?
-                    .data_base64
-                    .len()
-                    .div_ceil(4) as u64
-            };
-            let shared_uses = if shared_only {
-                1
-            } else {
-                evidence.text.matches(&image.reference).count() as u64
-            };
-            shared = shared
-                .checked_add(cost.checked_mul(shared_uses).ok_or(LimitError::Overflow)?)
-                .ok_or(LimitError::Overflow)?;
-            image_costs.push((image.reference.as_str(), cost));
-        }
+        let shared = SharedContext::count(&evidence, &profile.connection, shared_only)?;
         // These are explicit estimates, not asserted provider token constants.
-        let envelope = match protocol {
+        let envelope = match profile.protocol {
             Protocol::SystemOne | Protocol::OpenaiDecisions => 32,
         };
-        let base = shared.checked_add(envelope).ok_or(LimitError::Overflow)?;
+        let base = shared
+            .tokens
+            .checked_add(envelope)
+            .ok_or(LimitError::Overflow)?;
         let mut total = base;
         let mut per_question = Vec::with_capacity(questions.len());
         for question in questions {
-            fn occurrences(value: &serde_json::Value, reference: &str) -> u64 {
-                match value {
-                    serde_json::Value::String(text) => text.matches(reference).count() as u64,
-                    serde_json::Value::Array(values) => values
-                        .iter()
-                        .map(|value| occurrences(value, reference))
-                        .sum(),
-                    serde_json::Value::Object(values) => values
-                        .values()
-                        .map(|value| occurrences(value, reference))
-                        .sum(),
-                    _ => 0,
-                }
-            }
-            let serialized = codec::encode_toon(question)?;
-            let mut question_tokens = (serialized.len().div_ceil(4) as u64)
-                .checked_add(16)
-                .ok_or(LimitError::Overflow)?;
-            let values = if shared_only {
-                serde_json::Value::Null
-            } else if protocol == Protocol::OpenaiDecisions {
-                serde_json::to_value((&question.prompt, &question.criteria))
-                    .map_err(|_| crate::codec::CodecError::Shape)?
-            } else {
-                serde_json::to_value((&question.prompt, &question.criteria, &question.answer_space))
-                    .map_err(|_| crate::codec::CodecError::Shape)?
-            };
-            for (reference, cost) in &image_costs {
-                question_tokens = question_tokens
-                    .checked_add(
-                        cost.checked_mul(occurrences(&values, reference))
-                            .ok_or(LimitError::Overflow)?,
-                    )
-                    .ok_or(LimitError::Overflow)?;
-            }
-            total = total
-                .checked_add(question_tokens)
-                .ok_or(LimitError::Overflow)?;
+            let tokens = question_tokens(question, profile.protocol, &shared, shared_only)?;
+            total = total.checked_add(tokens).ok_or(LimitError::Overflow)?;
             per_question.push(estimate(
-                base.checked_add(question_tokens)
-                    .ok_or(LimitError::Overflow)?,
+                base.checked_add(tokens).ok_or(LimitError::Overflow)?,
                 multimodal,
             ));
         }
