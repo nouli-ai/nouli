@@ -526,6 +526,23 @@ mod tests {
     }
 
     #[test]
+    fn a_malformed_reference_fails_the_graph_instead_of_dropping_its_link() {
+        let mut export = referenced_questions();
+        let nouli_core::context::ContextUpdate::Append { record } = &mut export.turns[0].updates[0]
+        else {
+            panic!("the fixture appends its reference");
+        };
+        record.value =
+            nouli_core::data::Data::new(serde_json::json!({"nouli_decision_reference": {}}))
+                .unwrap();
+        let Err(error) = nodes(&[&export], &export.session.frontier) else {
+            panic!("a malformed reference must fail the graph");
+        };
+        assert!(matches!(error, RenderError::Evidence(_)), "{error}");
+        assert!(error.to_string().contains("saved-answer reference"));
+    }
+
+    #[test]
     fn references_connect_exact_questions_once_and_sort_sources_before_destinations() {
         let mut export = referenced_questions();
         let binding = export.turns[0].updates[0].clone();

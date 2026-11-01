@@ -527,6 +527,44 @@ mod tests {
         record.as_decision_reference().unwrap().unwrap()
     }
     #[test]
+    fn a_malformed_reference_is_ordinary_context_rather_than_a_dependency() {
+        let history = history();
+        let original = history[0].clone();
+        let sources = [SourcePoint {
+            session: original.session,
+            frontier: vec![original.id],
+        }];
+        let id = Id::generate();
+        let mut record = saved_answer(id, &original, original.id);
+        let mut value = record.value.value().clone();
+        value["nouli_decision_reference"]["source"] = serde_json::json!("SENTINEL");
+        record.value = Data::new(value).unwrap();
+        let updates = [ContextUpdate::Append {
+            record: record.clone(),
+        }];
+        let required = [RequiredItem {
+            record: id,
+            pointer: None,
+        }];
+        let plan = build_full(input(
+            &history,
+            &sources,
+            &original.request,
+            &updates,
+            &required,
+        ));
+        assert!(entry(&plan, id).protected);
+        assert!(
+            !entry(&plan, original.id).protected,
+            "an unreadable binding does not protect the turn it names"
+        );
+        assert_eq!(
+            entry(&plan, id).value.value()["record"]["value"],
+            *record.value.value(),
+            "an unreadable binding is never reduced"
+        );
+    }
+    #[test]
     fn selected_answers_are_required_across_sessions_and_followups_and_deduplicate_ancestry() {
         let mut history = history();
         let original = history[0].clone();

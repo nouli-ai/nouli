@@ -8,8 +8,9 @@
 //! - a saved-answer reference is keyed `decision:<id>` with value
 //!   `{"nouli_decision_reference": DecisionReference}`.
 //!
-//! Record values are stored as canonical JSON objects with sorted keys, so the
-//! typed forms here serialize to exactly the bytes earlier versions wrote.
+//! JSON objects keep their insertion order (`serde_json`'s `preserve_order`), so
+//! key order is persisted: struct field order here must match what earlier
+//! versions wrote, which the golden tests pin.
 pub mod marker;
 
 use serde::{Deserialize, Serialize};
@@ -223,6 +224,25 @@ pub(crate) fn reduce_to_binding(entry: &mut Value) {
     reference.insert("included_in_ancestry".into(), Value::Bool(true));
 }
 
+/// Just the binding of a saved-answer reference: which saved answer it cites
+/// and the marker that cites it. Reads no other snapshot content.
+#[derive(Deserialize)]
+pub(crate) struct Binding {
+    pub source: DecisionSource,
+    pub reference: String,
+}
+
+/// The binding of the saved-answer reference in a JSON record, if any.
+///
+/// # Errors
+///
+/// Returns the deserialization error if the record is keyed and wrapped as a
+/// reference but lacks a valid source or marker. Its message can quote saved
+/// content, so never log it.
+pub(crate) fn binding_of(record: &Value) -> Option<Result<Binding, serde_json::Error>> {
+    decision_reference_value_of(record).map(Binding::deserialize)
+}
+
 /// The wrapped image of a JSON record (`{"key": "image:…", "value":
 /// {"nouli_image": …}}`), as saved inputs and manifests hold it.
 pub(crate) fn image_value_of(record: &Value) -> Option<&Value> {
@@ -429,7 +449,8 @@ mod tests {
             Some(&turn.request.questions[0])
         );
         assert_eq!(reference.input_state.as_ref(), Some(&input));
-        assert_eq!(reference.record(id).unwrap(), legacy);
+        let bytes = |record: &ContextRecord| serde_json::to_string(record).unwrap();
+        assert_eq!(bytes(&reference.record(id).unwrap()), bytes(&legacy));
         // A record written before saved input state, and a binding reduced
         // by an ancestry, both survive a round trip.
         for value in [
@@ -447,7 +468,7 @@ mod tests {
                 value: Data::new(value).unwrap(),
             };
             let parsed = record.as_decision_reference().unwrap().unwrap();
-            assert_eq!(parsed.record(id).unwrap(), record);
+            assert_eq!(bytes(&parsed.record(id).unwrap()), bytes(&record));
         }
     }
 

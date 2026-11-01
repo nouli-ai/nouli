@@ -2,17 +2,13 @@
 //! and the clean-ups that follow from that protection.
 use super::{BuildError, ContextEntry, EntryKind, RequiredItem};
 use crate::{
-    context::{
-        evidence::{self, DecisionReference},
-        facts,
-    },
+    context::{evidence, facts},
     data::Data,
     history::{FinalizedTurn, Representation},
     identity::Id,
 };
-use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Whether any string inside the value contains the reference.
 fn mentions(value: &Value, reference: &str) -> bool {
@@ -24,17 +20,33 @@ fn mentions(value: &Value, reference: &str) -> bool {
     }
 }
 
-/// The saved-answer reference in a collected entry's record, if any.
+/// The saved-answer binding in a collected entry's record, if any.
 ///
-/// A record keyed and wrapped as a reference that does not parse is not a
-/// usable binding, so it is protected only as ordinary context.
-fn decision_reference(entry: &ContextEntry) -> Option<DecisionReference> {
-    let value = evidence::decision_reference_value_of(&entry.value.value()["record"])?;
-    DecisionReference::deserialize(value)
-        .inspect_err(|error| {
-            tracing::warn!(record = %entry.id, %error, "ignoring a malformed saved-answer reference");
+/// A record keyed and wrapped as a reference without a valid binding is
+/// protected only as ordinary context.
+fn binding(entry: &ContextEntry) -> Option<evidence::Binding> {
+    evidence::binding_of(&entry.value.value()["record"])?.ok()
+}
+
+/// The binding of every saved-answer reference among `entries`, read once.
+fn bindings(entries: &[ContextEntry]) -> HashMap<Id, evidence::Binding> {
+    entries
+        .iter()
+        .filter_map(|entry| {
+            match evidence::binding_of(&entry.value.value()["record"])? {
+                Ok(binding) => Some((entry.id, binding)),
+                Err(error) => {
+                    // The serde message can quote saved content; log only its class.
+                    tracing::warn!(
+                        record = %entry.id,
+                        category = ?error.classify(),
+                        "ignoring a malformed saved-answer reference"
+                    );
+                    None
+                }
+            }
         })
-        .ok()
+        .collect()
 }
 
 fn is_protected_decision(entry: &ContextEntry) -> bool {
@@ -208,11 +220,12 @@ pub(super) fn protect_dependencies(
     history: &[FinalizedTurn],
     live: &Value,
 ) {
+    let bindings = bindings(entries);
     loop {
         let used = records_used_by(history, &protected_decisions(entries));
         let protect: HashSet<Id> = entries
             .iter()
-            .flat_map(|entry| dependencies(entry, &used, live))
+            .flat_map(|entry| dependencies(entry, bindings.get(&entry.id), &used, live))
             .collect();
         if !protect_all(entries, &protect) {
             break;
@@ -221,8 +234,13 @@ pub(super) fn protect_dependencies(
 }
 
 /// The entry itself, and any turn it cites, when the entry is in use.
-fn dependencies(entry: &ContextEntry, used: &HashSet<Id>, live: &Value) -> Vec<Id> {
-    if let Some(reference) = decision_reference(entry) {
+fn dependencies(
+    entry: &ContextEntry,
+    binding: Option<&evidence::Binding>,
+    used: &HashSet<Id>,
+    live: &Value,
+) -> Vec<Id> {
+    if let Some(reference) = binding {
         let mentioned = mentions(live, &reference.reference);
         if !(entry.protected || used.contains(&entry.id) || mentioned) {
             return Vec::new();
@@ -255,9 +273,7 @@ pub(super) fn collapse_ancestry_references(
         if pointed {
             continue;
         }
-        if decision_reference(entry)
-            .is_some_and(|reference| decisions.contains(&reference.source.turn))
-        {
+        if binding(entry).is_some_and(|reference| decisions.contains(&reference.source.turn)) {
             let mut value = entry.value.value().clone();
             evidence::reduce_to_binding(&mut value);
             entry.value = Data::new(value)?;

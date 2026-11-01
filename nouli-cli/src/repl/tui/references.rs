@@ -542,18 +542,16 @@ impl App<'_> {
             if !texts.iter().any(|text| text.contains(binding.reference())) {
                 continue;
             }
-            let mut existing = None;
-            for record in &records {
-                if Binding::read(&record.record)
-                    .map_err(|e| e.to_string())?
-                    .is_some_and(|saved| saved.reference() == binding.reference())
-                {
-                    existing = Some(record.record.id);
-                    break;
-                }
-            }
-            if let Some(existing) = existing {
-                required.push(existing);
+            // A malformed reference cannot be this binding; restoring the
+            // session's bindings already reported it.
+            if let Some(existing) = records.iter().find(|r| {
+                r.record
+                    .as_decision_reference()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|saved| saved.reference == binding.reference())
+            }) {
+                required.push(existing.record.id);
             } else {
                 // The binding can have been carried from a different session.
                 // Evidence records are globally unique even across unrelated
@@ -715,6 +713,37 @@ mod tests {
         app.sync_references();
         assert!(app.references.picker.is_none());
         assert!(app.status.is_none());
+    }
+
+    #[test]
+    fn an_unlabeled_reference_binds_with_a_generic_label() {
+        let id = Id::generate();
+        let snapshot = DecisionReference {
+            source: DecisionSource {
+                session: Id::generate(),
+                turn: Id::generate(),
+                question: "old".into(),
+            },
+            reference: MarkerKind::Decision.marker(id),
+            question: None,
+            outcome: None,
+            provider: None,
+            images: None,
+            input_state: None,
+            input_references: None,
+            label: None,
+            included_in_ancestry: false,
+        };
+        let binding = Binding::read(&snapshot.record(id).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(binding.label, UNLABELED);
+        assert_eq!(binding.reference(), snapshot.reference);
+        let mut malformed = snapshot.record(id).unwrap();
+        malformed.value =
+            nouli_core::data::Data::new(serde_json::json!({"nouli_decision_reference": {}}))
+                .unwrap();
+        assert!(Binding::read(&malformed).is_err());
     }
 
     /// A ledger with one finalized turn saved in `source` and an empty

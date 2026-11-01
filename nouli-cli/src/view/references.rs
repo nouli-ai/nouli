@@ -39,10 +39,7 @@ pub(super) fn links(turns: &[&FinalizedTurn]) -> Result<Vec<Link>, RenderError> 
         // A record keyed and wrapped as a saved-answer reference must be a
         // complete binding; a malformed one fails the projection rather than
         // silently dropping its dependency edge.
-        let Some(reference) = record
-            .as_decision_reference()
-            .map_err(|_| RenderError::Protocol)?
-        else {
+        let Some(reference) = record.as_decision_reference()? else {
             continue;
         };
         if !matches!(

@@ -44,6 +44,8 @@ pub(crate) enum RenderError {
     Modes,
     #[error("invalid report or event stream")]
     Protocol,
+    #[error(transparent)]
+    Evidence(#[from] nouli_core::context::evidence::EvidenceError),
     #[error("cannot serialize report")]
     Codec(#[from] nouli_core::codec::CodecError),
     #[error("cannot write output")]
