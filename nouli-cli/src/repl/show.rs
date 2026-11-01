@@ -15,6 +15,7 @@ use nouli_core::{
     protocol::{ErrorCategory, ErrorReport},
     storage::Ledger,
 };
+use std::fmt::Write as _;
 use std::io::{self, Write};
 
 pub(super) fn say(out: &mut impl Write, text: &str) -> io::Result<()> {
@@ -43,7 +44,7 @@ pub(super) fn facts(
             .facts(session)
             .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())?;
         let mut text = Vec::new();
-        present::facts_text(ledger, &facts, &mut text).map_err(|_| ErrorReport {
+        present::facts_text(ledger, &facts, paint, &mut text).map_err(|_| ErrorReport {
             category: ErrorCategory::Internal,
             code: "facts_unavailable".into(),
             message: "Cannot list the facts".into(),
@@ -55,13 +56,7 @@ pub(super) fn facts(
         Ok(text) => text,
         Err(error) => return fail(out, &error.message),
     };
-    for line in text.lines() {
-        if line.contains("(from ") || line.contains("(replaced;") || line.contains("no facts yet") {
-            dim(out, paint, line)?;
-        } else {
-            say(out, line)?;
-        }
-    }
+    out.write_all(text.as_bytes())?;
     let pending: Vec<String> =
         queue
             .facts
@@ -126,7 +121,7 @@ pub(super) fn view(
             plural(turns, "turn")
         );
         if !parents.is_empty() {
-            text.push_str(&format!("  ← {}", render::clean(&parents.join(" + "))));
+            let _ = write!(text, "  ← {}", render::clean(&parents.join(" + ")));
         }
         let text = paint.apply(if is_current { TEAL } else { DIM }, &text);
         say(out, &text)?;
@@ -190,7 +185,11 @@ pub(super) fn context(
             } else {
                 format!("{:<10}turn {}", "decision", short(projection.record))
             };
-            let how = format!("{:?}", projection.representation).to_lowercase();
+            let how = match projection.representation {
+                nouli_core::history::Representation::Full => "full",
+                nouli_core::history::Representation::Compacted => "compacted",
+                nouli_core::history::Representation::Omitted => "omitted",
+            };
             lines.push(format!("  {what}   ({how})"));
         }
         for outcome in &turn.outcome.outcomes {
@@ -252,5 +251,54 @@ mod tests {
         assert!(shown.contains("● ") && shown.contains("named"), "{shown}");
         assert_ne!(left, current);
         let _ = std::fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn saved_fact_phrases_do_not_dim_the_repl_fact_text() {
+        use nouli_core::{
+            context::facts,
+            history::{FinalizedTurn, StandingChanges},
+            storage::turns::AttemptInput,
+        };
+        let root = std::env::temp_dir().join(format!("nouli-show-fact-{}", Id::generate()));
+        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let session = ledger
+            .create_session(None, ModelSelection::default())
+            .unwrap();
+        let data: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
+        let mut template: FinalizedTurn = serde_json::from_value(data["turns"][0].clone()).unwrap();
+        template.manifest.sources.clear();
+        let guard = ledger.session_guard(session.id).unwrap();
+        let attempt = ledger
+            .prepare_attempt(
+                &guard,
+                AttemptInput {
+                    request: template.request,
+                    updates: vec![facts::append("arrived (from x) (replaced; literally)").unwrap()],
+                    standing: StandingChanges::default(),
+                    manifest: template.manifest,
+                    request_id: None,
+                },
+            )
+            .unwrap();
+        ledger
+            .finalize_attempt(&guard, attempt.id, template.outcome)
+            .unwrap();
+        let mut out = Vec::new();
+        super::facts(
+            &ledger,
+            &SessionSelector::Id(session.id),
+            &Queue::default(),
+            Paint(true),
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "   1  arrived (from x) (replaced; literally)\n"
+        );
+        drop(guard);
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

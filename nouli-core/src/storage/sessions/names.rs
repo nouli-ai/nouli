@@ -1,7 +1,7 @@
 //! Stable, collision-checked names for sessions without a caller-supplied name.
 use super::{Session, SessionError};
 use crate::{
-    identity::SessionName,
+    identity::{Id, SessionName},
     storage::{StorageError, sql_error},
 };
 use rusqlite::Connection;
@@ -71,22 +71,28 @@ fn available(
     Err(SessionError::NamesExhausted)
 }
 
+/// Where the automatic name search starts for a session.
+///
+/// The `UUIDv7` tail is random; avoid its shared timestamp prefix.
+fn search_start(id: Id) -> Option<usize> {
+    let text = id.to_string();
+    let seed = u64::from_str_radix(&text[text.len() - 12..], 16).ok()?;
+    usize::try_from(seed % CAPACITY as u64).ok()
+}
+
 /// Called inside the same immediate transaction as the unique-name insert.
 pub(super) fn assign(connection: &Connection, session: &mut Session) -> Result<(), SessionError> {
     if session.name.is_some() {
         return Ok(());
     }
-    // UUIDv7's tail is random; avoid its shared timestamp prefix.
-    let id = session.id.to_string();
-    let seed = u64::from_str_radix(&id[id.len() - 12..], 16).map_err(|_| StorageError::Payload)?;
-    let start = (seed % CAPACITY as u64) as usize;
+    let start = search_start(session.id).ok_or(StorageError::Payload)?;
     let mut statement = connection
         .prepare("SELECT EXISTS(SELECT 1 FROM sessions WHERE name=?1)")
-        .map_err(|error| sql_error("prepare automatic session name", error))?;
+        .map_err(|error| sql_error("prepare automatic session name", &error))?;
     session.name = Some(available(start, |name| {
         statement
             .query_row([name], |row| row.get(0))
-            .map_err(|error| sql_error("check automatic session name", error))
+            .map_err(|error| sql_error("check automatic session name", &error))
     })?);
     Ok(())
 }
@@ -106,9 +112,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("nouli-names-{}", Id::generate()));
         let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
         let id = Id::generate();
-        let text = id.to_string();
-        let start =
-            (u64::from_str_radix(&text[text.len() - 12..], 16).unwrap() % CAPACITY as u64) as usize;
+        let start = search_start(id).unwrap();
         let reserved = SessionName::try_from(candidate(start)).unwrap();
         ledger
             .create_session(Some(reserved.clone()), ModelSelection::default())

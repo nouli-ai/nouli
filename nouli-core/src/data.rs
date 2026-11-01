@@ -19,6 +19,11 @@ pub enum DataError {
 }
 
 impl Data {
+    /// Wraps a JSON value after checking that every number is finite.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DataError::UnsupportedNumber`] if a number is not a finite `f64`.
     pub fn new(value: Value) -> Result<Self, DataError> {
         fn validate(value: &Value) -> Result<(), DataError> {
             match value {
@@ -46,6 +51,7 @@ impl Data {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn value(&self) -> &Value {
         &self.0
     }

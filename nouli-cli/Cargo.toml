@@ -1,9 +1,18 @@
 [package]
 name = "nouli-cli"
+description = "Terminal app and CLI for Nouli, a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use."
 version.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories = ["command-line-utilities"]
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "nouli"
@@ -25,6 +34,7 @@ ratatui = { version = "0.30.2", default-features = false, features = ["crossterm
 resvg = "0.49.0"
 roxmltree = "0.21.2"
 rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 shlex = "2.0.1"
 thiserror = "2.0.21"

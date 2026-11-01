@@ -1,14 +1,18 @@
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 use harness::{Home, report};
 use loopback::Server;
 use nouli_core::{
     codec::{self, InputFormat},
     data::Input,
     decision::TurnRequest,
-    history::{EvaluationRequest, ModelSelection, Representation, SessionSelection},
+    history::{
+        EvaluationRequest, ModelSelection, Representation, SessionSelection, StandingChanges,
+    },
     identity::SessionSelector,
     outcome::{Answer, QuestionOutcome},
     protocol::{Report, ResultEnvelope},
@@ -80,7 +84,7 @@ fn common_wire_corpus_preserves_probabilities_fractional_expectation_and_native_
             }
             let actual_model = response["model"].as_str().unwrap().to_owned();
             let (output, calls) = invoke(protocol, response, 200);
-            let result = report(output);
+            let result = report(&output);
             assert_eq!(calls, 1);
             assert_eq!(result.outcome.provider.provider, "local");
             assert_eq!(result.outcome.provider.model, actual_model);
@@ -145,7 +149,7 @@ fn common_wire_corpus_preserves_probabilities_fractional_expectation_and_native_
                     result.outcome.provider.request_id.as_deref(),
                     Some("fixture-router-request")
                 );
-                assert_eq!(result.outcome.usage.cost, Some(0.0000123));
+                assert_eq!(result.outcome.usage.cost, Some(0.000_012_3));
             }
         }
     }
@@ -192,13 +196,13 @@ fn malformed_coverage_boolean_noul_score_argmax_and_capacity_fail_without_succes
             );
             assert_eq!(calls, 1);
             if case == "refusal" && protocol == "openai-decisions" {
-                let result = report(output);
+                let result = report(&output);
                 assert!(
                     matches!(&result.outcome.outcomes[1], QuestionOutcome::Refused { question_id, .. } if question_id == "available")
                 );
             } else {
                 assert_eq!(output.status.code(), Some(3), "{protocol}/{case}");
-                assert!(output.stderr.is_empty());
+                assert_eq!(String::from_utf8_lossy(&output.stderr), "");
                 let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
                 assert!(matches!(envelope.result, Report::Error(_)));
             }
@@ -217,7 +221,7 @@ fn every_adapter_receives_compact_selected_outputs_and_preserves_full_original_l
             text: "ORIGINAL_EVIDENCE_".repeat(1500),
         });
         let request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: turn.clone(),
             session: SessionSelection::New { name: None },
             updates: vec![],
@@ -232,14 +236,14 @@ fn every_adapter_receives_compact_selected_outputs_and_preserves_full_original_l
         file.as_object_mut().unwrap().remove("session");
         std::fs::write(&json, serde_json::to_vec(&file).unwrap()).unwrap();
         std::fs::write(&toon, codec::encode_toon(&file).unwrap()).unwrap();
-        let first = report(home.run(["new", "Origin", "--input", json.to_str().unwrap()]));
-        let replay = report(home.run(["new", "Origin", "--input", toon.to_str().unwrap()]));
+        let first = report(&home.run(["new", "Origin", "--input", json.to_str().unwrap()]));
+        let replay = report(&home.run(["new", "Origin", "--input", toon.to_str().unwrap()]));
         assert!(replay.replayed);
         assert_eq!(replay.turn, first.turn);
         assert_eq!(server.count(), 1);
         let follow = home.0.join("follow.json");
         std::fs::write(&follow, serde_json::to_vec(&food()).unwrap()).unwrap();
-        let second = report(home.run([
+        let second = report(&home.run([
             "add",
             &first.session.unwrap().to_string(),
             "--input",

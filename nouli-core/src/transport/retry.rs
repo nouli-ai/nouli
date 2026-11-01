@@ -33,6 +33,12 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
+    /// Builds a retry policy from the attempt and delay limits in `settings`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError::Settings`] if the settings are invalid or the
+    /// maximum retry delay overflows the clock.
     pub fn new(settings: &ExecutionSettings) -> Result<Self, TransportError> {
         settings.validate().map_err(|_| TransportError::Settings)?;
         let max_delay = Duration::from_secs(settings.max_retry_delay_seconds);
@@ -46,6 +52,7 @@ impl RetryPolicy {
     }
     /// Completed attempts are one-based. The returned delay permits one next
     /// attempt; attempt zero and exhausted rounds never start extra calls.
+    #[must_use]
     pub fn next_delay(
         &self,
         completed_attempts: u32,
@@ -57,8 +64,8 @@ impl RetryPolicy {
         }
         let retry_after = match error {
             TransportError::Connect | TransportError::Timeout => None,
-            TransportError::RateLimited { retry_after } => *retry_after,
-            TransportError::Status {
+            TransportError::RateLimited { retry_after }
+            | TransportError::Status {
                 status: 500 | 502 | 503 | 504 | 524 | 529,
                 retry_after,
             } => *retry_after,
@@ -70,8 +77,7 @@ impl RetryPolicy {
         let backoff = Duration::from_secs(seconds).min(self.max_delay);
         Some(
             retry_after
-                .map(|hint| hint.delay(now))
-                .unwrap_or(Duration::ZERO)
+                .map_or(Duration::ZERO, |hint| hint.delay(now))
                 .max(backoff)
                 .min(self.max_delay),
         )

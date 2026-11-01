@@ -1,7 +1,9 @@
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 
 use harness::{Home, QUESTION, QUESTIONS, report};
 use nouli_core::{
@@ -13,19 +15,12 @@ use std::process::{Command, Output};
 
 fn text(output: Output) -> String {
     assert!(output.status.success(), "{output:?}");
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     String::from_utf8(output.stdout).unwrap()
 }
 
 fn command(home: &Home) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nouli"));
-    command
-        .env_clear()
-        .env("HOME", &home.0)
-        .current_dir(&home.0)
-        .arg("--store")
-        .arg(home.store());
-    command
+    home.bare_command(true)
 }
 
 #[test]
@@ -34,11 +29,11 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     for name in ["Travel", "Appointments"] {
-        report(home.run([&["new", name, name][..], &QUESTION].concat()));
-        report(home.run([&["add", name, "More evidence"][..], &QUESTIONS[1]].concat()));
+        report(&home.run([&["new", name, name][..], &QUESTION].concat()));
+        report(&home.run([&["add", name, "More evidence"][..], &QUESTIONS[1]].concat()));
     }
     let combined = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Combined", "Combine histories"][..],
                 &QUESTIONS[2],
@@ -64,14 +59,14 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     assert!(initial.contains("Expected score:"));
     assert!(!initial.contains('\u{1b}'));
 
-    report(home.run([&["add", "Travel", "Later source evidence"][..], &QUESTION].concat()));
-    report(home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTION].concat()));
+    report(&home.run([&["add", "Travel", "Later source evidence"][..], &QUESTION].concat()));
+    report(&home.run([&["new", "Unrelated", "Unrelated"][..], &QUESTION].concat()));
     let calls = server.count();
     // Store-only discovery must tolerate removed/invalid provider definitions.
     let config = "output = 'json'\n[providers.local]\nprotocol = 'removed-protocol'\n";
     std::fs::write(home.0.join("config.toml"), config).unwrap();
     std::fs::write(home.0.join(".env"), "UNFINISHED='\n").unwrap();
-    let database = home.store().join("ledger.sqlite3");
+    let database = home.ledger_path();
     let before = std::fs::read(&database).unwrap();
     for selector in ["Combined".to_owned(), combined.session.unwrap().to_string()] {
         for format in [vec![], vec!["--format", "auto"], vec!["--format", "text"]] {
@@ -130,7 +125,7 @@ fn empty_view_and_help_do_not_initialize_config_or_load_env() {
         )
         .unwrap();
     drop(ledger);
-    let database = home.store().join("ledger.sqlite3");
+    let database = home.ledger_path();
     let before = std::fs::read(&database).unwrap();
     let output = text(command(&home).args(["view", "Empty"]).output().unwrap());
     assert!(output.contains("Session: Empty"));

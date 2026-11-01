@@ -6,6 +6,15 @@ use super::{FinalizedTurn, HistoryError, SourcePoint};
 
 /// Sources, frontier entries, and parent lists supply tie order. Storage order
 /// and wall-clock completion times never influence this projection.
+///
+/// # Errors
+///
+/// - [`HistoryError::DuplicateTurn`] if `turns` repeats a turn ID.
+/// - [`HistoryError::InvalidFrontier`] if a source frontier is empty or repeats a turn.
+/// - [`HistoryError::UnknownTurn`] if a frontier entry or parent is missing from `turns`.
+/// - [`HistoryError::ForeignHead`] if a frontier turn belongs to another session.
+/// - [`HistoryError::Cycle`] if the parent links form a cycle.
+/// - Any error from [`FinalizedTurn::validate`] for a reachable turn.
 pub fn canonical_history<'a>(
     turns: &'a [FinalizedTurn],
     sources: &[SourcePoint],
@@ -60,10 +69,14 @@ pub fn canonical_history<'a>(
 mod tests {
     use super::*;
     use crate::identity::Id;
-    use crate::{
-        context::ContextUpdate,
-        history::{AttemptRecord, SessionSelection},
-    };
+    use crate::{context::ContextUpdate, history::SessionSelection};
+
+    /// An attempt is separate from finalized turns, so it cannot appear in a source head.
+    #[derive(serde::Deserialize)]
+    struct FailedAttempt {
+        id: Id,
+        session: Id,
+    }
 
     #[derive(serde::Deserialize)]
     struct Fixture {
@@ -71,7 +84,7 @@ mod tests {
         sources: Vec<SourcePoint>,
         expected: Vec<Id>,
         unrelated_pinned_record: Id,
-        failed_attempt: AttemptRecord,
+        failed_attempt: FailedAttempt,
         selections: std::collections::HashMap<String, SessionSelection>,
     }
 

@@ -1,29 +1,30 @@
 //! Terminal file drops are paths, either bracketed paste or ordinary key input.
 //! Resolve shell quoting without executing it, and snapshot bytes at drop time.
-mod documents;
+pub(crate) mod documents;
 mod files;
-mod worker;
+use crate::worker;
 pub(super) use files::discover;
 use std::{
     fs::File,
     io::{Cursor, Read},
     path::{Path, PathBuf},
 };
-pub(crate) use worker::maybe_worker;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use nouli_core::{
-    context::{ContextKind, ContextRecord, ContextUpdate},
-    data::Data,
+    context::{
+        ContextUpdate,
+        evidence::{self, marker},
+    },
     identity::Id,
     media::Image,
 };
 use thiserror::Error;
 
-const MAX_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const MAX_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Error)]
-pub(super) enum Error {
+pub(crate) enum Error {
     #[error("Cannot read {0}.")]
     Read(String),
     #[error("{0} is larger than 16 MiB. Choose a smaller file.")]
@@ -99,7 +100,7 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
         .to_string_lossy()
         .to_ascii_lowercase();
     if extension == "svg" {
-        bytes = worker::extract(bytes, "svg", &name).map_err(|_| Error::Svg(name.clone()))?;
+        bytes = worker::extract(&bytes, "svg", &name).map_err(|_| Error::Svg(name.clone()))?;
     }
     if let Ok(format) = image::guess_format(&bytes) {
         let reader = image::ImageReader::new(Cursor::new(&bytes))
@@ -125,7 +126,7 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
         }
         // References must survive textual serialization unchanged. Filenames
         // can contain quotes/backslashes, so keep them outside the opaque token.
-        let reference = format!("[image:{}]", Id::generate());
+        let reference = marker::image_marker(Id::generate());
         return Ok(Loaded {
             text: format!("{name} {reference}"),
             image: Some(Image {
@@ -137,17 +138,16 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
         });
     }
     let text = if bytes.starts_with(b"%PDF-") {
-        pdf_text(bytes, &name)?
+        pdf_text(&bytes, &name)?
     } else if matches!(extension.as_str(), "csv" | "tsv") {
         documents::delimited(&bytes, if extension == "tsv" { b'\t' } else { b',' }, &name)?
-    } else if matches!(
-        extension.as_str(),
-        "docx" | "pptx" | "xls" | "xlsx" | "xlsm" | "xlsb" | "ods" | "doc" | "ppt"
-    ) {
+    } else if (worker::WORKER_EXTENSIONS.contains(&extension.as_str()) && extension != "svg")
+        || matches!(extension.as_str(), "doc" | "ppt")
+    {
         if matches!(extension.as_str(), "doc" | "ppt") {
             documents::text(bytes, &extension, &name)?
         } else {
-            String::from_utf8(worker::extract(bytes, &extension, &name)?)
+            String::from_utf8(worker::extract(&bytes, &extension, &name)?)
                 .map_err(|_| Error::Unsupported(name.clone()))?
         }
     } else {
@@ -164,74 +164,41 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
     Ok(Loaded { text, image: None })
 }
 
-/// Keep document parsing outside the TUI process, with bounded output and time.
-fn pdf_text(bytes: Vec<u8>, name: &str) -> Result<String, Error> {
-    use std::{
-        io::Write,
-        process::{Command, Stdio},
-        thread,
-        time::{Duration, Instant},
-    };
-    let mut child = Command::new("pdftotext")
+/// Keep PDF conversion outside the TUI, with bounded input, output, and time.
+fn pdf_text(bytes: &[u8], name: &str) -> Result<String, Error> {
+    pdf_text_with(
+        std::process::Command::new("pdftotext"),
+        bytes,
+        name,
+        std::time::Duration::from_secs(10),
+    )
+}
+
+fn pdf_text_with(
+    mut command: std::process::Command,
+    bytes: &[u8],
+    name: &str,
+    timeout: std::time::Duration,
+) -> Result<String, Error> {
+    use crate::process::{RunError, run_bounded};
+    command
         .args(["-layout", "-nopgbrk", "-", "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
+        .stdout(std::process::Stdio::piped());
+    let output = run_bounded(&mut command, Some(bytes), timeout, MAX_BYTES, None, None).map_err(
+        |error| match error {
+            RunError::Spawn(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Error::PdfUnavailable
-            } else {
-                Error::Read(name.into())
             }
-        })?;
-    let mut stdin = child.stdin.take().expect("piped stdin");
-    let stdout = child.stdout.take().expect("piped stdout");
-    let writer = thread::spawn(move || stdin.write_all(&bytes));
-    let reader = thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout
-            .take(MAX_BYTES + 1)
-            .read_to_end(&mut output)
-            .map(|_| output)
-    });
-    let start = Instant::now();
-    let success = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status.success(),
-            Ok(None) if start.elapsed() < Duration::from_secs(10) => {
-                thread::sleep(Duration::from_millis(10))
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break false;
-            }
-        }
-    };
-    let _ = writer.join();
-    let output = reader
-        .join()
-        .ok()
-        .and_then(Result::ok)
-        .filter(|output| output.len() as u64 <= MAX_BYTES);
-    if !success {
-        return Err(Error::Unsupported(name.into()));
-    }
-    String::from_utf8(output.ok_or_else(|| Error::Unsupported(name.into()))?)
-        .map_err(|_| Error::Unsupported(name.into()))
+            RunError::Spawn(_) => Error::Read(name.into()),
+            _ => Error::Unsupported(name.into()),
+        },
+    )?;
+    String::from_utf8(output).map_err(|_| Error::Unsupported(name.into()))
 }
 
 pub(super) fn update(image: &Image) -> ContextUpdate {
-    let id = Id::generate();
     ContextUpdate::Append {
-        record: ContextRecord {
-            id,
-            key: format!("image:{id}"),
-            kind: ContextKind::Evidence,
-            value: Data::new(serde_json::json!({"nouli_image":image}))
-                .expect("image strings are portable"),
-        },
+        record: evidence::image_record(Id::generate(), image),
     }
 }
 
@@ -264,10 +231,8 @@ mod tests {
             std::fs::read(&png).unwrap()
         );
         assert_eq!(image.name, "photo.png");
-        assert!(
-            update(&image).new_record().unwrap().value.value()["nouli_image"]["data_base64"]
-                .is_string()
-        );
+        let saved = update(&image).new_record().unwrap().as_image().unwrap();
+        assert_eq!(saved.unwrap().data_base64, image.data_base64);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -279,5 +244,50 @@ mod tests {
         File::create(&path).unwrap().set_len(MAX_BYTES + 1).unwrap();
         assert!(matches!(load(&path), Err(Error::Large(_))));
         std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn pdf_timeout_kills_descendants_after_the_converter_exits() {
+        use nix::{sys::signal::kill, unistd::Pid};
+        use std::{
+            os::unix::fs::PermissionsExt,
+            process::Command,
+            thread,
+            time::{Duration, Instant},
+        };
+        let dir = std::env::temp_dir().join(format!("nouli-pdf-timeout-{}", Id::generate()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let program = dir.join("pdftotext");
+        let pids = dir.join("pids");
+        // Consume the input, then exit while a descendant keeps stdout open.
+        std::fs::write(&program, "#!/bin/sh\n/bin/cat >/dev/null\n/bin/sleep 30 &\nprintf '%s %s\\n' \"$$\" \"$!\" > \"$PID_FILE\"\nprintf k\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut command = Command::new("pdftotext");
+        command.env("PATH", &dir).env("PID_FILE", &pids);
+        let start = Instant::now();
+        assert!(matches!(
+            pdf_text_with(
+                command,
+                b"%PDF-1.4\n",
+                "fake.pdf",
+                Duration::from_millis(500)
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(start.elapsed() >= Duration::from_millis(400));
+        assert!(start.elapsed() < Duration::from_secs(5));
+        let ids: Vec<i32> = std::fs::read_to_string(&pids)
+            .unwrap()
+            .split_whitespace()
+            .map(|pid| pid.parse().unwrap())
+            .collect();
+        assert_eq!(ids.len(), 2);
+        for pid in ids {
+            let gone = (0..100).any(|_| {
+                thread::sleep(Duration::from_millis(50));
+                kill(Pid::from_raw(pid), None).is_err()
+            });
+            assert!(gone, "converter or descendant {pid} is still running");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

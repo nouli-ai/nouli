@@ -1,6 +1,6 @@
 //! Injectable single-attempt dispatch and retry time, with no persistence.
 use crate::{
-    config::{Protocol, resolve::ResolvedSettings},
+    config::resolve::ResolvedSettings,
     decision::TurnRequest,
     limits::count::TokenCounter,
     outcome::TurnOutcome,
@@ -24,6 +24,20 @@ pub trait DecisionProvider: Sync {
         counter: &C,
         cancel: &CancellationToken,
     ) -> impl Future<Output = Result<TurnOutcome, ProviderError>> + Send;
+    /// Evaluate using the current plan's prepared-image cache. Existing providers
+    /// keep their original attempt behavior; native providers reuse this cache
+    /// while building the request off the async executor.
+    fn attempt_prepared<C: TokenCounter + Sync>(
+        &self,
+        settings: &ResolvedSettings,
+        request: &TurnRequest,
+        evidence: &str,
+        counter: &C,
+        cancel: &CancellationToken,
+        _images: &crate::media::PreparedImages,
+    ) -> impl Future<Output = Result<TurnOutcome, ProviderError>> + Send {
+        self.attempt(settings, request, evidence, counter, cancel)
+    }
 }
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NativeProvider;
@@ -37,18 +51,22 @@ impl DecisionProvider for NativeProvider {
         cancel: &CancellationToken,
     ) -> Result<TurnOutcome, ProviderError> {
         let transport = HttpTransport::new(&settings.snapshot.execution)?;
-        match settings.snapshot.profile.protocol {
-            Protocol::SystemOne => {
-                provider::system_one::evaluate(
-                    &transport, settings, request, evidence, counter, cancel,
-                )
-                .await
-            }
-            Protocol::OpenaiDecisions => {
-                provider::openai::evaluate(&transport, settings, request, evidence, counter, cancel)
-                    .await
-            }
-        }
+        provider::evaluate(&transport, settings, request, evidence, counter, cancel).await
+    }
+    async fn attempt_prepared<C: TokenCounter + Sync>(
+        &self,
+        settings: &ResolvedSettings,
+        request: &TurnRequest,
+        evidence: &str,
+        counter: &C,
+        cancel: &CancellationToken,
+        images: &crate::media::PreparedImages,
+    ) -> Result<TurnOutcome, ProviderError> {
+        let transport = HttpTransport::new(&settings.snapshot.execution)?;
+        provider::evaluate_prepared(
+            &transport, settings, request, evidence, counter, cancel, images,
+        )
+        .await
     }
 }
 
@@ -68,6 +86,6 @@ impl RetryClock for TokioClock {
         SystemTime::now()
     }
     async fn wait(&self, delay: Duration, cancel: &CancellationToken) -> bool {
-        tokio::select! {biased; _=cancel.cancelled()=>false,_=tokio::time::sleep(delay)=>true}
+        tokio::select! {biased; ()=cancel.cancelled()=>false,()=tokio::time::sleep(delay)=>true}
     }
 }

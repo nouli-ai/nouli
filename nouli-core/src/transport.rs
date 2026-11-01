@@ -2,6 +2,7 @@
 
 pub mod retry;
 
+use std::collections::BTreeMap;
 use std::{fmt, time::Duration};
 
 use reqwest::{
@@ -68,11 +69,16 @@ impl fmt::Debug for HttpResponse {
         f.debug_struct("HttpResponse")
             .field("status", &self.status)
             .field("body_bytes", &self.body.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl HttpResponse {
+    /// Decodes the response body as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError::Contract`] if the body is not valid JSON.
     pub fn json(&self) -> Result<Value, TransportError> {
         codec::decode_value(&self.body, InputFormat::Json).map_err(|_| TransportError::Contract)
     }
@@ -85,6 +91,13 @@ pub struct HttpTransport {
 }
 
 /// Appends protocol path segments without dropping a reverse proxy's prefix.
+///
+/// # Errors
+///
+/// Returns [`TransportError::Endpoint`] if the profile is invalid, its base URL
+/// cannot carry path segments, or the request path or a Cloudflare model ID
+/// contains an empty, `.`, or `..` segment (or a `?`, `#`, or `\` in the
+/// request path).
 pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportError> {
     profile.validate().map_err(|_| TransportError::Endpoint)?;
     let mut url = Url::parse(&profile.base_url).map_err(|_| TransportError::Endpoint)?;
@@ -100,7 +113,7 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
     {
         let mut segments = url
             .path_segments_mut()
-            .map_err(|_| TransportError::Endpoint)?;
+            .map_err(|()| TransportError::Endpoint)?;
         segments.pop_if_empty();
         for part in path.split('/').filter(|_| {
             profile.connection.binding != Some(crate::config::HttpBinding::CloudflareWorkersAi)
@@ -111,7 +124,7 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
     if profile.connection.binding == Some(crate::config::HttpBinding::CloudflareWorkersAi) {
         let mut parts = url
             .path_segments_mut()
-            .map_err(|_| TransportError::Endpoint)?;
+            .map_err(|()| TransportError::Endpoint)?;
         // Cloudflare model IDs use slash-separated path components.
         parts.pop_if_empty();
         for segment in profile
@@ -133,7 +146,7 @@ pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportE
     Ok(url)
 }
 
-fn network_error(error: reqwest::Error) -> TransportError {
+fn network_error(error: &reqwest::Error) -> TransportError {
     if error.is_timeout() {
         TransportError::Timeout
     } else if error.is_connect() {
@@ -179,6 +192,14 @@ fn status_error(status: u16, retry_after: Option<RetryAfter>, body: &[u8]) -> Tr
 }
 
 impl HttpTransport {
+    /// Builds a transport that enforces the attempt timeout and response size
+    /// limit from `settings`, without retries, redirects, or proxies.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`TransportError::Settings`] if the settings are invalid or the
+    ///   timeout overflows the clock.
+    /// - Returns [`TransportError::Build`] if the HTTP client cannot be built.
     pub fn new(settings: &ExecutionSettings) -> Result<Self, TransportError> {
         settings.validate().map_err(|_| TransportError::Settings)?;
         let timeout = Duration::from_secs(settings.attempt_timeout_seconds);
@@ -198,6 +219,23 @@ impl HttpTransport {
         })
     }
 
+    /// Sends one cancellable JSON POST attempt to the profile's endpoint.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`TransportError::Endpoint`] if the endpoint cannot be built,
+    ///   and [`TransportError::Settings`] if a header or credential is not a
+    ///   valid HTTP header.
+    /// - Returns [`TransportError::Canceled`] if `cancel` fires first, and
+    ///   [`TransportError::Timeout`] if the attempt exceeds its timeout.
+    /// - Returns [`TransportError::Connect`], [`TransportError::Body`],
+    ///   [`TransportError::Truncated`], or [`TransportError::Oversize`] if the
+    ///   exchange fails or the response body is incomplete or too large.
+    /// - Returns a status classification such as
+    ///   [`TransportError::Authentication`], [`TransportError::RateLimited`],
+    ///   [`TransportError::Capacity`], [`TransportError::Capability`],
+    ///   [`TransportError::Contract`], or [`TransportError::Status`] for a
+    ///   non-2xx response.
     #[tracing::instrument(skip_all, name = "provider_attempt")]
     pub async fn post(
         &self,
@@ -207,10 +245,35 @@ impl HttpTransport {
         credential: Option<&Credential>,
         cancel: &CancellationToken,
     ) -> Result<HttpResponse, TransportError> {
-        self.post_with_headers(profile, path, body, credential, &Default::default(), cancel)
-            .await
+        self.post_with_headers(
+            profile,
+            path,
+            body,
+            credential,
+            &BTreeMap::default(),
+            cancel,
+        )
+        .await
     }
 
+    /// Sends one cancellable JSON POST attempt with additional sensitive
+    /// headers.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`TransportError::Endpoint`] if the endpoint cannot be built,
+    ///   and [`TransportError::Settings`] if a header or credential is not a
+    ///   valid HTTP header.
+    /// - Returns [`TransportError::Canceled`] if `cancel` fires first, and
+    ///   [`TransportError::Timeout`] if the attempt exceeds its timeout.
+    /// - Returns [`TransportError::Connect`], [`TransportError::Body`],
+    ///   [`TransportError::Truncated`], or [`TransportError::Oversize`] if the
+    ///   exchange fails or the response body is incomplete or too large.
+    /// - Returns a status classification such as
+    ///   [`TransportError::Authentication`], [`TransportError::RateLimited`],
+    ///   [`TransportError::Capacity`], [`TransportError::Capability`],
+    ///   [`TransportError::Contract`], or [`TransportError::Status`] for a
+    ///   non-2xx response.
     #[allow(clippy::too_many_arguments)]
     pub async fn post_with_headers(
         &self,
@@ -225,7 +288,7 @@ impl HttpTransport {
         let exchange = self.exchange(url, body, credential, profile, headers);
         tokio::select! {
             biased;
-            _=cancel.cancelled()=>Err(TransportError::Canceled),
+            ()=cancel.cancelled()=>Err(TransportError::Canceled),
             result=tokio::time::timeout(self.timeout,exchange)=>result.unwrap_or(Err(TransportError::Timeout)),
         }
     }
@@ -238,88 +301,17 @@ impl HttpTransport {
         profile: &ProviderProfile,
         headers: &std::collections::BTreeMap<String, Credential>,
     ) -> Result<HttpResponse, TransportError> {
-        let mut resolved_headers = HeaderMap::new();
-        for (name, value) in &profile.connection.headers {
-            let mut v = HeaderValue::from_str(value).map_err(|_| TransportError::Settings)?;
-            v.set_sensitive(true);
-            resolved_headers.insert(
-                HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?,
-                v,
-            );
-        }
-        for (name, value) in headers {
-            let mut v =
-                HeaderValue::from_str(value.expose()).map_err(|_| TransportError::Settings)?;
-            v.set_sensitive(true);
-            resolved_headers.insert(
-                HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?,
-                v,
-            );
-        }
-        if let Some(credential) = credential {
-            let mut header = HeaderValue::from_str(&format!(
-                "{}{}{}",
-                profile
-                    .connection
-                    .auth_scheme
-                    .as_deref()
-                    .unwrap_or("Bearer"),
-                if profile.connection.auth_scheme.as_deref() == Some("") {
-                    ""
-                } else {
-                    " "
-                },
-                credential.expose()
-            ))
-            .map_err(|_| TransportError::Settings)?;
-            header.set_sensitive(true);
-            resolved_headers.insert(
-                HeaderName::from_bytes(
-                    profile
-                        .connection
-                        .auth_header
-                        .as_deref()
-                        .unwrap_or("Authorization")
-                        .as_bytes(),
-                )
-                .map_err(|_| TransportError::Settings)?,
-                header,
-            );
-        }
         let mut response = self
             .client
             .post(url)
             .json(body)
-            .headers(resolved_headers)
+            .headers(request_headers(profile, headers, credential)?)
             .send()
             .await
-            .map_err(network_error)?;
+            .map_err(|error| network_error(&error))?;
         let status = response.status().as_u16();
         let headers = response.headers().clone();
-        let expected = response.content_length();
-        if expected.is_some_and(|length| length > self.max_response_bytes as u64) {
-            return Err(TransportError::Oversize {
-                limit: self.max_response_bytes,
-            });
-        }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|error| {
-            if expected.is_some() && !error.is_timeout() {
-                TransportError::Truncated
-            } else {
-                network_error(error)
-            }
-        })? {
-            if chunk.len() > self.max_response_bytes - bytes.len() {
-                return Err(TransportError::Oversize {
-                    limit: self.max_response_bytes,
-                });
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        if expected.is_some_and(|length| length != bytes.len() as u64) {
-            return Err(TransportError::Truncated);
-        }
+        let bytes = self.read_body(&mut response).await?;
         tracing::debug!(
             status,
             body_bytes = bytes.len(),
@@ -338,6 +330,90 @@ impl HttpTransport {
             body: bytes,
         })
     }
+
+    /// Reads the whole response body, rejecting it as soon as it exceeds the
+    /// size limit, and as truncated when it falls short of a declared length.
+    async fn read_body(&self, response: &mut reqwest::Response) -> Result<Vec<u8>, TransportError> {
+        let oversize = TransportError::Oversize {
+            limit: self.max_response_bytes,
+        };
+        let expected = response.content_length();
+        if expected.is_some_and(|length| length > self.max_response_bytes as u64) {
+            return Err(oversize);
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            if expected.is_some() && !error.is_timeout() {
+                TransportError::Truncated
+            } else {
+                network_error(&error)
+            }
+        })? {
+            if chunk.len() > self.max_response_bytes - bytes.len() {
+                return Err(oversize);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if expected.is_some_and(|length| length != bytes.len() as u64) {
+            return Err(TransportError::Truncated);
+        }
+        Ok(bytes)
+    }
+}
+
+/// Builds the attempt's headers, all marked sensitive: the profile's literal
+/// headers, then the resolved extra headers, then the credential, each later
+/// one replacing an earlier header of the same name.
+fn request_headers(
+    profile: &ProviderProfile,
+    headers: &std::collections::BTreeMap<String, Credential>,
+    credential: Option<&Credential>,
+) -> Result<HeaderMap, TransportError> {
+    let mut resolved = HeaderMap::new();
+    for (name, value) in &profile.connection.headers {
+        let (name, value) = sensitive_header(name, value)?;
+        resolved.insert(name, value);
+    }
+    for (name, value) in headers {
+        let (name, value) = sensitive_header(name, value.expose())?;
+        resolved.insert(name, value);
+    }
+    if let Some(credential) = credential {
+        let (name, value) = authorization_header(profile, credential)?;
+        resolved.insert(name, value);
+    }
+    Ok(resolved)
+}
+
+/// The credential header: `Authorization: Bearer <key>` unless the profile
+/// names another header or scheme. An empty scheme sends the bare key.
+fn authorization_header(
+    profile: &ProviderProfile,
+    credential: &Credential,
+) -> Result<(HeaderName, HeaderValue), TransportError> {
+    let scheme = profile
+        .connection
+        .auth_scheme
+        .as_deref()
+        .unwrap_or("Bearer");
+    let separator = if profile.connection.auth_scheme.as_deref() == Some("") {
+        ""
+    } else {
+        " "
+    };
+    let name = profile
+        .connection
+        .auth_header
+        .as_deref()
+        .unwrap_or("Authorization");
+    sensitive_header(name, &format!("{scheme}{separator}{}", credential.expose()))
+}
+
+fn sensitive_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), TransportError> {
+    let mut value = HeaderValue::from_str(value).map_err(|_| TransportError::Settings)?;
+    value.set_sensitive(true);
+    let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::Settings)?;
+    Ok((name, value))
 }
 
 #[cfg(test)]
@@ -346,12 +422,14 @@ pub(crate) mod test_server;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::config::ModelSettings;
     use test_server::MockServer;
 
     fn profile(base_url: String) -> ProviderProfile {
         ProviderProfile {
-            connection: Default::default(),
-            limits: Default::default(),
+            connection: ConnectionSettings::default(),
+            limits: ModelSettings::default(),
             protocol: crate::config::Protocol::SystemOne,
             base_url,
             model: "fixture".into(),
@@ -373,7 +451,7 @@ mod tests {
         profile.connection.binding = Some(crate::config::HttpBinding::CloudflareWorkersAi);
         profile.connection.request_path = Some("custom/run".into());
         profile.connection.auth_header = Some("X-Api-Key".into());
-        profile.connection.auth_scheme = Some("".into());
+        profile.connection.auth_scheme = Some(String::new());
         profile
             .connection
             .headers

@@ -18,6 +18,7 @@ pub enum ValueType {
     NullableObject,
 }
 impl ValueType {
+    #[must_use]
     pub fn of(value: &serde_json::Value) -> Self {
         match value {
             serde_json::Value::Number(_) => Self::Number,
@@ -28,6 +29,7 @@ impl ValueType {
             serde_json::Value::Array(_) => Self::Array,
         }
     }
+    #[must_use]
     pub fn accepts(self, value: &serde_json::Value) -> bool {
         let actual = Self::of(value);
         self == actual
@@ -65,9 +67,12 @@ pub(super) fn comparable(left: ValueType, right: ValueType, comparison: Comparis
 fn index(value: &str, len: usize) -> bool {
     value
         .parse::<usize>()
-        .ok()
-        .is_some_and(|i| i < len && i.to_string() == value)
+        .is_ok_and(|i| i < len && i.to_string() == value)
 }
+#[expect(
+    clippy::match_same_arms,
+    reason = "one arm per selector path keeps the schema table readable"
+)]
 fn answer_path(space: &AnswerSpace, path: &[&str]) -> Result<ValueType, CompileError> {
     Ok(match (space, path) {
         (_, []) => ValueType::Object,
@@ -93,6 +98,16 @@ fn answer_path(space: &AnswerSpace, path: &[&str]) -> Result<ValueType, CompileE
         _ => return Err(CompileError::Selector),
     })
 }
+/// Returns the value type selected by a reference's field and pointer.
+///
+/// # Errors
+///
+/// Returns [`CompileError::Selector`] if the pointer is malformed or the field
+/// or pointer does not apply to the question's answer space.
+#[expect(
+    clippy::match_same_arms,
+    reason = "one arm per selector path keeps the schema table readable"
+)]
 pub fn reference_type(
     reference: &ResultReference,
     question: &Question,

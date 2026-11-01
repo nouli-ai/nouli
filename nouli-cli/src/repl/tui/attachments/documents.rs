@@ -82,8 +82,6 @@ fn xml(
 }
 
 fn office_text(xml: &str, name: &str) -> Result<String, Error> {
-    let doc = roxmltree::Document::parse(xml).map_err(|_| unsupported(name))?;
-    let mut out = String::new();
     fn visit(node: roxmltree::Node<'_, '_>, out: &mut String, in_cell: bool, depth: usize) -> bool {
         if depth > 128 {
             return false;
@@ -106,14 +104,14 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
         }
         match tag {
             "t" => {
-                for text in node.children().filter(|n| n.is_text()) {
+                for text in node.children().filter(roxmltree::Node::is_text) {
                     out.push_str(text.text().unwrap_or_default());
                 }
             }
             "tab" => out.push('\t'),
             "br" => out.push('\n'),
             _ => {
-                for child in node.children().filter(|n| n.is_element()) {
+                for child in node.children().filter(roxmltree::Node::is_element) {
                     if !visit(child, out, in_cell || tag == "tc", depth + 1) {
                         return false;
                     }
@@ -135,13 +133,15 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
         }
         out.len() as u64 <= MAX_BYTES
     }
+    let doc = roxmltree::Document::parse(xml).map_err(|_| unsupported(name))?;
+    let mut out = String::new();
     if !visit(doc.root_element(), &mut out, false, 0) {
         return Err(unsupported(name));
     }
     Ok(out)
 }
 
-pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
+pub(crate) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
     if matches!(extension, "doc" | "ppt") {
         return legacy(bytes, extension, name);
     }
@@ -150,71 +150,106 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
         archive(&bytes, name)?;
     }
     if matches!(extension, "xls" | "xlsx" | "xlsm" | "xlsb" | "ods") {
-        let mut book = calamine::open_workbook_auto_from_rs(Cursor::new(bytes))
-            .map_err(|_| unsupported(name))?;
-        let mut out = String::new();
-        for sheet in book.sheet_names().to_vec() {
-            let range = book
-                .worksheet_range(&sheet)
-                .map_err(|_| unsupported(name))?;
-            let formulas = book
-                .worksheet_formula(&sheet)
-                .map_err(|_| unsupported(name))?;
-            let starts = [range.start(), formulas.start()]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            let ends = [range.end(), formulas.end()]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            writeln!(out, "Sheet: {sheet}").expect("string write");
-            if starts.is_empty() {
-                continue;
-            }
-            let (first_row, first_col) = (
-                starts.iter().map(|p| p.0).min().unwrap(),
-                starts.iter().map(|p| p.1).min().unwrap(),
-            );
-            let (last_row, last_col) = (
-                ends.iter().map(|p| p.0).max().unwrap(),
-                ends.iter().map(|p| p.1).max().unwrap(),
-            );
-            if u64::from(last_row - first_row + 1) * u64::from(last_col - first_col + 1) > 1_000_000
-            {
-                return Err(Error::Large(name.into()));
-            }
-            for row in first_row..=last_row {
-                let mut cells = Vec::new();
-                for col in first_col..=last_col {
-                    let value = match range.get_value((row, col)) {
-                        Some(cell) if !matches!(cell, calamine::Data::Empty) => cell_value(cell),
-                        _ => formulas
-                            .get_value((row, col))
-                            .filter(|s| !s.is_empty())
-                            .map(|formula| format!("={formula} (no cached result)"))
-                            .unwrap_or_default(),
-                    };
-                    cells.push(value);
-                }
-                out.push_str(&serde_json::to_string(&cells).expect("cell strings serialize"));
-                out.push('\n');
-                if out.len() as u64 > MAX_BYTES {
-                    return Err(Error::Large(name.into()));
-                }
-            }
-        }
-        return Ok(out);
+        return spreadsheet(bytes, name);
     }
     let mut archive = archive(&bytes, name)?;
     if extension == "docx" {
         return office_text(&xml(&mut archive, "word/document.xml", name)?, name);
     }
-    let presentation = xml(&mut archive, "ppt/presentation.xml", name)?;
-    let relationships = xml(&mut archive, "ppt/_rels/presentation.xml.rels", name)?;
-    let doc = roxmltree::Document::parse(&presentation).map_err(|_| unsupported(name))?;
-    let rels = roxmltree::Document::parse(&relationships).map_err(|_| unsupported(name))?;
-    let targets = rels
+    presentation(&mut archive, name)
+}
+
+/// Every sheet as a `Sheet: <name>` header followed by one JSON row per line.
+fn spreadsheet(bytes: Vec<u8>, name: &str) -> Result<String, Error> {
+    let mut book =
+        calamine::open_workbook_auto_from_rs(Cursor::new(bytes)).map_err(|_| unsupported(name))?;
+    let mut out = String::new();
+    for sheet in book.sheet_names().clone() {
+        let range = book
+            .worksheet_range(&sheet)
+            .map_err(|_| unsupported(name))?;
+        let formulas = book
+            .worksheet_formula(&sheet)
+            .map_err(|_| unsupported(name))?;
+        writeln!(out, "Sheet: {sheet}").expect("string write");
+        sheet_rows(&range, &formulas, &mut out, name)?;
+    }
+    Ok(out)
+}
+
+/// Inclusive `((first_row, first_col), (last_row, last_col))` covering both
+/// cached values and formulas, or `None` for an empty sheet.
+fn sheet_bounds(
+    range: &calamine::Range<calamine::Data>,
+    formulas: &calamine::Range<String>,
+) -> Option<((u32, u32), (u32, u32))> {
+    let starts = [range.start(), formulas.start()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let ends = [range.end(), formulas.end()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if starts.is_empty() {
+        return None;
+    }
+    let first = (
+        starts.iter().map(|p| p.0).min().unwrap(),
+        starts.iter().map(|p| p.1).min().unwrap(),
+    );
+    let last = (
+        ends.iter().map(|p| p.0).max().unwrap(),
+        ends.iter().map(|p| p.1).max().unwrap(),
+    );
+    Some((first, last))
+}
+
+/// A cell's cached value, else its formula marked as uncomputed, else empty.
+fn sheet_cell(
+    range: &calamine::Range<calamine::Data>,
+    formulas: &calamine::Range<String>,
+    position: (u32, u32),
+) -> String {
+    match range.get_value(position) {
+        Some(cell) if !matches!(cell, calamine::Data::Empty) => cell_value(cell),
+        _ => formulas
+            .get_value(position)
+            .filter(|s| !s.is_empty())
+            .map(|formula| format!("={formula} (no cached result)"))
+            .unwrap_or_default(),
+    }
+}
+
+/// Appends one JSON array per row of the sheet's used area.
+fn sheet_rows(
+    range: &calamine::Range<calamine::Data>,
+    formulas: &calamine::Range<String>,
+    out: &mut String,
+    name: &str,
+) -> Result<(), Error> {
+    let Some(((first_row, first_col), (last_row, last_col))) = sheet_bounds(range, formulas) else {
+        return Ok(());
+    };
+    if u64::from(last_row - first_row + 1) * u64::from(last_col - first_col + 1) > 1_000_000 {
+        return Err(Error::Large(name.into()));
+    }
+    for row in first_row..=last_row {
+        let cells = (first_col..=last_col)
+            .map(|col| sheet_cell(range, formulas, (row, col)))
+            .collect::<Vec<_>>();
+        out.push_str(&serde_json::to_string(&cells).expect("cell strings serialize"));
+        out.push('\n');
+        if out.len() as u64 > MAX_BYTES {
+            return Err(Error::Large(name.into()));
+        }
+    }
+    Ok(())
+}
+
+/// Internal relationship targets of `ppt/presentation.xml`, keyed by id.
+fn slide_targets<'a>(relationships: &'a roxmltree::Document<'a>) -> HashMap<&'a str, &'a str> {
+    relationships
         .descendants()
         .filter_map(|node| {
             if node.attribute("TargetMode") == Some("External") {
@@ -222,7 +257,16 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
             }
             Some((node.attribute("Id")?, node.attribute("Target")?))
         })
-        .collect::<HashMap<_, _>>();
+        .collect()
+}
+
+/// Each slide's text, in presentation order, under a `Slide <n>` header.
+fn presentation(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<String, Error> {
+    let presentation = xml(archive, "ppt/presentation.xml", name)?;
+    let relationships = xml(archive, "ppt/_rels/presentation.xml.rels", name)?;
+    let doc = roxmltree::Document::parse(&presentation).map_err(|_| unsupported(name))?;
+    let rels = roxmltree::Document::parse(&relationships).map_err(|_| unsupported(name))?;
+    let targets = slide_targets(&rels);
     let mut out = String::new();
     for (index, slide) in doc
         .descendants()
@@ -241,7 +285,7 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
             format!("ppt/{target}")
         };
         writeln!(out, "Slide {}", index + 1).expect("string write");
-        out.push_str(&office_text(&xml(&mut archive, &entry, name)?, name)?);
+        out.push_str(&office_text(&xml(archive, &entry, name)?, name)?);
         if out.len() as u64 > MAX_BYTES {
             return Err(Error::Large(name.into()));
         }
@@ -249,7 +293,17 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
     Ok(out)
 }
 
-pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
+/// A rendered SVG side in whole pixels, at least one.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "scale caps the longest side at 1568 pixels and the side is at least 1"
+)]
+fn pixels(side: f32, scale: f32) -> u32 {
+    (side * scale).ceil().max(1.0) as u32
+}
+
+pub(crate) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -269,11 +323,9 @@ pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
     }
     let size = tree.size();
     let scale = (1568.0 / size.width().max(size.height())).min(1.0);
-    let mut pixels = resvg::tiny_skia::Pixmap::new(
-        (size.width() * scale).ceil().max(1.0) as u32,
-        (size.height() * scale).ceil().max(1.0) as u32,
-    )
-    .ok_or_else(|| unsupported(name))?;
+    let mut pixels =
+        resvg::tiny_skia::Pixmap::new(pixels(size.width(), scale), pixels(size.height(), scale))
+            .ok_or_else(|| unsupported(name))?;
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::from_scale(scale, scale),
@@ -284,10 +336,11 @@ pub(super) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
 
 /// Optional converter runs in its own temporary directory and user profile.
 fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
+    use crate::process::{Limits, RunError, run_bounded};
     use std::{
+        os::unix::fs::DirBuilderExt,
         process::{Command, Stdio},
-        thread,
-        time::{Duration, Instant},
+        time::Duration,
     };
     struct Temp(std::path::PathBuf);
     impl Drop for Temp {
@@ -299,15 +352,6 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
         "nouli-office-{}",
         nouli_core::identity::Id::generate()
     )));
-    use nix::{
-        sys::{
-            resource::{Resource, setrlimit},
-            signal::{Signal, killpg},
-        },
-        unistd::Pid,
-    };
-    use std::os::unix::fs::DirBuilderExt;
-    use std::os::unix::process::CommandExt;
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&temp.0)
@@ -316,8 +360,8 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
     std::fs::write(&input, bytes).map_err(|_| Error::Read(name.into()))?;
     let output = if extension == "doc" { "docx" } else { "pptx" };
     let profile =
-        url::Url::from_directory_path(temp.0.join("profile")).map_err(|_| unsupported(name))?;
-    let mut process = [
+        url::Url::from_directory_path(temp.0.join("profile")).map_err(|()| unsupported(name))?;
+    [
         "soffice",
         "libreoffice",
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
@@ -330,54 +374,23 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
             .args(["--headless", "--convert-to", output, "--outdir"])
             .arg(&temp.0)
             .arg(&input)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(0);
-        // SAFETY: only async-signal-safe setrlimit calls run between fork/exec.
-        unsafe {
-            command.pre_exec(|| {
-                for (kind, limit) in [
-                    (Resource::RLIMIT_CORE, 0),
-                    (Resource::RLIMIT_CPU, 8),
-                    (Resource::RLIMIT_FSIZE, MAX_BYTES),
-                ] {
-                    setrlimit(kind, limit, limit).map_err(std::io::Error::from)?;
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    setrlimit(Resource::RLIMIT_DATA, 512 * 1024 * 1024, 512 * 1024 * 1024)
-                        .map_err(std::io::Error::from)?;
-                    setrlimit(Resource::RLIMIT_AS, 512 * 1024 * 1024, 512 * 1024 * 1024)
-                        .map_err(std::io::Error::from)?;
-                }
-                Ok(())
-            });
+            .stdout(Stdio::null());
+        match run_bounded(
+            &mut command,
+            None,
+            Duration::from_secs(10),
+            MAX_BYTES,
+            None,
+            Some(Limits::Office {
+                max_file_bytes: MAX_BYTES,
+            }),
+        ) {
+            Err(RunError::Spawn(_)) => None,
+            result => Some(result),
         }
-        command.spawn().ok()
     })
-    .ok_or_else(|| Error::OfficeUnavailable(name.into()))?;
-    let start = Instant::now();
-    loop {
-        match process.try_wait() {
-            Ok(Some(status)) if status.success() => {
-                let _ = killpg(Pid::from_raw(process.id() as i32), Signal::SIGKILL);
-                break;
-            }
-            Ok(None)
-                if start.elapsed() < Duration::from_secs(10)
-                    && !super::worker::group_over_memory(process.id()) =>
-            {
-                thread::sleep(Duration::from_millis(10))
-            }
-            _ => {
-                let _ = killpg(Pid::from_raw(process.id() as i32), Signal::SIGKILL);
-                let _ = process.kill();
-                let _ = process.wait();
-                return Err(unsupported(name));
-            }
-        }
-    }
+    .ok_or_else(|| Error::OfficeUnavailable(name.into()))?
+    .map_err(|_| unsupported(name))?;
     Ok(super::load(&temp.0.join(format!("input.{output}")))?.text)
 }
 
@@ -398,7 +411,7 @@ mod tests {
 
     #[test]
     fn office_extraction_preserves_unicode_entities_and_table_cells() {
-        let input = r#"<document><body><p><r><t>旅行 &amp; budget</t><t> €250</t></r></p><tbl><tr><tc><p><t>City</t></p></tc><tc><p><t>Fare</t></p></tc></tr><tr><tc><p><t>Seattle</t></p></tc><tc><p><t>42</t></p></tc></tr></tbl></body></document>"#;
+        let input = r"<document><body><p><r><t>旅行 &amp; budget</t><t> €250</t></r></p><tbl><tr><tc><p><t>City</t></p></tc><tc><p><t>Fare</t></p></tc></tr><tr><tc><p><t>Seattle</t></p></tc><tc><p><t>42</t></p></tc></tr></tbl></body></document>";
         let bytes = zipped(&[("word/document.xml", input)]);
         let result = text(bytes, "docx", "trip.docx").unwrap();
         assert_eq!(

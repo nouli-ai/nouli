@@ -252,15 +252,6 @@ mod tests {
 
     #[test]
     fn empty_histories_and_write_failures_are_reported() {
-        let mut export = fixture();
-        export.turns.clear();
-        let output = text(&export);
-        assert!(output.contains("empty[\"No finalized turns\"]"));
-        assert!(!output.contains("classDef"));
-        let mut export = fixture();
-        export.session.frontier.clear();
-        assert!(!text(&export).contains("classDef"));
-        struct Broken;
         impl std::io::Write for Broken {
             fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
                 Err(std::io::ErrorKind::BrokenPipe.into())
@@ -269,6 +260,15 @@ mod tests {
                 Ok(())
             }
         }
+        struct Broken;
+        let mut export = fixture();
+        export.turns.clear();
+        let output = text(&export);
+        assert!(output.contains("empty[\"No finalized turns\"]"));
+        assert!(!output.contains("classDef"));
+        let mut export = fixture();
+        export.session.frontier.clear();
+        assert!(!text(&export).contains("classDef"));
         assert!(matches!(
             write(&fixture(), &mut Broken),
             Err(RenderError::Write(_))

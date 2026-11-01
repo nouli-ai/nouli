@@ -1,4 +1,4 @@
-//! OpenAI Decisions' native arrays, predicate answers, and per-question refusals.
+//! `OpenAI` Decisions' native arrays, predicate answers, and per-question refusals.
 
 use std::collections::HashMap;
 
@@ -10,23 +10,12 @@ use super::{ProviderError, confidence::native_confidence};
 use crate::{
     codec,
     config::{Protocol, resolve::ResolvedSettings},
-    decision::{AnswerSpace, CONTRACT_VERSION, Criterion, TurnRequest},
-    limits::{ResolvedLimits, count::TokenCounter},
-    outcome::{Answer, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome, Usage},
+    decision::{AnswerSpace, ChoiceOption, Criterion, Question, TurnRequest},
+    limits::count::TokenCounter,
+    outcome::{Answer, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome},
     transport::HttpTransport,
 };
 
-#[derive(Deserialize)]
-struct NativeResponse {
-    model: String,
-    answers: Vec<NativeAnswer>,
-    usage: Option<NativeUsage>,
-}
-#[derive(Deserialize)]
-struct NativeUsage {
-    input_tokens: Option<u64>,
-    output_tokens: Option<u64>,
-}
 #[derive(Deserialize)]
 struct ChoiceProbability {
     value: String,
@@ -73,12 +62,16 @@ impl NativeAnswer {
 }
 
 fn level(criterion: &Criterion) -> (&str, &str) {
-    match criterion {
-        Criterion::Text(text) => (text, text),
-        Criterion::Detailed { label, description } => (label, description),
-    }
+    (criterion.label(), criterion.description())
 }
 
+/// Build the `OpenAI` decisions request body for a turn.
+///
+/// # Errors
+///
+/// - [`ProviderError::Contract`] if the request is invalid or `model` is blank.
+/// - [`ProviderError::Codec`] if the context has malformed image evidence or criteria
+///   cannot be encoded.
 pub fn request_body(
     request: &TurnRequest,
     context_toon: &str,
@@ -87,6 +80,14 @@ pub fn request_body(
     request.validate()?;
     crate::decision::nonempty(model, "model")?;
     let evidence = crate::media::Evidence::read(context_toon)?;
+    body_from_evidence(request, &evidence, model)
+}
+/// Build the protocol fields from evidence already read and validated by the caller.
+pub(super) fn body_from_evidence(
+    request: &TurnRequest,
+    evidence: &crate::media::Evidence,
+    model: &str,
+) -> Result<Value, ProviderError> {
     let mut questions = Vec::with_capacity(request.questions.len());
     for question in &request.questions {
         let instructions = if question.criteria.is_empty() {
@@ -124,147 +125,179 @@ pub fn request_body(
     Ok(json!({"model":model,"input":input,"questions":questions}))
 }
 
+/// Convert an `OpenAI` decisions response into a validated turn outcome.
+///
+/// # Errors
+///
+/// - [`ProviderError::Contract`] if the request or resulting outcome is invalid.
+/// - [`ProviderError::Wire`] if the response does not match the schema, or its answers
+///   do not cover each question once with matching kinds, options, and levels.
+/// - Any error from converting native confidence.
 pub fn normalize(
     request: &TurnRequest,
     response: Value,
     profile_name: &str,
 ) -> Result<TurnOutcome, ProviderError> {
-    request.validate()?;
-    let response: NativeResponse =
-        serde_json::from_value(response).map_err(|_| ProviderError::Wire)?;
-    if response.answers.len() != request.questions.len() {
+    super::normalize_response(
+        request,
+        response,
+        profile_name,
+        ordered_answers,
+        question_outcome,
+    )
+}
+
+fn ordered_answers(
+    request: &TurnRequest,
+    answers: Vec<NativeAnswer>,
+) -> Result<Vec<NativeAnswer>, ProviderError> {
+    let mut answers = answers_by_question(request, answers)?;
+    request
+        .questions
+        .iter()
+        .map(|question| answers.remove(&question.id).ok_or(ProviderError::Wire))
+        .collect()
+}
+
+/// Keys native answers by question name, requiring exactly one answer per
+/// question and no answers to unknown questions.
+fn answers_by_question(
+    request: &TurnRequest,
+    answers: Vec<NativeAnswer>,
+) -> Result<HashMap<String, NativeAnswer>, ProviderError> {
+    if answers.len() != request.questions.len() {
         return Err(ProviderError::Wire);
     }
-    let mut answers = HashMap::new();
-    for answer in response.answers {
+    let mut by_question = HashMap::new();
+    for answer in answers {
         let name = answer.name().to_owned();
-        if !request.questions.iter().any(|q| q.id == name) || answers.insert(name, answer).is_some()
+        if !request.questions.iter().any(|q| q.id == name)
+            || by_question.insert(name, answer).is_some()
         {
             return Err(ProviderError::Wire);
         }
     }
-    let identity = ProviderIdentity {
-        provider: profile_name.to_owned(),
-        model: response.model,
-        upstream_provider: None,
-        request_id: None,
-    };
-    let mut outcomes = Vec::with_capacity(request.questions.len());
-    for question in &request.questions {
-        let native = answers.remove(&question.id).ok_or(ProviderError::Wire)?;
-        if matches!(native, NativeAnswer::Refusal { .. }) {
-            outcomes.push(QuestionOutcome::Refused {
+    Ok(by_question)
+}
+
+fn question_outcome(
+    question: &Question,
+    native: NativeAnswer,
+    identity: &ProviderIdentity,
+) -> Result<QuestionOutcome, ProviderError> {
+    let (answer, confidence) = match (native, &question.answer_space) {
+        (NativeAnswer::Refusal { .. }, _) => {
+            return Ok(QuestionOutcome::Refused {
                 question_id: question.id.clone(),
                 reason: "Native provider refusal (no reason supplied)".into(),
             });
-            continue;
         }
-        let (answer, confidence) = match (native, &question.answer_space) {
-            (NativeAnswer::Predicate { probability, .. }, AnswerSpace::Noul) => {
-                (Answer::Noul { probability }, None)
-            }
-            (
-                NativeAnswer::Choice {
-                    choice,
-                    probabilities,
-                    confidence,
-                    ..
-                },
-                AnswerSpace::Choice { options },
-            ) => {
-                let mut probabilities_by_id = HashMap::new();
-                for entry in probabilities {
-                    if probabilities_by_id
-                        .insert(entry.value, entry.probability)
-                        .is_some()
-                    {
-                        return Err(ProviderError::Wire);
-                    }
-                }
-                if probabilities_by_id.len() != options.len() {
-                    return Err(ProviderError::Wire);
-                }
-                let distribution = options
-                    .iter()
-                    .map(|option| {
-                        Ok(OptionProbability {
-                            option_id: option.id.clone(),
-                            probability: *probabilities_by_id
-                                .get(&option.id)
-                                .ok_or(ProviderError::Wire)?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, ProviderError>>()?;
-                (
-                    Answer::Choice {
-                        selected: choice,
-                        distribution,
-                    },
-                    confidence,
-                )
-            }
-            (
-                NativeAnswer::Score {
-                    score,
-                    probabilities,
-                    confidence,
-                    ..
-                },
-                AnswerSpace::Score { levels },
-            ) => {
-                if probabilities.len() != levels.len() {
-                    return Err(ProviderError::Wire);
-                }
-                let mut ordered = vec![None; levels.len()];
-                for probability in probabilities {
-                    let index =
-                        usize::try_from(probability.value).map_err(|_| ProviderError::Wire)?;
-                    let criterion = levels.get(index).ok_or(ProviderError::Wire)?;
-                    if level(criterion).0 != probability.label
-                        || ordered[index].replace(probability.probability).is_some()
-                    {
-                        return Err(ProviderError::Wire);
-                    }
-                }
-                let probabilities = ordered
-                    .into_iter()
-                    .map(|p| p.ok_or(ProviderError::Wire))
-                    .collect::<Result<Vec<_>, _>>()?;
-                (
-                    Answer::Score {
-                        value: score,
-                        probabilities,
-                    },
-                    confidence,
-                )
-            }
-            _ => return Err(ProviderError::Wire),
-        };
-        outcomes.push(QuestionOutcome::Answered {
-            question_id: question.id.clone(),
-            answer,
-            confidence: native_confidence(confidence, None, &identity)?,
-        });
-    }
-    let usage = match response.usage {
-        Some(usage) => Usage {
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            exact: usage.input_tokens.is_some() || usage.output_tokens.is_some(),
-            cost: None,
-        },
-        None => Usage::default(),
+        (NativeAnswer::Predicate { probability, .. }, AnswerSpace::Noul) => {
+            (Answer::Noul { probability }, None)
+        }
+        (
+            NativeAnswer::Choice {
+                choice,
+                probabilities,
+                confidence,
+                ..
+            },
+            AnswerSpace::Choice { options },
+        ) => (
+            Answer::Choice {
+                selected: choice,
+                distribution: choice_distribution(options, probabilities)?,
+            },
+            confidence,
+        ),
+        (
+            NativeAnswer::Score {
+                score,
+                probabilities,
+                confidence,
+                ..
+            },
+            AnswerSpace::Score { levels },
+        ) => (
+            Answer::Score {
+                value: score,
+                probabilities: score_probabilities(levels, probabilities)?,
+            },
+            confidence,
+        ),
+        _ => return Err(ProviderError::Wire),
     };
-    let outcome = TurnOutcome {
-        version: CONTRACT_VERSION,
-        provider: identity,
-        outcomes,
-        usage,
-    };
-    outcome.validate(request)?;
-    Ok(outcome)
+    Ok(QuestionOutcome::Answered {
+        question_id: question.id.clone(),
+        answer,
+        confidence: native_confidence(confidence, None, identity)?,
+    })
 }
 
+/// Orders native choice probabilities by the request's options, requiring
+/// exactly one probability per option.
+fn choice_distribution(
+    options: &[ChoiceOption],
+    probabilities: Vec<ChoiceProbability>,
+) -> Result<Vec<OptionProbability>, ProviderError> {
+    let mut probabilities_by_id = HashMap::new();
+    for entry in probabilities {
+        if probabilities_by_id
+            .insert(entry.value, entry.probability)
+            .is_some()
+        {
+            return Err(ProviderError::Wire);
+        }
+    }
+    if probabilities_by_id.len() != options.len() {
+        return Err(ProviderError::Wire);
+    }
+    options
+        .iter()
+        .map(|option| {
+            Ok(OptionProbability {
+                option_id: option.id.clone(),
+                probability: *probabilities_by_id
+                    .get(&option.id)
+                    .ok_or(ProviderError::Wire)?,
+            })
+        })
+        .collect()
+}
+
+/// Orders native level probabilities by level index, requiring each level
+/// exactly once under its own label.
+fn score_probabilities(
+    levels: &[Criterion],
+    probabilities: Vec<LevelProbability>,
+) -> Result<Vec<f64>, ProviderError> {
+    if probabilities.len() != levels.len() {
+        return Err(ProviderError::Wire);
+    }
+    let mut ordered = vec![None; levels.len()];
+    for probability in probabilities {
+        let index = usize::try_from(probability.value).map_err(|_| ProviderError::Wire)?;
+        let criterion = levels.get(index).ok_or(ProviderError::Wire)?;
+        if level(criterion).0 != probability.label
+            || ordered[index].replace(probability.probability).is_some()
+        {
+            return Err(ProviderError::Wire);
+        }
+    }
+    ordered
+        .into_iter()
+        .map(|p| p.ok_or(ProviderError::Wire))
+        .collect()
+}
+
+/// Send a turn to an `OpenAI` decisions provider and normalize its response.
+///
+/// # Errors
+///
+/// - [`ProviderError::Protocol`] if the profile does not use `OpenAI` decisions.
+/// - [`ProviderError::Limit`] if the profile limits are invalid or the input exceeds them.
+/// - Any error from [`crate::provider::wire::body`] or [`normalize`].
+/// - [`ProviderError::Transport`] if the request fails or the response is not JSON.
 pub async fn evaluate(
     transport: &HttpTransport,
     settings: &ResolvedSettings,
@@ -273,32 +306,16 @@ pub async fn evaluate(
     counter: &impl TokenCounter,
     cancel: &CancellationToken,
 ) -> Result<TurnOutcome, ProviderError> {
-    let profile = &settings.snapshot.profile;
-    if profile.protocol != Protocol::OpenaiDecisions {
+    if settings.snapshot.profile.protocol != Protocol::OpenaiDecisions {
         return Err(ProviderError::Protocol);
     }
-    ResolvedLimits::for_profile(profile)?.assess(context_toon, request, counter)?;
-    let body = crate::provider::wire::body(profile, request, context_toon)?;
-    let response = transport
-        .post_with_headers(
-            profile,
-            profile
-                .connection
-                .request_path
-                .as_deref()
-                .unwrap_or("v1/decisions"),
-            &body,
-            settings.credential.as_ref(),
-            &settings.headers,
-            cancel,
-        )
-        .await?;
-    normalize(request, response.json()?, &settings.snapshot.profile_name)
+    super::evaluate(transport, settings, request, context_toon, counter, cancel).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::ModelSelection;
     use crate::{
         config::{Config, ExecutionSettings, OutputFormat, resolve::SettingsSnapshot},
         limits::count::ByteCounter,
@@ -329,8 +346,8 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 std::path::Path::new("/unused"),
             )
             .unwrap()

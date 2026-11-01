@@ -4,9 +4,11 @@ use crate::{
     input::InputError,
     present,
     render::{self, Format},
-    render_error, settings,
+    render_error,
+    repl::sessions::{create, resolve, session_report},
+    settings,
     settings::Settings,
-    turns::{Creation, Draft, Verb},
+    turns::{Draft, Verb},
 };
 use nouli_core::{
     config::resolve::RuntimeOverrides,
@@ -14,14 +16,19 @@ use nouli_core::{
         Engine, EngineError, EvaluationInput,
         execution::{NativeProvider, TokioClock},
     },
-    history::{EvaluationRequest, ModelSelection, SessionSelection},
+    history::{ModelSelection, SessionSelection},
     limits::count::ByteCounter,
-    protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
-    storage::{Ledger, OpenMode, replay::ReplayError, worker::LedgerWorker},
+    protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, TurnReport},
+    storage::{
+        OpenMode,
+        worker::{LedgerWorker, WorkerError},
+    },
 };
 use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
+pub(crate) const LEDGER_FILE: &str = "ledger.sqlite3";
+
 #[derive(Debug, thiserror::Error)]
 enum EvaluationError {
     #[error(transparent)]
@@ -65,30 +72,25 @@ pub(crate) async fn run_until(
 }
 /// Runs the command behind the turn's provider credential, if it has one,
 /// before the engine asks for it, so the wait is off the async runtime and ends
-/// on Ctrl-C. When this cannot tell which provider the turn will use, the
-/// engine's own lookup runs the command instead.
+/// on Ctrl-C. The engine plans the settings, so the provider chosen here is the
+/// one the turn uses. When the plan fails, the engine's own lookup runs the
+/// command instead.
 async fn fetch_credential(
     settings: &Settings,
-    overrides: &RuntimeOverrides,
-    request: &EvaluationRequest,
+    engine: &Engine<NativeProvider, ByteCounter, TokioClock>,
+    input: &EvaluationInput<'_>,
     worker: Option<&LedgerWorker>,
+    ephemeral: bool,
     cancel: &CancellationToken,
 ) {
-    let defaults = match (&request.session, worker) {
-        (SessionSelection::Continue { session }, Some(worker)) => {
-            let selector = session.clone();
-            match worker.call(move |ledger| ledger.session(&selector)).await {
-                Ok(Ok(session)) => session.defaults,
-                _ => return,
-            }
-        }
-        _ => ModelSelection::default(),
+    let planned = if ephemeral {
+        engine.planned_ephemeral_settings(input).ok()
+    } else if let Some(worker) = worker {
+        engine.planned_settings(worker, input).await.ok()
+    } else {
+        None
     };
-    let Ok(snapshot) =
-        settings
-            .config
-            .resolve_snapshot(overrides, &request.model, &defaults, &settings.home)
-    else {
+    let Some(snapshot) = planned else {
         return;
     };
     if snapshot.profile.api_key_env.is_some() || snapshot.profile.stored_credential {
@@ -102,35 +104,69 @@ async fn fetch_credential(
             .await;
     }
 }
+pub(crate) fn engine() -> Engine<NativeProvider, ByteCounter, TokioClock> {
+    Engine {
+        provider: NativeProvider,
+        counter: ByteCounter,
+        clock: TokioClock,
+    }
+}
+
+pub(crate) async fn ledger_worker(
+    settings: &Settings,
+    ephemeral: bool,
+    fresh: bool,
+) -> Result<Option<LedgerWorker>, WorkerError> {
+    if ephemeral && fresh {
+        return Ok(None);
+    }
+    LedgerWorker::open(
+        settings.store.clone(),
+        if ephemeral {
+            OpenMode::ReadOnlyExisting
+        } else {
+            OpenMode::ReadWriteCreate
+        },
+    )
+    .await
+    .map(Some)
+}
+
+/// Cancel the engine, then await its cleanup before returning a signal error.
+pub(crate) async fn cancel_on_interrupt<T>(
+    evaluation: impl Future<Output = T>,
+    interrupt: impl Future<Output = io::Result<()>>,
+    cancel: &CancellationToken,
+) -> io::Result<T> {
+    tokio::pin!(evaluation);
+    tokio::select! {
+        biased;
+        result = &mut evaluation => Ok(result),
+        signal = interrupt => {
+            cancel.cancel();
+            let result = evaluation.await;
+            signal?;
+            Ok(result)
+        }
+    }
+}
+
 async fn execute(
     draft: &Draft,
     settings: &Settings,
     interrupt: impl Future<Output = io::Result<()>>,
 ) -> Result<TurnReport, EvaluationError> {
     let request = &draft.request;
-    let engine = Engine {
-        provider: NativeProvider,
-        counter: ByteCounter,
-        clock: TokioClock,
-    };
+    let engine = engine();
     let overrides = overrides(draft, settings);
     let ephemeral = draft.ephemeral;
-    let worker = if ephemeral && matches!(request.session, SessionSelection::New { .. }) {
-        None
-    } else {
-        Some(
-            LedgerWorker::open(
-                settings.store.clone(),
-                if ephemeral {
-                    OpenMode::ReadOnlyExisting
-                } else {
-                    OpenMode::ReadWriteCreate
-                },
-            )
-            .await
-            .map_err(EngineError::from)?,
-        )
-    };
+    let worker = ledger_worker(
+        settings,
+        ephemeral,
+        matches!(request.session, SessionSelection::New { .. }),
+    )
+    .await
+    .map_err(EngineError::from)?;
     let input = EvaluationInput {
         request,
         config: &settings.config,
@@ -140,7 +176,15 @@ async fn execute(
     };
     let cancel = CancellationToken::new();
     let evaluation = async {
-        fetch_credential(settings, &overrides, request, worker.as_ref(), &cancel).await;
+        fetch_credential(
+            settings,
+            &engine,
+            &input,
+            worker.as_ref(),
+            ephemeral,
+            &cancel,
+        )
+        .await;
         if ephemeral {
             let result = engine
                 .evaluate_ephemeral(
@@ -177,16 +221,10 @@ async fn execute(
             })
         }
     };
-    tokio::pin!(evaluation);
-    tokio::select! {
-        biased;
-        result=&mut evaluation=>result.map_err(EvaluationError::from),
-        signal=interrupt=> {
-            cancel.cancel();let result=evaluation.await;
-            if let Err(error)=signal {return Err(EvaluationError::Signal(error));}
-            result.map_err(EvaluationError::from)
-        }
-    }
+    cancel_on_interrupt(evaluation, interrupt, &cancel)
+        .await
+        .map_err(EvaluationError::Signal)?
+        .map_err(EvaluationError::from)
 }
 pub(crate) fn input_error(error: &InputError) -> ErrorReport {
     ErrorReport {
@@ -217,59 +255,6 @@ pub(crate) fn overrides(draft: &Draft, settings: &Settings) -> RuntimeOverrides 
     }
 }
 
-pub(crate) fn create(
-    settings: &Settings,
-    creation: &Creation,
-) -> Result<SessionReport, ErrorReport> {
-    let mut ledger =
-        Ledger::open(&settings.store, OpenMode::ReadWriteCreate).map_err(|error| error.report())?;
-    let session = if creation.sources.is_empty() {
-        ledger
-            .create_session(Some(creation.name.clone()), creation.defaults.clone())
-            .map_err(|error| error.report())?
-    } else {
-        ledger
-            .create_session_from(
-                Some(creation.name.clone()),
-                creation.defaults.clone(),
-                &creation.sources,
-            )
-            .map_err(|error| EngineError::Source(error).report())?
-    };
-    let sources = ledger
-        .session_sources(session.id)
-        .map_err(|error| error.report())?;
-    Ok(SessionReport {
-        session: session.id,
-        name: session.name,
-        sources,
-    })
-}
-
-/// Replaces `--replace N` numbers with the session's current facts.
-pub(crate) fn resolve(settings: &Settings, draft: Draft) -> Result<Draft, ErrorReport> {
-    let Some(session) = draft.replaced_session().cloned() else {
-        return Ok(draft);
-    };
-    let ledger = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
-        .map_err(|error| error.report())?;
-    // A repeated command repeats its saved replacements; after the first run
-    // the numbers no longer name the facts they named then.
-    if let Some(key) = draft.request_id()
-        && let Some(saved) = ledger
-            .saved_request_by_id(key)
-            .map_err(|error| EngineError::from(error).report())?
-    {
-        return draft
-            .replay(&saved.request.updates)
-            .ok_or_else(|| EngineError::from(ReplayError::IntentConflict).report());
-    }
-    let current = ledger
-        .facts(&session)
-        .map_err(|error| EngineError::Turn(error).report())?;
-    draft.resolve(&current).map_err(|error| input_error(&error))
-}
-
 /// Runs one of the turn verbs and writes its result.
 pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
     let creates = verb.creates_only();
@@ -294,17 +279,20 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
             return render_error(args, settings.config.output, input_error(&error));
         }
     };
-    let format = match render::resolve(
+    let format = match render::resolve_stream_format(
         &args.output,
         settings.config.output,
         io::stdout().is_terminal(),
     ) {
         Ok(format) => format,
-        Err(_) => return ExitCode::from(2),
+        Err(error) => return render_error(args, settings.config.output, error),
     };
     if let Some(creation) = &draft.create {
         let result = match create(&settings, creation) {
-            Ok(report) => ResultEnvelope::new(Report::Session(report)),
+            Ok(session) => match session_report(&settings, session) {
+                Ok(report) => ResultEnvelope::new(Report::Session(report)),
+                Err(error) => ResultEnvelope::new(Report::Error(error)),
+            },
             Err(error) => ResultEnvelope::new(Report::Error(error)),
         };
         return write_result(&result, format);
@@ -323,12 +311,11 @@ pub(crate) fn command(args: &Args, verb: Verb<'_>) -> ExitCode {
     if let Err(error) = settings::preflight::turn(&settings, &overrides, &draft.request) {
         return render_error(args, settings.config.output, error.report(&settings));
     }
-    let runtime = match tokio::runtime::Builder::new_current_thread()
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-    {
-        Ok(runtime) => runtime,
-        Err(_) => return ExitCode::from(6),
+    else {
+        return ExitCode::from(6);
     };
     let result = runtime.block_on(run(&draft, &settings));
     if format == Format::Text
@@ -366,5 +353,35 @@ fn write_result(result: &ResultEnvelope, format: Format) -> ExitCode {
     ) {
         Ok(code) => ExitCode::from(code),
         Err(_) => ExitCode::from(6),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cancel_on_interrupt;
+    use std::{cell::Cell, io};
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn completion_wins_when_the_signal_is_also_ready() {
+        let cancel = CancellationToken::new();
+        let result = cancel_on_interrupt(async { 7 }, async { Ok(()) }, &cancel).await;
+        assert_eq!(result.unwrap(), 7);
+        assert!(!cancel.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn signal_failure_waits_for_cancelled_evaluation_cleanup() {
+        let cancel = CancellationToken::new();
+        let cleaned = Cell::new(false);
+        let evaluation = async {
+            cancel.cancelled().await;
+            cleaned.set(true);
+        };
+        let interrupt = async { Err(io::Error::other("signal installation failed")) };
+        let result = cancel_on_interrupt(evaluation, interrupt, &cancel).await;
+        assert!(result.is_err());
+        assert!(cancel.is_cancelled());
+        assert!(cleaned.get());
     }
 }

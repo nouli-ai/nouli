@@ -2,7 +2,7 @@
 //! terminal or on piped input.
 use super::{Current, Open, Queue, Repl, can_draw, label, tui};
 use crate::{
-    Args, evaluate,
+    Args,
     render::{self, turn::Paint},
     render_error, settings,
     settings::Settings,
@@ -13,7 +13,7 @@ use nouli_core::{
     identity::SessionSelector,
     protocol::ErrorReport,
     storage::{
-        Ledger, OpenMode, StorageError,
+        Ledger, OpenMode,
         sessions::{Session, SessionError},
     },
 };
@@ -28,21 +28,9 @@ pub(crate) enum Target {
     Pick,
 }
 
-/// The ledger, or `None` when the store has no ledger yet. Every other failure
-/// to open it is an error, not an empty store.
-fn open_existing(settings: &Settings) -> Result<Option<Ledger>, ErrorReport> {
-    match Ledger::open(&settings.store, OpenMode::ReadOnlyExisting) {
-        Ok(ledger) => Ok(Some(ledger)),
-        Err(StorageError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
-            Ok(None)
-        }
-        Err(error) => Err(error.report()),
-    }
-}
-
 /// Resolves the target to a session, creating a named one that is missing.
 fn resolve(settings: &Settings, selector: SessionSelector) -> Result<(Session, bool), ErrorReport> {
-    let existing = match open_existing(settings)? {
+    let existing = match super::open_existing(&settings.store)? {
         Some(ledger) => match ledger.session(&selector) {
             Ok(session) => Some(session),
             Err(SessionError::UnknownSession) => None,
@@ -66,16 +54,7 @@ fn resolve(settings: &Settings, selector: SessionSelector) -> Result<(Session, b
         sources: vec![],
         defaults: ModelSelection::default(),
     };
-    evaluate::create(settings, &creation).and_then(|report| {
-        Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
-            .map_err(|error| error.report())
-            .and_then(|ledger| {
-                ledger
-                    .session(&SessionSelector::Id(report.session))
-                    .map_err(|error| error.report())
-            })
-            .map(|session| (session, true))
-    })
+    crate::repl::sessions::create(settings, &creation).map(|session| (session, true))
 }
 
 /// A new session with an automatically assigned name.
@@ -171,7 +150,8 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
         return render_error(args, settings.config.output, error);
     }
     if can_draw() && settings.config.providers.is_empty() {
-        match crate::connect::configure(args, &crate::connect::Connect::default()) {
+        match crate::connect::configure(&settings.config_path, &crate::connect::Connect::default())
+        {
             Ok(_) => {
                 settings = match settings::load(args) {
                     Ok(s) => s,
@@ -188,16 +168,9 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
                 }
             }
             Err(error) => {
-                return render_error(
-                    args,
-                    settings.config.output,
-                    nouli_core::protocol::ErrorReport {
-                        category: nouli_core::protocol::ErrorCategory::Configuration,
-                        code: "connection_setup_failed".into(),
-                        message: error.to_string(),
-                        retryable: false,
-                    },
-                );
+                let mut report = error.report();
+                settings.annotate(&mut report);
+                return render_error(args, settings.config.output, report);
             }
         }
     }
@@ -209,33 +182,26 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
     if can_draw()
         && let Target::Named(selector) = &target
     {
-        match open_existing(&settings).and_then(|ledger| {
-            ledger
-                .map(|ledger| ledger.session(selector))
-                .transpose()
-                .map_err(|error| error.report())
-        }) {
-            Ok(Some(session)) => {
-                model = nouli_core::config::resolve::select_model(&[&model, &session.defaults])
-            }
-            Ok(None) => {}
-            Err(error) if error.code == "invalid_session" => {}
+        let ledger = match super::open_existing(&settings.store) {
+            Ok(ledger) => ledger,
             Err(error) => return render_error(args, settings.config.output, error),
+        };
+        if let Some(ledger) = ledger {
+            match ledger.session(selector) {
+                Ok(session) => {
+                    model = crate::selection::model(None, &[&model, &session.defaults]);
+                }
+                Err(SessionError::UnknownSession) => {}
+                Err(error) => return render_error(args, settings.config.output, error.report()),
+            }
         }
     }
     if can_draw()
         && let Err(error) = crate::connect::startup(&mut settings, &mut model)
     {
-        return render_error(
-            args,
-            settings.config.output,
-            nouli_core::protocol::ErrorReport {
-                category: nouli_core::protocol::ErrorCategory::Configuration,
-                code: "connection_setup_failed".into(),
-                message: error.to_string(),
-                retryable: false,
-            },
-        );
+        let mut report = error.report();
+        settings.annotate(&mut report);
+        return render_error(args, settings.config.output, report);
     }
     let outcome = session_loop(
         &settings,

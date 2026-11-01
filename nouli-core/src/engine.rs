@@ -7,7 +7,7 @@ pub mod workflow;
 use crate::{
     config::{
         Config, ConfigError,
-        resolve::{RuntimeOverrides, select_model},
+        resolve::{RuntimeOverrides, SettingsSnapshot, select_model},
     },
     context::builder::BuildError,
     history::{EvaluationRequest, FinalizedTurn, HistoryError, ModelSelection, SessionSelection},
@@ -23,7 +23,7 @@ use crate::{
     },
 };
 use execution::{DecisionProvider, RetryClock};
-use run::{Executed, Recorder, RunInput};
+use run::{DurableRecorder, RunInput};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
 use thiserror::Error;
@@ -44,6 +44,10 @@ pub struct EvaluationResult {
 }
 #[derive(Debug, Error)]
 pub enum EngineError {
+    /// A blocking engine task stopped before returning its result. The static
+    /// diagnostic never contains user evidence or credentials.
+    #[error("internal engine failure: {0}")]
+    Internal(&'static str),
     #[error(transparent)]
     Workflow(#[from] crate::storage::workflows::WorkflowError),
     #[error(transparent)]
@@ -86,6 +90,22 @@ pub struct Engine<P, C, T> {
     pub clock: T,
 }
 impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T> {
+    /// Evaluate one durable turn, replaying a saved result for a known request ID.
+    ///
+    /// # Errors
+    ///
+    /// - [`EngineError::Canceled`] if `cancel` fires before or during evaluation.
+    /// - [`EngineError::History`] if the request fails validation.
+    /// - [`EngineError::Worker`], [`EngineError::Replay`], [`EngineError::Session`],
+    ///   [`EngineError::Storage`], or [`EngineError::Turn`] if the ledger cannot look up,
+    ///   accept, or record the request.
+    /// - [`EngineError::Config`] if settings cannot be resolved for a new request.
+    /// - [`EngineError::InProgress`] if another live owner is evaluating the request, or
+    ///   [`EngineError::Interrupted`] if it needs an explicit interrupted retry.
+    /// - [`EngineError::Limit`], [`EngineError::Build`], or [`EngineError::Config`] if the
+    ///   resolved profile, context plan, credentials, or attempt timeout are invalid.
+    /// - [`EngineError::Provider`] if every provider attempt fails or a capacity failure
+    ///   cannot be retried with a smaller context.
     pub async fn evaluate(
         &self,
         ledger: &LedgerWorker,
@@ -96,8 +116,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         if cancel.is_cancelled() {
             return Err(EngineError::Canceled);
         }
-        let mut request = input.request.clone();
-        request.model = select_model(&[&input.overrides.selection, &request.model]);
+        let mut request = effective_request(&input);
         request.validate()?;
         let key = request
             .request_id
@@ -116,22 +135,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             let settings = if let Some(saved) = saved {
                 saved.settings
             } else {
-                let defaults = match &request.session {
-                    SessionSelection::Continue { session } => {
-                        let selector = session.clone();
-                        ledger
-                            .call(move |ledger| ledger.session(&selector))
-                            .await??
-                            .defaults
-                    }
-                    _ => ModelSelection::default(),
-                };
-                input.config.resolve_snapshot(
-                    input.overrides,
-                    &request.model,
-                    &defaults,
-                    input.home,
-                )?
+                new_request_settings(ledger, &input, &request).await?
             };
             let query = request.clone();
             ledger
@@ -160,7 +164,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         let history = ledger
             .call(move |ledger| ledger.ancestry(&sources))
             .await??;
-        match self
+        let turn = self
             .execute(
                 RunInput {
                     context_base: None,
@@ -171,25 +175,101 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     settings: frozen.settings.clone(),
                     session: frozen.session,
                 },
-                Recorder::durable(ledger, owner.clone()),
+                DurableRecorder::Evaluation {
+                    worker: ledger,
+                    owner: owner.clone(),
+                },
                 lookup,
                 cancel,
             )
-            .await?
-        {
-            Executed::Saved(turn) => Ok(EvaluationResult {
-                request_id: key,
-                turn: *turn,
-                replayed: false,
-            }),
-            Executed::Ephemeral { .. } => Err(StorageError::Payload.into()),
+            .await?;
+        Ok(EvaluationResult {
+            request_id: key,
+            turn,
+            replayed: false,
+        })
+    }
+}
+impl<P, C, T> Engine<P, C, T> {
+    /// The settings [`Self::evaluate`] will use for `input`, without evaluating it:
+    /// those frozen by an earlier acceptance of the same request ID, or settings
+    /// resolved against the continued session's model defaults. Callers use it to
+    /// prepare what those settings need, such as credentials, ahead of evaluation.
+    ///
+    /// # Errors
+    ///
+    /// - [`EngineError::Worker`], [`EngineError::Replay`], or [`EngineError::Session`]
+    ///   if the ledger cannot look up the saved request or continued session.
+    /// - [`EngineError::Replay`] with [`ReplayError::MissingId`] or
+    ///   [`ReplayError::UnknownRequest`] for an interrupted retry without a saved
+    ///   request, which evaluation rejects the same way.
+    /// - [`EngineError::Config`] if settings cannot be resolved for a new request.
+    pub async fn planned_settings(
+        &self,
+        ledger: &LedgerWorker,
+        input: &EvaluationInput<'_>,
+    ) -> Result<SettingsSnapshot, EngineError> {
+        let request = effective_request(input);
+        let query = request.clone();
+        let saved = ledger
+            .call(move |ledger| ledger.saved_request(&query))
+            .await??;
+        match saved {
+            Some(saved) => Ok(saved.settings),
+            None if input.retry_interrupted => Err(if request.request_id.is_some() {
+                ReplayError::UnknownRequest
+            } else {
+                ReplayError::MissingId
+            }
+            .into()),
+            None => new_request_settings(ledger, input, &request).await,
         }
+    }
+}
+/// The request as durable evaluation runs it, with the caller's model override applied.
+fn effective_request(input: &EvaluationInput<'_>) -> EvaluationRequest {
+    let mut request = input.request.clone();
+    request.model = select_model(&[&input.overrides.selection, &request.model]);
+    request
+}
+/// Settings for a request not accepted before, resolved against the continued
+/// session's model defaults.
+async fn new_request_settings(
+    ledger: &LedgerWorker,
+    input: &EvaluationInput<'_>,
+    request: &EvaluationRequest,
+) -> Result<SettingsSnapshot, EngineError> {
+    let defaults = session_defaults(ledger, &request.session).await??;
+    Ok(input
+        .config
+        .resolve_snapshot(input.overrides, &request.model, &defaults, input.home)?)
+}
+
+/// Model defaults belong only to continued sessions; new and branched sessions
+/// resolve against an empty selection until their first request is accepted.
+async fn session_defaults(
+    worker: &LedgerWorker,
+    session: &SessionSelection,
+) -> Result<Result<ModelSelection, SessionError>, WorkerError> {
+    if let SessionSelection::Continue { session } = session {
+        let session = session.clone();
+        worker
+            .call(move |ledger| ledger.session(&session).map(|session| session.defaults))
+            .await
+    } else {
+        Ok(Ok(ModelSelection::default()))
     }
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "test fakes implement async traits without needing to await"
+)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::history::StandingChanges;
     use crate::{
         config::{
             ExecutionSettings, ModelSettings, OutputFormat, Protocol, ProviderDefinition,
@@ -265,7 +345,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: serde_json::from_str(include_str!(
                 "../../fixtures/contracts/decision-request.json"
             ))
@@ -285,7 +365,7 @@ mod tests {
     }
     fn config() -> Config {
         Config {
-            defaults: Default::default(),
+            defaults: ModelSettings::default(),
             default_provider: Some("fixture".into()),
             default_model: Some("offline".into()),
             output: OutputFormat::Json,
@@ -297,15 +377,15 @@ mod tests {
             providers: BTreeMap::from([(
                 "fixture".into(),
                 ProviderDefinition {
-                    connection: Default::default(),
-                    defaults: Default::default(),
+                    connection: ConnectionSettings::default(),
+                    defaults: ModelSettings::default(),
                     protocol: Protocol::SystemOne,
                     base_url: "http://127.0.0.1:8080".into(),
                     api_key_env: None,
                     models: BTreeMap::from([(
                         "offline".into(),
                         ModelSettings {
-                            connection: Default::default(),
+                            connection: ConnectionSettings::default(),
                             per_question_context_tokens: None,
                             max_questions: None,
                             max_choices: None,
@@ -361,14 +441,13 @@ mod tests {
                 let mut ledger = Ledger::open(path, OpenMode::ReadWriteCreate).unwrap();
                 ledger.transaction::<_,StorageError>("inject finalization failure",|tx| {tx.execute_batch("CREATE TRIGGER IF NOT EXISTS reject_engine_finalization BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();Ok(())}).unwrap();
             }
-            match self.results.lock().unwrap().pop_front() {
-                Some(result) => result,
-                None => {
-                    let mut outcome = outcome();
-                    outcome.provider.provider = settings.snapshot.profile_name.clone();
-                    outcome.provider.model = settings.snapshot.profile.model.clone();
-                    Ok(outcome)
-                }
+            if let Some(result) = self.results.lock().unwrap().pop_front() {
+                result
+            } else {
+                let mut outcome = outcome();
+                outcome.provider.provider = settings.snapshot.profile_name.clone();
+                outcome.provider.model = settings.snapshot.profile.model.clone();
+                Ok(outcome)
             }
         }
     }
@@ -421,6 +500,64 @@ mod tests {
             key: "budget".into(),
             value: Data::new(serde_json::json!(value)).unwrap(),
             kind: ContextKind::Commitment,
+        }
+    }
+    #[tokio::test]
+    async fn planned_settings_match_the_settings_evaluation_freezes() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let engine = make_engine(Fake::default());
+        let config = config();
+        let request = request();
+        let overrides = RuntimeOverrides::default();
+        let input = |config, retry_interrupted| EvaluationInput {
+            request: &request,
+            config,
+            overrides: &overrides,
+            home: Path::new("/unused"),
+            retry_interrupted,
+        };
+        // An interrupted retry of a request never saved is rejected, as evaluation rejects it.
+        assert!(matches!(
+            engine
+                .planned_settings(&ledger.worker, &input(&config, true))
+                .await,
+            Err(EngineError::Replay(ReplayError::UnknownRequest))
+        ));
+        let planned = engine
+            .planned_settings(&ledger.worker, &input(&config, false))
+            .await
+            .unwrap();
+        run(
+            &engine,
+            &mut ledger,
+            &config,
+            &request,
+            false,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let frozen = ledger.saved_request(&request).unwrap().unwrap();
+        // The ledger records its own path as the store; the provider choice is the plan's.
+        assert_eq!(
+            (&planned.profile_name, &planned.profile, &planned.execution),
+            (
+                &frozen.settings.profile_name,
+                &frozen.settings.profile,
+                &frozen.settings.execution
+            )
+        );
+        // A saved request keeps its frozen settings, whatever the configuration says now.
+        let changed = Config::default();
+        for retry in [false, true] {
+            assert_eq!(
+                engine
+                    .planned_settings(&ledger.worker, &input(&changed, retry))
+                    .await
+                    .unwrap(),
+                frozen.settings
+            );
         }
     }
     #[tokio::test]
@@ -658,7 +795,7 @@ mod tests {
             Err(EngineError::Turn(_))
         ));
         for session in ledger.list_sessions().unwrap() {
-            assert!(session.frontier.is_empty());
+            assert_eq!(session.frontier, [] as [crate::identity::Id; 0]);
         }
         let attempts = ledger
             .list_sessions()
@@ -949,7 +1086,7 @@ mod tests {
         assert_eq!(attempts.len(), 1);
         assert_eq!(
             attempts[0].progress.error.as_ref().unwrap().code,
-            "provider_outcome_unknown"
+            crate::protocol::OUTCOME_UNKNOWN
         );
         assert!(matches!(
             run(

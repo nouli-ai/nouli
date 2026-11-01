@@ -94,13 +94,13 @@ impl Destination {
             ) {
                 Ok(0) => return Err(failure()),
                 Ok(count) => offset += count,
-                Err(Errno::EINTR) => continue,
+                Err(Errno::EINTR) => {}
                 Err(Errno::EAGAIN) => match self {
                     Self::Ready(fd) => {
-                        tokio::select! {biased;_=cancel.cancelled()=>return Err(interrupted()),ready=fd.writable()=>{ready.map_err(|_|failure())?.clear_ready();}}
+                        tokio::select! {biased;()=cancel.cancelled()=>return Err(interrupted()),ready=fd.writable()=>{ready.map_err(|_|failure())?.clear_ready();}}
                     }
                     Self::Direct(_) => {
-                        tokio::select! {biased;_=cancel.cancelled()=>return Err(interrupted()),_=tokio::time::sleep(Duration::from_millis(10))=>{}}
+                        tokio::select! {biased;()=cancel.cancelled()=>return Err(interrupted()),()=tokio::time::sleep(Duration::from_millis(10))=>{}}
                     }
                 },
                 Err(_) => return Err(failure()),

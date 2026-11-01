@@ -103,7 +103,7 @@ mod tests {
             ]
         );
         assert_eq!(parts(&line("plain")), [("plain".into(), Style::default())]);
-        assert!(line("").spans.is_empty());
+        assert_eq!(line("").spans, [] as [ratatui::prelude::Span<'_>; 0]);
     }
 
     #[test]

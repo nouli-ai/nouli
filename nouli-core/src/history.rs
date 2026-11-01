@@ -65,6 +65,7 @@ pub struct StandingChanges {
 }
 
 impl StandingChanges {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.set.is_empty() && self.drop.is_empty()
     }
@@ -123,6 +124,7 @@ pub enum CountMethod {
 }
 
 impl TokenCount {
+    #[must_use]
     pub fn is_consistent(&self) -> bool {
         self.exact
             == matches!(
@@ -170,24 +172,6 @@ pub struct FinalizedTurn {
     pub manifest: EvaluationManifest,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AttemptState {
-    Pending,
-    Running,
-    Failed,
-    Interrupted,
-}
-
-/// Attempts are separate from finalized turns and cannot appear in source heads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AttemptRecord {
-    pub id: Id,
-    pub session: Id,
-    pub state: AttemptState,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HistoryEvent {
@@ -199,9 +183,6 @@ pub enum HistoryEvent {
         session: Id,
         previous_name: Option<SessionName>,
         name: SessionName,
-    },
-    AttemptRecorded {
-        attempt: AttemptRecord,
     },
     TurnFinalized {
         session: Id,
@@ -238,6 +219,15 @@ pub enum HistoryError {
 
 impl EvaluationRequest {
     /// A turn asks exactly its own questions, so it needs at least one.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::Standing`] if the request uses standing questions.
+    /// - [`HistoryError::Decision`] if the turn is invalid, or [`HistoryError::Context`]
+    ///   if a context update is invalid.
+    /// - [`HistoryError::InvalidSelection`] if the request ID, provider, or model is blank,
+    ///   or required records repeat.
+    /// - Any error from [`SessionSelection::validate`].
     pub fn validate(&self) -> Result<(), HistoryError> {
         // First, so a 0.2.0 request with only standing questions says why.
         if !self.standing.is_empty() {
@@ -276,6 +266,12 @@ impl EvaluationRequest {
 }
 
 impl SessionSelection {
+    /// Check that a source selection names at least one source with a valid frontier.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::InvalidSelection`] if `From` lists no sources.
+    /// - [`HistoryError::InvalidFrontier`] if an explicit frontier is empty or repeats a turn.
     pub fn validate(&self) -> Result<(), HistoryError> {
         if let Self::From { sources, .. } = self {
             if sources.is_empty() {
@@ -299,6 +295,16 @@ impl SessionSelection {
 }
 
 impl FinalizedTurn {
+    /// Check that a finalized turn is internally consistent.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::InvalidManifest`] if workflow node, run, context base, session, or
+    ///   runtime-only flags disagree, or the manifest provider differs from the outcome's.
+    /// - Any error from [`ContextBase::validate`](base::ContextBase::validate) or
+    ///   [`EvaluationManifest::validate`].
+    /// - [`HistoryError::Decision`] if the outcome does not match the request.
+    /// - [`HistoryError::Context`] if an update is invalid or two updates create the same record.
     pub fn validate(&self) -> Result<(), HistoryError> {
         if self
             .workflow_node
@@ -328,17 +334,7 @@ impl FinalizedTurn {
             return Err(HistoryError::InvalidManifest);
         }
         self.outcome.validate(&self.request)?;
-        for update in &self.updates {
-            update.validate()?;
-        }
-        let mut ids = std::collections::HashSet::new();
-        for update in &self.updates {
-            if let Some(record) = update.new_record()
-                && !ids.insert(record.id)
-            {
-                return Err(ContextError::DuplicateRecord.into());
-            }
-        }
+        crate::context::validate_updates(&self.updates)?;
         self.manifest.validate()?;
         if self.manifest.provider != self.outcome.provider {
             return Err(HistoryError::InvalidManifest);
@@ -348,6 +344,14 @@ impl FinalizedTurn {
 }
 
 impl EvaluationManifest {
+    /// Check that a manifest's provider, token counts, and record projections are consistent.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::Decision`] if the provider or model name is blank.
+    /// - [`HistoryError::InvalidManifest`] if the input count is inconsistent, the budget is
+    ///   zero or exceeded by input plus reserved output, a record is projected twice, or a
+    ///   protected record is omitted.
     pub fn validate(&self) -> Result<(), HistoryError> {
         crate::decision::nonempty(&self.provider.provider, "manifest.provider")?;
         crate::decision::nonempty(&self.provider.model, "manifest.model")?;
@@ -425,7 +429,7 @@ mod tests {
     #[test]
     fn evaluation_metadata_rejects_empty_sources_ids_and_duplicate_requirements() {
         let mut request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: turn().request,
             session: SessionSelection::From {
                 sources: vec![],
@@ -451,7 +455,7 @@ mod tests {
     fn a_request_asks_its_own_questions_and_sets_no_standing_ones() {
         let question = turn().request.questions[0].clone();
         let mut request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: TurnRequest {
                 questions: vec![],
                 ..turn().request

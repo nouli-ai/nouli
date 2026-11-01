@@ -1,185 +1,44 @@
 //! Compact final workflow reports with self-describing selected values.
-use super::{InspectionReference, NodeReport, ProjectedOutput, RunReport};
+use crate::protocol::{
+    InspectionReference, NodeReport, ProjectedOutput, RunReport, SelectedChoice,
+};
 use crate::{
-    engine::workflow::WorkflowResult, storage::workflows::recovery::RunInspection,
-    workflow::WorkflowSpec,
+    engine::workflow::WorkflowResult,
+    identity::Id,
+    outcome::{Answer, Confidence, QuestionOutcome},
+    storage::workflows::recovery::RunInspection,
+    workflow::{
+        NodeStatus, RunStatus, WorkflowSpec, compile,
+        schedule::{self, NodeOutput, ResolvedBinding},
+    },
 };
 use thiserror::Error;
 #[derive(Debug, Error)]
-pub enum ProjectionError {
+pub enum ReportError {
     #[error("workflow result does not match its definition or inspection")]
     Snapshot,
 }
 /// The full intermediate outcomes remain in the engine result and ledger.
 /// This public report includes only selected outputs and structural node metadata.
+///
+/// # Errors
+///
+/// Returns [`ReportError::Snapshot`] if the definition does not compile, or the
+/// result or `inspection` disagrees with the definition, is unfinished, or has outputs
+/// or outcomes that do not match it.
 pub fn workflow(
     definition: &WorkflowSpec,
     result: &WorkflowResult,
     inspection: Option<&RunInspection>,
-) -> Result<RunReport, ProjectionError> {
-    let graph =
-        crate::workflow::compile::compile(definition).map_err(|_| ProjectionError::Snapshot)?;
-    if definition.nodes.len() != result.result.nodes.len()
-        || result.persisted != result.run.is_some()
-        || result.persisted != result.session.is_some()
-        || result.persisted != result.frontier.is_some()
-        || matches!(
-            result.result.status,
-            crate::workflow::RunStatus::Pending | crate::workflow::RunStatus::Running
-        )
-        || result.result.nodes.iter().any(|node| {
-            matches!(
-                node.status,
-                crate::workflow::NodeStatus::Pending | crate::workflow::NodeStatus::Running
-            )
-        })
-        || inspection.is_some_and(|inspection| {
-            Some(inspection.run.frozen.definition.run) != result.run
-                || inspection.run.frozen.definition.request.workflow != *definition
-                || inspection.run.nodes != result.result.nodes
-                || inspection.nodes.len() != definition.nodes.len()
-                || inspection
-                    .nodes
-                    .iter()
-                    .enumerate()
-                    .any(|(index, node)| node.node != index)
-        })
-    {
-        return Err(ProjectionError::Snapshot);
-    }
-    if crate::workflow::schedule::project_outputs(&graph, &result.result.nodes)
-        .map_err(|_| ProjectionError::Snapshot)?
-        != result.result.outputs
-    {
-        return Err(ProjectionError::Snapshot);
-    }
-    for (node, progress) in definition.nodes.iter().zip(&result.result.nodes) {
-        if let Some(output) = &progress.output {
-            output
-                .outcome
-                .validate(&node.turn)
-                .map_err(|_| ProjectionError::Snapshot)?;
-        }
-    }
-    let reference = |index: usize| -> InspectionReference {
-        let turn = if result.persisted {
-            result.result.nodes[index]
-                .output
-                .as_ref()
-                .and_then(|output| output.source.as_ref())
-                .and_then(|source| source.frontier.first())
-                .copied()
-        } else {
-            None
-        };
-        InspectionReference {
-            run: result.run,
-            session: result.session,
-            node: Some(definition.nodes[index].id.clone()),
-            turn,
-            attempts: inspection
-                .map(|inspection| {
-                    inspection.nodes[index]
-                        .attempts
-                        .iter()
-                        .map(|attempt| attempt.intent.id)
-                        .collect()
-                })
-                .unwrap_or_default(),
-        }
-    };
-    let nodes = definition
-        .nodes
-        .iter()
-        .zip(&result.result.nodes)
-        .enumerate()
-        .map(|(index, (node, progress))| NodeReport {
-            provider: progress
-                .output
-                .as_ref()
-                .map(|output| output.outcome.provider.clone()),
-            node: node.id.clone(),
-            status: progress.status,
-            turn: reference(index).turn,
-            outcome: None,
-            error: progress.error.clone(),
-            inspection: Some(reference(index)),
-        })
-        .collect();
+) -> Result<RunReport, ReportError> {
+    let references = verify_snapshot(definition, result, inspection)?;
+    let nodes = node_reports(&references);
     let outputs = result
         .result
         .outputs
         .iter()
-        .map(|binding| {
-            let index = definition
-                .nodes
-                .iter()
-                .position(|node| node.id == binding.reference.node)
-                .ok_or(ProjectionError::Snapshot)?;
-            let question = definition.nodes[index]
-                .turn
-                .questions
-                .iter()
-                .find(|question| question.id == binding.reference.question)
-                .ok_or(ProjectionError::Snapshot)?;
-            Ok(ProjectedOutput {
-                name: binding.name.clone(),
-                value: binding.value.clone(),
-                reference: Some(binding.reference.clone()),
-                question: Some(question.clone()),
-                provider: result.result.nodes[index]
-                    .output
-                    .as_ref()
-                    .map(|output| output.outcome.provider.clone()),
-                confidence: result.result.nodes[index]
-                    .output
-                    .as_ref()
-                    .and_then(|output| {
-                        output
-                            .outcome
-                            .outcomes
-                            .iter()
-                            .find(|outcome| outcome.question_id() == question.id)
-                    })
-                    .and_then(|outcome| match outcome {
-                        crate::outcome::QuestionOutcome::Answered { confidence, .. } => {
-                            confidence.clone()
-                        }
-                        crate::outcome::QuestionOutcome::Refused { .. } => None,
-                    }),
-                selected_choice: result.result.nodes[index]
-                    .output
-                    .as_ref()
-                    .and_then(|output| {
-                        output
-                            .outcome
-                            .outcomes
-                            .iter()
-                            .find(|outcome| outcome.question_id() == question.id)
-                    })
-                    .and_then(|outcome| match outcome {
-                        crate::outcome::QuestionOutcome::Answered {
-                            answer:
-                                crate::outcome::Answer::Choice {
-                                    selected,
-                                    distribution,
-                                },
-                            ..
-                        } => distribution
-                            .iter()
-                            .find(|entry| entry.option_id == *selected)
-                            .map(|entry| super::SelectedChoice {
-                                id: selected.clone(),
-                                probability: entry.probability,
-                            }),
-                        _ => None,
-                    }),
-                defaulted: binding.defaulted,
-                required_missing: binding.required_missing,
-                inspection: Some(reference(index)),
-            })
-        })
-        .collect::<Result<_, ProjectionError>>()?;
+        .map(|binding| projected_output(binding, &references))
+        .collect::<Result<_, ReportError>>()?;
     Ok(RunReport {
         run: result.run,
         session: result.session,
@@ -191,6 +50,202 @@ pub fn workflow(
         nodes,
         outputs,
     })
+}
+
+/// Checks that `result` (and `inspection`, when given) is a finished run of
+/// `definition` whose outputs and outcomes match it, and returns the verified
+/// snapshot's [`References`].
+fn verify_snapshot<'a>(
+    definition: &'a WorkflowSpec,
+    result: &'a WorkflowResult,
+    inspection: Option<&'a RunInspection>,
+) -> Result<References<'a>, ReportError> {
+    let graph = compile::compile(definition).map_err(|_| ReportError::Snapshot)?;
+    if !is_finished_run_of(definition, result)
+        || inspection.is_some_and(|inspection| !inspects(inspection, definition, result))
+    {
+        return Err(ReportError::Snapshot);
+    }
+    if schedule::project_outputs(&graph, &result.result.nodes).map_err(|_| ReportError::Snapshot)?
+        != result.result.outputs
+    {
+        return Err(ReportError::Snapshot);
+    }
+    for (node, progress) in definition.nodes.iter().zip(&result.result.nodes) {
+        if let Some(output) = &progress.output {
+            output
+                .outcome
+                .validate(&node.turn)
+                .map_err(|_| ReportError::Snapshot)?;
+        }
+    }
+    Ok(References {
+        definition,
+        result,
+        inspection,
+    })
+}
+
+/// Whether the result has one settled node per definition node and records
+/// run, session, and frontier exactly when persisted.
+fn is_finished_run_of(definition: &WorkflowSpec, result: &WorkflowResult) -> bool {
+    definition.nodes.len() == result.result.nodes.len()
+        && result.persisted == result.run.is_some()
+        && result.persisted == result.session.is_some()
+        && result.persisted == result.frontier.is_some()
+        && !matches!(
+            result.result.status,
+            RunStatus::Pending | RunStatus::Running
+        )
+        && !result
+            .result
+            .nodes
+            .iter()
+            .any(|node| matches!(node.status, NodeStatus::Pending | NodeStatus::Running))
+}
+
+/// Whether the inspection describes this run of this definition, node for node.
+fn inspects(
+    inspection: &RunInspection,
+    definition: &WorkflowSpec,
+    result: &WorkflowResult,
+) -> bool {
+    Some(inspection.run.frozen.definition.run) == result.run
+        && inspection.run.frozen.definition.request.workflow == *definition
+        && inspection.run.nodes == result.result.nodes
+        && inspection.nodes.len() == definition.nodes.len()
+        && inspection
+            .nodes
+            .iter()
+            .enumerate()
+            .all(|(index, node)| node.node == index)
+}
+
+/// Builds the inspection links that point from the report back to the ledger.
+///
+/// Only [`verify_snapshot`] creates one, so the definition, result, and
+/// inspection are known to have one entry per node and can be indexed directly.
+struct References<'a> {
+    definition: &'a WorkflowSpec,
+    result: &'a WorkflowResult,
+    inspection: Option<&'a RunInspection>,
+}
+impl References<'_> {
+    fn output(&self, index: usize) -> Option<&NodeOutput> {
+        self.result.result.nodes[index].output.as_ref()
+    }
+
+    /// The node's saved turn, reported only for persisted runs.
+    fn turn(&self, index: usize) -> Option<Id> {
+        if !self.result.persisted {
+            return None;
+        }
+        self.output(index)
+            .and_then(|output| output.source.as_ref())
+            .and_then(|source| source.frontier.first())
+            .copied()
+    }
+
+    fn node(&self, index: usize) -> InspectionReference {
+        InspectionReference {
+            run: self.result.run,
+            session: self.result.session,
+            node: Some(self.definition.nodes[index].id.clone()),
+            turn: self.turn(index),
+            attempts: self
+                .inspection
+                .map(|inspection| {
+                    inspection.nodes[index]
+                        .attempts
+                        .iter()
+                        .map(|attempt| attempt.intent.id)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+fn node_reports(references: &References<'_>) -> Vec<NodeReport> {
+    references
+        .definition
+        .nodes
+        .iter()
+        .zip(&references.result.result.nodes)
+        .enumerate()
+        .map(|(index, (node, progress))| {
+            let inspection = references.node(index);
+            NodeReport {
+                provider: progress
+                    .output
+                    .as_ref()
+                    .map(|output| output.outcome.provider.clone()),
+                node: node.id.clone(),
+                status: progress.status,
+                turn: inspection.turn,
+                outcome: None,
+                error: progress.error.clone(),
+                inspection: Some(inspection),
+            }
+        })
+        .collect()
+}
+
+/// Describes one selected output with its question and the answer behind it.
+fn projected_output(
+    binding: &ResolvedBinding,
+    references: &References<'_>,
+) -> Result<ProjectedOutput, ReportError> {
+    let definition = references.definition;
+    let index = definition
+        .nodes
+        .iter()
+        .position(|node| node.id == binding.reference.node)
+        .ok_or(ReportError::Snapshot)?;
+    let question = definition.nodes[index]
+        .turn
+        .questions
+        .iter()
+        .find(|question| question.id == binding.reference.question)
+        .ok_or(ReportError::Snapshot)?;
+    let output = references.output(index);
+    let outcome = output.and_then(|output| output.outcome.outcome_for(&question.id));
+    Ok(ProjectedOutput {
+        name: binding.name.clone(),
+        value: binding.value.clone(),
+        reference: Some(binding.reference.clone()),
+        question: Some(question.clone()),
+        provider: output.map(|output| output.outcome.provider.clone()),
+        confidence: outcome.and_then(confidence),
+        selected_choice: outcome.and_then(selected_choice),
+        defaulted: binding.defaulted,
+        required_missing: binding.required_missing,
+        inspection: Some(references.node(index)),
+    })
+}
+
+fn confidence(outcome: &QuestionOutcome) -> Option<Confidence> {
+    match outcome {
+        QuestionOutcome::Answered { confidence, .. } => confidence.clone(),
+        QuestionOutcome::Refused { .. } => None,
+    }
+}
+
+/// The chosen option of a choice answer, with the probability it was given.
+fn selected_choice(outcome: &QuestionOutcome) -> Option<SelectedChoice> {
+    let QuestionOutcome::Answered {
+        answer: answer @ Answer::Choice { selected, .. },
+        ..
+    } = outcome
+    else {
+        return None;
+    };
+    answer
+        .selected_probability()
+        .map(|probability| SelectedChoice {
+            id: selected.clone(),
+            probability,
+        })
 }
 
 #[cfg(test)]
@@ -208,7 +263,10 @@ mod tests {
         },
     };
     fn definition() -> WorkflowSpec {
-        serde_json::from_str(include_str!("../../../fixtures/contracts/workflow.json")).unwrap()
+        serde_json::from_str(include_str!(
+            "../../../../../fixtures/contracts/workflow.json"
+        ))
+        .unwrap()
     }
     fn result(definition: &WorkflowSpec, statuses: &[NodeStatus]) -> WorkflowResult {
         let session = Id::generate();
@@ -218,7 +276,7 @@ mod tests {
                 status: *status,
                 output: (*status == NodeStatus::Completed).then(|| NodeOutput {
                     outcome: serde_json::from_str::<TurnOutcome>(include_str!(
-                        "../../../fixtures/contracts/decision-outcome.json"
+                        "../../../../../fixtures/contracts/decision-outcome.json"
                     ))
                     .unwrap(),
                     source: Some(crate::history::SourcePoint {

@@ -199,7 +199,9 @@ pub(super) fn write(
             // Wires take as many rows as their crossings need.
             let mut wires = vec![];
             edges::write(&connections, &mut wires)?;
-            top += wires.iter().filter(|byte| **byte == b'\n').count();
+            #[expect(clippy::naive_bytecount, reason = "wire output is a few rows")]
+            let rows = wires.iter().filter(|byte| **byte == b'\n').count();
+            top += rows;
             sink.write_all(&wires)?;
         }
     }

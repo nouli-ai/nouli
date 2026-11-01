@@ -20,7 +20,7 @@ use std::{io::Read, path::PathBuf};
 /// Inputs and model options shared by every turn verb.
 #[derive(Debug, Args)]
 pub(crate) struct Common {
-    /// A complete JSON or TOON request without `session`, or - for stdin.
+    /// A complete JSON or TOON request without session, or - for stdin.
     #[arg(long, value_name = "FILE")]
     pub input: Option<PathBuf>,
     /// Required for stdin or a file without a .json or .toon extension.
@@ -124,7 +124,7 @@ pub(crate) struct Whatif {
     pub common: Common,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Verb<'a> {
     New(&'a New),
     Add(&'a Add),
@@ -181,8 +181,7 @@ impl Verb<'_> {
         let parts = match self {
             Verb::New(args) => {
                 let name = Some(args.name.clone());
-                let create =
-                    args.facts.is_empty() && args.question.is_none() && args.common.input.is_none();
+                let create = self.creates_only();
                 if create && (args.replay.request_id.is_some() || args.replay.retry_interrupted) {
                     return Err(InputError::CreateOnly);
                 }
@@ -262,8 +261,8 @@ impl Verb<'_> {
 
 /// A request ID makes a repeated command repeat its record IDs, so the saved
 /// request replays instead of conflicting with a fresh one.
-fn record_id(replay: Option<&Replay>, kind: &str, index: usize) -> Id {
-    match replay.and_then(|replay| replay.request_id.as_deref()) {
+fn record_id(key: Option<&str>, kind: &str, index: usize) -> Id {
+    match key {
         Some(key) => Id::derived(&format!("{key}/{kind}/{index}")),
         None => Id::generate(),
     }
@@ -312,7 +311,7 @@ impl Parts<'_> {
                 }
                 object.insert(
                     "session".into(),
-                    serde_json::json!({"mode":"new","name":null}),
+                    codec::to_value(&SessionSelection::New { name: None })?,
                 );
                 codec::default_turn_version(&mut value)?;
                 serde_json::from_value::<EvaluationRequest>(value).map_err(|_| InputError::Shape)?
@@ -340,11 +339,9 @@ impl Parts<'_> {
                 .into_iter()
                 .collect();
             let mut updates = Vec::with_capacity(self.facts.len());
+            let key = self.replay.and_then(|replay| replay.request_id.as_deref());
             for (index, text) in self.facts.iter().enumerate() {
-                updates.push(facts::append_with(
-                    record_id(self.replay, "fact", index),
-                    text,
-                )?);
+                updates.push(facts::append_with(record_id(key, "fact", index), text)?);
             }
             EvaluationRequest {
                 turn: TurnRequest {
@@ -426,7 +423,7 @@ impl Draft {
             let ContextUpdate::Supersede { replacement, .. } = update else {
                 return None;
             };
-            if replacement.id != Id::derived(&format!("{key}/replace/{index}"))
+            if replacement.id != record_id(Some(key), "replace", index)
                 || replacement.value.value().as_str() != Some(text.trim())
             {
                 return None;
@@ -448,10 +445,7 @@ impl Draft {
             let fact = current
                 .get(number - 1)
                 .ok_or(InputError::UnknownFact(*number))?;
-            let id = match &self.request_id {
-                Some(key) => Id::derived(&format!("{key}/replace/{index}")),
-                None => Id::generate(),
-            };
+            let id = record_id(self.request_id.as_deref(), "replace", index);
             updates.push(facts::replace_with(id, fact, text)?);
         }
         updates.append(&mut self.request.updates);
@@ -597,7 +591,10 @@ mod tests {
             SessionSelection::From { .. }
         ));
         let ask = draft(&["ask", "Trip", "-q", "q: Is it?", "--request-id", "key"]).unwrap();
-        assert!(ask.request.updates.is_empty());
+        assert_eq!(
+            ask.request.updates,
+            [] as [nouli_core::context::ContextUpdate; 0]
+        );
         assert_eq!(ask.request.request_id.as_deref(), Some("key"));
         assert!(matches!(
             draft(&["ask", "Trip", "--retry-interrupted"]),
@@ -645,7 +642,7 @@ mod tests {
         // The replacement is now fact 1; the command still repeats.
         let replayed = command("NEW", "Added").replay(&first).unwrap();
         assert_eq!(replayed.request.updates, first);
-        assert!(replayed.replaces.is_empty());
+        assert_eq!(replayed.replaces, [] as [(usize, std::string::String); 0]);
         assert!(command("OTHER", "Added").replay(&first).is_none());
         assert!(command("NEW", "Another").replay(&first).is_none());
     }

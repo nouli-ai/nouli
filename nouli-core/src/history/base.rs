@@ -16,6 +16,12 @@ pub struct ContextBase {
     pub runtime_only: bool,
 }
 impl ContextBase {
+    /// Check that the base's source frontiers and context updates are valid.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::InvalidFrontier`] if a source frontier is empty or repeats a turn.
+    /// - [`HistoryError::Context`] if an update is invalid or two updates create the same record.
     pub fn validate(&self) -> Result<(), HistoryError> {
         let mut records = HashSet::new();
         for source in &self.sources {

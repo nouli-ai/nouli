@@ -57,6 +57,7 @@ pub struct ConnectionSettings {
     pub pixel_overhead: Option<u64>,
 }
 impl ConnectionSettings {
+    #[must_use]
     pub fn overlay(&self, other: &Self) -> Self {
         let mut result = self.clone();
         macro_rules! overlay { ($($field:ident),*) => { $(if other.$field.is_some() {result.$field.clone_from(&other.$field);})* }; }
@@ -100,6 +101,15 @@ impl ConnectionSettings {
         result.extra_body.extend(other.extra_body.clone());
         result
     }
+    /// Validates the connection fields that do not depend on the protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Invalid`] if a header name or value is invalid, a header environment
+    /// variable name is invalid, the auth header or auth scheme is invalid, `extra_body` sets a
+    /// reserved request field, an image dimension or patch size is zero or the minimum dimension
+    /// exceeds the maximum, or the request path is empty, has an empty, `.`, or `..` segment, or
+    /// contains `?`, `#`, or `\`.
     pub fn validate_fields(&self) -> Result<(), ConfigError> {
         use reqwest::header::{HeaderName, HeaderValue};
         for (name, value) in &self.headers {
@@ -153,6 +163,12 @@ impl ConnectionSettings {
         }
         Ok(())
     }
+    /// Validates the connection fields and their compatibility with `protocol`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`Self::validate_fields`] error, or [`ConfigError::Invalid`] if the binding or
+    /// image encoding is incompatible with `protocol`.
     pub fn validate(&self, protocol: Protocol) -> Result<(), ConfigError> {
         self.validate_fields()?;
         if protocol == Protocol::OpenaiDecisions
@@ -172,6 +188,7 @@ impl ConnectionSettings {
     }
 }
 impl ModelSettings {
+    #[must_use]
     pub fn overlay(&self, other: &Self) -> Self {
         let mut r = self.clone();
         r.connection = self.connection.overlay(&other.connection);
@@ -300,6 +317,14 @@ pub struct StoreSettings {
     pub store: Option<PathBuf>,
 }
 impl StoreSettings {
+    /// Loads the store and output settings from the configuration file at `path`. A missing file
+    /// yields the defaults when `optional` is set.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::Read`] if the file cannot be read, other than a missing optional file.
+    /// - [`ConfigError::Syntax`] if the file is not valid TOML or a field has the wrong type.
+    /// - [`ConfigError::Invalid`] if `store` is empty.
     pub fn load(path: &Path, optional: bool) -> Result<Self, ConfigError> {
         let input = match std::fs::read_to_string(path) {
             Ok(input) => input,
@@ -376,6 +401,11 @@ fn env_name(name: &str) -> bool {
 }
 
 impl ExecutionSettings {
+    /// Checks that every execution limit is nonzero.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Invalid`] if any limit is zero.
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.max_parallel == 0
             || self.max_attempts == 0
@@ -423,6 +453,12 @@ fn validate_connection(
 }
 
 impl ModelSettings {
+    /// Validates the model limits and connection fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`ConnectionSettings::validate_fields`] error, or [`ConfigError::Invalid`] if
+    /// the request byte limit, a context token limit, or a count limit is zero.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.connection.validate_fields()?;
         if self.max_request_bytes == Some(0) {
@@ -447,6 +483,14 @@ impl ModelSettings {
 }
 
 impl ProviderDefinition {
+    /// Validates the provider's connection, defaults, and per-model settings.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::Invalid`] if the base URL is not HTTPS (or HTTP to a local host) or has
+    ///   credentials, a query, or a fragment, if `api_key_env` is not a valid variable name, if a
+    ///   provider limit is zero, or if a model name is blank.
+    /// - Any [`ConnectionSettings::validate`] or [`ModelSettings::validate`] error.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_connection(
             &self.base_url,
@@ -467,6 +511,26 @@ impl ProviderDefinition {
 }
 
 impl ProviderProfile {
+    /// The explicit image encoding, or the selected protocol's default.
+    #[must_use]
+    pub fn image_encoding(&self) -> ImageEncoding {
+        self.connection
+            .image_encoding
+            .unwrap_or(match self.protocol {
+                Protocol::SystemOne => ImageEncoding::Assets,
+                Protocol::OpenaiDecisions => ImageEncoding::OpenaiContent,
+            })
+    }
+
+    /// Validates a resolved provider profile.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::Invalid`] if the base URL is not HTTPS (or HTTP to a local host) or has
+    ///   credentials, a query, or a fragment, if `api_key_env` is not a valid variable name, if a
+    ///   provider limit is zero, or if the model is blank.
+    /// - Any [`ConnectionSettings::validate`] or [`ModelSettings::validate`] error for the
+    ///   connection, limits, or context token settings.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_connection(
             &self.base_url,
@@ -496,6 +560,12 @@ impl ProviderProfile {
 }
 
 impl Config {
+    /// Parses and validates configuration TOML.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Syntax`] if the input is not valid TOML or has unknown or mistyped
+    /// fields, or any [`Config::validate`] error.
     pub fn parse(input: &str) -> Result<Self, ConfigError> {
         let config: Self = toml::from_str(input).map_err(|_| ConfigError::Syntax)?;
         config.validate()?;
@@ -504,6 +574,11 @@ impl Config {
 
     /// The caller supplies the path; only a missing optional default is ignored.
     /// Loading never creates directories, a ledger, or a provider connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Read`] if the file cannot be read, other than a missing optional
+    /// file, or any [`Config::parse`] error.
     pub fn load(path: &Path, optional: bool) -> Result<Self, ConfigError> {
         match std::fs::read_to_string(path) {
             Ok(input) => Self::parse(&input),
@@ -517,6 +592,15 @@ impl Config {
         }
     }
 
+    /// Validates the defaults, execution settings, and every provider definition.
+    ///
+    /// # Errors
+    ///
+    /// - Any [`ModelSettings::validate`], [`ExecutionSettings::validate`], or
+    ///   [`ProviderDefinition::validate`] error.
+    /// - [`ConfigError::Invalid`] if a provider name or `default_model` is blank, or `store` is
+    ///   empty.
+    /// - [`ConfigError::UnknownProvider`] if `default_provider` names an undefined provider.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.defaults.validate()?;
         self.execution.validate()?;

@@ -4,6 +4,7 @@
 //! checking its permissions, and running commands belong to the caller. No
 //! error, `Debug`, or `Display` output here contains a credential value.
 
+use super::env_name;
 use std::{collections::BTreeMap, fmt};
 
 use thiserror::Error;
@@ -31,6 +32,11 @@ impl fmt::Display for CredentialSource {
 pub struct Secret(String);
 
 impl Secret {
+    /// Wraps a credential value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::InvalidKey`] if the value is blank or contains control characters.
     pub fn new(value: String) -> Result<Self, AuthError> {
         if value.trim().is_empty() || value.chars().any(char::is_control) {
             return Err(AuthError::InvalidKey);
@@ -38,6 +44,7 @@ impl Secret {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -62,24 +69,33 @@ pub enum KeySource {
 
 impl KeySource {
     /// A source that reads the key from a named environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::InvalidEnvName`] if `name` is not a valid environment variable name.
     pub fn env(name: String) -> Result<Self, AuthError> {
         if env_name(&name) {
             Ok(Self::Env(name))
         } else {
-            Err(AuthError::InvalidEnv(String::new()))
+            Err(AuthError::InvalidEnvName)
         }
     }
 
     /// A source that runs a program, with no shell, and reads its output.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::InvalidCommandWords`] if `words` is empty or contains an empty word.
     pub fn command(words: Vec<String>) -> Result<Self, AuthError> {
         if words.is_empty() || words.iter().any(String::is_empty) {
-            Err(AuthError::InvalidCommand(String::new()))
+            Err(AuthError::InvalidCommandWords)
         } else {
             Ok(Self::Command(words))
         }
     }
 
     /// A word for listings; never the value.
+    #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Key(_) => "key",
@@ -97,6 +113,7 @@ pub enum AuthEntry {
 }
 
 impl AuthEntry {
+    #[must_use]
     pub fn source(&self) -> &KeySource {
         match self {
             Self::ApiKey(source) => source,
@@ -126,20 +143,18 @@ pub enum AuthError {
     EmptyKey(String),
     #[error("a credential cannot be empty or contain control characters")]
     InvalidKey,
+    #[error(
+        "an environment variable name must use letters, digits, and underscores, and not start with a digit"
+    )]
+    InvalidEnvName,
+    #[error("a credential command must be a non-empty list of non-empty strings")]
+    InvalidCommandWords,
 }
 
 /// The parsed credential store: provider name to entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthStore {
     entries: BTreeMap<String, AuthEntry>,
-}
-
-fn env_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
-        && bytes.all(|c| c.is_ascii_alphanumeric() || c == b'_')
 }
 
 fn entry(provider: &str, table: &toml::Table) -> Result<AuthEntry, AuthError> {
@@ -196,6 +211,14 @@ fn entry(provider: &str, table: &toml::Table) -> Result<AuthEntry, AuthError> {
 impl AuthStore {
     /// Parses the file's text. The parser's own errors are never passed on,
     /// because they quote the line they failed on.
+    ///
+    /// # Errors
+    ///
+    /// - [`AuthError::Syntax`] if the text is not valid TOML.
+    /// - [`AuthError::Layout`] if it contains anything other than `[providers.NAME]` tables.
+    /// - [`AuthError::Field`], [`AuthError::MissingType`], [`AuthError::UnknownType`],
+    ///   [`AuthError::Source`], [`AuthError::EmptyKey`], [`AuthError::InvalidEnv`], or
+    ///   [`AuthError::InvalidCommand`] if a provider entry is invalid.
     pub fn parse(input: &str) -> Result<Self, AuthError> {
         let table: toml::Table = input.parse().map_err(|_| AuthError::Syntax)?;
         let mut entries = BTreeMap::new();
@@ -214,6 +237,10 @@ impl AuthStore {
     }
 
     /// The file's text, including any stored key. Only the writer should call it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Syntax`] if the store cannot be serialized as TOML.
     pub fn to_toml(&self) -> Result<String, AuthError> {
         let mut providers = toml::Table::new();
         for (provider, entry) in &self.entries {
@@ -242,6 +269,7 @@ impl AuthStore {
         toml::to_string(&root).map_err(|_| AuthError::Syntax)
     }
 
+    #[must_use]
     pub fn get(&self, provider: &str) -> Option<&AuthEntry> {
         self.entries.get(provider)
     }
@@ -263,6 +291,23 @@ impl AuthStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_constructors_report_errors_without_a_provider() {
+        assert_eq!(
+            KeySource::env("1BAD".into()).unwrap_err(),
+            AuthError::InvalidEnvName
+        );
+        assert_eq!(
+            KeySource::command(vec!["tool".into(), String::new()]).unwrap_err(),
+            AuthError::InvalidCommandWords
+        );
+        assert!(!AuthError::InvalidEnvName.to_string().contains("provider"));
+        assert!(matches!(
+            KeySource::env("API_KEY".into()),
+            Ok(KeySource::Env(_))
+        ));
+    }
 
     const FILE: &str = r#"
 [providers.typesafe]
@@ -363,7 +408,7 @@ command = ["op", "read", "op://Private/Router/credential"]
         let store = AuthStore::parse(FILE).unwrap();
         assert!(!format!("{store:?}").contains("SENTINEL_KEY_VALUE"));
         assert!(Secret::new("a\nb".into()).is_err());
-        assert!(Secret::new("".into()).is_err());
+        assert!(Secret::new(String::new()).is_err());
         assert_eq!(CredentialSource::Env("NAME".into()).to_string(), "env:NAME");
         assert_eq!(CredentialSource::Auth("p".into()).to_string(), "auth:p");
     }

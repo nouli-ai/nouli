@@ -4,11 +4,12 @@
 //! label field, a 20-cell bar, and the probability to two decimals. Color only
 //! styles a row; turning it off never changes the layout.
 
-use super::{RenderError, clean};
+use super::{RenderError, clean, plural};
 use nouli_core::{
     decision::{AnswerSpace, ChoiceOption, Criterion, Question},
-    outcome::{Answer, OptionProbability, QuestionOutcome},
+    outcome::{Answer, OptionProbability, QuestionOutcome, outcome_for, probability_of},
 };
+use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -40,9 +41,6 @@ pub(crate) struct Header {
 
 impl Header {
     pub(crate) fn text(&self) -> String {
-        let plural = |count: usize, noun: &str| {
-            format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
-        };
         let mut parts = vec![match self.turn {
             Some(turn) => format!("turn {turn}"),
             None => "(not saved)".into(),
@@ -51,7 +49,7 @@ impl Header {
         // What was replaced is a fact about the saved history, which a turn
         // that was not saved does not touch.
         if self.turn.is_some() && self.replaced > 0 {
-            facts.push_str(&format!(" ({} replaced, kept in history)", self.replaced));
+            let _ = write!(facts, " ({} replaced, kept in history)", self.replaced);
         }
         parts.push(facts);
         parts.push(plural(self.questions, "question"));
@@ -98,6 +96,22 @@ fn pad(text: &str, columns: usize) -> String {
     format!("{text}{}", " ".repeat(spaces))
 }
 
+/// The sparkline glyph for a probability.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the probability is clamped to 0..=1, so the index is 0..=7"
+)]
+fn spark(probability: f64) -> char {
+    SPARK[(probability.clamp(0.0, 1.0) * 7.0).round() as usize]
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "the probability is clamped to 0..=1 and a bar is a few dozen cells"
+)]
 fn bar(probability: f64, cells: usize) -> String {
     let eighths = (probability.clamp(0.0, 1.0) * (cells * 8) as f64).round() as usize;
     let (full, remainder) = (eighths / 8, eighths % 8);
@@ -116,26 +130,12 @@ fn moved(before: f64, now: f64) -> bool {
     (before - now).abs() >= CHANGE - 1e-9
 }
 
-fn level_label(level: &Criterion) -> &str {
-    match level {
-        Criterion::Text(text) => text,
-        Criterion::Detailed { label, .. } => label,
-    }
-}
-
 fn option_label(options: &[ChoiceOption], id: &str) -> String {
     options
         .iter()
         .find(|option| option.id == id)
         .map_or(id, |option| option.description.as_str())
         .to_owned()
-}
-
-fn chance(distribution: &[OptionProbability], id: &str) -> Option<f64> {
-    distribution
-        .iter()
-        .find(|entry| entry.option_id == id)
-        .map(|entry| entry.probability)
 }
 
 /// The change marker, shortened so the whole line stays within the column limit.
@@ -179,11 +179,7 @@ fn choice_rows(
     layout: Layout,
 ) {
     let (selected, distribution) = answer;
-    let name = if layout.id_columns == 0 {
-        String::new()
-    } else {
-        pad(&clean(&question.id), layout.id_columns)
-    };
+    let name = id_column(question, layout);
     for (position, option) in options.iter().enumerate() {
         let chosen = option.id == selected;
         let lead = if position == 0 {
@@ -198,10 +194,10 @@ fn choice_rows(
                 layout.label_columns
             ),
             bar(
-                chance(distribution, &option.id).unwrap_or(0.0),
+                probability_of(distribution, &option.id).unwrap_or(0.0),
                 layout.bar_cells
             ),
-            percent(chance(distribution, &option.id)),
+            percent(probability_of(distribution, &option.id)),
         );
         let mut row = if chosen {
             format!(
@@ -220,9 +216,9 @@ fn choice_rows(
                     },
                 ..
             }) = previous
-            && let Some(was) = chance(earlier, before)
+            && let Some(was) = probability_of(earlier, before)
             && options.iter().any(|option| &option.id == before)
-            && let Some(now) = chance(distribution, selected)
+            && let Some(now) = probability_of(distribution, selected)
             && (before != selected || moved(was, now))
         {
             let used =
@@ -245,6 +241,43 @@ fn choice_rows(
     }
 }
 
+/// The padded question ID, or nothing when the layout has no ID column.
+fn id_column(question: &Question, layout: Layout) -> String {
+    if layout.id_columns == 0 {
+        String::new()
+    } else {
+        pad(&clean(&question.id), layout.id_columns)
+    }
+}
+
+/// The shared parts of a yes/no or score question's answer rows.
+struct AnswerLine<'a> {
+    paint: Paint,
+    layout: Layout,
+    /// The indent and question ID before the answer.
+    lead: &'a str,
+    /// The answer space's color.
+    accent: &'a str,
+}
+
+impl AnswerLine<'_> {
+    /// One accented row, ending in a change marker when the answer moved from `was`.
+    fn row(&self, body: &str, was: Option<f64>) -> String {
+        let mut row = format!("{}{}", self.lead, self.paint.apply(self.accent, body));
+        if let Some(was) = was {
+            row.push_str(&marker(
+                self.paint,
+                self.lead.width() + body.width(),
+                None,
+                was,
+                self.accent,
+                self.layout,
+            ));
+        }
+        row
+    }
+}
+
 fn question_rows(
     paint: Paint,
     question: &Question,
@@ -253,19 +286,13 @@ fn question_rows(
     rows: &mut Vec<String>,
     layout: Layout,
 ) {
-    let name = if layout.id_columns == 0 {
-        String::new()
-    } else {
-        pad(&clean(&question.id), layout.id_columns)
-    };
-    let lead = format!("  {name}   ");
-    let used = lead.width();
-    let (answer, ..) = match outcome {
-        Some(QuestionOutcome::Answered { answer, .. }) => (answer, ()),
+    let lead = format!("  {}   ", id_column(question, layout));
+    let answer = match outcome {
+        Some(QuestionOutcome::Answered { answer, .. }) => answer,
         Some(QuestionOutcome::Refused { reason, .. }) => {
             let text = fit(
                 &clean(reason),
-                layout.columns.saturating_sub(used + 9).max(1),
+                layout.columns.saturating_sub(lead.width() + 9).max(1),
             );
             rows.push(format!(
                 "{lead}{}",
@@ -281,6 +308,12 @@ fn question_rows(
     let earlier = match previous {
         Some(QuestionOutcome::Answered { answer, .. }) => Some(answer),
         _ => None,
+    };
+    let line = AnswerLine {
+        paint,
+        layout,
+        lead: &lead,
+        accent: crate::palette::Tone::from(&question.answer_space).ansi(),
     };
     match (&question.answer_space, answer) {
         (
@@ -299,33 +332,7 @@ fn question_rows(
             layout,
         ),
         (AnswerSpace::Noul, Answer::Noul { probability }) => {
-            // "yes" fills the label field, so the bar lines up with a choice's.
-            let body = format!(
-                "yes{}{} {}",
-                " ".repeat(layout.label_columns.saturating_sub(2)),
-                bar(*probability, layout.bar_cells),
-                percent(Some(*probability))
-            );
-            let mut row = format!(
-                "{lead}{}",
-                paint.apply(
-                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
-                    &body
-                )
-            );
-            if let Some(Answer::Noul { probability: was }) = earlier
-                && moved(*was, *probability)
-            {
-                row.push_str(&marker(
-                    paint,
-                    used + body.width(),
-                    None,
-                    *was,
-                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
-                    layout,
-                ));
-            }
-            rows.push(row);
+            rows.push(noul_row(&line, *probability, earlier));
         }
         (
             AnswerSpace::Score { levels },
@@ -333,69 +340,76 @@ fn question_rows(
                 value,
                 probabilities,
             },
-        ) => {
-            let sparkline: String = probabilities
-                .iter()
-                .map(|probability| {
-                    SPARK[((probability.clamp(0.0, 1.0) * 7.0).round() as usize).min(7)]
-                })
-                .collect();
-            let body = format!(
-                "expected {value:.2} of {}   {sparkline}",
-                levels.len().saturating_sub(1)
-            );
-            let mut row = format!(
-                "{lead}{}",
-                paint.apply(
-                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
-                    &body
-                )
-            );
-            if let Some(Answer::Score {
-                value: was,
-                probabilities: before,
-            }) = earlier
-                && before.len() == probabilities.len()
-                && moved(*was, *value)
-            {
-                row.push_str(&marker(
-                    paint,
-                    used + body.width(),
-                    None,
-                    *was,
-                    crate::palette::Tone::for_space(&question.answer_space).ansi(),
-                    layout,
-                ));
-            }
-            rows.push(row);
-            let detail = levels
-                .iter()
-                .zip(probabilities)
-                .map(|(level, probability)| {
-                    format!(
-                        "{} {probability:.2}",
-                        clean(&super::image_labels(level_label(level)))
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" · ");
-            rows.push(paint.apply(
-                DIM,
-                &format!(
-                    "  {}{}",
-                    " ".repeat(layout.id_columns + 3),
-                    fit(
-                        &detail,
-                        layout.columns.saturating_sub(layout.id_columns + 5)
-                    )
-                ),
-            ));
-        }
+        ) => rows.extend(score_rows(&line, levels, (*value, probabilities), earlier)),
         _ => rows.push(format!(
             "{lead}{}",
             paint.apply(DIM, "answer does not match the question")
         )),
     }
+}
+
+/// A yes/no answer's probability bar.
+fn noul_row(line: &AnswerLine, probability: f64, earlier: Option<&Answer>) -> String {
+    // "yes" fills the label field, so the bar lines up with a choice's.
+    let body = format!(
+        "yes{}{} {}",
+        " ".repeat(line.layout.label_columns.saturating_sub(2)),
+        bar(probability, line.layout.bar_cells),
+        percent(Some(probability))
+    );
+    let was = match earlier {
+        Some(Answer::Noul { probability: was }) if moved(*was, probability) => Some(*was),
+        _ => None,
+    };
+    line.row(&body, was)
+}
+
+/// A score answer's expected value and sparkline, then its per-level probabilities.
+fn score_rows(
+    line: &AnswerLine,
+    levels: &[Criterion],
+    (value, probabilities): (f64, &[f64]),
+    earlier: Option<&Answer>,
+) -> [String; 2] {
+    let sparkline: String = probabilities
+        .iter()
+        .map(|probability| spark(*probability))
+        .collect();
+    let body = format!(
+        "expected {value:.2} of {}   {sparkline}",
+        levels.len().saturating_sub(1)
+    );
+    let was = match earlier {
+        Some(Answer::Score {
+            value: was,
+            probabilities: before,
+        }) if before.len() == probabilities.len() && moved(*was, value) => Some(*was),
+        _ => None,
+    };
+    let detail = levels
+        .iter()
+        .zip(probabilities)
+        .map(|(level, probability)| {
+            format!(
+                "{} {probability:.2}",
+                clean(&super::image_labels(level.label()))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let layout = line.layout;
+    let detail = line.paint.apply(
+        DIM,
+        &format!(
+            "  {}{}",
+            " ".repeat(layout.id_columns + 3),
+            fit(
+                &detail,
+                layout.columns.saturating_sub(layout.id_columns + 5)
+            )
+        ),
+    );
+    [line.row(&body, was), detail]
 }
 
 #[derive(Clone, Copy)]
@@ -477,9 +491,7 @@ fn write_layout<'a>(
     )?;
     let mut rows = Vec::new();
     for question in questions {
-        let outcome = outcomes
-            .iter()
-            .find(|outcome| outcome.question_id() == question.id);
+        let outcome = outcome_for(outcomes, &question.id);
         question_rows(
             paint,
             question,
@@ -591,7 +603,7 @@ mod tests {
             header,
             questions,
             outcomes,
-            |id| previous.iter().find(|outcome| outcome.question_id() == id),
+            |id| outcome_for(previous, id),
             color,
         )
         .unwrap();
@@ -906,7 +918,7 @@ mod tests {
                 &header(Some(2)),
                 &questions,
                 &now,
-                |id| was.iter().find(|outcome| outcome.question_id() == id),
+                |id| outcome_for(&was, id),
                 false,
                 columns,
             )
@@ -924,7 +936,7 @@ mod tests {
                 &header(Some(2)),
                 &questions,
                 &now,
-                |id| was.iter().find(|outcome| outcome.question_id() == id),
+                |id| outcome_for(&was, id),
                 true,
                 columns,
             )
@@ -960,7 +972,7 @@ mod tests {
             &header(Some(1)),
             &questions,
             &now,
-            |id| was.iter().find(|outcome| outcome.question_id() == id),
+            |id| outcome_for(&was, id),
             false,
         );
         assert!(matches!(result, Err(RenderError::Write(_))));

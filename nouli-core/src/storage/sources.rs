@@ -46,7 +46,7 @@ pub(super) fn resolve_on(
                         |row| row.get(0),
                     )
                     .optional()
-                    .map_err(|error| sql_error("validate source membership", error))?;
+                    .map_err(|error| sql_error("validate source membership", &error))?;
                 if owner.as_deref() != Some(session.id.to_string().as_str()) {
                     return Err(HistoryError::ForeignHead.into());
                 }
@@ -68,14 +68,7 @@ pub(super) fn resolve_selection(
     match selection {
         SessionSelection::New { .. } => Ok(vec![]),
         SessionSelection::Continue { .. } => {
-            if current.frontier.is_empty() {
-                Ok(super::sessions::read_sources(connection, current.id)?)
-            } else {
-                Ok(vec![SourcePoint {
-                    session: current.id,
-                    frontier: current.frontier.clone(),
-                }])
-            }
+            Ok(super::sessions::read_context_sources(connection, current)?)
         }
         SessionSelection::From { sources, .. } => resolve_on(connection, sources),
     }
@@ -84,6 +77,13 @@ pub(super) fn resolve_selection(
 impl Ledger {
     /// One read transaction freezes all unspecified heads together. This also
     /// works on a read-only ledger and creates no session or guard files.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SourceError::History`] if no sources are selected, a frontier
+    /// is empty or repeats a turn, or a frontier turn belongs to another
+    /// session; [`SourceError::Session`] if a selected session cannot be read;
+    /// or [`SourceError::Storage`] if the SQLite read fails.
     pub fn resolve_sources(
         &self,
         selections: &[SourceSelection],
@@ -91,16 +91,24 @@ impl Ledger {
         let transaction = self
             .connection
             .unchecked_transaction()
-            .map_err(|error| sql_error("begin source snapshot", error))?;
+            .map_err(|error| sql_error("begin source snapshot", &error))?;
         let sources = resolve_on(&transaction, selections)?;
         transaction
             .commit()
-            .map_err(|error| sql_error("finish source snapshot", error))?;
+            .map_err(|error| sql_error("finish source snapshot", &error))?;
         Ok(sources)
     }
 
     /// Record references without copying or changing the selected sources.
     /// Evaluation updates can subsequently resolve conflicts during preparation.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Ledger::resolve_sources`] for the selections.
+    /// - [`SourceError::Session`] if the defaults are invalid, the name is
+    ///   taken, or no automatic name is available.
+    /// - [`SourceError::Storage`] if the ledger is read-only or the SQLite
+    ///   write fails.
     pub fn create_session_from(
         &mut self,
         name: Option<SessionName>,
@@ -127,6 +135,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
         data::Data,
@@ -168,7 +177,7 @@ mod tests {
             .prepare_attempt(
                 &guard,
                 AttemptInput {
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     request: fixture.request,
                     updates,
                     manifest: fixture.manifest,
@@ -186,24 +195,56 @@ mod tests {
             frontier,
         }
     }
-    #[test]
-    fn branches_and_blends_freeze_ordered_mixed_provider_ancestry() {
-        let store = Store::new();
-        let mut ledger = store.open();
+    fn budget_record(budget: i64) -> ContextRecord {
+        ContextRecord {
+            id: Id::generate(),
+            key: "budget".into(),
+            value: Data::new(serde_json::json!(budget)).unwrap(),
+            kind: ContextKind::Evidence,
+        }
+    }
+    fn rebudgeted(record: &ContextRecord, budget: i64) -> ContextRecord {
+        ContextRecord {
+            id: Id::generate(),
+            value: Data::new(serde_json::json!(budget)).unwrap(),
+            ..record.clone()
+        }
+    }
+    fn supersede(targets: Vec<Id>, replacement: ContextRecord) -> ContextUpdate {
+        ContextUpdate::Supersede {
+            targets,
+            replacement,
+            pinned: None,
+        }
+    }
+    /// A named root with one pinned budget record, two branches that each add a
+    /// turn on a different model, and a named blend of both branches.
+    struct Diamond {
+        root: Session,
+        left: Session,
+        right: Session,
+        blend: Session,
+        record: ContextRecord,
+        first: FinalizedTurn,
+        left_turn: FinalizedTurn,
+        right_turn: FinalizedTurn,
+    }
+    fn blend_defaults() -> ModelSelection {
+        ModelSelection {
+            provider: Some("explicit-new-profile".into()),
+            model: Some("new-model".into()),
+        }
+    }
+    fn diamond(ledger: &mut Ledger) -> Diamond {
         let root = ledger
             .create_session(
                 Some(SessionName::try_from("root".to_owned()).unwrap()),
                 ModelSelection::default(),
             )
             .unwrap();
-        let record = ContextRecord {
-            id: Id::generate(),
-            key: "budget".into(),
-            value: Data::new(serde_json::json!(8)).unwrap(),
-            kind: ContextKind::Evidence,
-        };
+        let record = budget_record(8);
         let first = commit(
-            &mut ledger,
+            ledger,
             root.id,
             vec![ContextUpdate::Pin {
                 target: PinTarget::New {
@@ -222,28 +263,44 @@ mod tests {
                 }],
             )
             .unwrap();
-        let l = commit(&mut ledger, left.id, vec![], "left-model");
+        let left_turn = commit(ledger, left.id, vec![], "left-model");
         let right = ledger
             .create_session_from(None, ModelSelection::default(), &[selection(root.id, None)])
             .unwrap();
-        let r = commit(&mut ledger, right.id, vec![], "right-model");
-        let defaults = ModelSelection {
-            provider: Some("explicit-new-profile".into()),
-            model: Some("new-model".into()),
-        };
+        let right_turn = commit(ledger, right.id, vec![], "right-model");
         let blend = ledger
             .create_session_from(
                 Some(SessionName::try_from("blend".to_owned()).unwrap()),
-                defaults.clone(),
+                blend_defaults(),
                 &[selection(left.id, None), selection(right.id, None)],
             )
             .unwrap();
-        let captured = ledger.session_sources(blend.id).unwrap();
-        assert_eq!(blend.defaults, defaults);
+        Diamond {
+            root,
+            left,
+            right,
+            blend,
+            record,
+            first,
+            left_turn,
+            right_turn,
+        }
+    }
+    #[test]
+    fn branches_and_blends_freeze_ordered_mixed_provider_ancestry() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let diamond = diamond(&mut ledger);
+        let captured = ledger.session_sources(diamond.blend.id).unwrap();
+        assert_eq!(diamond.blend.defaults, blend_defaults());
         let history = ledger.ancestry(&captured).unwrap();
         assert_eq!(
             history.iter().map(|t| t.id).collect::<Vec<_>>(),
-            vec![first.id, l.id, r.id]
+            vec![
+                diamond.first.id,
+                diamond.left_turn.id,
+                diamond.right_turn.id
+            ]
         );
         assert_eq!(
             history
@@ -253,68 +310,57 @@ mod tests {
             vec!["source-model", "left-model", "right-model"]
         );
         let active = ledger
-            .context_at(&captured, &[], blend.id, Id::generate())
+            .context_at(&captured, &[], diamond.blend.id, Id::generate())
             .unwrap();
         assert_eq!(active.len(), 1);
-        assert_eq!(active[0].record, record);
-        commit(
-            &mut ledger,
-            root.id,
-            vec![ContextUpdate::Supersede {
-                targets: vec![record.id],
-                replacement: ContextRecord {
-                    id: Id::generate(),
-                    value: Data::new(serde_json::json!(12)).unwrap(),
-                    ..record.clone()
-                },
-                pinned: None,
-            }],
-            "later-model",
+        assert_eq!(active[0].record, diamond.record);
+        assert!(
+            ledger
+                .create_session_from(
+                    diamond.blend.name.clone(),
+                    ModelSelection::default(),
+                    &[selection(diamond.root.id, None)]
+                )
+                .is_err()
         );
-        commit(
-            &mut ledger,
-            left.id,
-            vec![ContextUpdate::Supersede {
-                targets: vec![record.id],
-                replacement: ContextRecord {
-                    id: Id::generate(),
-                    value: Data::new(serde_json::json!(6)).unwrap(),
-                    ..record.clone()
-                },
-                pinned: None,
-            }],
-            "later-left-model",
-        );
-        assert_eq!(ledger.session_sources(blend.id).unwrap(), captured);
+        assert_eq!(ledger.list_sessions().unwrap().len(), 4);
+    }
+    #[test]
+    fn blend_sources_stay_frozen_after_their_sources_advance() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let diamond = diamond(&mut ledger);
+        let captured = ledger.session_sources(diamond.blend.id).unwrap();
+        let active = ledger
+            .context_at(&captured, &[], diamond.blend.id, Id::generate())
+            .unwrap();
+        for (session, budget, model) in [
+            (diamond.root.id, 12, "later-model"),
+            (diamond.left.id, 6, "later-left-model"),
+        ] {
+            let update = supersede(vec![diamond.record.id], rebudgeted(&diamond.record, budget));
+            commit(&mut ledger, session, vec![update], model);
+        }
+        assert_eq!(ledger.session_sources(diamond.blend.id).unwrap(), captured);
         assert_eq!(
             ledger
-                .context_at(&captured, &[], blend.id, Id::generate())
+                .context_at(&captured, &[], diamond.blend.id, Id::generate())
                 .unwrap(),
             active
         );
         assert_eq!(
             ledger
-                .resolve_sources(&[selection(root.id, Some(vec![first.id]))])
+                .resolve_sources(&[selection(diamond.root.id, Some(vec![diamond.first.id]))])
                 .unwrap()[0]
                 .frontier,
-            vec![first.id]
+            vec![diamond.first.id]
         );
-        assert!(
-            ledger
-                .create_session_from(
-                    blend.name.clone(),
-                    ModelSelection::default(),
-                    &[selection(root.id, None)]
-                )
-                .is_err()
-        );
-        assert_eq!(ledger.list_sessions().unwrap().len(), 4);
         drop(ledger);
         let read = Ledger::open(&store.0, OpenMode::ReadOnlyExisting).unwrap();
         assert_eq!(
             read.resolve_sources(&[
-                selection(left.id, Some(vec![l.id])),
-                selection(right.id, None)
+                selection(diamond.left.id, Some(vec![diamond.left_turn.id])),
+                selection(diamond.right.id, None)
             ])
             .unwrap(),
             captured
@@ -327,12 +373,7 @@ mod tests {
         let root = ledger
             .create_session(None, ModelSelection::default())
             .unwrap();
-        let original = ContextRecord {
-            id: Id::generate(),
-            key: "budget".into(),
-            value: Data::new(serde_json::json!(8)).unwrap(),
-            kind: ContextKind::Evidence,
-        };
+        let original = budget_record(8);
         commit(
             &mut ledger,
             root.id,
@@ -349,19 +390,11 @@ mod tests {
             let branch = ledger
                 .create_session_from(None, ModelSelection::default(), &[selection(root.id, None)])
                 .unwrap();
-            let replacement = ContextRecord {
-                id: Id::generate(),
-                value: Data::new(serde_json::json!(budget)).unwrap(),
-                ..original.clone()
-            };
+            let replacement = rebudgeted(&original, budget);
             commit(
                 &mut ledger,
                 branch.id,
-                vec![ContextUpdate::Supersede {
-                    targets: vec![original.id],
-                    replacement: replacement.clone(),
-                    pinned: None,
-                }],
+                vec![supersede(vec![original.id], replacement.clone())],
                 "branch",
             );
             branches.push(selection(branch.id, None));
@@ -373,7 +406,7 @@ mod tests {
         let guard = ledger.session_guard(blend.id).unwrap();
         let fixture = fixture();
         let mut input = AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: fixture.request,
             manifest: fixture.manifest,
             updates: vec![],
@@ -386,16 +419,8 @@ mod tests {
                 crate::context::projection::ProjectionError::Conflicts { .. }
             ))
         ));
-        let replacement = ContextRecord {
-            id: Id::generate(),
-            value: Data::new(serde_json::json!(12)).unwrap(),
-            ..original
-        };
-        input.updates.push(ContextUpdate::Supersede {
-            targets: records,
-            replacement: replacement.clone(),
-            pinned: None,
-        });
+        let replacement = rebudgeted(&original, 12);
+        input.updates.push(supersede(records, replacement.clone()));
         let attempt = ledger.prepare_attempt(&guard, input).unwrap();
         ledger
             .finalize_attempt(&guard, attempt.id, fixture.outcome)
@@ -432,7 +457,7 @@ mod tests {
         let captured = ledger.session_sources(derived.id).unwrap();
         let fixture = fixture();
         let request = EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: fixture.request,
             session: SessionSelection::Continue {
                 session: SessionSelector::Id(derived.id),
@@ -454,8 +479,8 @@ mod tests {
                     context_budget_tokens: Some(4096),
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 std::path::Path::new("/unused"),
             )
             .unwrap()

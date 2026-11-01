@@ -101,7 +101,7 @@ impl Terminal {
             match self.master.write(bytes) {
                 Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero).into()),
                 Ok(count) => bytes = &bytes[count..],
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     let mut fds = [PollFd::new(self.master.as_fd(), PollFlags::POLLOUT)];
                     match poll(&mut fds, 50u16) {
@@ -127,7 +127,7 @@ impl Terminal {
                 Ok(_) => {}
                 Err(error) => return Err(error.into()),
             }
-            let mut buffer = [0; 65536];
+            let mut buffer = vec![0; 65536];
             match self.master.read(&mut buffer) {
                 Ok(0) => self.closed = true,
                 Ok(count) => {
@@ -194,8 +194,11 @@ impl Terminal {
         };
         // SAFETY: the master FD is live and size points to a valid winsize for
         // the duration of this TIOCSWINSZ call; the kernel does not retain it.
-        unsafe { set_window_size(self.master.as_raw_fd(), &size) }?;
-        kill(Pid::from_raw(self.child.id() as i32), Signal::SIGWINCH)?;
+        unsafe { set_window_size(self.master.as_raw_fd(), &raw const size) }?;
+        kill(
+            Pid::from_raw(self.child.id().cast_signed()),
+            Signal::SIGWINCH,
+        )?;
         Ok(())
     }
 

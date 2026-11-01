@@ -1,4 +1,5 @@
 //! Store-wide discovery and fixed, question-specific saved-answer evidence.
+mod search;
 mod text;
 use std::collections::HashSet;
 
@@ -8,8 +9,10 @@ use thiserror::Error;
 use super::{Ledger, StorageError, sql_error, turns::TurnError};
 use crate::{
     codec,
-    context::{ContextKind, ContextRecord},
-    data::{Data, DataError},
+    context::{
+        ContextRecord,
+        evidence::{self, DecisionReference, EvidenceError, ImageSnapshot},
+    },
     decision::Question,
     history::FinalizedTurn,
     identity::Id,
@@ -17,12 +20,7 @@ use crate::{
     outcome::{ProviderIdentity, QuestionOutcome},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DecisionSource {
-    pub session: Id,
-    pub turn: Id,
-    pub question: String,
-}
+pub use crate::context::evidence::DecisionSource;
 
 /// A lightweight catalog entry: no input images or entire session histories.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,73 +38,9 @@ pub struct SavedDecision {
 }
 
 impl SavedDecision {
+    #[must_use]
     pub fn answered(&self) -> bool {
         matches!(self.outcome, QuestionOutcome::Answered { .. })
-    }
-
-    pub fn matches(&self, query: &str) -> bool {
-        let searchable = format!(
-            "{} {} {} {} {}",
-            visible_text(&self.question.prompt),
-            self.source.question,
-            self.session_name,
-            self.source.turn,
-            self.text.join("\n")
-        )
-        .to_lowercase();
-        query
-            .split_whitespace()
-            .all(|word| searchable.contains(&word.to_lowercase()))
-    }
-
-    /// A short contextual match when the question title alone does not explain
-    /// why this saved answer was found. Keep Unicode boundaries intact.
-    pub fn excerpt(&self, query: &str) -> Option<String> {
-        let words = query
-            .split_whitespace()
-            .map(str::to_lowercase)
-            .collect::<Vec<_>>();
-        if words.is_empty()
-            || words
-                .iter()
-                .all(|word| self.question.prompt.to_lowercase().contains(word))
-        {
-            return None;
-        }
-        let line = self
-            .text
-            .iter()
-            .find(|line| words.iter().any(|word| line.to_lowercase().contains(word)))?;
-        let line = visible_text(line);
-        let lower = line.to_lowercase();
-        let byte = words
-            .iter()
-            .filter_map(|word| lower.find(word))
-            .min()
-            .unwrap_or(0);
-        let mut lowered = 0;
-        let mut at = 0;
-        for (index, ch) in line.chars().enumerate() {
-            let size = ch.to_lowercase().map(char::len_utf8).sum::<usize>();
-            if lowered + size > byte {
-                at = index;
-                break;
-            }
-            lowered += size;
-            at = index + 1;
-        }
-        let start = at.saturating_sub(24);
-        let shown = line.chars().skip(start).take(100).collect::<String>();
-        Some(format!(
-            "{}{}{}",
-            if start > 0 { "…" } else { "" },
-            shown,
-            if line.chars().count() > start + 100 {
-                "…"
-            } else {
-                ""
-            }
-        ))
     }
 }
 
@@ -119,7 +53,7 @@ pub enum DecisionError {
     #[error(transparent)]
     Codec(#[from] codec::CodecError),
     #[error(transparent)]
-    Data(#[from] DataError),
+    Evidence(#[from] EvidenceError),
     #[error("the selected saved question or answer is unavailable")]
     Missing,
     #[error("the selected question was refused; choose a saved answer")]
@@ -127,28 +61,7 @@ pub enum DecisionError {
 }
 
 fn visible_text(prompt: &str) -> String {
-    let mut prompt = prompt.to_owned();
-    for prefix in ["[image:", "[decision:"] {
-        let mut offset = 0;
-        while let Some(at) = prompt[offset..].find(prefix) {
-            let start = offset + at;
-            let Some(end) = prompt[start + prefix.len()..].find(']') else {
-                break;
-            };
-            let end = start + prefix.len() + end;
-            if Id::try_from(prompt[start + prefix.len()..end].to_owned()).is_ok() {
-                let from = if start > 0 && prompt.as_bytes()[start - 1] == b' ' {
-                    start - 1
-                } else {
-                    start
-                };
-                prompt.replace_range(from..end + 1, "");
-                offset = from;
-            } else {
-                offset = end + 1;
-            }
-        }
-    }
+    let prompt = evidence::marker::strip_markers(prompt);
     let prompt = prompt
         .chars()
         .filter(|c| !c.is_control() || c.is_whitespace())
@@ -171,13 +84,22 @@ impl Ledger {
     /// historical image payloads on each keystroke or subsequent picker open.
     /// Checking identities, rather than a UUID watermark, includes late workflow
     /// publications whose IDs precede another already-published turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecisionError::Turn`] if a listed turn cannot be read, or
+    /// [`DecisionError::Storage`] if the SQLite query fails or a stored turn
+    /// has an invalid ID or lacks an outcome for one of its questions.
     pub fn saved_decisions(
         &self,
         known: &HashSet<Id>,
     ) -> Result<(Vec<Id>, Vec<SavedDecision>), DecisionError> {
-        let mut statement = self.connection.prepare(
-            "SELECT t.id, COALESCE(s.name,s.id), t.ordinal, t.rowid FROM turns t JOIN sessions s ON s.id=t.session_id ORDER BY t.rowid DESC"
-        ).map_err(|error| sql_error("list saved decisions", error))?;
+        const LIST_SAVED_DECISIONS: &str = "SELECT t.id, COALESCE(s.name,s.id), t.ordinal, t.rowid FROM turns t JOIN sessions s ON s.id=t.session_id ORDER BY t.rowid DESC";
+
+        let mut statement = self
+            .connection
+            .prepare(LIST_SAVED_DECISIONS)
+            .map_err(|error| sql_error("list saved decisions", &error))?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -187,12 +109,12 @@ impl Ledger {
                     row.get::<_, i64>(3)?,
                 ))
             })
-            .map_err(|error| sql_error("read decision catalog", error))?;
+            .map_err(|error| sql_error("read decision catalog", &error))?;
         let mut ids = Vec::new();
         let mut entries = Vec::new();
         for row in rows {
             let (id, session_name, ordinal, sequence) =
-                row.map_err(|error| sql_error("read decision entry", error))?;
+                row.map_err(|error| sql_error("read decision entry", &error))?;
             let id = Id::try_from(id).map_err(|_| StorageError::Payload)?;
             if known.contains(&id) {
                 continue;
@@ -202,9 +124,7 @@ impl Ledger {
             for question in &turn.request.questions {
                 let outcome = turn
                     .outcome
-                    .outcomes
-                    .iter()
-                    .find(|outcome| outcome.question_id() == question.id)
+                    .outcome_for(&question.id)
                     .ok_or(StorageError::Payload)?;
                 entries.push(SavedDecision {
                     source: DecisionSource {
@@ -228,17 +148,33 @@ impl Ledger {
     /// Snapshot one exact answer as ordinary durable evidence, without blending
     /// source-session ancestry, changing its active facts, or re-evaluating it.
     /// Native image inputs are copied from the immutable saved input manifest.
+    ///
+    /// # Errors
+    ///
+    /// - [`DecisionError::Turn`] if the source turn cannot be read.
+    /// - [`DecisionError::Missing`] if the turn is runtime-only, belongs to
+    ///   another session, or lacks the question or its outcome.
+    /// - [`DecisionError::Refused`] if the question was not answered.
+    /// - [`DecisionError::Codec`] if the saved input manifest cannot be
+    ///   decoded, [`DecisionError::Evidence`] if the record value is invalid, or
+    ///   [`DecisionError::Storage`] if the label query fails.
     pub fn decision_reference(
         &self,
         source: &DecisionSource,
         id: Id,
     ) -> Result<ContextRecord, DecisionError> {
+        const READ_REFERENCE_SOURCE_LABEL: &str = "SELECT COALESCE(s.name,s.id),t.ordinal FROM turns t JOIN sessions s ON s.id=t.session_id WHERE t.id=?1";
+
         let turn = self.turn(source.turn)?;
-        let mut record = reference_record(&turn, source, id)?;
-        let (name,ordinal):(String,i64)=self.connection.query_row(
-            "SELECT COALESCE(s.name,s.id),t.ordinal FROM turns t JOIN sessions s ON s.id=t.session_id WHERE t.id=?1",
-            [source.turn.to_string()],|row|Ok((row.get(0)?,row.get(1)?)))
-            .map_err(|e|sql_error("read reference source label",e))?;
+        let mut reference = reference_snapshot(&turn, source, id)?;
+        let (name, ordinal): (String, i64) = self
+            .connection
+            .query_row(
+                READ_REFERENCE_SOURCE_LABEL,
+                [source.turn.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| sql_error("read reference source label", &e))?;
         let prompt = &turn
             .request
             .questions
@@ -247,15 +183,19 @@ impl Ledger {
             .ok_or(DecisionError::Missing)?
             .prompt;
         let shortened = short_label(prompt);
-        let mut value = record.value.value().clone();
-        value["nouli_decision_reference"]["label"] =
-            serde_json::json!(format!("@{shortened} · {name} / {}", ordinal + 1));
-        record.value = Data::new(value)?;
-        Ok(record)
+        reference.label = Some(format!("@{shortened} · {name} / {}", ordinal + 1));
+        Ok(reference.record(id)?)
     }
 
     /// The immutable input state actually sent for this saved answer. Read it
     /// only for the selected preview, rather than caching every full history.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecisionError::Turn`] if the source turn cannot be read,
+    /// [`DecisionError::Missing`] if it belongs to another session or lacks the
+    /// question, or [`DecisionError::Codec`] if the saved input manifest cannot
+    /// be decoded.
     pub fn decision_state(&self, source: &DecisionSource) -> Result<Vec<String>, DecisionError> {
         let turn = self.turn(source.turn)?;
         if turn.session != source.session
@@ -271,11 +211,11 @@ impl Ledger {
     }
 }
 
-fn reference_record(
+fn reference_snapshot(
     turn: &FinalizedTurn,
     source: &DecisionSource,
     id: Id,
-) -> Result<ContextRecord, DecisionError> {
+) -> Result<DecisionReference, DecisionError> {
     if turn.runtime_only || turn.session != source.session || turn.id != source.turn {
         return Err(DecisionError::Missing);
     }
@@ -287,9 +227,7 @@ fn reference_record(
         .ok_or(DecisionError::Missing)?;
     let outcome = turn
         .outcome
-        .outcomes
-        .iter()
-        .find(|o| o.question_id() == source.question)
+        .outcome_for(&source.question)
         .ok_or(DecisionError::Missing)?;
     if !matches!(outcome, QuestionOutcome::Answered { .. }) {
         return Err(DecisionError::Refused);
@@ -298,31 +236,26 @@ fn reference_record(
     // turns and other references, even when their original files are gone.
     let evidence = media::Evidence::read(&turn.manifest.context_toon)?;
     let input = codec::decode_value(evidence.text.as_bytes(), codec::InputFormat::Toon)?;
-    let images = evidence.images;
-    let images = images
-        .into_iter()
-        .map(|image| {
-            serde_json::json!({"record":{
-                "id":Id::generate(),"key":format!("image:{}",image.reference),
-                "value":{"nouli_image":image},"kind":"evidence"
-            }})
-        })
-        .collect::<Vec<_>>();
-    Ok(ContextRecord {
+    let images = evidence
+        .images
+        .iter()
+        .map(|image| ImageSnapshot::new(Id::generate(), image))
+        .collect();
+    Ok(DecisionReference::snapshot(
         id,
-        key: format!("decision:{id}"),
-        kind: ContextKind::Evidence,
-        value: Data::new(serde_json::json!({"nouli_decision_reference":{
-            "source":source,"reference":format!("[decision:{id}]"),
-            "question":question,"outcome":outcome,"provider":turn.outcome.provider,
-            "images":images,"input_state":input
-        }}))?,
-    })
+        source.clone(),
+        question.clone(),
+        outcome.clone(),
+        turn.outcome.provider.clone(),
+        images,
+        input,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{context::evidence::marker, history::StandingChanges};
 
     fn turn() -> FinalizedTurn {
         let fixture: serde_json::Value =
@@ -370,7 +303,7 @@ mod tests {
                         AttemptInput {
                             request: template.request,
                             updates: vec![],
-                            standing: Default::default(),
+                            standing: StandingChanges::default(),
                             manifest: template.manifest,
                             request_id: None,
                         },
@@ -428,12 +361,9 @@ mod tests {
         let record = ledger
             .decision_reference(&entry.source, Id::generate())
             .unwrap();
-        assert!(
-            record.value.value()["nouli_decision_reference"]["label"]
-                .as_str()
-                .unwrap()
-                .contains("first-project")
-        );
+        let reference = record.as_decision_reference().unwrap().unwrap();
+        assert!(reference.label.unwrap().contains("first-project"));
+        assert_eq!(record.key, format!("decision:{}", record.id));
         assert_eq!(ledger.turn(saved[0].id).unwrap(), saved[0]);
         drop(ledger);
         let reopened = Ledger::open(&path, OpenMode::ReadOnlyExisting).unwrap();
@@ -454,30 +384,27 @@ mod tests {
             turn: turn.id,
             question: turn.request.questions[0].id.clone(),
         };
-        let record = reference_record(&turn, &source, Id::generate()).unwrap();
-        let value = &record.value.value()["nouli_decision_reference"];
+        let id = Id::generate();
+        let value = reference_snapshot(&turn, &source, id).unwrap();
+        assert_eq!(value.question.as_ref(), Some(&turn.request.questions[0]));
+        assert_eq!(value.outcome.as_ref(), Some(&turn.outcome.outcomes[0]));
+        assert_eq!(value.source, source);
+        assert_eq!(value.reference, marker::decision_marker(id));
         assert_eq!(
-            value["question"],
-            serde_json::to_value(&turn.request.questions[0]).unwrap()
-        );
-        assert_eq!(
-            value["outcome"],
-            serde_json::to_value(&turn.outcome.outcomes[0]).unwrap()
-        );
-        assert_eq!(value["source"]["turn"], turn.id.to_string());
-        assert_eq!(
-            value["input_state"],
-            codec::decode_value(
-                turn.manifest.context_toon.as_bytes(),
-                codec::InputFormat::Toon
+            value.input_state,
+            Some(
+                codec::decode_value(
+                    turn.manifest.context_toon.as_bytes(),
+                    codec::InputFormat::Toon
+                )
+                .unwrap()
             )
-            .unwrap()
         );
         assert_eq!(turn, before);
         let mut invalid = source.clone();
         invalid.session = Id::generate();
         assert!(matches!(
-            reference_record(&turn, &invalid, Id::generate()),
+            reference_snapshot(&turn, &invalid, Id::generate()),
             Err(DecisionError::Missing)
         ));
         let mut refused = turn.clone();
@@ -486,7 +413,7 @@ mod tests {
             reason: "No".into(),
         };
         assert!(matches!(
-            reference_record(&refused, &source, Id::generate()),
+            reference_snapshot(&refused, &source, Id::generate()),
             Err(DecisionError::Refused)
         ));
     }
@@ -500,22 +427,27 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
         let original = png.into_inner();
-        let reference = format!("[image:{}]", Id::generate());
+        let reference = marker::image_marker(Id::generate());
         let image = media::Image {
             reference: reference.clone(),
             name: "旧 image.png".into(),
             format: "png".into(),
             data_base64: BASE64_STANDARD.encode(&original),
         };
-        turn.manifest.context_toon=codec::encode_toon(&serde_json::json!({"records":[{"value":{"record":{
-            "id":Id::generate(),"key":"image:source","kind":"evidence","value":{"nouli_image":image}
-        }}}]})).unwrap();
+        let saved = evidence::image_record(Id::generate(), &image);
+        turn.manifest.context_toon =
+            codec::encode_toon(&serde_json::json!({"records":[{"value":{"record":saved}}]}))
+                .unwrap();
         let source = DecisionSource {
             session: turn.session,
             turn: turn.id,
             question: turn.request.questions[0].id.clone(),
         };
-        let record = reference_record(&turn, &source, Id::generate()).unwrap();
+        let id = Id::generate();
+        let record = reference_snapshot(&turn, &source, id)
+            .unwrap()
+            .record(id)
+            .unwrap();
         let native = media::Evidence::read(
             &codec::encode_toon(&serde_json::json!({"records":[{"value":{"record":record}}]}))
                 .unwrap(),

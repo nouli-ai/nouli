@@ -23,6 +23,13 @@ impl fmt::Debug for Credential {
 }
 
 impl Credential {
+    /// Wraps a credential value for use in a request header.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::MissingCredential`] if the value is empty.
+    /// - [`ConfigError::InvalidCredential`] if it contains anything other than visible ASCII
+    ///   characters.
     pub fn new(value: String) -> Result<Self, ConfigError> {
         if value.is_empty() {
             return Err(ConfigError::MissingCredential);
@@ -32,6 +39,7 @@ impl Credential {
         }
         Ok(Self(value))
     }
+    #[must_use]
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -50,6 +58,8 @@ pub struct RuntimeOverrides {
     /// entry and no `api_key_env` takes its key from the store.
     pub stored_credentials: std::collections::BTreeSet<String>,
 }
+
+pub(crate) const FROZEN_SETTINGS_VERSION: u32 = 2;
 
 /// Frozen, serializable settings contain no credential values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,10 +85,16 @@ struct RawSettingsSnapshot {
     output: OutputFormat,
     store: PathBuf,
 }
+/// Read the version only after the raw snapshot's fields have decoded, matching
+/// the order in which the snapshot's `TryFrom` checks its version.
+pub(crate) fn frozen_settings_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> {
+    RawSettingsSnapshot::deserialize(value).map(|raw| raw.format_version)
+}
+
 impl TryFrom<RawSettingsSnapshot> for SettingsSnapshot {
     type Error = String;
     fn try_from(raw: RawSettingsSnapshot) -> Result<Self, Self::Error> {
-        if raw.format_version != 2 {
+        if raw.format_version != FROZEN_SETTINGS_VERSION {
             return Err("unsupported frozen settings; use a fresh store".into());
         }
         Ok(Self {
@@ -101,6 +117,7 @@ pub struct ResolvedSettings {
 
 /// Layers are ordered highest first. Provider and model overrides are independent
 /// fields, including the final configuration defaults layer.
+#[must_use]
 pub fn select_model(layers: &[&ModelSelection]) -> ModelSelection {
     ModelSelection {
         provider: layers.iter().find_map(|layer| layer.provider.clone()),
@@ -112,11 +129,22 @@ impl SettingsSnapshot {
     /// Re-resolve only the saved source, preserving every saved setting. An
     /// environment variable comes first, and the provider's stored entry is the
     /// fallback when the variable is not set at all.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::Invalid`] if the snapshot's format version is unsupported, or any
+    ///   [`ProviderProfile::validate`] or [`ExecutionSettings::validate`] error.
+    /// - [`ConfigError::HeaderCredential`] if a header's environment variable is unset, empty, or
+    ///   not a valid header value.
+    /// - [`ConfigError::CredentialSource`] if `api_key_env` is set and the resolved credential (the
+    ///   variable, or the stored entry when the variable is unset) is missing or invalid.
+    /// - [`ConfigError::StoredCredential`] if the profile relies on the stored credential and it is
+    ///   missing or invalid.
     pub fn with_credentials(
         self,
         lookup: impl Fn(&CredentialSource) -> Option<String>,
     ) -> Result<ResolvedSettings, ConfigError> {
-        if self.format_version != 2 {
+        if self.format_version != FROZEN_SETTINGS_VERSION {
             return Err(ConfigError::Invalid(
                 "unsupported frozen settings; use a fresh store",
             ));
@@ -178,6 +206,10 @@ impl SettingsSnapshot {
 
 impl Config {
     /// Resolve connection overlays for selection/setup without reading credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::UnknownProvider`] if `provider` is not defined.
     pub fn connection_settings(
         &self,
         provider: &str,
@@ -197,11 +229,16 @@ impl Config {
         }
         Ok(connection)
     }
+    /// Chooses the store directory: the explicit path, then the configured store, then `.nouli`
+    /// under `home`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Invalid`] if the chosen path is empty.
     pub fn store_path(&self, home: &Path, explicit: Option<&Path>) -> Result<PathBuf, ConfigError> {
         let store = explicit
             .or(self.store.as_deref())
-            .map(Path::to_owned)
-            .unwrap_or_else(|| home.join(".nouli"));
+            .map_or_else(|| home.join(".nouli"), Path::to_owned);
         if store.as_os_str().is_empty() {
             return Err(ConfigError::Invalid("store"));
         }
@@ -209,6 +246,10 @@ impl Config {
     }
     /// CLI selection precedes request then session defaults. For workflow nodes,
     /// pass node selection as the override and the frozen run selection as layer 1.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`Config::resolve_snapshot`] or [`SettingsSnapshot::with_credentials`] error.
     pub fn resolve(
         &self,
         overrides: &RuntimeOverrides,
@@ -221,6 +262,18 @@ impl Config {
             .with_credentials(lookup)
     }
 
+    /// Resolves the selected provider and model into frozen settings without reading credentials.
+    ///
+    /// # Errors
+    ///
+    /// - Any [`Config::validate`] error.
+    /// - [`ConfigError::NoProviders`] if no provider is defined.
+    /// - [`ConfigError::MissingProvider`] or [`ConfigError::MissingModel`] if no layer selects a
+    ///   provider or a model.
+    /// - [`ConfigError::UnknownProvider`] if the selected provider is not defined.
+    /// - Any [`ProviderProfile::validate`] or [`ExecutionSettings::validate`] error for the
+    ///   resolved settings, such as a zero `max_parallel` override, or [`ConfigError::Invalid`] if
+    ///   the store path is empty.
     pub fn resolve_snapshot(
         &self,
         overrides: &RuntimeOverrides,
@@ -288,7 +341,7 @@ impl Config {
         execution.validate()?;
         let store = self.store_path(home, overrides.store.as_deref())?;
         Ok(SettingsSnapshot {
-            format_version: 2,
+            format_version: FROZEN_SETTINGS_VERSION,
             profile_name: name,
             profile,
             execution,
@@ -339,8 +392,8 @@ x-tenant = "model"
         let resolved = config
             .resolve(
                 &RuntimeOverrides::default(),
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
                 |_| Some("Bearer SECRET_VALUE".into()),
             )
@@ -652,8 +705,8 @@ reserved_output_tokens = 256
                     context_budget_tokens: budget,
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
             )
         };
@@ -704,8 +757,8 @@ reserved_output_tokens = 256
                     selection,
                     ..Default::default()
                 },
-                &Default::default(),
-                &Default::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
             )
         };
@@ -736,11 +789,11 @@ reserved_output_tokens = 256
             },
         )
         .unwrap();
-        assert!(
+        assert_eq!(
             crate::limits::ResolvedLimits::for_profile(&selected.profile)
                 .unwrap()
-                .budget
-                == 8192
+                .budget,
+            8192
         );
         for (request, session, expected) in [
             (None, None, "gpt-6-luna"),
@@ -753,7 +806,7 @@ reserved_output_tokens = 256
         ] {
             let selected = config
                 .resolve_snapshot(
-                    &Default::default(),
+                    &RuntimeOverrides::default(),
                     &ModelSelection {
                         provider: None,
                         model: request.map(str::to_owned),

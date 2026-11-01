@@ -9,6 +9,17 @@ use crate::{
 };
 use rusqlite::params;
 impl Ledger {
+    /// Interrupts every pending or running node and finishes the run as
+    /// interrupted.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Conflict`] or [`WorkflowError::Storage`] if the
+    ///   owner no longer holds the running workflow or the ledger is read-only.
+    /// - Returns any error from [`Ledger::record_workflow_progress`] or
+    ///   [`Ledger::finish_workflow`].
+    /// - Returns [`WorkflowError::Compile`] or [`WorkflowError::Snapshot`] if the
+    ///   frozen workflow or its stored events or outputs are inconsistent.
     pub fn interrupt_workflow(
         &mut self,
         owner: &WorkflowOwner,
@@ -25,7 +36,7 @@ impl Ledger {
                     message: "Workflow execution interrupted".into(),
                     retryable: false,
                 });
-                self.record_workflow_progress(owner, node, progress)?;
+                self.record_workflow_progress(owner, node, &progress)?;
             }
         }
         let snapshot = self.workflow_run(run)?;
@@ -45,11 +56,30 @@ impl Ledger {
         )
     }
 
+    /// Publishes the terminal result of a workflow run and settles its request
+    /// reservation.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Conflict`] or [`WorkflowError::Storage`] if the
+    ///   owner no longer holds the running workflow or the ledger is read-only.
+    /// - Returns [`WorkflowError::Conflict`] if `result` does not match the
+    ///   stored nodes, any node or attempt is still live, or the result status
+    ///   is neither the derived terminal status nor interrupted.
+    /// - Returns [`WorkflowError::Snapshot`] if the outputs or orders do not
+    ///   match the stored nodes or the request has no request ID, and
+    ///   [`WorkflowError::Compile`] if the frozen workflow does not compile.
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read or
+    ///   written.
+    /// - Returns [`WorkflowError::Conflict`] if the run or reservation changed
+    ///   owner or state concurrently.
     pub fn finish_workflow(
         &mut self,
         owner: &WorkflowOwner,
         result: &ScheduleResult,
     ) -> Result<super::StoredRun, WorkflowError> {
+        const VERIFY_SETTLED_WORKFLOW_ATTEMPTS: &str = "SELECT EXISTS(SELECT 1 FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND s.state IN ('pending','running'))";
+
         validate_owner(self, owner)?;
         let definition = &owner.frozen.definition;
         let current = self.workflow_run(definition.run)?;
@@ -62,7 +92,14 @@ impl Ledger {
         {
             return Err(WorkflowError::Conflict);
         }
-        let live:bool=self.connection.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND s.state IN ('pending','running'))",[definition.run.to_string()],|row|row.get(0)).map_err(|error|sql_error("verify settled workflow attempts",error))?;
+        let live: bool = self
+            .connection
+            .query_row(
+                VERIFY_SETTLED_WORKFLOW_ATTEMPTS,
+                [definition.run.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|error| sql_error("verify settled workflow attempts", &error))?;
         if live {
             return Err(WorkflowError::Conflict);
         }
@@ -110,13 +147,72 @@ impl Ledger {
             .request_id
             .as_deref()
             .ok_or(WorkflowError::Snapshot)?;
-        self.transaction::<_,StorageError>("finish workflow run",|tx| {
-            let changed=tx.execute("UPDATE workflow_runs SET state=?2,result_toon=?3 WHERE id=?1 AND state='running' AND owner_id=?4",params![definition.run.to_string(),run_name(result.status),Self::encode_payload(result)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("save workflow result",error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            let state=if result.status==RunStatus::Completed {"completed"} else {"interrupted"};
-            let changed=tx.execute("UPDATE request_reservations SET state=?2,result_toon=?3 WHERE request_id=?1 AND state='pending' AND owner_id=?4",params![key,state,Self::encode_payload(result)?,owner.session_guard.owner.to_string()]).map_err(|error|sql_error("save workflow replay result",error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) SELECT id,?2,state,frontier_toon,published_revision,?3 FROM workflow_runs WHERE id=?1",params![definition.run.to_string(),owner.round,Self::encode_payload(result)?]).map_err(|error|sql_error("append workflow round result",error))?;
-            event(tx,definition.run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,round:owner.round,kind:WorkflowEventKind::RunFinished,progress:None,node:None,node_status:None,run_status:Some(result.status),attempt:None,turn:None})?;Ok(())
+        self.transaction::<_, StorageError>("finish workflow run", |tx| {
+            persist_result(tx, owner, result, key)
         })?;
         self.workflow_run(definition.run)
     }
+}
+
+fn persist_result(
+    tx: &rusqlite::Transaction<'_>,
+    owner: &WorkflowOwner,
+    result: &ScheduleResult,
+    key: &str,
+) -> Result<(), StorageError> {
+    const SAVE_WORKFLOW_RESULT: &str = "UPDATE workflow_runs SET state=?2,result_toon=?3 WHERE id=?1 AND state='running' AND owner_id=?4";
+    const APPEND_WORKFLOW_ROUND_RESULT: &str = "INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) SELECT id,?2,state,frontier_toon,published_revision,?3 FROM workflow_runs WHERE id=?1";
+    let definition = &owner.frozen.definition;
+
+    let changed = tx
+        .execute(
+            SAVE_WORKFLOW_RESULT,
+            params![
+                definition.run.to_string(),
+                run_name(result.status),
+                Ledger::encode_payload(result)?,
+                owner.session_guard.owner.to_string()
+            ],
+        )
+        .map_err(|error| sql_error("save workflow result", &error))?;
+    if changed != 1 {
+        return Err(StorageError::Conflict);
+    }
+    let state = if result.status == RunStatus::Completed {
+        super::super::reservations::ReservationState::Completed
+    } else {
+        super::super::reservations::ReservationState::Interrupted
+    };
+    super::super::reservations::finish_workflow(
+        tx,
+        key,
+        state,
+        &Ledger::encode_payload(result)?,
+        owner.session_guard.owner,
+    )?;
+    tx.execute(
+        APPEND_WORKFLOW_ROUND_RESULT,
+        params![
+            definition.run.to_string(),
+            owner.round,
+            Ledger::encode_payload(result)?
+        ],
+    )
+    .map_err(|error| sql_error("append workflow round result", &error))?;
+    event(
+        tx,
+        definition.run,
+        &WorkflowEvent {
+            version: crate::decision::CONTRACT_VERSION,
+            round: owner.round,
+            kind: WorkflowEventKind::RunFinished,
+            progress: None,
+            node: None,
+            node_status: None,
+            run_status: Some(result.status),
+            attempt: None,
+            turn: None,
+        },
+    )?;
+    Ok(())
 }

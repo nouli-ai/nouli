@@ -48,6 +48,16 @@ pub enum GrammarError {
 }
 
 /// Parse one question written in the compact grammar.
+///
+/// # Errors
+///
+/// - [`GrammarError::MissingId`] or [`GrammarError::InvalidId`] if the ID before the colon is
+///   absent or invalid.
+/// - [`GrammarError::EmptyPrompt`] if the prompt is empty.
+/// - Another [`GrammarError`], such as [`GrammarError::Unbalanced`] or
+///   [`GrammarError::ChoiceCount`], if the trailing answer list is malformed, has the wrong number
+///   of items, or derives an empty or duplicate option ID.
+/// - [`GrammarError::Contract`] if the question fails [`Question::validate`].
 pub fn parse(line: &str) -> Result<Question, GrammarError> {
     let colon = line.find(':').ok_or(GrammarError::MissingId)?;
     let id = line[..colon].trim();
@@ -90,6 +100,7 @@ pub fn parse(line: &str) -> Result<Question, GrammarError> {
 /// For any question produced by [`parse`], `parse(&format(&q))` returns `q`.
 /// Detailed score levels are written by label, and choice option IDs are not
 /// written, so other questions may not round-trip exactly.
+#[must_use]
 pub fn format(question: &Question) -> String {
     let group = |open: char, close: char, items: Vec<&str>| {
         let items: Vec<String> = items.into_iter().map(item).collect();
@@ -102,17 +113,9 @@ pub fn format(question: &Question) -> String {
             ']',
             options.iter().map(|o| o.description.as_str()).collect(),
         ),
-        AnswerSpace::Score { levels } => group(
-            '<',
-            '>',
-            levels
-                .iter()
-                .map(|level| match level {
-                    Criterion::Text(text) => text.as_str(),
-                    Criterion::Detailed { label, .. } => label.as_str(),
-                })
-                .collect(),
-        ),
+        AnswerSpace::Score { levels } => {
+            group('<', '>', levels.iter().map(Criterion::label).collect())
+        }
     };
     format!("{}: {}{answers}", question.id, question.prompt)
 }
@@ -120,6 +123,7 @@ pub fn format(question: &Question) -> String {
 /// Derive a choice option ID from its label: letters and digits of any script
 /// are lowercased, and every other run of characters becomes one `_`. The ID is
 /// at most `MAX_ID` bytes.
+#[must_use]
 pub fn option_id(label: &str) -> String {
     let mut id = String::new();
     let mut gap = false;
@@ -271,7 +275,7 @@ fn items(
         out.push(value);
         while chars.next_if(|(_, c)| c.is_whitespace()).is_some() {}
         match chars.next() {
-            Some((_, ',')) => continue,
+            Some((_, ',')) => {}
             Some((i, c)) if c == close => return Ok((out, i + c.len_utf8())),
             Some((i, _)) => return Err(GrammarError::UnexpectedCharacter(offset + i)),
             None => return Err(GrammarError::Unbalanced(offset + start)),

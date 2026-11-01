@@ -125,18 +125,27 @@ fn distribution(values: impl Iterator<Item = f64>) -> Result<(), ContractError> 
     Ok(())
 }
 
+/// A score level index as a number on the score scale.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "score scales have a handful of levels, far below 2^52"
+)]
+fn level(index: usize) -> f64 {
+    index as f64
+}
+
 /// The lowest and highest expected level index over true distributions consistent with
 /// the reported probabilities: start every level at its lower bound, then hand the
 /// remaining mass to the lowest (or highest) levels first.
 fn expectation_range(probabilities: &[f64]) -> (f64, f64) {
     let lows: Vec<f64> = probabilities.iter().map(|p| bounds(*p).0).collect();
-    let floor: f64 = lows.iter().enumerate().map(|(i, p)| i as f64 * p).sum();
+    let floor: f64 = lows.iter().enumerate().map(|(i, p)| level(i) * p).sum();
     let slack = (1.0 - lows.iter().sum::<f64>()).max(0.0);
     let fill = |order: &mut dyn Iterator<Item = usize>| {
         let (mut left, mut expected) = (slack, floor);
         for i in order {
             let add = (bounds(probabilities[i]).1 - lows[i]).min(left);
-            expected += i as f64 * add;
+            expected += level(i) * add;
             left -= add;
         }
         expected
@@ -147,7 +156,58 @@ fn expectation_range(probabilities: &[f64]) -> (f64, f64) {
     )
 }
 
+/// The probability `distribution` gives to `option_id`.
+#[must_use]
+pub fn probability_of(distribution: &[OptionProbability], option_id: &str) -> Option<f64> {
+    distribution
+        .iter()
+        .find(|entry| entry.option_id == option_id)
+        .map(|entry| entry.probability)
+}
+
+/// The outcome for the question with `question_id`.
+#[must_use]
+pub fn outcome_for<'a>(
+    outcomes: &'a [QuestionOutcome],
+    question_id: &str,
+) -> Option<&'a QuestionOutcome> {
+    outcomes
+        .iter()
+        .find(|outcome| outcome.question_id() == question_id)
+}
+
 impl Answer {
+    /// The probability a choice answer gives to `option_id`; `None` for
+    /// other answer types or an option outside its distribution.
+    #[must_use]
+    pub fn probability_of(&self, option_id: &str) -> Option<f64> {
+        match self {
+            Self::Choice { distribution, .. } => probability_of(distribution, option_id),
+            Self::Noul { .. } | Self::Score { .. } => None,
+        }
+    }
+
+    /// The probability a choice answer gives to its selected option; `None`
+    /// for other answer types or a selection outside its distribution.
+    #[must_use]
+    pub fn selected_probability(&self) -> Option<f64> {
+        match self {
+            Self::Choice { selected, .. } => self.probability_of(selected),
+            Self::Noul { .. } | Self::Score { .. } => None,
+        }
+    }
+
+    /// Check that an answer matches the question's answer space.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from validating `question`.
+    /// - [`ContractError::AnswerType`] if the answer kind differs from the answer space.
+    /// - [`ContractError::Unknown`], [`ContractError::Duplicate`], or [`ContractError::Missing`]
+    ///   if a choice selection or distribution does not cover the options exactly once.
+    /// - [`ContractError::Number`] or [`ContractError::Distribution`] if a probability or
+    ///   score is out of range, or a distribution does not sum to one.
+    /// - [`ContractError::ScoreExpectation`] if a score is too far from its expectation.
     pub fn validate(&self, question: &Question) -> Result<(), ContractError> {
         question.validate()?;
         match (self, &question.answer_space) {
@@ -187,7 +247,7 @@ impl Answer {
                 if probabilities.len() != levels.len() {
                     return Err(ContractError::Missing("score.probabilities"));
                 }
-                if !value.is_finite() || !(0.0..=(levels.len() - 1) as f64).contains(value) {
+                if !value.is_finite() || !(0.0..=level(levels.len() - 1)).contains(value) {
                     return Err(ContractError::Number("score.value"));
                 }
                 distribution(probabilities.iter().copied())?;
@@ -204,12 +264,21 @@ impl Answer {
 }
 
 impl QuestionOutcome {
+    #[must_use]
     pub fn question_id(&self) -> &str {
         match self {
             Self::Answered { question_id, .. } | Self::Refused { question_id, .. } => question_id,
         }
     }
 
+    /// Check that a question outcome belongs to `question` and is well formed.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContractError::Unknown`] if the question ID differs.
+    /// - Any error from [`Answer::validate`].
+    /// - [`ContractError::Empty`] or [`ContractError::Number`] if confidence is empty,
+    ///   non-finite, or out of range, or a refusal reason is blank.
     pub fn validate(&self, question: &Question) -> Result<(), ContractError> {
         if self.question_id() != question.id {
             return Err(ContractError::Unknown("outcome.question_id"));
@@ -239,6 +308,23 @@ impl QuestionOutcome {
 }
 
 impl TurnOutcome {
+    /// The outcome for the question with `question_id`.
+    #[must_use]
+    pub fn outcome_for(&self, question_id: &str) -> Option<&QuestionOutcome> {
+        outcome_for(&self.outcomes, question_id)
+    }
+
+    /// Check that a turn outcome answers each requested question exactly once.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from validating `request`.
+    /// - [`ContractError::Version`] if the contract version differs.
+    /// - [`ContractError::Empty`] if a provider identity field is blank, or
+    ///   [`ContractError::Number`] if the usage cost is negative or non-finite.
+    /// - [`ContractError::Unknown`], [`ContractError::Duplicate`], or [`ContractError::Missing`]
+    ///   if outcomes do not cover the questions exactly once.
+    /// - Any error from [`QuestionOutcome::validate`].
     pub fn validate(&self, request: &TurnRequest) -> Result<(), ContractError> {
         request.validate()?;
         if self.version != CONTRACT_VERSION {
@@ -296,6 +382,27 @@ mod tests {
     }
 
     #[test]
+    fn accessors_find_outcomes_and_choice_probabilities() {
+        let (_, outcome) = fixture();
+        let travel = outcome.outcome_for("travel").unwrap();
+        assert_eq!(travel.question_id(), "travel");
+        assert!(outcome.outcome_for("missing").is_none());
+        assert_eq!(
+            outcome_for(&outcome.outcomes, "travel"),
+            Some(&outcome.outcomes[0])
+        );
+        let QuestionOutcome::Answered { answer, .. } = travel else {
+            panic!("the fixture answers travel");
+        };
+        assert_eq!(answer.selected_probability(), Some(0.7));
+        assert_eq!(answer.probability_of("flight"), Some(0.3));
+        assert_eq!(answer.probability_of("boat"), None);
+        let noul = Answer::Noul { probability: 0.4 };
+        assert_eq!(noul.selected_probability(), None);
+        assert_eq!(noul.probability_of("train"), None);
+    }
+
+    #[test]
     fn all_primitives_refusal_and_confidence_round_trip() {
         let (request, outcome) = fixture();
         outcome.validate(&request).unwrap();
@@ -339,9 +446,10 @@ mod tests {
             probabilities: vec![0.0, 0.5705, 0.43],
         };
         answer.validate(question).unwrap();
-        assert!(
-            matches!(answer, Answer::Score { probabilities, .. } if probabilities[1] == 0.5705)
-        );
+        let Answer::Score { probabilities, .. } = &answer else {
+            panic!("expected a score answer");
+        };
+        assert_eq!(probabilities, &[0.0, 0.5705, 0.43]);
         assert!(
             Answer::Score {
                 value: 1.43,

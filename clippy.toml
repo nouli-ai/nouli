@@ -1,0 +1,3 @@
+allowed-duplicate-crates = ["getrandom", "miniz_oxide", "syn", "windows-sys"]
+# Clap prints doc comments verbatim as --help text, so these stay unquoted there.
+doc-valid-idents = ["..", "SELECTOR@TURN_ID", "SESSION@TURN_ID", "WorkflowRequest"]

@@ -3,7 +3,7 @@ use super::{EngineError, workflow::WorkflowEngineError};
 use crate::{
     config::ConfigError,
     context::{builder::BuildError, projection::ProjectionError},
-    protocol::{ErrorCategory as Category, ErrorReport},
+    protocol::{ErrorCategory as Category, ErrorReport, OUTCOME_UNKNOWN},
     provider::ProviderError,
     storage::{
         StorageError, guards::GuardError, replay::ReplayError, sessions::SessionError,
@@ -12,12 +12,7 @@ use crate::{
     transport::TransportError,
 };
 pub(crate) fn message(category: Category, code: &str) -> ErrorReport {
-    ErrorReport {
-        category,
-        code: code.into(),
-        message: code.replace('_', " "),
-        retryable: false,
-    }
+    ErrorReport::new(category, code, code.replace('_', " "))
 }
 fn storage(error: &StorageError) -> ErrorReport {
     match error {
@@ -52,16 +47,19 @@ fn storage(error: &StorageError) -> ErrorReport {
     }
 }
 impl StorageError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         storage(self)
     }
 }
 impl SessionError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         session(self)
     }
 }
 impl crate::storage::inspection::InspectionError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         use crate::storage::inspection::InspectionError;
         match self {
@@ -141,6 +139,7 @@ fn turn(error: &TurnError) -> ErrorReport {
         TurnError::Session(error) => session(error),
         TurnError::Projection(error) => projection(error),
         TurnError::Conflict => message(Category::Conflict, "head_conflict"),
+        TurnError::WorkflowAttempt => message(Category::Internal, "workflow_attempt_misrouted"),
         _ => message(Category::Input, "invalid_turn"),
     }
 }
@@ -217,6 +216,7 @@ fn limit(error: &crate::limits::LimitError) -> ErrorReport {
     }
 }
 impl WorkflowError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
             Self::Storage(error) => storage(error),
@@ -228,21 +228,43 @@ impl WorkflowError {
             Self::Conflict => message(Category::Conflict, "workflow_conflict"),
             Self::AdvancedHead => message(Category::Conflict, "advanced_session_head"),
             Self::Snapshot => message(Category::Storage, "invalid_saved_workflow"),
+            Self::NotDurable => message(Category::Input, "workflow_not_durable"),
             Self::UnknownRun => message(Category::Input, "unknown_workflow"),
             Self::Compile(_) | Self::History(_) => message(Category::Input, "invalid_workflow"),
         }
     }
 }
+/// The one report for a provider failure, shared by saved attempts and final reports.
+pub(super) fn provider(error: &ProviderError) -> ErrorReport {
+    match error {
+        ProviderError::Limit(error) => limit(error),
+        ProviderError::Profile => message(Category::Configuration, "invalid_provider_profile"),
+        ProviderError::Transport(error) => match error {
+            TransportError::Authentication { .. } => {
+                message(Category::Authentication, "provider_authentication_failed")
+            }
+            TransportError::Canceled => message(Category::Interrupted, OUTCOME_UNKNOWN),
+            TransportError::Timeout => message(Category::Transport, OUTCOME_UNKNOWN),
+            TransportError::Capacity => message(Category::Capacity, "provider_capacity"),
+            TransportError::Capability => message(Category::Capability, "provider_capability"),
+            TransportError::Contract => message(Category::Contract, "provider_contract"),
+            _ => message(Category::Transport, "provider_transport_failed"),
+        },
+        _ => message(Category::Contract, "provider_contract"),
+    }
+}
 impl EngineError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
+            Self::Internal(_) => message(Category::Internal, "engine_internal"),
             Self::Workflow(error) => error.report(),
             Self::Config(error) => config(error),
-            Self::Storage(error) => storage(error),
+            Self::Storage(error)
+            | Self::Worker(crate::storage::worker::WorkerError::Storage(error)) => storage(error),
             Self::Session(error) => session(error),
             Self::Source(error) => source(error),
             Self::Turn(error) => turn(error),
-            Self::Worker(crate::storage::worker::WorkerError::Storage(error)) => storage(error),
             Self::Worker(_) => message(Category::Storage, "ledger_worker_stopped"),
             Self::Replay(error) => match error {
                 ReplayError::Storage(error) => storage(error),
@@ -253,6 +275,7 @@ impl EngineError {
                 ReplayError::Conflict | ReplayError::IntentConflict => {
                     message(Category::Conflict, "request_conflict")
                 }
+                ReplayError::UnknownRequest => message(Category::Input, "unknown_request"),
                 _ => message(Category::Input, "invalid_request"),
             },
             Self::InProgress { .. } => message(Category::Conflict, "request_in_progress"),
@@ -269,27 +292,7 @@ impl EngineError {
                 _ => message(Category::Input, "invalid_context"),
             },
             Self::Limit(error) => limit(error),
-            Self::Provider(error) => match error {
-                ProviderError::Limit(error) => limit(error),
-                ProviderError::Transport(error) => match error {
-                    TransportError::Authentication { .. } => {
-                        message(Category::Authentication, "provider_authentication_failed")
-                    }
-                    TransportError::Canceled => {
-                        message(Category::Interrupted, "provider_outcome_unknown")
-                    }
-                    TransportError::Timeout => {
-                        message(Category::Transport, "provider_outcome_unknown")
-                    }
-                    TransportError::Capacity => message(Category::Capacity, "provider_capacity"),
-                    TransportError::Capability => {
-                        message(Category::Capability, "provider_capability")
-                    }
-                    TransportError::Contract => message(Category::Contract, "provider_contract"),
-                    _ => message(Category::Transport, "provider_transport_failed"),
-                },
-                _ => message(Category::Contract, "provider_contract"),
-            },
+            Self::Provider(error) => provider(error),
             Self::History(error) => {
                 history(error).unwrap_or_else(|| message(Category::Input, "invalid_evaluation"))
             }
@@ -309,6 +312,7 @@ fn schedule(error: &crate::workflow::schedule::ScheduleError) -> ErrorReport {
     }
 }
 impl WorkflowEngineError {
+    #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
             Self::Engine(error) => error.report(),
@@ -338,6 +342,27 @@ mod tests {
         assert!(!report.retryable);
     }
     use super::*;
+    #[test]
+    fn specific_errors_keep_their_codes_ahead_of_catch_all_arms() {
+        for (report, code) in [
+            (
+                EngineError::Replay(ReplayError::UnknownRequest).report(),
+                "unknown_request",
+            ),
+            (
+                EngineError::Provider(ProviderError::Profile).report(),
+                "invalid_provider_profile",
+            ),
+            (WorkflowError::NotDurable.report(), "workflow_not_durable"),
+            (
+                turn(&TurnError::WorkflowAttempt),
+                "workflow_attempt_misrouted",
+            ),
+        ] {
+            assert_eq!(report.code, code);
+        }
+    }
+
     #[test]
     fn configuration_reports_identify_setup_errors_without_echoing_private_details() {
         for (error, code) in [

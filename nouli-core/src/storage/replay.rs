@@ -1,15 +1,16 @@
 //! Store-wide request reservations with frozen intent and explicit recovery.
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    Ledger, StorageError,
+    Ledger, StorageError, freeze_settings, freeze_store,
     guards::{self, FileGuard, GuardError, SessionGuard},
-    sessions::{Session, SessionError, insert_session, read_session},
+    reservations::{self, ReservationKind, ReservationState},
+    sessions::{self, SessionError},
     sql_error,
-    turns::{AttemptInput, AttemptProgress, AttemptStatus, PreparedAttempt, TurnError},
+    turns::{self, AttemptInput, AttemptProgress, AttemptStatus, PreparedAttempt, TurnError},
 };
 use crate::{
     codec,
@@ -20,7 +21,7 @@ use crate::{
         SourcePoint, StandingChanges,
     },
     identity::{Id, SessionSelector},
-    protocol::{ErrorCategory, ErrorReport},
+    protocol::{NOT_DISPATCHED, OUTCOME_UNKNOWN},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,6 +33,14 @@ pub struct FrozenRequest {
     pub session: Id,
     pub frontier: Vec<Id>,
     pub revision: i64,
+}
+
+/// Decode an owned request, validating its known frozen-settings field first.
+pub(super) fn decode_frozen_request(payload: &str) -> Result<FrozenRequest, StorageError> {
+    let value = codec::decode_value(payload.as_bytes(), codec::InputFormat::Toon)
+        .map_err(|_| StorageError::Payload)?;
+    super::validate_frozen_settings_version(value.get("settings").ok_or(StorageError::Payload)?)?;
+    serde_json::from_value(value).map_err(|_| StorageError::Payload)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,12 +75,22 @@ pub struct RequestOwner {
 }
 
 impl RequestOwner {
+    #[must_use]
     pub fn frozen(&self) -> &FrozenRequest {
         &self.frozen
     }
+    #[must_use]
     pub fn guard(&self) -> &SessionGuard {
         &self.session_guard
     }
+    /// Prepares the reserved request's attempt with the frozen intent and the
+    /// given manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplayError::Session`] if the session cannot be read,
+    /// [`ReplayError::Conflict`] if its head moved since the request was
+    /// frozen, or [`ReplayError::Turn`] if [`Ledger::prepare_attempt`] fails.
     pub fn prepare(
         &self,
         ledger: &mut Ledger,
@@ -98,6 +117,8 @@ impl RequestOwner {
 pub enum ReplayError {
     #[error("request ID is missing or empty")]
     MissingId,
+    #[error("no interrupted request has this request ID")]
+    UnknownRequest,
     #[error("request ID already identifies different intent")]
     IntentConflict,
     #[error("saved session head or request ownership changed")]
@@ -120,6 +141,11 @@ pub enum ReplayError {
 
 /// Presentation/config defaults are not part of submitted intent. Resolve
 /// explicit CLI provider/model overrides into request.model before this call.
+///
+/// # Errors
+///
+/// Returns [`ReplayError::History`] if the request is invalid, or
+/// [`ReplayError::Fingerprint`] if its intent cannot be hashed.
 pub fn fingerprint(request: &EvaluationRequest) -> Result<String, ReplayError> {
     request.validate()?;
     intent_hash(request)
@@ -153,48 +179,43 @@ fn intent_hash(request: &EvaluationRequest) -> Result<String, ReplayError> {
 struct Reservation {
     session: Id,
     fingerprint: String,
-    state: String,
+    state: ReservationState,
     frozen: FrozenRequest,
     result: Option<String>,
     recovery: Option<RecoveryKind>,
 }
 
 fn reservation(connection: &Connection, key: &str) -> Result<Option<Reservation>, ReplayError> {
-    let kind: Option<String> = connection
-        .query_row(
-            "SELECT kind FROM request_reservations WHERE request_id=?1",
-            [key],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| sql_error("read request kind", error))?;
-    if kind.as_deref().is_some_and(|kind| kind != "evaluation") {
+    if reservations::matches_kind(connection, key, ReservationKind::Evaluation)?
+        .is_some_and(|matches| !matches)
+    {
         return Err(ReplayError::IntentConflict);
     }
-    type ReservationRow = (
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-    );
-    let row:Option<ReservationRow>=connection.query_row("SELECT session_id,fingerprint,state,frozen_toon,result_toon,recovery_kind FROM request_reservations WHERE request_id=?1",[key],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?))).optional().map_err(|error|sql_error("read request reservation",error))?;
-    row.map(|(session, hash, state, frozen, result, recovery)| {
-        let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
-        let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
-        if frozen.session != session || intent_hash(&frozen.request)? != hash {
-            return Err(StorageError::Payload.into());
-        }
-        Ok(Reservation {
-            session,
-            fingerprint: hash,
-            state,
-            frozen,
-            result,
-            recovery: recovery.map(|s| Ledger::decode_payload(&s)).transpose()?,
-        })
-    })
+    let row = reservations::evaluation(connection, key)?;
+    row.map(
+        |reservations::EvaluationRow {
+             session,
+             fingerprint: hash,
+             state,
+             frozen,
+             result,
+             recovery,
+         }| {
+            let frozen = decode_frozen_request(&frozen)?;
+            let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
+            if frozen.session != session || intent_hash(&frozen.request)? != hash {
+                return Err(StorageError::Payload.into());
+            }
+            Ok(Reservation {
+                session,
+                fingerprint: hash,
+                state,
+                frozen,
+                result,
+                recovery: recovery.map(|s| Ledger::decode_payload(&s)).transpose()?,
+            })
+        },
+    )
     .transpose()
 }
 
@@ -224,10 +245,14 @@ fn interrupt(
     key: &str,
     saved: &Reservation,
 ) -> Result<RecoveryKind, ReplayError> {
-    if saved.state == "interrupted" {
+    const INSPECT_ORPHAN_ATTEMPTS: &str = "SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id";
+
+    if saved.state == ReservationState::Interrupted {
         return Ok(saved.recovery.unwrap_or(RecoveryKind::Interrupted));
     }
-    let mut statement=transaction.prepare("SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id").map_err(|error|sql_error("inspect orphan attempts",error))?;
+    let mut statement = transaction
+        .prepare(INSPECT_ORPHAN_ATTEMPTS)
+        .map_err(|error| sql_error("inspect orphan attempts", &error))?;
     let rows = statement
         .query_map([saved.session.to_string()], |row| {
             Ok((
@@ -237,9 +262,9 @@ fn interrupt(
                 row.get::<_, String>(3)?,
             ))
         })
-        .map_err(|error| sql_error("read orphan attempts", error))?
+        .map_err(|error| sql_error("read orphan attempts", &error))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| sql_error("read orphan rows", error))?;
+        .map_err(|error| sql_error("read orphan rows", &error))?;
     drop(statement);
     let mut kind = RecoveryKind::NeverDispatched;
     for (id, intent, state, progress) in rows {
@@ -254,7 +279,7 @@ fn interrupt(
                 if progress
                     .error
                     .as_ref()
-                    .is_some_and(|error| error.code == "provider_outcome_unknown")
+                    .is_some_and(|error| error.code == OUTCOME_UNKNOWN)
                 {
                     RecoveryKind::OutcomeUnknown
                 } else {
@@ -264,8 +289,8 @@ fn interrupt(
             "interrupted" => {
                 let progress: AttemptProgress = Ledger::decode_payload(&progress)?;
                 match progress.error.as_ref().map(|error| error.code.as_str()) {
-                    Some("provider_outcome_unknown") => RecoveryKind::OutcomeUnknown,
-                    Some("not_dispatched") => RecoveryKind::NeverDispatched,
+                    Some(OUTCOME_UNKNOWN) => RecoveryKind::OutcomeUnknown,
+                    Some(NOT_DISPATCHED) => RecoveryKind::NeverDispatched,
                     _ => RecoveryKind::Interrupted,
                 }
             }
@@ -275,31 +300,14 @@ fn interrupt(
         if recovery_priority(observed) > recovery_priority(kind) {
             kind = observed;
         }
-        if matches!(state.as_str(), "pending" | "running") {
-            let code = if state == "running" {
-                "provider_outcome_unknown"
-            } else {
-                "not_dispatched"
-            };
-            let progress = AttemptProgress {
-                state: AttemptStatus::Interrupted,
-                error: Some(ErrorReport {
-                    category: ErrorCategory::Interrupted,
-                    code: code.into(),
-                    message: "Request owner exited before finalization".into(),
-                    retryable: false,
-                }),
-            };
-            transaction
-                .execute(
-                    "UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1",
-                    [&id],
-                )
-                .map_err(|error| sql_error("mark orphan attempt", error))?;
-            transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![id,Ledger::encode_payload(&progress)?]).map_err(|error|sql_error("record orphan attempt",error))?;
-        }
+        turns::interrupt_attempt(
+            transaction,
+            Id::try_from(id).map_err(|_| StorageError::Payload)?,
+            AttemptStatus::parse(&state)?,
+            "Request owner exited before finalization",
+        )?;
     }
-    transaction.execute("UPDATE request_reservations SET state='interrupted',recovery_kind=?2 WHERE request_id=?1 AND state='pending'",params![key,Ledger::encode_payload(&kind)?]).map_err(|error|sql_error("record interrupted request",error))?;
+    reservations::interrupt_evaluation(transaction, key, &Ledger::encode_payload(&kind)?)?;
     Ok(kind)
 }
 
@@ -311,11 +319,11 @@ pub(super) fn validate_reserved_input(
     let Some(key) = &input.request_id else {
         return Ok(());
     };
-    let row:Option<(String,String,String)>=ledger.connection.query_row("SELECT owner_id,state,frozen_toon FROM request_reservations WHERE request_id=?1 AND session_id=?2",params![key,guard.session.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error|sql_error("validate request owner",error))?;
+    let row = reservations::owner(&ledger.connection, key, guard.session)?;
     let (owner, state, frozen) = row.ok_or(StorageError::Conflict)?;
-    let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
+    let frozen = decode_frozen_request(&frozen)?;
     if owner != guard.owner.to_string()
-        || state != "pending"
+        || state != ReservationState::Pending
         || input.request != frozen.request.turn
         || input.standing != frozen.request.standing
         || input.updates != frozen.request.updates
@@ -339,6 +347,14 @@ pub(super) fn validate_reserved_input(
 
 impl Ledger {
     /// Inspect validated frozen settings without acquiring ownership or credentials.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`fingerprint`] for the request.
+    /// - [`ReplayError::IntentConflict`] if the request ID already identifies
+    ///   different intent or a non-evaluation request.
+    /// - [`ReplayError::Storage`] or [`ReplayError::Fingerprint`] if the SQLite
+    ///   query fails or the saved reservation is invalid.
     pub fn saved_request(
         &self,
         request: &EvaluationRequest,
@@ -359,9 +375,32 @@ impl Ledger {
     /// The frozen request saved under a request ID, whatever its intent. A
     /// caller that builds a request from the ledger's current state uses it to
     /// rebuild the same request when the ID was already used.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplayError::IntentConflict`] if the ID identifies a
+    /// non-evaluation request, or [`ReplayError::Storage`] or
+    /// [`ReplayError::Fingerprint`] if the SQLite query fails or the saved
+    /// reservation is invalid.
     pub fn saved_request_by_id(&self, key: &str) -> Result<Option<FrozenRequest>, ReplayError> {
         Ok(reservation(&self.connection, key)?.map(|saved| saved.frozen))
     }
+    /// Reserves a request ID with frozen intent and settings, or reports the
+    /// existing reservation's completed, in-progress, or interrupted state.
+    ///
+    /// # Errors
+    ///
+    /// - [`ReplayError::MissingId`] if the request ID is missing or blank.
+    /// - [`ReplayError::History`] or [`ReplayError::Fingerprint`] if the
+    ///   request is invalid or cannot be hashed.
+    /// - [`ReplayError::IntentConflict`] if the ID already identifies
+    ///   different intent.
+    /// - [`ReplayError::Guard`] if the ledger is read-only or another writer
+    ///   owns the session.
+    /// - [`ReplayError::Session`] or [`ReplayError::Source`] if the selected
+    ///   session or its sources cannot be resolved or created.
+    /// - [`ReplayError::Storage`] if the settings are invalid, the store path
+    ///   cannot be resolved, or the SQLite write fails.
     pub fn accept_request(
         &mut self,
         request: &EvaluationRequest,
@@ -369,6 +408,22 @@ impl Ledger {
     ) -> Result<RequestDecision, ReplayError> {
         self.request_decision(request, Some(settings), false)
     }
+    /// Retakes ownership of an interrupted reservation for the same request
+    /// under its frozen intent.
+    ///
+    /// # Errors
+    ///
+    /// - [`ReplayError::MissingId`] if the request ID is missing or blank.
+    /// - [`ReplayError::UnknownRequest`] if no reservation exists for it.
+    /// - [`ReplayError::History`] or [`ReplayError::Fingerprint`] if the
+    ///   request is invalid or cannot be hashed.
+    /// - [`ReplayError::IntentConflict`] if the ID identifies different intent.
+    /// - [`ReplayError::Guard`] if the ledger is read-only or another writer
+    ///   owns the session.
+    /// - [`ReplayError::Conflict`] if the session head moved since the request
+    ///   was frozen.
+    /// - [`ReplayError::Session`] or [`ReplayError::Storage`] if reading the
+    ///   session or the SQLite write fails.
     pub fn retry_interrupted_request(
         &mut self,
         request: &EvaluationRequest,
@@ -396,106 +451,147 @@ impl Ledger {
         }
         if existing
             .as_ref()
-            .is_some_and(|saved| saved.state == "completed")
+            .is_some_and(|saved| saved.state == ReservationState::Completed)
         {
             return completed(existing.ok_or(StorageError::Payload)?);
         }
-        let lock_key = format!(
-            "request-{}",
-            codec::fingerprint(&key).map_err(|_| ReplayError::Fingerprint)?
-        );
-        let request_guard = match guards::lock(self, &lock_key) {
-            Ok(guard) => guard,
-            Err(GuardError::WriterActive) => {
-                return Ok(RequestDecision::InProgress {
-                    session: existing.map(|saved| saved.session),
-                });
-            }
-            Err(error) => return Err(error.into()),
+        let Some(request_guard) =
+            reservations::lock_request(self, key).map_err(|error| match error {
+                reservations::LockError::Fingerprint => ReplayError::Fingerprint,
+                reservations::LockError::Guard(error) => ReplayError::Guard(error),
+            })?
+        else {
+            return Ok(RequestDecision::InProgress {
+                session: existing.map(|saved| saved.session),
+            });
         };
         if let Some(saved) = reservation(&self.connection, key)? {
-            if saved.fingerprint != hash {
-                return Err(ReplayError::IntentConflict);
-            }
-            if saved.state == "completed" {
-                return completed(saved);
-            }
-            let kind = self
-                .transaction::<_, ReplayError>("recover exited owner", |transaction| {
-                    interrupt(transaction, key, &saved)
-                })?;
-            if !retry {
-                return Ok(RequestDecision::Interrupted {
-                    kind,
-                    frozen: Box::new(saved.frozen),
-                });
-            }
-            let guard = guards::acquire_session(self, saved.session)?;
-            let current = self.session(&SessionSelector::Id(saved.session))?;
-            if current.frontier != saved.frozen.frontier
-                || current.revision != saved.frozen.revision
-            {
-                return Err(ReplayError::Conflict);
-            }
-            self.transaction::<_,StorageError>("retry original reservation",|transaction| {
-                let changed=transaction.execute("UPDATE request_reservations SET owner_id=?2,state='pending',recovery_kind=NULL WHERE request_id=?1 AND state='interrupted'",params![key,guard.owner.to_string()]).map_err(|error|sql_error("reserve explicit retry",error))?;
-                if changed!=1 {return Err(StorageError::Conflict);}
-                Ok(())
-            })?;
-            return Ok(RequestDecision::Accepted(Box::new(RequestOwner {
-                key: key.into(),
-                frozen: saved.frozen,
-                session_guard: guard,
-                _request_guard: request_guard,
-            })));
+            return self.resume_reservation(key, &hash, saved, retry, request_guard);
         }
         if retry {
-            return Err(ReplayError::MissingId);
+            return Err(ReplayError::UnknownRequest);
         }
         let mut settings = settings.ok_or(StorageError::Payload)?;
-        settings
-            .profile
-            .validate()
-            .map_err(|_| StorageError::Payload)?;
-        settings
-            .execution
-            .validate()
-            .map_err(|_| StorageError::Payload)?;
-        settings.store = std::fs::canonicalize(self.path().parent().ok_or(StorageError::Payload)?)
-            .map_err(|source| StorageError::Io {
-                operation: "freeze store path",
-                path: self.path().to_owned(),
-                source,
-            })?;
-        let (id, name, new) = match &request.session {
-            SessionSelection::Continue { session } => (self.session(session)?.id, None, false),
-            SessionSelection::New { name } | SessionSelection::From { name, .. } => {
-                (Id::generate(), name.clone(), true)
-            }
-        };
-        let guard = guards::acquire_session(self, id)?;
-        let frozen=self.transaction::<_,ReplayError>("accept unique request",|transaction| {
-            let mut current=if new {Session {id,name,defaults:ModelSelection {provider:Some(settings.profile_name.clone()),model:Some(settings.profile.model.clone())},frontier:vec![],revision:0}} else {read_session(transaction,&SessionSelector::Id(id))?};
-            let captured=super::sources::resolve_selection(transaction,&request.session,&current)?;
-            if new {insert_session(transaction,&mut current,&captured)?;}
-            let frozen=FrozenRequest {request:request.clone(),settings,sources:captured,session:id,frontier:current.frontier,revision:current.revision};
-            transaction.execute("INSERT INTO request_reservations(session_id,request_id,fingerprint,owner_id,state,frozen_toon) VALUES(?1,?2,?3,?4,'pending',?5)",params![id.to_string(),key,hash,guard.owner.to_string(),Ledger::encode_payload(&frozen)?]).map_err(|error|sql_error("reserve unique request",error))?;
-            Ok(frozen)
-        })?;
-        Ok(RequestDecision::Accepted(Box::new(RequestOwner {
-            key: key.into(),
-            frozen,
-            session_guard: guard,
-            _request_guard: request_guard,
-        })))
+        freeze_settings(&settings).map_err(|_| StorageError::Payload)?;
+        settings.store = freeze_store(self, "freeze store path")?;
+        self.reserve_new_request(request, key, &hash, settings, request_guard)
     }
+
+    /// Settles a reservation seen under the request lock: reports it completed
+    /// or interrupted, or, for an explicit retry, retakes its ownership.
+    fn resume_reservation(
+        &mut self,
+        key: &str,
+        hash: &str,
+        saved: Reservation,
+        retry: bool,
+        request_guard: FileGuard,
+    ) -> Result<RequestDecision, ReplayError> {
+        if saved.fingerprint != hash {
+            return Err(ReplayError::IntentConflict);
+        }
+        if saved.state == ReservationState::Completed {
+            return completed(saved);
+        }
+        let kind = self.transaction::<_, ReplayError>("recover exited owner", |transaction| {
+            interrupt(transaction, key, &saved)
+        })?;
+        if !retry {
+            return Ok(RequestDecision::Interrupted {
+                kind,
+                frozen: Box::new(saved.frozen),
+            });
+        }
+        self.retake_interrupted_reservation(key, saved, request_guard)
+    }
+
+    /// Reassigns an interrupted reservation to a new owner, provided the
+    /// session head has not moved since the request was frozen.
+    fn retake_interrupted_reservation(
+        &mut self,
+        key: &str,
+        saved: Reservation,
+        request_guard: FileGuard,
+    ) -> Result<RequestDecision, ReplayError> {
+        let guard = guards::acquire_session(self, saved.session)?;
+        let current = self.session(&SessionSelector::Id(saved.session))?;
+        if current.frontier != saved.frozen.frontier || current.revision != saved.frozen.revision {
+            return Err(ReplayError::Conflict);
+        }
+        self.transaction::<_, StorageError>("retry original reservation", |transaction| {
+            reservations::reclaim_evaluation(transaction, key, guard.owner)
+        })?;
+        Ok(accepted(key, saved.frozen, guard, request_guard))
+    }
+
+    /// Reserves a request ID that has never been used: resolves or creates the
+    /// target session, captures its sources, and saves the frozen request.
+    fn reserve_new_request(
+        &mut self,
+        request: &EvaluationRequest,
+        key: &str,
+        hash: &str,
+        settings: SettingsSnapshot,
+        request_guard: FileGuard,
+    ) -> Result<RequestDecision, ReplayError> {
+        let target = sessions::target(self, &request.session)?;
+        let id = target.id;
+        let guard = guards::acquire_session(self, id)?;
+        let frozen =
+            self.transaction::<_, ReplayError>("accept unique request", |transaction| {
+                let (current, captured) = sessions::open_target::<ReplayError>(
+                    transaction,
+                    target,
+                    &request.session,
+                    ModelSelection {
+                        provider: Some(settings.profile_name.clone()),
+                        model: Some(settings.profile.model.clone()),
+                    },
+                )?;
+                let frozen = FrozenRequest {
+                    request: request.clone(),
+                    settings,
+                    sources: captured,
+                    session: id,
+                    frontier: current.frontier,
+                    revision: current.revision,
+                };
+                reservations::insert_evaluation(
+                    transaction,
+                    frozen.session,
+                    key,
+                    hash,
+                    guard.owner,
+                    &Ledger::encode_payload(&frozen)?,
+                )?;
+                Ok(frozen)
+            })?;
+        Ok(accepted(key, frozen, guard, request_guard))
+    }
+}
+
+fn accepted(
+    key: &str,
+    frozen: FrozenRequest,
+    session_guard: SessionGuard,
+    request_guard: FileGuard,
+) -> RequestDecision {
+    RequestDecision::Accepted(Box::new(RequestOwner {
+        key: key.into(),
+        frozen,
+        session_guard,
+        _request_guard: request_guard,
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConnectionSettings;
+    use crate::config::ModelSettings;
     use crate::config::{ExecutionSettings, OutputFormat, Protocol, ProviderProfile};
     use crate::history::SourceSelection;
+    use crate::protocol::{ErrorCategory, ErrorReport};
     use crate::storage::OpenMode;
 
     struct Store(std::path::PathBuf);
@@ -519,7 +615,7 @@ mod tests {
     }
     fn request() -> EvaluationRequest {
         EvaluationRequest {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             turn: fixture().request,
             session: SessionSelection::New { name: None },
             updates: vec![],
@@ -533,8 +629,8 @@ mod tests {
             format_version: 2,
             profile_name: "fixture".into(),
             profile: ProviderProfile {
-                connection: Default::default(),
-                limits: Default::default(),
+                connection: ConnectionSettings::default(),
+                limits: ModelSettings::default(),
                 protocol: Protocol::SystemOne,
                 base_url: "http://127.0.0.1:8080".into(),
                 model: "offline".into(),
@@ -566,7 +662,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 attempt.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -584,6 +680,82 @@ mod tests {
                 row.get(0)
             })
             .unwrap()
+    }
+
+    #[test]
+    fn tampered_frozen_versions_keep_the_unsupported_settings_report() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let owner = accepted(ledger.accept_request(&request(), settings(&store)).unwrap());
+        let mut frozen = serde_json::to_value(owner.frozen()).unwrap();
+        for version in [None, Some(serde_json::json!(0)), Some(serde_json::json!(3))] {
+            let settings = frozen["settings"].as_object_mut().unwrap();
+            if let Some(version) = version {
+                settings.insert("format_version".into(), version);
+            } else {
+                settings.remove("format_version");
+            }
+            let payload = Ledger::encode_payload(&frozen).unwrap();
+            let error = decode_frozen_request(&payload).unwrap_err();
+            assert_eq!(error.report().code, "unsupported_frozen_settings");
+            let snapshot_payload = Ledger::encode_payload(&frozen["settings"]).unwrap();
+            let error = Ledger::decode_payload::<SettingsSnapshot>(&snapshot_payload).unwrap_err();
+            assert_eq!(error.report().code, "invalid_saved_payload");
+            let error = Ledger::decode_settings(&snapshot_payload).unwrap_err();
+            assert_eq!(error.report().code, "unsupported_frozen_settings");
+            let workflow_payload = Ledger::encode_payload(&vec![&frozen["settings"]]).unwrap();
+            let error = super::super::workflows::decode_settings(&workflow_payload).unwrap_err();
+            assert_eq!(error.report().code, "unsupported_frozen_settings");
+        }
+    }
+
+    #[test]
+    fn accepted_request_json_matches_the_string_state_export() {
+        use super::super::inspection::AcceptedRequest;
+
+        #[derive(Serialize)]
+        struct PreviousAcceptedRequest<'a> {
+            request_id: &'a str,
+            state: &'a str,
+            frozen: &'a FrozenRequest,
+        }
+
+        let store = Store::new();
+        let mut ledger = store.open();
+        let request = request();
+        let owner = accepted(ledger.accept_request(&request, settings(&store)).unwrap());
+        for (state, previous_state) in [
+            (ReservationState::Pending, "pending"),
+            (ReservationState::Completed, "completed"),
+            (ReservationState::Interrupted, "interrupted"),
+        ] {
+            let current = AcceptedRequest {
+                request_id: "stable-request".into(),
+                state,
+                frozen: owner.frozen.clone(),
+            };
+            let previous = PreviousAcceptedRequest {
+                request_id: "stable-request",
+                state: previous_state,
+                frozen: owner.frozen(),
+            };
+            let json = serde_json::to_vec(&current).unwrap();
+            assert_eq!(json, serde_json::to_vec(&previous).unwrap());
+            assert_eq!(
+                serde_json::from_slice::<AcceptedRequest>(&json).unwrap(),
+                current
+            );
+        }
+    }
+
+    #[test]
+    fn retrying_an_unknown_request_id_is_not_reported_as_missing() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        assert!(matches!(
+            ledger.retry_interrupted_request(&request()),
+            Err(ReplayError::UnknownRequest)
+        ));
     }
 
     #[test]
@@ -657,7 +829,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 pending.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -693,7 +865,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 a.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -703,7 +875,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 a.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Failed,
                     error: Some(ErrorReport {
                         category: ErrorCategory::Transport,
@@ -729,7 +901,7 @@ mod tests {
             .record_attempt_progress(
                 owner.guard(),
                 b.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -765,7 +937,7 @@ mod tests {
             .unwrap();
         let guard = ledger.session_guard(source.id).unwrap();
         let input = || AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: fixture().request,
             updates: vec![],
             manifest: fixture().manifest,

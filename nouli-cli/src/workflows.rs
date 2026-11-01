@@ -10,13 +10,12 @@ use clap::Subcommand;
 use input::RunArgs;
 use nouli_core::{
     codec,
-    config::resolve::{RuntimeOverrides, select_model},
     engine::{
         Engine,
         execution::{NativeProvider, TokioClock},
         workflow::{WorkflowEngineError, WorkflowInput},
     },
-    history::{ModelSelection, SessionSelection},
+    history::SessionSelection,
     identity::Id,
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, InspectionReference, Report, ResultEnvelope},
@@ -24,7 +23,7 @@ use nouli_core::{
         Ledger, OpenMode,
         worker::{LedgerWorker, WorkerError},
     },
-    workflow::{RunMode, WorkflowRequest},
+    workflow::RunMode,
 };
 use std::{io::Write, sync::Arc};
 use thiserror::Error;
@@ -33,16 +32,13 @@ use tokio_util::sync::CancellationToken;
 pub(crate) enum Command {
     Run(RunArgs),
     Show {
-        #[arg(value_parser=id)]
+        #[arg(value_parser=crate::selection::id)]
         run: Id,
     },
     Resume {
-        #[arg(value_parser=id)]
+        #[arg(value_parser=crate::selection::id)]
         run: Id,
     },
-}
-fn id(value: &str) -> Result<Id, nouli_core::identity::IdentityError> {
-    Id::try_from(value.to_owned())
 }
 #[derive(Debug, Error)]
 pub(crate) enum WorkflowCliError {
@@ -113,25 +109,20 @@ pub(crate) fn needs_config(command: &Command) -> bool {
     matches!(command, Command::Run(_))
 }
 /// Runs the commands behind the credentials the run's nodes will use, before
-/// the engine asks for them; see `evaluate::fetch_credential`.
+/// the engine asks for them; see `evaluate::fetch_credential`. The engine plans
+/// the node settings, so a continued session's model defaults and a replayed
+/// run's saved settings choose the providers here exactly as they do in the run.
 async fn fetch_credentials(
     settings: &Settings,
-    overrides: &RuntimeOverrides,
-    request: &WorkflowRequest,
+    engine: &Engine<NativeProvider, ByteCounter, TokioClock>,
+    worker: Option<&LedgerWorker>,
+    input: &WorkflowInput<'_>,
     cancel: &CancellationToken,
 ) {
-    let run_model = select_model(&[&overrides.selection, &request.workflow.model]);
-    for node in &request.workflow.nodes {
-        let mut node_overrides = overrides.clone();
-        node_overrides.selection = node.model.clone();
-        let Ok(snapshot) = settings.config.resolve_snapshot(
-            &node_overrides,
-            &run_model,
-            &ModelSelection::default(),
-            &settings.home,
-        ) else {
-            continue;
-        };
+    let Ok(snapshots) = engine.planned_workflow_settings(worker, input).await else {
+        return;
+    };
+    for snapshot in snapshots {
         if snapshot.profile.api_key_env.is_some() || snapshot.profile.stored_credential {
             settings
                 .credentials
@@ -163,26 +154,9 @@ async fn execute(
         request.as_ref().map(|request| &request.session),
         Some(SessionSelection::New { .. })
     );
-    let worker = if mode == Some(RunMode::Ephemeral) && fresh {
-        None
-    } else {
-        Some(
-            LedgerWorker::open(
-                settings.store.clone(),
-                if mode == Some(RunMode::Ephemeral) {
-                    OpenMode::ReadOnlyExisting
-                } else {
-                    OpenMode::ReadWriteCreate
-                },
-            )
-            .await?,
-        )
-    };
-    let engine = Arc::new(Engine {
-        provider: NativeProvider,
-        counter: ByteCounter,
-        clock: TokioClock,
-    });
+    let worker =
+        crate::evaluate::ledger_worker(settings, mode == Some(RunMode::Ephemeral), fresh).await?;
+    let engine = Arc::new(crate::evaluate::engine());
     let cancel = CancellationToken::new();
     let sink = Arc::new(
         events::Output::new(format == Format::Jsonl, cancel.clone())
@@ -197,17 +171,18 @@ async fn execute(
             Command::Run(args) => {
                 let request = request.as_ref().ok_or(boundary::InputError::Shape)?;
                 let overrides = args.overrides(settings);
-                fetch_credentials(settings, &overrides, request, &cancel).await;
+                let input = WorkflowInput {
+                    request,
+                    config: &settings.config,
+                    overrides: &overrides,
+                    home: &settings.home,
+                };
+                fetch_credentials(settings, &engine, worker.as_ref(), &input, &cancel).await;
                 Ok::<ResultEnvelope, WorkflowCliError>(
                     engine
                         .evaluate_workflow_report(
                             worker.as_ref(),
-                            WorkflowInput {
-                                request,
-                                config: &settings.config,
-                                overrides: &overrides,
-                                home: &settings.home,
-                            },
+                            input,
                             lookup,
                             cancel.clone(),
                             sink,
@@ -227,17 +202,14 @@ async fn execute(
             Command::Show { .. } => Err(boundary::InputError::Shape.into()),
         }
     };
-    tokio::pin!(evaluation);
-    tokio::select! {biased;result=&mut evaluation=>result,signal=tokio::signal::ctrl_c()=>{cancel.cancel();let result=evaluation.await;if let Err(error)=signal {return Err(WorkflowCliError::Signal(error));}result}}
+    crate::evaluate::cancel_on_interrupt(evaluation, tokio::signal::ctrl_c(), &cancel)
+        .await
+        .map_err(WorkflowCliError::Signal)?
 }
+/// Runs a workflow command. `format` is never JSONL for `Command::Show`: the
+/// caller resolves `show` with `render::resolve_report_format`.
 pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 {
     if let Command::Show { run } = command {
-        if format == Format::Jsonl {
-            return output_error(
-                crate::inspect::input_error("Workflow inspection supports text, JSON, or TOON"),
-                format,
-            );
-        }
         let result = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
             .map_err(crate::inspect::InspectError::from)
             .and_then(|ledger| {
@@ -248,12 +220,13 @@ pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 
             .and_then(|inspection| {
                 let value =
                     codec::to_value(&inspection).map_err(crate::inspect::InspectError::from)?;
-                crate::inspect::write(
+                render::labelled(
                     "Saved workflow, recovery receipts, and ordered history",
-                    value,
+                    &value,
                     &mut std::io::stdout().lock(),
                     format,
                 )
+                .map_err(crate::inspect::InspectError::from)
             });
         return match result {
             Ok(()) => 0,

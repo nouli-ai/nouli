@@ -5,40 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::decision::{AnswerSpace, ChoiceOption, ContractError, Criterion, Question};
 use unicode_segmentation::UnicodeSegmentation;
 
-/// A question's answer type, chosen with Shift-Tab.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
-    Noul,
-    Choice,
-    Score,
-}
-
-impl Kind {
-    pub(super) fn tone(self) -> crate::palette::Tone {
-        match self {
-            Self::Noul => crate::palette::Tone::Noul,
-            Self::Choice => crate::palette::Tone::Choice,
-            Self::Score => crate::palette::Tone::Score,
-        }
-    }
-    pub(super) const ALL: [Kind; 3] = [Kind::Noul, Kind::Choice, Kind::Score];
-
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Kind::Noul => "Yes / No",
-            Kind::Choice => "Choose one",
-            Kind::Score => "Score",
-        }
-    }
-
-    fn next(self) -> Self {
-        match self {
-            Kind::Noul => Kind::Choice,
-            Kind::Choice => Kind::Score,
-            Kind::Score => Kind::Noul,
-        }
-    }
-}
+pub(super) use crate::palette::Tone as Kind;
 
 /// The parts of the form that Tab moves between.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -274,13 +241,13 @@ impl Form {
     pub(super) fn tab(&mut self, facts: &mut Vec<String>) {
         match self.row {
             Row::Question if self.kind != Kind::Noul && !self.options.is_empty() => {
-                self.go(Row::Option(0), facts)
+                self.go(Row::Option(0), facts);
             }
             Row::Option(index) if index + 1 < self.options.len() => {
-                self.go(Row::Option(index + 1), facts)
+                self.go(Row::Option(index + 1), facts);
             }
             Row::Option(index) if self.options[index].trim().is_empty() => {
-                self.focus(Section::State, facts)
+                self.focus(Section::State, facts);
             }
             Row::Option(_) => self.add_option(facts),
             _ => self.next_section(facts),

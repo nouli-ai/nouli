@@ -3,7 +3,10 @@ use super::{App, Row, Status};
 use crate::render;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::{
-    context::{ContextRecord, ContextUpdate},
+    context::{
+        ContextRecord, ContextUpdate,
+        evidence::{self, DecisionReference, EvidenceError, marker::MarkerKind},
+    },
     identity::Id,
     outcome::{Answer, QuestionOutcome},
     storage::{
@@ -50,20 +53,33 @@ pub(super) struct Picker {
 
 pub(super) struct Binding {
     pub record: ContextRecord,
-    pub reference: String,
+    pub snapshot: DecisionReference,
     pub label: String,
 }
 
 impl Binding {
-    pub fn read(record: &ContextRecord) -> Option<Self> {
-        let value = &record.value.value()["nouli_decision_reference"];
-        Some(Self {
+    /// The binding a saved-answer reference record holds, or `None` for any
+    /// other record. A reference saved without a label (for example by a
+    /// library caller) is shown with a generic one.
+    pub fn read(record: &ContextRecord) -> Result<Option<Self>, EvidenceError> {
+        let Some(snapshot) = record.as_decision_reference()? else {
+            return Ok(None);
+        };
+        let label = snapshot.label.as_deref().unwrap_or(UNLABELED);
+        Ok(Some(Self {
             record: record.clone(),
-            reference: value["reference"].as_str()?.to_owned(),
-            label: render::image_labels(&render::clean(value["label"].as_str()?)),
-        })
+            label: render::image_labels(&render::clean(label)),
+            snapshot,
+        }))
+    }
+
+    /// The `[decision:UUID]` marker that draft text uses to cite it.
+    pub fn reference(&self) -> &str {
+        &self.snapshot.reference
     }
 }
+
+const UNLABELED: &str = "@saved answer";
 
 impl References {
     pub fn in_directory(root: Option<PathBuf>) -> Self {
@@ -176,22 +192,15 @@ pub(super) fn describe_answer(
                 };
                 format!("{value:.2} / {max}")
             }
-            Answer::Choice {
-                selected,
-                distribution,
-            } => {
+            Answer::Choice { selected, .. } => {
                 let label = match &question.answer_space {
                     nouli_core::decision::AnswerSpace::Choice { options } => options
                         .iter()
                         .find(|o| &o.id == selected)
-                        .map(|o| o.description.as_str())
-                        .unwrap_or(selected),
+                        .map_or(selected.as_str(), |o| o.description.as_str()),
                     _ => selected,
                 };
-                let probability = distribution
-                    .iter()
-                    .find(|o| &o.option_id == selected)
-                    .map_or(0.0, |o| o.probability);
+                let probability = answer.selected_probability().unwrap_or(0.0);
                 format!("{label} · {probability:.2}")
             }
         },
@@ -343,12 +352,12 @@ impl App<'_> {
                 .iter()
                 .enumerate()
                 .flat_map(|(i, b)| {
-                    text.match_indices(&b.reference).map(move |(at, _)| {
+                    text.match_indices(b.reference()).map(move |(at, _)| {
                         let start = text[..at]
                             .strip_suffix(' ')
                             .and_then(|prefix| prefix.strip_suffix(&b.label))
                             .map_or(at, str::len);
-                        let end = at + b.reference.len();
+                        let end = at + b.reference().len();
                         let distance = if cursor < start {
                             start - cursor
                         } else {
@@ -388,7 +397,7 @@ impl App<'_> {
                 self.references.preview_scroll = self
                     .references
                     .preview_scroll
-                    .saturating_sub(self.references.preview_page.max(1))
+                    .saturating_sub(self.references.preview_page.max(1));
             }
             KeyCode::PageDown if picker.expanded => {
                 self.references.preview_scroll = self
@@ -410,10 +419,10 @@ impl App<'_> {
                 return false;
             }
             KeyCode::Char('s') if control => {
-                self.status = Some(Status::info("Choose a result, or Esc to keep the text."))
+                self.status = Some(Status::info("Choose a result, or Esc to keep the text."));
             }
             KeyCode::F(5) => {
-                self.status = Some(Status::info("Choose a result, or Esc to keep the text."))
+                self.status = Some(Status::info("Choose a result, or Esc to keep the text."));
             }
             _ => return false,
         }
@@ -463,13 +472,10 @@ impl App<'_> {
         let Some(picker) = self.references.picker.take() else {
             return;
         };
-        let existing = self.references.bindings.iter().position(|b| {
-            b.record.value.value()["nouli_decision_reference"]["source"]
-                == serde_json::to_value(&entry.source).expect("source IDs serialize")
-                && b.record.value.value()["nouli_decision_reference"]
-                    .get("input_state")
-                    .is_some()
-        });
+        let existing =
+            self.references.bindings.iter().position(|b| {
+                b.snapshot.source == entry.source && b.snapshot.input_state.is_some()
+            });
         let binding = if let Some(i) = existing {
             i
         } else {
@@ -484,7 +490,7 @@ impl App<'_> {
                     return;
                 }
             };
-            let Some(binding) = Binding::read(&record) else {
+            let Ok(Some(binding)) = Binding::read(&record) else {
                 self.status = Some(Status::error("Cannot read this saved reference."));
                 return;
             };
@@ -492,7 +498,7 @@ impl App<'_> {
             self.references.bindings.len() - 1
         };
         let bound = &self.references.bindings[binding];
-        let inserted = format!("{} {}", bound.label, bound.reference);
+        let inserted = format!("{} {}", bound.label, bound.reference());
         self.form
             .remove_range(picker.range, &mut self.repl.queue.facts);
         self.form.paste(&inserted, &mut self.repl.queue.facts);
@@ -509,12 +515,12 @@ impl App<'_> {
         texts: &[&str],
     ) -> Result<(Vec<ContextUpdate>, Vec<Id>), String> {
         for text in texts {
-            for tag in render::decision_tags(text) {
+            for tag in MarkerKind::Decision.ranges(text) {
                 if !self
                     .references
                     .bindings
                     .iter()
-                    .any(|b| b.reference == text[tag.clone()])
+                    .any(|b| b.reference() == &text[tag.clone()])
                 {
                     return Err("A saved reference is unavailable. Remove it and choose the answer again with @.".into());
                 }
@@ -533,21 +539,24 @@ impl App<'_> {
         let mut updates = Vec::new();
         let mut required = Vec::new();
         for binding in &self.references.bindings {
-            if !texts.iter().any(|text| text.contains(&binding.reference)) {
+            if !texts.iter().any(|text| text.contains(binding.reference())) {
                 continue;
             }
+            // A malformed reference cannot be this binding; restoring the
+            // session's bindings already reported it.
             if let Some(existing) = records.iter().find(|r| {
-                r.record.value.value()["nouli_decision_reference"]["reference"].as_str()
-                    == Some(&binding.reference)
+                r.record
+                    .as_decision_reference()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|saved| saved.reference == binding.reference())
             }) {
                 required.push(existing.record.id);
             } else {
                 // The binding can have been carried from a different session.
                 // Evidence records are globally unique even across unrelated
                 // histories; copy the snapshot under a new destination ID.
-                let mut record = binding.record.clone();
-                record.id = Id::generate();
-                record.key = format!("decision:{}", record.id);
+                let record = evidence::rebind_decision_record(&binding.record, Id::generate());
                 required.push(record.id);
                 updates.push(ContextUpdate::Append { record });
             }
@@ -572,21 +581,29 @@ impl App<'_> {
             .collect::<Vec<_>>();
         self.references
             .bindings
-            .retain(|b| used.iter().any(|text| text.contains(&b.reference)));
+            .retain(|b| used.iter().any(|text| text.contains(b.reference())));
         self.references.dismissed = None;
         if let Ok(ledger) = self.repl.ledger()
             && let Ok(sources) = ledger.context_sources(self.repl.session.id)
             && let Ok(records) =
                 ledger.context_at(&sources, &[], self.repl.session.id, Id::generate())
         {
-            for binding in records.iter().filter_map(|r| Binding::read(&r.record)) {
-                if !self
-                    .references
-                    .bindings
-                    .iter()
-                    .any(|b| b.reference == binding.reference)
-                {
-                    self.references.bindings.push(binding);
+            for record in &records {
+                match Binding::read(&record.record) {
+                    Ok(Some(binding)) => {
+                        if !self
+                            .references
+                            .bindings
+                            .iter()
+                            .any(|b| b.reference() == binding.reference())
+                        {
+                            self.references.bindings.push(binding);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.status = Some(Status::error(render::clean(&error.to_string())));
+                    }
                 }
             }
         }
@@ -647,14 +664,14 @@ mod tests {
     #[test]
     fn at_signs_inside_attachments_never_reopen_search_after_appending_text() {
         use crate::settings::Settings;
-        use nouli_core::{context::ContextKind, data::Data, media::Image};
+        use nouli_core::{context::evidence::DecisionSource, media::Image};
         let settings = Settings::for_test(
             std::env::temp_dir().join(format!("nouli-at-attachments-{}", Id::generate())),
         );
         let mut app = super::super::tests::app(&settings);
         app.form.row = Row::Question;
         for name in ["@photo.png", "my @photo.png"] {
-            let reference = format!("[image:{}]", Id::generate());
+            let reference = MarkerKind::Image.marker(Id::generate());
             app.images = vec![Image {
                 reference: reference.clone(),
                 name: name.into(),
@@ -668,18 +685,29 @@ mod tests {
             assert!(app.status.is_none());
         }
         let id = Id::generate();
-        let reference = format!("[decision:{id}]");
+        let reference = MarkerKind::Decision.marker(id);
         let label = "@Question about @old · source / 1";
-        app.references.bindings = vec![Binding {
-            record: ContextRecord {
-                id,
-                key: format!("decision:{id}"),
-                kind: ContextKind::Evidence,
-                value: Data::new(serde_json::json!({})).unwrap(),
+        let snapshot = DecisionReference {
+            source: DecisionSource {
+                session: Id::generate(),
+                turn: Id::generate(),
+                question: "old".into(),
             },
             reference: reference.clone(),
-            label: label.into(),
-        }];
+            question: None,
+            outcome: None,
+            provider: None,
+            images: None,
+            input_state: None,
+            input_references: None,
+            label: Some(label.into()),
+            included_in_ancestry: false,
+        };
+        let binding = Binding::read(&snapshot.record(id).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(binding.label, label);
+        app.references.bindings = vec![binding];
         app.form.question = format!("{label} {reference} more ordinary text");
         app.form.cursor = app.form.question.len();
         app.sync_references();
@@ -688,15 +716,51 @@ mod tests {
     }
 
     #[test]
-    fn store_wide_selection_is_atomic_preserves_drafts_and_requires_bound_evidence() {
-        use crate::settings::Settings;
+    fn an_unlabeled_reference_binds_with_a_generic_label() {
+        let id = Id::generate();
+        let snapshot = DecisionReference {
+            source: DecisionSource {
+                session: Id::generate(),
+                turn: Id::generate(),
+                question: "old".into(),
+            },
+            reference: MarkerKind::Decision.marker(id),
+            question: None,
+            outcome: None,
+            provider: None,
+            images: None,
+            input_state: None,
+            input_references: None,
+            label: None,
+            included_in_ancestry: false,
+        };
+        let binding = Binding::read(&snapshot.record(id).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(binding.label, UNLABELED);
+        assert_eq!(binding.reference(), snapshot.reference);
+        let mut malformed = snapshot.record(id).unwrap();
+        malformed.value =
+            nouli_core::data::Data::new(serde_json::json!({"nouli_decision_reference": {}}))
+                .unwrap();
+        assert!(Binding::read(&malformed).is_err());
+    }
+
+    /// A ledger with one finalized turn saved in `source` and an empty
+    /// `target` session; the source's guard stays held for the whole test.
+    struct SavedElsewhere {
+        ledger: Ledger,
+        source: Id,
+        target: Id,
+        saved: Id,
+        guard: nouli_core::storage::guards::SessionGuard,
+    }
+
+    fn saved_elsewhere(settings: &crate::settings::Settings) -> SavedElsewhere {
         use nouli_core::{
-            history::{FinalizedTurn, ModelSelection},
+            history::{FinalizedTurn, ModelSelection, StandingChanges},
             storage::{OpenMode, turns::AttemptInput},
         };
-        let settings = Settings::for_test(
-            std::env::temp_dir().join(format!("nouli-reference-ui-{}", Id::generate())),
-        );
         let mut ledger = Ledger::open(&settings.store, OpenMode::ReadWriteCreate).unwrap();
         let source = ledger
             .create_session(
@@ -721,7 +785,7 @@ mod tests {
                 AttemptInput {
                     request: template.request,
                     updates: vec![],
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     manifest: template.manifest,
                     request_id: None,
                 },
@@ -730,27 +794,50 @@ mod tests {
         let saved = ledger
             .finalize_attempt(&guard, intent.id, template.outcome)
             .unwrap();
+        SavedElsewhere {
+            ledger,
+            source: source.id,
+            target: target.id,
+            saved: saved.id,
+            guard,
+        }
+    }
+
+    /// Sends one key, asserting that it never launches a decision turn.
+    fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        let mut running = None;
+        app.key(KeyEvent::new(code, modifiers), &mut running)
+            .unwrap();
+        assert!(
+            running.is_none(),
+            "selecting a reference never sends a decision"
+        );
+    }
+
+    #[test]
+    fn store_wide_selection_is_atomic_preserves_drafts_and_requires_bound_evidence() {
+        let settings = crate::settings::Settings::for_test(
+            std::env::temp_dir().join(format!("nouli-reference-ui-{}", Id::generate())),
+        );
+        let SavedElsewhere {
+            mut ledger,
+            source,
+            target,
+            saved,
+            guard,
+        } = saved_elsewhere(&settings);
         let mut app = super::super::tests::app(&settings);
-        app.repl.session.id = target.id;
+        app.repl.session.id = target;
         app.form.row = Row::Question;
         app.form.kind = super::super::Kind::Choice;
         app.form.options = vec!["Keep".into(), "Change".into()];
-        let press = |app: &mut App, code, modifiers| {
-            let mut running = None;
-            app.key(KeyEvent::new(code, modifiers), &mut running)
-                .unwrap();
-            assert!(
-                running.is_none(),
-                "selecting a reference never sends a decision"
-            );
-        };
         for ch in "Reconsider @Which route".chars() {
             press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE);
         }
         assert_eq!(app.references.picker.as_ref().unwrap().matches.len(), 1);
-        assert_eq!(app.references.selected().unwrap().source.session, source.id);
+        assert_eq!(app.references.selected().unwrap().source.session, source);
         ledger
-            .rename_session(source.id, "renamed-source".to_owned().try_into().unwrap())
+            .rename_session(source, "renamed-source".to_owned().try_into().unwrap())
             .unwrap();
         app.references.refresh(&ledger).unwrap();
         assert!(
@@ -786,14 +873,15 @@ mod tests {
         assert_eq!(required.len(), 1);
         let record = updates[0].new_record().unwrap();
         assert_eq!(
-            record.value.value()["nouli_decision_reference"]["source"]["turn"],
-            saved.id.to_string()
+            record.as_decision_reference().unwrap().unwrap().source.turn,
+            saved
         );
+        assert_eq!(record.key, format!("decision:{}", record.id));
         assert_ne!(record.id, app.references.bindings[0].record.id);
-        let range = render::decision_tags(&text).pop().unwrap();
-        assert!(!render::image_labels(&text).contains("[decision:"));
+        let range = MarkerKind::Decision.ranges(&text).pop().unwrap();
+        assert!(!render::image_labels(&text).contains(MarkerKind::Decision.prefix()));
         // Session switching must preserve a still-unsent reference binding.
-        app.repl.session.id = source.id;
+        app.repl.session.id = source;
         app.restore_references();
         assert_eq!(app.references.bindings.len(), 1);
         assert!(app.reference_updates(&ledger, &[&text]).is_ok());
@@ -805,11 +893,11 @@ mod tests {
         app.form.paste(" ", &mut app.repl.queue.facts);
         press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
         assert_eq!(app.form.question, "Reconsider ");
-        assert!(
+        assert_eq!(
             app.reference_updates(&ledger, &[&app.form.question])
                 .unwrap()
-                .0
-                .is_empty()
+                .0,
+            [] as [nouli_core::context::ContextUpdate; 0]
         );
         let orphan = format!("Unknown [decision:{}]", Id::generate());
         assert!(app.reference_updates(&ledger, &[&orphan]).is_err());

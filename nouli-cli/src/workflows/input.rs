@@ -56,7 +56,7 @@ impl RunArgs {
             object.insert("workflow".into(), codec::to_value(&workflow)?);
             object
                 .entry("session")
-                .or_insert(serde_json::json!({"mode":"new","name":null}));
+                .or_insert(codec::to_value(&SessionSelection::New { name: None })?);
             (
                 serde_json::from_value::<WorkflowRequest>(value)
                     .map_err(|_| input::InputError::Shape)?,
@@ -91,8 +91,7 @@ impl RunArgs {
             request.workflow.mode == RunMode::Ephemeral,
             request.request_id.is_some(),
         )?;
-        nouli_core::storage::workflows::fingerprint(&request)
-            .map_err(|_| input::InputError::Shape)?;
+        request.validate().map_err(|_| input::InputError::Shape)?;
         Ok(request)
     }
     pub(super) fn overrides(&self, settings: &crate::settings::Settings) -> RuntimeOverrides {

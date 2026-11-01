@@ -13,6 +13,7 @@ use nouli_core::{
     protocol::{ErrorReport, TurnReport},
     storage::{Ledger, OpenMode},
 };
+use std::fmt::Write as _;
 use std::{io::Write, path::Path};
 use thiserror::Error;
 
@@ -44,15 +45,9 @@ fn earlier(store: &Path, report: &TurnReport) -> Result<(Vec<FinalizedTurn>, usi
                 PresentError::History(nouli_core::engine::EngineError::Turn(error).report())
             })
         })?;
-    let own = report
-        .session
-        .map(|session| {
-            history
-                .iter()
-                .filter(|turn| turn.session == session)
-                .count()
-        })
-        .unwrap_or(0);
+    let own = report.session.map_or(0, |session| {
+        crate::repl::own_history(&history, session).count()
+    });
     Ok((
         history
             .into_iter()
@@ -81,12 +76,10 @@ pub(crate) fn turn_text(
 ) -> Result<(), PresentError> {
     let (history, own) = earlier(store, report)?;
     let previous = |id: &str| {
-        history.iter().rev().find_map(|turn| {
-            turn.outcome
-                .outcomes
-                .iter()
-                .find(|outcome| outcome.question_id() == id)
-        })
+        history
+            .iter()
+            .rev()
+            .find_map(|turn| turn.outcome.outcome_for(id))
     };
     let (facts, replaced) = fact_counts(updates);
     let header = Header {
@@ -124,13 +117,14 @@ pub(crate) fn turn_text(
         clean(&report.outcome.provider.model)
     );
     if let Some(session) = report.session {
-        line.push_str(&format!(" · session {session}"));
+        let _ = write!(line, " · session {session}");
     }
     if let Some(turn) = report.turn {
-        line.push_str(&format!(
+        let _ = write!(
+            line,
             " · turn {turn}{}",
             if report.replayed { " (replayed)" } else { "" }
-        ));
+        );
     }
     writeln!(sink, "{}", Paint(color).apply(DIM, &line)).map_err(RenderError::from)?;
     sink.flush().map_err(RenderError::from)?;
@@ -141,10 +135,11 @@ pub(crate) fn turn_text(
 pub(crate) fn facts_text(
     ledger: &Ledger,
     facts: &[Fact],
+    paint: Paint,
     sink: &mut impl Write,
 ) -> Result<(), crate::inspect::InspectError> {
     if facts.is_empty() {
-        writeln!(sink, "  no facts yet")?;
+        writeln!(sink, "{}", paint.apply(DIM, "  no facts yet"))?;
     }
     for fact in facts {
         let mut line = if fact.alternatives.is_empty() {
@@ -168,13 +163,61 @@ pub(crate) fn facts_text(
                 .ok()
                 .and_then(|session| session.name)
                 .map_or_else(|| source.to_string(), |name| name.as_str().to_owned());
-            line.push_str(&format!("   (from {})", clean(&name)));
+            let _ = write!(
+                line,
+                "{}",
+                paint.apply(DIM, &format!("   (from {})", clean(&name)))
+            );
         }
         if let Some(previous) = &fact.previous {
-            line.push_str(&format!("   (replaced; was: {})", clean(previous)));
+            let _ = write!(
+                line,
+                "{}",
+                paint.apply(DIM, &format!("   (replaced; was: {})", clean(previous)))
+            );
         }
         writeln!(sink, "{line}")?;
     }
     sink.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nouli_core::identity::Id;
+
+    #[test]
+    fn fact_words_never_act_as_source_or_replacement_annotations() {
+        let root = std::env::temp_dir().join(format!("nouli-fact-paint-{}", Id::generate()));
+        let ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let mut fact = Fact {
+            number: 1,
+            records: vec![],
+            key: "fact:x".into(),
+            text: "arrived (from x) (replaced; literally)".into(),
+            alternatives: vec![],
+            turn: Id::generate(),
+            source_session: None,
+            previous: None,
+        };
+        let mut out = Vec::new();
+        facts_text(&ledger, &[fact.clone()], Paint(true), &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "   1  arrived (from x) (replaced; literally)\n"
+        );
+        fact.previous = Some("earlier".into());
+        let mut out = Vec::new();
+        facts_text(&ledger, &[fact], Paint(true), &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            format!(
+                "   1  arrived (from x) (replaced; literally){}\n",
+                Paint(true).apply(DIM, "   (replaced; was: earlier)")
+            )
+        );
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

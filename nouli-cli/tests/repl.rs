@@ -1,7 +1,9 @@
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 use harness::Home;
 use loopback::Server;
 use nouli_core::{
@@ -9,10 +11,7 @@ use nouli_core::{
     storage::{Ledger, OpenMode},
 };
 use serde_json::{Value, json};
-use std::{
-    io::Write,
-    process::{Output, Stdio},
-};
+use std::process::Output;
 
 /// A provider that answers whatever it is asked: the first choice leads, unless
 /// the evidence says CANCELLED, when the last one does.
@@ -20,6 +19,10 @@ fn provider() -> Server {
     Server::with_handler(answer)
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "fixture questions have a few options"
+)]
 fn answer(body: &Value) -> (u16, String) {
     {
         let cancelled = body["state"].as_str().unwrap().contains("CANCELLED");
@@ -63,21 +66,7 @@ fn answer(body: &Value) -> (u16, String) {
 }
 
 fn open(home: &Home, arguments: &[&str], script: &str) -> Output {
-    let mut child = home
-        .command()
-        .args(arguments)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(script.as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
+    home.run_with_stdin(arguments, script.as_bytes())
 }
 
 fn text(output: &Output) -> String {

@@ -4,6 +4,10 @@ use std::{
     io::{self, Write},
 };
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "each flag is one direction of a box-drawing junction"
+)]
 fn junction(up: bool, down: bool, left: bool, right: bool) -> char {
     match (up, down, left, right) {
         (true, true, true, true) => '┼',

@@ -27,6 +27,12 @@ impl From<Ledger> for LedgerWorker {
     }
 }
 impl LedgerWorker {
+    /// Opens a ledger on a blocking thread and wraps it in a shared worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WorkerError::Storage`] if [`Ledger::open`] fails, or
+    /// [`WorkerError::Stopped`] if the blocking task panics or is cancelled.
     pub async fn open(root: PathBuf, mode: OpenMode) -> Result<Self, WorkerError> {
         Ok(
             tokio::task::spawn_blocking(move || Ledger::open(&root, mode))
@@ -35,6 +41,13 @@ impl LedgerWorker {
                 .into(),
         )
     }
+    /// Runs an operation on the ledger on a blocking thread once earlier jobs
+    /// finish.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WorkerError::Stopped`] if the blocking task panics or is
+    /// cancelled.
     pub async fn call<T: Send + 'static>(
         &self,
         operation: impl FnOnce(&mut Ledger) -> T + Send + 'static,

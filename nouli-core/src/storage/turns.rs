@@ -16,7 +16,7 @@ use crate::{
     },
     identity::{Id, SessionSelector},
     outcome::TurnOutcome,
-    protocol::ErrorReport,
+    protocol::{ErrorCategory, ErrorReport, NOT_DISPATCHED, OUTCOME_UNKNOWN},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ impl AttemptStatus {
             Self::Interrupted => "interrupted",
         }
     }
-    fn parse(value: &str) -> Result<Self, StorageError> {
+    pub(super) fn parse(value: &str) -> Result<Self, StorageError> {
         match value {
             "pending" => Ok(Self::Pending),
             "running" => Ok(Self::Running),
@@ -104,18 +104,22 @@ pub enum TurnError {
     AttemptState,
     #[error("session head or attempt changed concurrently")]
     Conflict,
+    #[error("attempt belongs to a workflow; finalize it through the workflow owner")]
+    WorkflowAttempt,
     #[error(transparent)]
     History(#[from] HistoryError),
     #[error(transparent)]
     Session(#[from] SessionError),
     #[error(transparent)]
-    Storage(#[from] StorageError),
+    Storage(StorageError),
 }
 
-fn write_error(error: StorageError) -> TurnError {
-    match error {
-        StorageError::Conflict => TurnError::Conflict,
-        error => TurnError::Storage(error),
+impl From<StorageError> for TurnError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::Conflict => Self::Conflict,
+            error => Self::Storage(error),
+        }
     }
 }
 
@@ -124,35 +128,90 @@ pub(super) fn progress_event(
     attempt: Id,
     progress: &AttemptProgress,
 ) -> Result<(), StorageError> {
+    const APPEND_ATTEMPT_EVENT: &str = "INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1";
+
     let payload = Ledger::encode_payload(progress)?;
-    transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![attempt.to_string(),payload]).map_err(|error|sql_error("append attempt event",error))?;
+    transaction
+        .execute(APPEND_ATTEMPT_EVENT, params![attempt.to_string(), payload])
+        .map_err(|error| sql_error("append attempt event", &error))?;
     Ok(())
 }
 
+/// Marks an attempt that an exited or abandoned owner left in `previous` as
+/// interrupted, recording whether its provider outcome is unknown (it was
+/// running) or it was never dispatched (it was pending).
+///
+/// Returns `false` without writing anything when `previous` is not pending or
+/// running, or the attempt is no longer in `previous`, so an attempt settled
+/// concurrently keeps its own state and error.
+pub(super) fn interrupt_attempt(
+    transaction: &Transaction<'_>,
+    attempt: Id,
+    previous: AttemptStatus,
+    message: &str,
+) -> Result<bool, StorageError> {
+    let code = match previous {
+        AttemptStatus::Running => OUTCOME_UNKNOWN,
+        AttemptStatus::Pending => NOT_DISPATCHED,
+        AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Interrupted => {
+            return Ok(false);
+        }
+    };
+    let changed = transaction
+        .execute(
+            "UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state=?3",
+            params![
+                attempt.to_string(),
+                AttemptStatus::Interrupted.name(),
+                previous.name()
+            ],
+        )
+        .map_err(|error| sql_error("interrupt attempt", &error))?;
+    if changed == 0 {
+        return Ok(false);
+    }
+    progress_event(
+        transaction,
+        attempt,
+        &AttemptProgress {
+            state: AttemptStatus::Interrupted,
+            error: Some(ErrorReport {
+                category: ErrorCategory::Interrupted,
+                code: code.into(),
+                message: message.into(),
+                retryable: false,
+            }),
+        },
+    )?;
+    Ok(true)
+}
+
 impl Ledger {
+    /// Validates and durably records a pending attempt against the session's
+    /// current head.
+    ///
+    /// # Errors
+    ///
+    /// - [`TurnError::Conflict`] if the guard belongs to another session or
+    ///   ledger, or the input does not match its pending request reservation.
+    /// - [`TurnError::History`] if the request, manifest, or updates are
+    ///   invalid, records repeat, or the request ID is blank.
+    /// - [`TurnError::Session`] if the session cannot be read.
+    /// - [`TurnError::Projection`], [`TurnError::UnknownTurn`], or
+    ///   [`TurnError::History`] if the updates cannot be projected onto the
+    ///   session's context.
+    /// - [`TurnError::Storage`] if the ledger is read-only, encoding fails, or
+    ///   the SQLite write fails.
     pub fn prepare_attempt(
         &mut self,
         guard: &SessionGuard,
         input: AttemptInput,
     ) -> Result<PreparedAttempt, TurnError> {
         let session = guard.session();
-        guard.validate(self, session).map_err(write_error)?;
+        guard.validate(self, session)?;
         input.request.validate().map_err(HistoryError::from)?;
         input.manifest.validate()?;
-        for update in &input.updates {
-            update.validate().map_err(HistoryError::from)?;
-        }
-        let mut record_ids = HashSet::new();
-        if input
-            .updates
-            .iter()
-            .filter_map(ContextUpdate::new_record)
-            .any(|record| !record_ids.insert(record.id))
-        {
-            return Err(
-                HistoryError::Context(crate::context::ContextError::DuplicateRecord).into(),
-            );
-        }
+        crate::context::validate_updates(&input.updates).map_err(HistoryError::from)?;
         if input
             .request_id
             .as_ref()
@@ -161,7 +220,7 @@ impl Ledger {
             return Err(HistoryError::InvalidSelection.into());
         }
         let session = self.session(&SessionSelector::Id(session))?;
-        super::replay::validate_reserved_input(self, guard, &input).map_err(write_error)?;
+        super::replay::validate_reserved_input(self, guard, &input)?;
         let prepared = PreparedAttempt {
             workflow: None,
             id: Id::generate(),
@@ -188,13 +247,13 @@ impl Ledger {
                         payload
                     ],
                 )
-                .map_err(|error| sql_error("insert accepted intent", error))?;
+                .map_err(|error| sql_error("insert accepted intent", &error))?;
             transaction
                 .execute(
                     "INSERT INTO attempt_states(attempt_id,state) VALUES(?1,'pending')",
                     [prepared.id.to_string()],
                 )
-                .map_err(|error| sql_error("insert pending state", error))?;
+                .map_err(|error| sql_error("insert pending state", &error))?;
             progress_event(
                 transaction,
                 prepared.id,
@@ -207,8 +266,23 @@ impl Ledger {
         Ok(prepared)
     }
 
+    /// Reads an attempt's accepted intent, latest progress, and finalized turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownAttempt`] if no attempt has the ID, or
+    /// [`TurnError::Storage`] if the SQLite query fails or the stored attempt is
+    /// invalid or inconsistent.
     pub fn attempt(&self, id: Id) -> Result<AttemptSnapshot, TurnError> {
-        let row:Option<(String,String,Option<String>,String)>=self.connection.query_row("SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1",[id.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))).optional().map_err(|error|sql_error("read attempt",error))?;
+        const READ_ATTEMPT: &str = "SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1";
+
+        let row: Option<(String, String, Option<String>, String)> = self
+            .connection
+            .query_row(READ_ATTEMPT, [id.to_string()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .optional()
+            .map_err(|error| sql_error("read attempt", &error))?;
         let (intent, state, turn, progress) = row.ok_or(TurnError::UnknownAttempt)?;
         let intent: PreparedAttempt = Self::decode_payload(&intent)?;
         let progress: AttemptProgress = Self::decode_payload(&progress)?;
@@ -225,32 +299,47 @@ impl Ledger {
         })
     }
 
+    /// Lists every attempt in a session in acceptance order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::Session`] if the session does not exist or cannot
+    /// be read, or [`TurnError::Storage`] if the SQLite query fails or a stored
+    /// attempt is invalid.
     pub fn list_attempts(&self, session: Id) -> Result<Vec<AttemptSnapshot>, TurnError> {
         self.session(&SessionSelector::Id(session))?;
         let mut statement = self
             .connection
             .prepare("SELECT id FROM attempts WHERE session_id=?1 ORDER BY rowid")
-            .map_err(|error| sql_error("list attempts", error))?;
+            .map_err(|error| sql_error("list attempts", &error))?;
         let ids = statement
             .query_map([session.to_string()], |row| row.get::<_, String>(0))
-            .map_err(|error| sql_error("list attempts", error))?
+            .map_err(|error| sql_error("list attempts", &error))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| sql_error("read attempt ids", error))?;
+            .map_err(|error| sql_error("read attempt ids", &error))?;
         ids.into_iter()
             .map(|id| self.attempt(Id::try_from(id).map_err(|_| StorageError::Payload)?))
             .collect()
     }
 
+    /// Advances a pending or running attempt to a later non-final state.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Ledger::attempt`] reading the attempt.
+    /// - [`TurnError::Conflict`] if the guard does not own the attempt or its
+    ///   state changed concurrently.
+    /// - [`TurnError::AttemptState`] if the transition is not allowed.
+    /// - [`TurnError::Storage`] if the ledger is read-only or the SQLite write
+    ///   fails.
     pub fn record_attempt_progress(
         &mut self,
         guard: &SessionGuard,
         id: Id,
-        progress: AttemptProgress,
+        progress: &AttemptProgress,
     ) -> Result<(), TurnError> {
         let snapshot = self.attempt(id)?;
-        guard
-            .validate(self, snapshot.intent.session)
-            .map_err(write_error)?;
+        guard.validate(self, snapshot.intent.session)?;
         if snapshot.intent.owner != Some(guard.owner) {
             return Err(TurnError::Conflict);
         }
@@ -273,25 +362,42 @@ impl Ledger {
                     "UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state=?3",
                     params![id.to_string(), progress.state.name(), previous.name()],
                 )
-                .map_err(|error| sql_error("advance attempt state", error))?;
+                .map_err(|error| sql_error("advance attempt state", &error))?;
             if changed != 1 {
                 return Err(StorageError::Conflict);
             }
-            progress_event(transaction, id, &progress)
+            progress_event(transaction, id, progress)
         })
-        .map_err(write_error)
+        .map_err(TurnError::from)
     }
 
+    /// Publishes an attempt's outcome as an immutable turn and advances the
+    /// session head atomically.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Ledger::attempt`] reading the attempt.
+    /// - [`TurnError::Conflict`] if the guard does not own the attempt, the
+    ///   session head moved since preparation, or its request reservation is
+    ///   no longer pending.
+    /// - [`TurnError::WorkflowAttempt`] if the attempt belongs to a workflow.
+    /// - [`TurnError::AttemptState`] if the attempt already finished.
+    /// - [`TurnError::Session`], [`TurnError::Projection`], or
+    ///   [`TurnError::History`] if the session, its context, or the resulting
+    ///   turn is invalid.
+    /// - [`TurnError::Storage`] if the ledger is read-only, encoding fails, or
+    ///   the SQLite write fails.
     pub fn finalize_attempt(
         &mut self,
         guard: &SessionGuard,
         id: Id,
         outcome: TurnOutcome,
     ) -> Result<FinalizedTurn, TurnError> {
+        const CHECK_EXPECTED_HEAD: &str = "SELECT revision FROM sessions WHERE id=?1";
+        const PUBLISH_SESSION_HEAD: &str = "UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807";
+
         let snapshot = self.attempt(id)?;
-        guard
-            .validate(self, snapshot.intent.session)
-            .map_err(write_error)?;
+        guard.validate(self, snapshot.intent.session)?;
         if snapshot.intent.owner != Some(guard.owner) {
             return Err(TurnError::Conflict);
         }
@@ -303,7 +409,7 @@ impl Ledger {
         }
         let prepared = snapshot.intent;
         if prepared.workflow.is_some() {
-            return Err(TurnError::Conflict);
+            return Err(TurnError::WorkflowAttempt);
         }
         let current = self.session(&SessionSelector::Id(prepared.session))?;
         if current.revision != prepared.expected_revision
@@ -319,16 +425,12 @@ impl Ledger {
         )?;
         let mut manifest = prepared.input.manifest;
         manifest.provider = outcome.provider.clone();
-        let parents = if prepared.expected_frontier.is_empty() {
-            let mut seen = HashSet::new();
-            self.session_sources(prepared.session)?
-                .into_iter()
-                .flat_map(|source| source.frontier)
-                .filter(|id| seen.insert(*id))
-                .collect()
-        } else {
-            prepared.expected_frontier
-        };
+        let mut seen = HashSet::new();
+        let parents = super::sessions::read_context_sources(&self.connection, &current)?
+            .into_iter()
+            .flat_map(|source| source.frontier)
+            .filter(|id| seen.insert(*id))
+            .collect();
         let turn = FinalizedTurn {
             context_base: None,
             workflow_run: None,
@@ -346,27 +448,61 @@ impl Ledger {
         turn.validate()?;
         let payload = Self::encode_payload(&turn)?;
         let frontier = Self::encode_payload(&vec![turn.id])?;
-        let event = Self::encode_payload(&HistoryEvent::TurnFinalized {
+        let event = HistoryEvent::TurnFinalized {
             session: turn.session,
             turn: turn.id,
             frontier: vec![turn.id],
-        })?;
-        self.transaction::<_, StorageError>("finalize turn",|transaction| {
-            let current:i64=transaction.query_row("SELECT revision FROM sessions WHERE id=?1",[turn.session.to_string()],|row|row.get(0)).map_err(|error|sql_error("check expected head",error))?;
-            if current!=prepared.expected_revision {return Err(StorageError::Conflict);}
-            super::publication::insert_turn(transaction,&turn,id,prepared.expected_revision)?;
-            let changed=transaction.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807",params![turn.session.to_string(),frontier,prepared.expected_revision]).map_err(|error|sql_error("publish session head",error))?;
-            if changed!=1 {return Err(StorageError::Conflict);}
-            if let Some(key)=&prepared.input.request_id {
-                let changed=transaction.execute("UPDATE request_reservations SET state='completed',result_toon=?2 WHERE request_id=?1 AND owner_id=?3 AND session_id=?4 AND state='pending'",params![key,payload,guard.owner.to_string(),turn.session.to_string()]).map_err(|error|sql_error("complete request reservation",error))?;
-                if changed!=1 {return Err(StorageError::Conflict);}
+        };
+        self.transaction::<_, StorageError>("finalize turn", |transaction| {
+            let current: i64 = transaction
+                .query_row(CHECK_EXPECTED_HEAD, [turn.session.to_string()], |row| {
+                    row.get(0)
+                })
+                .map_err(|error| sql_error("check expected head", &error))?;
+            if current != prepared.expected_revision {
+                return Err(StorageError::Conflict);
             }
-            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![turn.session.to_string(),event]).map_err(|error|sql_error("record finalized head",error))?;
+            super::publication::insert_turn(transaction, &turn, id, prepared.expected_revision)?;
+            let changed = transaction
+                .execute(
+                    PUBLISH_SESSION_HEAD,
+                    params![
+                        turn.session.to_string(),
+                        frontier,
+                        prepared.expected_revision
+                    ],
+                )
+                .map_err(|error| sql_error("publish session head", &error))?;
+            if changed != 1 {
+                return Err(StorageError::Conflict);
+            }
+            if let Some(key) = &prepared.input.request_id {
+                super::reservations::complete_evaluation(
+                    transaction,
+                    key,
+                    &payload,
+                    guard.owner,
+                    turn.session,
+                )?;
+            }
+            super::sessions::append_event(
+                transaction,
+                turn.session,
+                &event,
+                "record finalized head",
+            )?;
             Ok(())
-        }).map_err(write_error)?;
+        })?;
         Ok(turn)
     }
 
+    /// Reads and validates a finalized turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownTurn`] if no turn has the ID,
+    /// [`TurnError::Storage`] if the SQLite query fails or the stored payload is
+    /// invalid, or [`TurnError::History`] if the turn fails validation.
     pub fn turn(&self, id: Id) -> Result<FinalizedTurn, TurnError> {
         let payload: Option<String> = self
             .connection
@@ -376,7 +512,7 @@ impl Ledger {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| sql_error("read turn", error))?;
+            .map_err(|error| sql_error("read turn", &error))?;
         let turn: FinalizedTurn = Self::decode_payload(&payload.ok_or(TurnError::UnknownTurn)?)?;
         if turn.id != id {
             return Err(StorageError::Payload.into());
@@ -385,6 +521,13 @@ impl Ledger {
         Ok(turn)
     }
 
+    /// Reads and validates the evaluation manifest saved for a turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownTurn`] if the turn has no manifest,
+    /// [`TurnError::Storage`] if the SQLite query fails or the stored payload is
+    /// invalid, or [`TurnError::History`] if the manifest fails validation.
     pub fn manifest(&self, id: Id) -> Result<EvaluationManifest, TurnError> {
         let payload: Option<String> = self
             .connection
@@ -394,13 +537,20 @@ impl Ledger {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| sql_error("read manifest", error))?;
+            .map_err(|error| sql_error("read manifest", &error))?;
         let manifest: EvaluationManifest =
             Self::decode_payload(&payload.ok_or(TurnError::UnknownTurn)?)?;
         manifest.validate()?;
         Ok(manifest)
     }
 
+    /// Collects every turn reachable from the source frontiers in canonical
+    /// history order.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error from [`Ledger::turn`] for a reachable turn, or
+    /// [`TurnError::History`] if the turns cannot be ordered canonically.
     pub fn ancestry(&self, sources: &[SourcePoint]) -> Result<Vec<FinalizedTurn>, TurnError> {
         let mut pending: Vec<_> = sources
             .iter()
@@ -434,6 +584,20 @@ impl Ledger {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn storage_conflicts_map_to_the_same_turn_variant_and_report() {
+        let conflict = TurnError::from(StorageError::Conflict);
+        assert!(matches!(conflict, TurnError::Conflict));
+        assert_eq!(
+            crate::engine::EngineError::Turn(conflict).report().code,
+            "head_conflict"
+        );
+        assert!(matches!(
+            TurnError::from(StorageError::Payload),
+            TurnError::Storage(StorageError::Payload)
+        ));
+    }
+
     use super::*;
     use crate::{
         context::{ContextKind, ContextRecord},
@@ -465,7 +629,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
         let turn: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
         AttemptInput {
-            standing: Default::default(),
+            standing: StandingChanges::default(),
             request: turn.request,
             updates: vec![ContextUpdate::Append {
                 record: ContextRecord {
@@ -496,12 +660,12 @@ mod tests {
         let guard = ledger.session_guard(session.id).unwrap();
         let prepared = ledger.prepare_attempt(&guard, input()).unwrap();
         assert_eq!(ledger.attempt(prepared.id).unwrap().intent, prepared);
-        assert!(
+        assert_eq!(
             ledger
                 .session(&SessionSelector::Id(session.id))
                 .unwrap()
-                .frontier
-                .is_empty()
+                .frontier,
+            [] as [crate::identity::Id; 0]
         );
         let first = ledger
             .finalize_attempt(&guard, prepared.id, outcome())
@@ -573,14 +737,14 @@ mod tests {
             }),
         };
         ledger
-            .record_attempt_progress(&guard, failure.id, progress.clone())
+            .record_attempt_progress(&guard, failure.id, &progress)
             .unwrap();
         let interrupted = ledger.prepare_attempt(&guard, input()).unwrap();
         ledger
             .record_attempt_progress(
                 &guard,
                 interrupted.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Running,
                     error: None,
                 },
@@ -590,7 +754,7 @@ mod tests {
             .record_attempt_progress(
                 &guard,
                 interrupted.id,
-                AttemptProgress {
+                &AttemptProgress {
                     state: AttemptStatus::Interrupted,
                     error: None,
                 },
@@ -618,7 +782,95 @@ mod tests {
     }
 
     #[test]
+    fn interrupting_an_attempt_settled_since_it_was_read_leaves_it_unchanged() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let session = ledger
+            .create_session(None, ModelSelection::default())
+            .unwrap();
+        let guard = ledger.session_guard(session.id).unwrap();
+        let running = AttemptProgress {
+            state: AttemptStatus::Running,
+            error: None,
+        };
+        let failed = AttemptProgress {
+            state: AttemptStatus::Failed,
+            error: Some(ErrorReport {
+                category: ErrorCategory::Transport,
+                code: "provider_transport_failed".into(),
+                message: "provider transport failed".into(),
+                retryable: false,
+            }),
+        };
+        let settled = ledger.prepare_attempt(&guard, input()).unwrap();
+        ledger
+            .record_attempt_progress(&guard, settled.id, &running)
+            .unwrap();
+        ledger
+            .record_attempt_progress(&guard, settled.id, &failed)
+            .unwrap();
+        let pending = ledger.prepare_attempt(&guard, input()).unwrap();
+        let orphan = ledger.prepare_attempt(&guard, input()).unwrap();
+        ledger
+            .record_attempt_progress(&guard, orphan.id, &running)
+            .unwrap();
+        let events = |ledger: &Ledger, id: Id| -> i64 {
+            ledger
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM attempt_events WHERE attempt_id=?1",
+                    [id.to_string()],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        let before = events(&ledger, settled.id);
+        let changed = ledger
+            .transaction::<_, StorageError>("interrupt attempts", |tx| {
+                Ok([
+                    // The owner read this attempt as running before it settled.
+                    interrupt_attempt(tx, settled.id, AttemptStatus::Running, "exited")?,
+                    // Only pending and running attempts can be interrupted.
+                    interrupt_attempt(tx, settled.id, AttemptStatus::Failed, "exited")?,
+                    // A pending attempt read as running has moved on as well.
+                    interrupt_attempt(tx, pending.id, AttemptStatus::Running, "exited")?,
+                    interrupt_attempt(tx, orphan.id, AttemptStatus::Running, "exited")?,
+                ])
+            })
+            .unwrap();
+        assert_eq!(changed, [false, false, false, true]);
+        assert_eq!(ledger.attempt(settled.id).unwrap().progress, failed);
+        assert_eq!(events(&ledger, settled.id), before);
+        assert_eq!(
+            ledger.attempt(pending.id).unwrap().progress.state,
+            AttemptStatus::Pending
+        );
+        let interrupted = ledger.attempt(orphan.id).unwrap().progress;
+        assert_eq!(interrupted.state, AttemptStatus::Interrupted);
+        assert_eq!(interrupted.error.unwrap().code, OUTCOME_UNKNOWN);
+        assert!(
+            ledger
+                .transaction::<_, StorageError>("interrupt pending attempt", |tx| {
+                    interrupt_attempt(tx, pending.id, AttemptStatus::Pending, "exited")
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            ledger
+                .attempt(pending.id)
+                .unwrap()
+                .progress
+                .error
+                .unwrap()
+                .code,
+            NOT_DISPATCHED
+        );
+    }
+
+    #[test]
     fn injected_finalization_failure_rolls_back_records_context_and_head() {
+        const INJECT_FINALIZATION_FAILURE: &str = "CREATE TRIGGER fail_publish BEFORE UPDATE ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected failure'); END;";
+
         let store = Store::new();
         let mut ledger = store.open();
         let session = ledger
@@ -626,18 +878,24 @@ mod tests {
             .unwrap();
         let guard = ledger.session_guard(session.id).unwrap();
         let attempt = ledger.prepare_attempt(&guard, input()).unwrap();
-        ledger.transaction::<_, StorageError>("inject failure",|transaction| {transaction.execute_batch("CREATE TRIGGER fail_publish BEFORE UPDATE ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected failure'); END;").map_err(|error|sql_error("inject finalization failure",error))}).unwrap();
+        ledger
+            .transaction::<_, StorageError>("inject failure", |transaction| {
+                transaction
+                    .execute_batch(INJECT_FINALIZATION_FAILURE)
+                    .map_err(|error| sql_error("inject finalization failure", &error))
+            })
+            .unwrap();
         assert!(
             ledger
                 .finalize_attempt(&guard, attempt.id, outcome())
                 .is_err()
         );
-        assert!(
+        assert_eq!(
             ledger
                 .session(&SessionSelector::Id(session.id))
                 .unwrap()
-                .frontier
-                .is_empty()
+                .frontier,
+            [] as [crate::identity::Id; 0]
         );
         assert_eq!(
             ledger.attempt(attempt.id).unwrap().progress.state,
@@ -656,7 +914,7 @@ mod tests {
             .transaction::<_, StorageError>("remove failure", |transaction| {
                 transaction
                     .execute_batch("DROP TRIGGER fail_publish")
-                    .map_err(|error| sql_error("remove failure injection", error))
+                    .map_err(|error| sql_error("remove failure injection", &error))
             })
             .unwrap();
         ledger

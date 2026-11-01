@@ -1,9 +1,11 @@
 //! Pre-refactor frozen settings are deliberately incompatible. Historical stores
 //! remain intact and can still be opened by the matching released binary.
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
 use harness::Home;
 use std::path::Path;
 
@@ -17,7 +19,7 @@ fn historical_frozen_settings_report_fresh_store_guidance_without_inference_or_r
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "../fixtures/contracts/ledger-v{version}/ledger.sqlite3"
         ));
-        let database = home.store().join("ledger.sqlite3");
+        let database = home.ledger_path();
         std::fs::copy(fixture, &database).unwrap();
         let before = std::fs::read(&database).unwrap();
         let listed = home.run(["sessions", "list", "--json"]);

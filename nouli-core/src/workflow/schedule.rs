@@ -2,6 +2,7 @@
 use super::{
     NodeStatus, RunStatus, WorkflowNode,
     compile::{CompiledBinding, CompiledReference, CompiledWorkflow},
+    node::node_scope,
     reference::{MissingPolicy, ReferenceValue, ResultField, ResultReference},
     resolve::{self, ResolveError},
 };
@@ -102,6 +103,10 @@ pub trait ScheduleObserver: Send + Sync + 'static {
 #[derive(Default)]
 pub struct NoopObserver;
 impl ScheduleObserver for NoopObserver {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait returns a future; this observer has nothing to await"
+    )]
     async fn changed(&self, _node: usize, _progress: NodeProgress) -> Result<(), ErrorReport> {
         Ok(())
     }
@@ -119,12 +124,7 @@ pub enum ScheduleError {
     Resolve(#[from] ResolveError),
 }
 fn error(category: ErrorCategory, code: &str) -> ErrorReport {
-    ErrorReport {
-        category,
-        code: code.into(),
-        message: code.replace('_', " "),
-        retryable: false,
-    }
+    ErrorReport::new(category, code, code.replace('_', " "))
 }
 fn source(
     selector: &CompiledReference,
@@ -200,13 +200,10 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
                 return Ok(None);
             }
         }
-        let inputs = plan
-            .inputs
-            .iter()
-            .map(|binding| compiled_binding(binding, &self.nodes))
-            .collect::<Result<Vec<_>, _>>()?;
+        let scope = node_scope(self.graph, &self.nodes, id)?;
+        let inputs = scope.inputs;
         let required_missing = inputs.iter().any(|input| input.required_missing);
-        self.nodes[id].inputs = inputs.clone();
+        self.nodes[id].inputs.clone_from(&inputs);
         let failed_parent = plan.dependencies.iter().any(|parent| {
             matches!(
                 self.nodes[*parent].status,
@@ -237,25 +234,9 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
             self.nodes[id].status = NodeStatus::Skipped;
             return Ok(None);
         }
-        let parents: Vec<_> = plan
-            .dependencies
-            .iter()
-            .filter(|parent| self.nodes[**parent].status == NodeStatus::Completed)
-            .copied()
-            .collect();
-        let mut ancestors = HashSet::new();
-        for parent in &parents {
-            ancestors.insert(*parent);
-            ancestors.extend(self.nodes[*parent].ancestors.iter().copied());
-        }
-        let ordered: Vec<_> = self
-            .graph
-            .order()
-            .iter()
-            .filter(|ancestor| ancestors.contains(ancestor))
-            .copied()
-            .collect();
-        self.nodes[id].ancestors = ordered.clone();
+        let parents = scope.parents;
+        let ordered = scope.ancestors;
+        self.nodes[id].ancestors.clone_from(&ordered);
         let ancestors = ordered
             .into_iter()
             .map(|node| {
@@ -404,8 +385,53 @@ impl<E: NodeExecutor, O: ScheduleObserver> Scheduler<'_, E, O> {
                 }
                 return Err(ScheduleError::State);
             }
-            tokio::select! {biased;_=self.cancel.cancelled()=>return Ok(true),result=self.tasks.join_next_with_id()=>{let id=self.complete(result.ok_or(ScheduleError::State)?,false)?;self.observer.changed(id,self.nodes[id].clone()).await.map_err(ScheduleError::Observer)?;}}
+            tokio::select! {biased;()=self.cancel.cancelled()=>return Ok(true),result=self.tasks.join_next_with_id()=>{let id=self.complete(result.ok_or(ScheduleError::State)?,false)?;self.observer.changed(id,self.nodes[id].clone()).await.map_err(ScheduleError::Observer)?;}}
         }
+    }
+    /// Joins every remaining task, aborting them first when `canceling`, and
+    /// reports each settled node. Every task is joined even after an error;
+    /// the last error met is returned.
+    async fn join_remaining(&mut self, canceling: bool) -> Result<(), ScheduleError> {
+        if canceling {
+            self.tasks.abort_all();
+        }
+        let mut cleanup_error = None;
+        while let Some(result) = self.tasks.join_next_with_id().await {
+            match self.complete(result, canceling) {
+                Ok(id) => {
+                    if let Err(error) = self.observer.changed(id, self.nodes[id].clone()).await {
+                        cleanup_error = Some(ScheduleError::Observer(error));
+                    }
+                }
+                Err(error) => cleanup_error = Some(error),
+            }
+        }
+        cleanup_error.map_or(Ok(()), Err)
+    }
+    /// Marks every node that never settled as interrupted and reports it.
+    async fn interrupt_unfinished(&mut self) -> Result<(), ScheduleError> {
+        for (index, node) in self.nodes.iter_mut().enumerate() {
+            if matches!(node.status, NodeStatus::Pending | NodeStatus::Running) {
+                node.status = NodeStatus::Interrupted;
+                node.error = Some(error(ErrorCategory::Interrupted, "node_interrupted"));
+                self.observer
+                    .changed(index, node.clone())
+                    .await
+                    .map_err(ScheduleError::Observer)?;
+            }
+        }
+        Ok(())
+    }
+    /// Resolves the workflow outputs from the final node states.
+    fn into_result(self, canceled: bool) -> Result<ScheduleResult, ScheduleError> {
+        let outputs = project_outputs(self.graph, &self.nodes)?;
+        Ok(ScheduleResult {
+            status: run_status(&self.nodes, &outputs, canceled),
+            nodes: self.nodes,
+            start_order: self.start_order,
+            completion_order: self.completion_order,
+            outputs,
+        })
     }
 }
 
@@ -445,6 +471,16 @@ pub(crate) fn project_outputs(
     Ok(outputs)
 }
 
+/// Executes a compiled workflow from scratch with at most `parallelism`
+/// concurrent nodes, without observing progress.
+///
+/// # Errors
+///
+/// - Returns [`ScheduleError::Parallelism`] if `parallelism` is zero.
+/// - Returns [`ScheduleError::State`] if scheduler task bookkeeping becomes
+///   inconsistent.
+/// - Returns [`ScheduleError::Resolve`] if a workflow output cannot be
+///   resolved from the final node states.
 pub async fn schedule<E: NodeExecutor>(
     graph: Arc<CompiledWorkflow>,
     executor: Arc<E>,
@@ -454,6 +490,18 @@ pub async fn schedule<E: NodeExecutor>(
     schedule_observed(graph, executor, Arc::new(NoopObserver), parallelism, cancel).await
 }
 
+/// Executes a compiled workflow from scratch, reporting each node state change
+/// to `observer`.
+///
+/// # Errors
+///
+/// - Returns [`ScheduleError::Parallelism`] if `parallelism` is zero.
+/// - Returns [`ScheduleError::Observer`] if the observer rejects a progress
+///   change.
+/// - Returns [`ScheduleError::State`] if scheduler task bookkeeping becomes
+///   inconsistent.
+/// - Returns [`ScheduleError::Resolve`] if a workflow output cannot be
+///   resolved from the final node states.
 pub async fn schedule_observed<E: NodeExecutor, O: ScheduleObserver>(
     graph: Arc<CompiledWorkflow>,
     executor: Arc<E>,
@@ -487,6 +535,38 @@ pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
     if parallelism == 0 {
         return Err(ScheduleError::Parallelism);
     }
+    validate_resumable(&graph, &nodes)?;
+    let mut scheduler = Scheduler {
+        observer,
+        graph: &graph,
+        executor,
+        limit: parallelism.min(graph.definition().max_parallel),
+        cancel,
+        nodes,
+        tasks: JoinSet::new(),
+        owners: HashMap::new(),
+        start_order: vec![],
+        completion_order: vec![],
+    };
+    let result = scheduler.drive().await;
+    let canceling = !matches!(result, Ok(false));
+    // Tasks are joined before any error is returned; an error from `drive`
+    // takes priority over one met while joining.
+    let cleanup = scheduler.join_remaining(canceling).await;
+    let canceled = result?;
+    cleanup?;
+    if canceled {
+        scheduler.interrupt_unfinished().await?;
+    }
+    scheduler.into_result(canceled)
+}
+
+/// Checks that a snapshot has one node per plan, holds only pending, completed,
+/// or skipped nodes, and carries a valid output exactly for completed ones.
+fn validate_resumable(
+    graph: &CompiledWorkflow,
+    nodes: &[NodeProgress],
+) -> Result<(), ScheduleError> {
     if nodes.len() != graph.nodes().len()
         || nodes.iter().any(|node| {
             !matches!(
@@ -505,71 +585,24 @@ pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
                 .map_err(|_| ScheduleError::State)?;
         }
     }
-    let mut scheduler = Scheduler {
-        observer,
-        graph: &graph,
-        executor,
-        limit: parallelism.min(graph.definition().max_parallel),
-        cancel,
-        nodes,
-        tasks: JoinSet::new(),
-        owners: HashMap::new(),
-        start_order: vec![],
-        completion_order: vec![],
-    };
-    let result = scheduler.drive().await;
-    let canceling = !matches!(result, Ok(false));
-    if canceling {
-        scheduler.tasks.abort_all();
-    }
-    let mut cleanup_error = None;
-    while let Some(result) = scheduler.tasks.join_next_with_id().await {
-        match scheduler.complete(result, canceling) {
-            Ok(id) => {
-                if let Err(error) = scheduler
-                    .observer
-                    .changed(id, scheduler.nodes[id].clone())
-                    .await
-                {
-                    cleanup_error = Some(ScheduleError::Observer(error));
-                }
-            }
-            Err(error) => cleanup_error = Some(error),
-        }
-    }
-    let canceled = result?;
-    if let Some(error) = cleanup_error {
-        return Err(error);
-    }
-    if canceled {
-        for (index, node) in scheduler.nodes.iter_mut().enumerate() {
-            if matches!(node.status, NodeStatus::Pending | NodeStatus::Running) {
-                node.status = NodeStatus::Interrupted;
-                node.error = Some(error(ErrorCategory::Interrupted, "node_interrupted"));
-                scheduler
-                    .observer
-                    .changed(index, node.clone())
-                    .await
-                    .map_err(ScheduleError::Observer)?;
-            }
-        }
-    }
-    let outputs = project_outputs(scheduler.graph, &scheduler.nodes)?;
-    let partial = scheduler
-        .nodes
+    Ok(())
+}
+
+/// The overall status: interrupted wins, then failure (partial when anything
+/// completed), otherwise completed.
+fn run_status(nodes: &[NodeProgress], outputs: &[ResolvedBinding], canceled: bool) -> RunStatus {
+    let partial = nodes
         .iter()
         .any(|node| matches!(node.status, NodeStatus::Failed | NodeStatus::Blocked))
         || outputs.iter().any(|output| output.required_missing);
     let interrupted = canceled
-        || scheduler
-            .nodes
+        || nodes
             .iter()
             .any(|node| node.status == NodeStatus::Interrupted);
-    let status = if interrupted {
+    if interrupted {
         RunStatus::Interrupted
     } else if partial {
-        if scheduler
-            .nodes
+        if nodes
             .iter()
             .any(|node| node.status == NodeStatus::Completed)
         {
@@ -579,17 +612,14 @@ pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
         }
     } else {
         RunStatus::Completed
-    };
-    Ok(ScheduleResult {
-        status,
-        nodes: scheduler.nodes,
-        start_order: scheduler.start_order,
-        completion_order: scheduler.completion_order,
-        outputs,
-    })
+    }
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "test fakes implement async traits without needing to await"
+)]
 mod tests {
     use super::*;
     use crate::{
@@ -753,7 +783,7 @@ mod tests {
             match event {
                 Event::Start(id) => executor.gates[&id].add_permits(1),
                 Event::Finish(id) if id == "final" => break,
-                _ => {}
+                Event::Finish(_) => {}
             }
         }
         let result = task.await.unwrap();
@@ -919,7 +949,7 @@ mod tests {
                 .iter()
                 .all(|node| node.status == NodeStatus::Skipped)
         );
-        assert!(skipped.start_order.is_empty());
+        assert_eq!(skipped.start_order, [] as [usize; 0]);
         child.inputs = vec![OutputBinding {
             name: "optional_parent".into(),
             reference: ResultReference {
@@ -1104,7 +1134,7 @@ mod tests {
         .unwrap();
         assert_eq!(resumed.status, RunStatus::Completed);
         assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-        assert!(resumed.start_order.is_empty());
+        assert_eq!(resumed.start_order, [] as [usize; 0]);
     }
     #[tokio::test]
     async fn typed_interruption_without_parent_cancellation_never_reports_completed_run() {

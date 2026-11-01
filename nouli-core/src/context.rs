@@ -2,6 +2,8 @@
 
 pub mod builder;
 pub mod compact;
+mod decision_entry;
+pub mod evidence;
 pub mod facts;
 pub mod projection;
 
@@ -72,7 +74,33 @@ pub enum ContextError {
     ConflictingRevisions,
 }
 
+/// Check each update's shape and reject duplicate identities among newly created records.
+///
+/// # Errors
+///
+/// Returns any [`ContextUpdate::validate`] error before checking record identities,
+/// or [`ContextError::DuplicateRecord`] when two updates create the same record.
+pub fn validate_updates(updates: &[ContextUpdate]) -> Result<(), ContextError> {
+    for update in updates {
+        update.validate()?;
+    }
+    let mut ids = HashSet::new();
+    for update in updates {
+        if let Some(record) = update.new_record()
+            && !ids.insert(record.id)
+        {
+            return Err(ContextError::DuplicateRecord);
+        }
+    }
+    Ok(())
+}
+
 impl ContextRecord {
+    /// Checks that the record has a non-blank key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContextError::EmptyKey`] if the key is blank.
     pub fn validate(&self) -> Result<(), ContextError> {
         if self.key.trim().is_empty() {
             return Err(ContextError::EmptyKey);
@@ -82,6 +110,7 @@ impl ContextRecord {
 }
 
 impl ContextUpdate {
+    #[must_use]
     pub fn new_record(&self) -> Option<&ContextRecord> {
         match self {
             Self::Append { record }
@@ -95,6 +124,12 @@ impl ContextUpdate {
 
     /// Validates shape only. Reachability, active targets, and inherited retention
     /// are validated against the selected branch by the context projector.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContextError::EmptyKey`] if a new record has a blank key.
+    /// - [`ContextError::InvalidTargets`] if a supersession has no targets, repeats a target, or
+    ///   targets its own replacement.
     pub fn validate(&self) -> Result<(), ContextError> {
         if let Some(record) = self.new_record() {
             record.validate()?;
@@ -144,5 +179,65 @@ mod tests {
             .validate(),
             Err(ContextError::InvalidTargets)
         );
+    }
+    #[test]
+    fn shared_validation_checks_shapes_before_duplicate_record_identities() {
+        let record = ContextRecord {
+            id: Id::generate(),
+            key: "budget".into(),
+            value: Data::new(serde_json::json!(8)).unwrap(),
+            kind: ContextKind::Commitment,
+        };
+        let append = ContextUpdate::Append {
+            record: record.clone(),
+        };
+        let pin = ContextUpdate::Pin {
+            target: PinTarget::New {
+                record: record.clone(),
+            },
+        };
+        assert_eq!(
+            validate_updates(&[append.clone(), pin.clone()]),
+            Err(ContextError::DuplicateRecord)
+        );
+        let mut invalid = record.clone();
+        invalid.key.clear();
+        assert_eq!(
+            validate_updates(&[append, pin, ContextUpdate::Append { record: invalid }]),
+            Err(ContextError::EmptyKey)
+        );
+        validate_updates(&[
+            ContextUpdate::Unpin { target: record.id },
+            ContextUpdate::Unpin { target: record.id },
+        ])
+        .unwrap();
+        let mut workflow: crate::workflow::WorkflowSpec =
+            serde_json::from_str(include_str!("../../fixtures/contracts/workflow.json")).unwrap();
+        workflow.nodes[0].updates = vec![
+            ContextUpdate::Append {
+                record: record.clone()
+            };
+            2
+        ];
+        assert_eq!(
+            workflow.validate(),
+            Err(crate::workflow::WorkflowError::Context(
+                ContextError::DuplicateRecord
+            ))
+        );
+        workflow.nodes[0].updates.clear();
+        let request = crate::workflow::WorkflowRequest {
+            workflow,
+            session: crate::history::SessionSelection::New { name: None },
+            updates: vec![ContextUpdate::Append { record }; 2],
+            required_records: vec![],
+            request_id: None,
+        };
+        assert!(matches!(
+            request.validate(),
+            Err(crate::workflow::RequestError::History(
+                crate::history::HistoryError::Context(ContextError::DuplicateRecord)
+            ))
+        ));
     }
 }

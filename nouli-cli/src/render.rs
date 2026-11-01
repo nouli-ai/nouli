@@ -3,7 +3,7 @@ mod media;
 mod text;
 pub(crate) mod turn;
 use clap::{Args, ValueEnum};
-pub(crate) use media::{decision_tags, image_label_projection, image_labels, image_tags};
+pub(crate) use media::{image_label_projection, image_labels};
 use nouli_core::{
     codec,
     config::OutputFormat,
@@ -15,6 +15,7 @@ use nouli_core::{
     },
     workflow::RunStatus,
 };
+use serde::Serialize;
 use std::io::Write;
 pub(crate) use text::clean;
 use thiserror::Error;
@@ -44,6 +45,8 @@ pub(crate) enum RenderError {
     Modes,
     #[error("invalid report or event stream")]
     Protocol,
+    #[error(transparent)]
+    Evidence(#[from] nouli_core::context::evidence::EvidenceError),
     #[error("cannot serialize report")]
     Codec(#[from] nouli_core::codec::CodecError),
     #[error("cannot write output")]
@@ -76,6 +79,43 @@ pub(crate) fn resolve(
         selected
     })
 }
+fn input(code: &str, message: &str) -> ErrorReport {
+    ErrorReport {
+        category: ErrorCategory::Input,
+        code: code.into(),
+        message: message.into(),
+        retryable: false,
+    }
+}
+/// Resolves the format of a command that may stream events, reporting
+/// conflicting output flags as an input error.
+pub(crate) fn resolve_stream_format(
+    args: &OutputArgs,
+    configured: OutputFormat,
+    terminal: bool,
+) -> Result<Format, ErrorReport> {
+    resolve(args, configured, terminal).map_err(|_| {
+        input(
+            "conflicting_output_options",
+            "Choose only one of --json, --jsonl, or --format",
+        )
+    })
+}
+/// Resolves the format of a command that reports once rather than streaming
+/// events, so JSONL is refused with an input error.
+pub(crate) fn resolve_report_format(
+    args: &OutputArgs,
+    configured: OutputFormat,
+    terminal: bool,
+) -> Result<Format, ErrorReport> {
+    match resolve_stream_format(args, configured, terminal)? {
+        Format::Jsonl => Err(input(
+            "unsupported_output_format",
+            "This command supports text, JSON, or TOON output",
+        )),
+        format => Ok(format),
+    }
+}
 /// Color only on a terminal, with `NO_COLOR` unset or empty and `TERM` not `dumb`.
 pub(crate) fn color_enabled(terminal: bool) -> bool {
     color_for(
@@ -89,7 +129,7 @@ fn color_for(
     no_color: Option<&std::ffi::OsStr>,
     term: Option<&std::ffi::OsStr>,
 ) -> bool {
-    terminal && no_color.is_none_or(|value| value.is_empty()) && !plain_terminal(term)
+    terminal && no_color.is_none_or(std::ffi::OsStr::is_empty) && !plain_terminal(term)
 }
 /// Whether `TERM` names a terminal that takes no escape codes, such as an
 /// Emacs shell buffer.
@@ -126,7 +166,36 @@ pub(crate) fn diagnostic(sink: &mut impl Write, error: &ErrorReport) -> Result<(
     )?;
     Ok(())
 }
-fn json_value(sink: &mut impl Write, value: serde_json::Value) -> Result<(), RenderError> {
+pub(crate) fn labelled(
+    label: &str,
+    value: &impl Serialize,
+    sink: &mut impl Write,
+    format: Format,
+) -> Result<(), RenderError> {
+    // JSON keeps declaration/insertion order; TOON canonicalizes keys itself.
+    match format {
+        Format::Json => {
+            serde_json::to_writer(&mut *sink, value)?;
+            sink.write_all(b"\n")?;
+        }
+        Format::Toon | Format::Text => {
+            if format == Format::Text {
+                writeln!(sink, "{label}")?;
+            }
+            sink.write_all(codec::encode_toon(value)?.as_bytes())?;
+            sink.write_all(b"\n")?;
+        }
+        Format::Auto | Format::Jsonl => return Err(RenderError::Modes),
+    }
+    sink.flush()?;
+    Ok(())
+}
+
+pub(crate) fn plural(count: usize, noun: &str) -> String {
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
+fn json_value(sink: &mut impl Write, value: &serde_json::Value) -> Result<(), RenderError> {
     serde_json::to_writer(&mut *sink, &value)?;
     sink.write_all(b"\n")?;
     sink.flush()?;
@@ -148,7 +217,7 @@ pub(crate) fn result(
             Report::Error(error) => diagnostic(stderr, error)?,
             _ => text::result(stdout, result)?,
         },
-        Format::Json => json_value(stdout, encoded)?,
+        Format::Json => json_value(stdout, &encoded)?,
         Format::Toon => {
             stdout.write_all(codec::encode_toon(&encoded)?.as_bytes())?;
             stdout.write_all(b"\n")?;
@@ -222,7 +291,7 @@ impl<W: Write> JsonlWriter<W> {
         };
         let value = codec::to_value(event)?;
         self.next = self.next.checked_add(1).ok_or(RenderError::Protocol)?;
-        if let Err(error) = json_value(&mut self.sink, value) {
+        if let Err(error) = json_value(&mut self.sink, &value) {
             self.failed = true;
             return Err(error);
         }
@@ -239,6 +308,61 @@ mod tests {
         outcome::{Answer, QuestionOutcome, TurnOutcome},
         protocol::{TurnReport, validate_events},
     };
+    #[test]
+    fn report_formats_refuse_jsonl_and_keep_the_others() {
+        let resolve = |args: OutputArgs, configured| {
+            resolve_report_format(&args, configured, false).map_err(|error| error.code)
+        };
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    jsonl: true,
+                    ..Default::default()
+                },
+                OutputFormat::Auto
+            ),
+            Err("unsupported_output_format".into())
+        );
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    format: Some(Format::Jsonl),
+                    ..Default::default()
+                },
+                OutputFormat::Text
+            ),
+            Err("unsupported_output_format".into())
+        );
+        assert_eq!(
+            resolve(OutputArgs::default(), OutputFormat::Auto),
+            Ok(Format::Json)
+        );
+        assert_eq!(
+            resolve(OutputArgs::default(), OutputFormat::Text),
+            Ok(Format::Text)
+        );
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    format: Some(Format::Toon),
+                    ..Default::default()
+                },
+                OutputFormat::Auto
+            ),
+            Ok(Format::Toon)
+        );
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    json: true,
+                    jsonl: true,
+                    ..Default::default()
+                },
+                OutputFormat::Auto
+            ),
+            Err("conflicting_output_options".into())
+        );
+    }
     #[test]
     fn color_needs_a_terminal_a_clear_no_color_and_a_capable_term() {
         use std::ffi::OsStr;
@@ -361,7 +485,7 @@ mod tests {
             0
         );
         let text = String::from_utf8(stdout).unwrap();
-        assert!(stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&stderr), "");
         for expected in [
             "train (Rail)",
             "P(selected)=0.7",
@@ -390,7 +514,7 @@ mod tests {
                 result(&mut stdout, &mut stderr, format, &report).unwrap(),
                 0
             );
-            assert!(stderr.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stderr), "");
             diagnostic(
                 &mut stderr,
                 &ErrorReport {
@@ -469,7 +593,7 @@ mod tests {
                 result(&mut stdout, &mut stderr, Format::Json, &error(category)).unwrap(),
                 code
             );
-            assert!(stderr.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stderr), "");
             assert!(matches!(
                 serde_json::from_slice::<ResultEnvelope>(&stdout)
                     .unwrap()
@@ -498,7 +622,7 @@ mod tests {
             .unwrap(),
             2
         );
-        assert!(stdout.is_empty());
+        assert_eq!(String::from_utf8_lossy(&stdout), "");
         assert!(!String::from_utf8(stderr).unwrap().contains("SECRET_"));
         let mut report = turn();
         let Report::Turn(turn) = &mut report.result else {
@@ -527,7 +651,7 @@ mod tests {
         for format in [Format::Text, Format::Json, Format::Jsonl] {
             let mut stdout = Vec::new();
             assert!(result(&mut stdout, &mut Vec::new(), format, &report).is_err());
-            assert!(stdout.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stdout), "");
         }
     }
     struct Broken {
@@ -555,17 +679,14 @@ mod tests {
         assert!(writer.event(&events[0]).is_err());
         assert!(writer.event(events.last().unwrap()).is_err());
     }
-    #[test]
-    fn compiled_caller_defaults_render_as_data_consistently_without_native_answer_labels() {
+    /// The contract workflow with outputs on a skipped node, so every output
+    /// falls back to its caller-supplied default.
+    fn workflow_with_defaulted_outputs() -> nouli_core::workflow::WorkflowSpec {
         use nouli_core::{
             data::Data,
-            engine::workflow::WorkflowResult,
-            protocol::projection,
             workflow::{
-                NodeStatus, OutputBinding, WorkflowSpec, compile,
+                OutputBinding, WorkflowSpec, compile,
                 reference::{MissingPolicy, ResultField, ResultReference},
-                resolve,
-                schedule::{NodeOutput, NodeProgress, ResolvedBinding, ScheduleResult},
             },
         };
         let mut definition: WorkflowSpec =
@@ -605,6 +726,19 @@ mod tests {
         })
         .collect();
         compile::compile(&definition).unwrap();
+        definition
+    }
+    /// A completed run of `definition` whose third node was skipped and whose
+    /// outputs all resolved to their defaults.
+    fn defaulted_run(definition: &nouli_core::workflow::WorkflowSpec) -> ResultEnvelope {
+        use nouli_core::{
+            engine::workflow::WorkflowResult,
+            engine::workflow::reporting as projection,
+            workflow::{
+                NodeStatus, resolve,
+                schedule::{NodeOutput, NodeProgress, ResolvedBinding, ScheduleResult},
+            },
+        };
         let Report::Turn(turn) = turn().result else {
             panic!("turn")
         };
@@ -640,7 +774,7 @@ mod tests {
             })
             .collect();
         let report = projection::workflow(
-            &definition,
+            definition,
             &WorkflowResult {
                 request_id: None,
                 run: None,
@@ -660,7 +794,11 @@ mod tests {
             None,
         )
         .unwrap();
-        let report = ResultEnvelope::new(Report::Run(report));
+        ResultEnvelope::new(Report::Run(report))
+    }
+    #[test]
+    fn compiled_caller_defaults_render_as_data_consistently_without_native_answer_labels() {
+        let report = defaulted_run(&workflow_with_defaulted_outputs());
         for format in [Format::Text, Format::Json, Format::Jsonl] {
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
@@ -668,7 +806,7 @@ mod tests {
                 result(&mut stdout, &mut stderr, format, &report).unwrap(),
                 0
             );
-            assert!(stderr.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stderr), "");
             match format {
                 Format::Text => {
                     let text = String::from_utf8(stdout).unwrap();
@@ -694,6 +832,29 @@ mod tests {
                     validate_events(&events).unwrap();
                 }
                 Format::Auto | Format::Toon => unreachable!(),
+            }
+        }
+    }
+    #[test]
+    fn labelled_values_preserve_historical_json_toon_and_text_bytes() {
+        let connection = serde_json::json!({"version":1,"configured":true,"provider":"gateway","model":"user/model"});
+        // workflow show has already passed its inspection through codec::to_value.
+        let workflow = codec::to_value(&serde_json::json!({"version":1,"header":{"status":"completed","id":"run"},"nodes":[{"node":"check","status":"completed"}]})).unwrap();
+        for value in [connection, workflow] {
+            for format in [Format::Json, Format::Toon, Format::Text] {
+                let mut expected = Vec::new();
+                if format == Format::Json {
+                    serde_json::to_writer(&mut expected, &value).unwrap();
+                } else {
+                    if format == Format::Text {
+                        expected.extend_from_slice(b"Saved output\n");
+                    }
+                    expected.extend_from_slice(codec::encode_toon(&value).unwrap().as_bytes());
+                }
+                expected.push(b'\n');
+                let mut actual = Vec::new();
+                labelled("Saved output", &value, &mut actual, format).unwrap();
+                assert_eq!(actual, expected, "{format:?}");
             }
         }
     }

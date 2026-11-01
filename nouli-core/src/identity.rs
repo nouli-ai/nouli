@@ -19,12 +19,14 @@ pub enum IdentityError {
 pub struct Id(Uuid);
 
 impl Id {
+    #[must_use]
     pub fn generate() -> Self {
         Self(Uuid::now_v7())
     }
 
     /// A valid ID computed from `seed`, so a repeated request can repeat the
     /// IDs it names. Distinct seeds give distinct IDs; the timestamp field is zero.
+    #[must_use]
     pub fn derived(seed: &str) -> Self {
         use sha2::{Digest, Sha256};
         let digest = Sha256::digest(seed.as_bytes());
@@ -62,6 +64,7 @@ impl fmt::Display for Id {
 pub struct SessionName(String);
 
 impl SessionName {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }

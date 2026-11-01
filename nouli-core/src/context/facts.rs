@@ -4,17 +4,11 @@
 //! supersedes the record with one that keeps the key, so the earlier text stays
 //! in history while the fact keeps its number.
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{ContextKind, ContextRecord, ContextUpdate, projection};
-use crate::{
-    data::Data,
-    identity::{Id, SessionSelector},
-    storage::{Ledger, turns::TurnError},
-};
+use super::{ContextKind, ContextRecord, ContextUpdate};
+use crate::{data::Data, identity::Id};
 
 /// Key prefix shared by every fact record.
 pub const KEY_PREFIX: &str = "fact:";
@@ -67,12 +61,20 @@ fn record(id: Id, key: String, text: &str) -> Result<ContextRecord, FactError> {
 }
 
 /// Appends a new fact. The text is trimmed; empty text is rejected.
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn append(text: &str) -> Result<ContextUpdate, FactError> {
     append_with(Id::generate(), text)
 }
 
 /// Appends a fact under a chosen record ID. Callers that replay a request use
 /// IDs derived from the request, so the repeated request has the same intent.
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn append_with(id: Id, text: &str) -> Result<ContextUpdate, FactError> {
     Ok(ContextUpdate::Append {
         record: record(id, format!("{KEY_PREFIX}{id}"), text)?,
@@ -82,11 +84,19 @@ pub fn append_with(id: Id, text: &str) -> Result<ContextUpdate, FactError> {
 /// Replaces a fact's text, keeping its key and number. The earlier version
 /// stays in the ledger. A fact with conflicting alternatives has them all
 /// superseded.
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn replace(fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     replace_with(Id::generate(), fact, text)
 }
 
 /// Replaces a fact with a record of a chosen ID; see [`append_with`].
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn replace_with(id: Id, fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     Ok(ContextUpdate::Supersede {
         targets: fact.records.clone(),
@@ -95,102 +105,14 @@ pub fn replace_with(id: Id, fact: &Fact, text: &str) -> Result<ContextUpdate, Fa
     })
 }
 
-impl Ledger {
-    /// The active facts at the session's head. They follow the order in which
-    /// each fact was first added, so a replacement keeps its predecessor's
-    /// number. A blend lists the facts of every source.
-    pub fn facts(&self, selector: &SessionSelector) -> Result<Vec<Fact>, TurnError> {
-        let session = self.session(selector)?;
-        let sources = self.context_sources(session.id)?;
-        let history = self.ancestry(&sources)?;
-        let mut rank: HashMap<&str, usize> = HashMap::new();
-        let mut versions: HashMap<&str, Vec<&str>> = HashMap::new();
-        for turn in &history {
-            for update in &turn.updates {
-                if let Some(record) = update.new_record()
-                    && record.key.starts_with(KEY_PREFIX)
-                {
-                    let next = rank.len();
-                    rank.entry(record.key.as_str()).or_insert(next);
-                    if let Some(text) = record.value.value().as_str() {
-                        versions.entry(record.key.as_str()).or_default().push(text);
-                    }
-                }
-            }
-        }
-        let active = projection::project(&history, &sources, &[], session.id, session.id)?;
-        // Group the active versions by key; blended branches that replaced the
-        // same fact leave several, which stay together as one numbered fact.
-        let mut groups: Vec<(&str, Vec<&projection::ActiveRecord>)> = Vec::new();
-        for record in active.iter().filter(|active| {
-            active.record.kind == ContextKind::Evidence
-                && active.record.key.starts_with(KEY_PREFIX)
-                && active.record.value.value().is_string()
-        }) {
-            match groups
-                .iter_mut()
-                .find(|(key, _)| *key == record.record.key.as_str())
-            {
-                Some((_, members)) => members.push(record),
-                None => groups.push((record.record.key.as_str(), vec![record])),
-            }
-        }
-        let mut facts: Vec<_> = groups
-            .into_iter()
-            .filter_map(|(key, members)| {
-                let texts: Vec<String> = members
-                    .iter()
-                    .filter_map(|active| active.record.value.value().as_str().map(str::to_owned))
-                    .collect();
-                let projection::RevisionOrigin::Turn {
-                    session: origin_session,
-                    turn,
-                } = &members[0].origin
-                else {
-                    return None;
-                };
-                let (origin_session, turn) = (*origin_session, *turn);
-                let previous = if members.len() == 1 {
-                    versions
-                        .get(key)
-                        .and_then(|texts| texts.iter().rev().nth(1))
-                        .map(|text| (*text).to_owned())
-                } else {
-                    None
-                };
-                Some((
-                    rank.get(key).copied()?,
-                    Fact {
-                        number: 0,
-                        records: members.iter().map(|active| active.record.id).collect(),
-                        key: key.to_owned(),
-                        text: texts.join(" | "),
-                        alternatives: if texts.len() > 1 { texts } else { Vec::new() },
-                        turn,
-                        source_session: (origin_session != session.id).then_some(origin_session),
-                        previous,
-                    },
-                ))
-            })
-            .collect();
-        facts.sort_by_key(|(rank, _)| *rank);
-        Ok(facts
-            .into_iter()
-            .enumerate()
-            .map(|(index, (_, mut fact))| {
-                fact.number = index + 1;
-                fact
-            })
-            .collect())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         history::{FinalizedTurn, ModelSelection, SourceSelection},
-        storage::{OpenMode, turns::AttemptInput},
+        identity::SessionSelector,
+        storage::{Ledger, OpenMode, turns::AttemptInput},
     };
 
     struct Store(std::path::PathBuf);
@@ -220,7 +142,7 @@ mod tests {
                 AttemptInput {
                     request: fixture.request,
                     updates,
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     manifest: fixture.manifest,
                     request_id: None,
                 },
@@ -422,7 +344,7 @@ mod tests {
         assert_eq!(facts[0].text, "cheap | dear");
         assert_eq!(facts[0].previous, None);
         assert_eq!(facts[1].records.len(), 1);
-        assert!(facts[1].alternatives.is_empty());
+        assert_eq!(facts[1].alternatives, [] as [std::string::String; 0]);
         // A plain append is allowed and keeps both alternatives.
         commit(&mut ledger, blend.id, vec![append("three").unwrap()]);
         let facts = list(&ledger, blend.id);
@@ -438,7 +360,7 @@ mod tests {
         let facts = list(&ledger, blend.id);
         assert_eq!(texts(&facts), [(1, "settled"), (2, "two"), (3, "three")]);
         assert_eq!(facts[0].records.len(), 1);
-        assert!(facts[0].alternatives.is_empty());
+        assert_eq!(facts[0].alternatives, [] as [std::string::String; 0]);
     }
 
     #[test]

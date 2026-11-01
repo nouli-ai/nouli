@@ -1,12 +1,17 @@
 //! Public compact reports and one ordered terminal event per invocation.
-use super::*;
+mod projection;
+use super::{
+    Arc, CancellationToken, CredentialLookup, DecisionProvider, Engine, Id, LedgerWorker,
+    RetryClock, TokenCounter, WorkflowEngineError, WorkflowInput, WorkflowResult,
+};
 use crate::{
     protocol::{
-        InspectionReference, Report, ResultEnvelope, projection,
+        ErrorCategory, InspectionReference, Report, ResultEnvelope,
         stream::{EventSink, EventStream, StreamError},
     },
     workflow::WorkflowSpec,
 };
+pub use projection::{ReportError, workflow};
 
 impl<
     P: DecisionProvider + Send + 'static,
@@ -14,6 +19,13 @@ impl<
     T: RetryClock + Send + 'static,
 > Engine<P, C, T>
 {
+    /// Evaluate a workflow and stream its events and terminal result envelope to `sink`.
+    ///
+    /// # Errors
+    ///
+    /// Workflow failures are reported inside the returned envelope, not as `Err`.
+    /// Returns [`StreamError::Sink`] if the sink rejected any event, including the terminal
+    /// event, or [`StreamError::State`] if the event stream is inconsistent.
     pub async fn evaluate_workflow_report<S: EventSink>(
         self: &Arc<Self>,
         worker: Option<&LedgerWorker>,
@@ -36,6 +48,13 @@ impl<
             .await;
         finish(Some(definition), None, result, &stream).await
     }
+    /// Resume a saved workflow run and stream its events and terminal result envelope to `sink`.
+    ///
+    /// # Errors
+    ///
+    /// Workflow failures are reported inside the returned envelope, not as `Err`.
+    /// Returns [`StreamError::Sink`] if the sink rejected any event, including the terminal
+    /// event, or [`StreamError::State`] if the event stream is inconsistent.
     pub async fn resume_workflow_report<S: EventSink>(
         self: &Arc<Self>,
         worker: &LedgerWorker,
@@ -82,7 +101,7 @@ async fn finish<S: EventSink>(
         Ok(result) => {
             recovery_run = result.run;
             let projected = definition
-                .ok_or(projection::ProjectionError::Snapshot)
+                .ok_or(projection::ReportError::Snapshot)
                 .and_then(|definition| projection::workflow(definition, &result, None));
             match projected {
                 Ok(report) => Report::Run(report),

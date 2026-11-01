@@ -1,8 +1,10 @@
 #[path = "support/harness.rs"]
-pub mod harness;
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod harness;
 #[path = "support/loopback.rs"]
-pub mod loopback;
-use harness::{Home, QUESTION, report};
+#[allow(dead_code, reason = "each test uses a subset of the helpers")]
+mod loopback;
+use harness::{Home, QUESTION, ledger_bytes, report};
 use loopback::Server;
 use nouli_core::{
     identity::SessionSelector,
@@ -32,15 +34,8 @@ fn provider() -> Server {
     })
 }
 
-fn failure(output: Output, code: &str) -> ErrorReport {
-    assert_eq!(output.status.code(), Some(2), "{code}");
-    assert!(output.stderr.is_empty());
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!("expected an error report")
-    };
-    assert_eq!(error.code, code);
-    error
+fn failure(output: &Output, code: &str) -> ErrorReport {
+    harness::error_report(output, 2, Some(code))
 }
 
 fn ids(questions: &[nouli_core::decision::Question]) -> Vec<&str> {
@@ -50,13 +45,12 @@ fn ids(questions: &[nouli_core::decision::Question]) -> Vec<&str> {
         .collect()
 }
 
-#[test]
-fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what_they_name() {
-    let server = provider();
+/// A home whose store holds session `Trip`, started with one fact and the travel question.
+fn trip(server: &Server) -> Home {
     let home = Home::create();
-    home.configure(&server, "typesafe", false);
+    home.configure(server, "typesafe", false);
     let first = report(
-        home.run(
+        &home.run(
             [
                 &["new", "Trip", "The train costs 40 USD", "--json"][..],
                 &QUESTION,
@@ -65,15 +59,34 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         ),
     );
     assert_eq!(ids(&first.questions), ["travel"]);
+    home
+}
+
+/// The texts of the facts saved for session `name`, in fact-number order.
+fn saved_facts(home: &Home, name: &str) -> Vec<String> {
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    let session = SessionSelector::Name(name.to_owned().try_into().unwrap());
+    ledger
+        .facts(&session)
+        .unwrap()
+        .into_iter()
+        .map(|fact| fact.text)
+        .collect()
+}
+
+#[test]
+fn each_turn_asks_only_its_own_questions_and_replace_changes_only_the_fact_it_names() {
+    let server = provider();
+    let home = trip(&server);
     // A fact needs a question to go with it; nothing is asked again.
     let calls = server.count();
     let nothing = failure(
-        home.run(["add", "Trip", "A taxi costs 70 USD", "--json"]),
+        &home.run(["add", "Trip", "A taxi costs 70 USD", "--json"]),
         "questions_required",
     );
     assert!(nothing.message.contains("-q"));
     assert_eq!(server.count(), calls);
-    let second = report(home.run([
+    let second = report(&home.run([
         "add",
         "Trip",
         "A taxi costs 70 USD",
@@ -89,19 +102,12 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
             .len(),
         1
     );
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    let trip = SessionSelector::Name("Trip".to_owned().try_into().unwrap());
-    let numbered = ledger.facts(&trip).unwrap();
     assert_eq!(
-        numbered
-            .iter()
-            .map(|fact| fact.text.as_str())
-            .collect::<Vec<_>>(),
+        saved_facts(&home, "Trip"),
         ["The train costs 40 USD", "A taxi costs 70 USD"]
     );
-    drop(ledger);
     // Replacing fact 2 shows the model only the new text, and keeps its number.
-    let fourth = report(home.run([
+    let fourth = report(&home.run([
         "add",
         "Trip",
         "--replace",
@@ -117,15 +123,18 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
         .unwrap()
         .to_owned();
     assert!(seen.contains("140 USD") && !seen.contains("70 USD"));
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    let numbered = ledger.facts(&trip).unwrap();
+    let numbered = saved_facts(&home, "Trip");
     assert_eq!(numbered.len(), 2);
-    assert_eq!(numbered[1].text, "A taxi costs 140 USD");
-    drop(ledger);
-    // A what-if asks its own question and saves nothing.
-    let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    assert_eq!(numbered[1], "A taxi costs 140 USD");
+}
+
+#[test]
+fn whatif_asks_its_own_question_and_saves_nothing() {
+    let server = provider();
+    let home = trip(&server);
+    let before = ledger_bytes(&home);
     let calls = server.count();
-    let what = report(home.run([
+    let what = report(&home.run([
         "whatif",
         "Trip",
         "The train is CANCELLED",
@@ -136,15 +145,24 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     assert!(what.session.is_none() && what.turn.is_none());
     assert_eq!(ids(&what.questions), ["extra"]);
     assert_eq!(server.count(), calls + 1);
-    assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
-    // Mistakes are input errors that never reach the provider.
+    assert_eq!(before, ledger_bytes(&home));
+}
+
+#[test]
+fn input_mistakes_are_errors_that_never_reach_the_provider_or_the_ledger() {
+    let server = provider();
+    let home = trip(&server);
+    let before = ledger_bytes(&home);
     let calls = server.count();
-    failure(home.run(["whatif", "Trip", "--json"]), "questions_required");
+    failure(
+        &home.run(["whatif", "Trip", "--json"]),
+        "questions_required",
+    );
     let removed = home.run(["add", "Trip", "--drop", "travel"]);
     assert_eq!(removed.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&removed.stderr).contains("--drop"));
     let grammar = failure(
-        home.run(["add", "Trip", "-q", "no colon in this question"]),
+        &home.run(["add", "Trip", "-q", "no colon in this question"]),
         "invalid_decision_input",
     );
     assert!(grammar.message.starts_with("grammar error: "));
@@ -152,12 +170,9 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     let twice = home.run(["add", "Trip", "-q", "a: A?", "-q", "b: B?"]);
     assert_eq!(twice.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&twice.stderr).contains("--question"));
-    failure(
-        home.run(["add", "Trip", "-q", "bad: What? [only one]"]),
-        "invalid_decision_input",
-    );
-    failure(
-        home.run([
+    for args in [
+        &["add", "Trip", "-q", "bad: What? [only one]"][..],
+        &[
             "add",
             "Trip",
             "--replace",
@@ -165,22 +180,21 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
             "no such fact",
             "-q",
             "a: b",
-        ]),
-        "invalid_decision_input",
-    );
-    failure(
-        home.run(["add", "Trip", "--replace", "one", "text"]),
-        "invalid_decision_input",
-    );
-    failure(
-        home.run(["add", "Trip", "--input", "request.json", "-q", "a: b"]),
-        "invalid_decision_input",
-    );
-    failure(
-        home.run(["add", "Trip", "--input", "request.json", "A fact"]),
-        "invalid_decision_input",
-    );
-    // A 0.2.0 request file with standing questions says what to change.
+        ],
+        &["add", "Trip", "--replace", "one", "text"],
+        &["add", "Trip", "--input", "request.json", "-q", "a: b"],
+        &["add", "Trip", "--input", "request.json", "A fact"],
+    ] {
+        failure(&home.run(args), "invalid_decision_input");
+    }
+    assert_request_files_say_to_use_turn_questions(&home);
+    assert_eq!(server.count(), calls);
+    assert_eq!(before, ledger_bytes(&home));
+}
+
+/// A 0.2.0 request file with standing questions, or with no questions at all,
+/// says to ask them in `turn.questions`.
+fn assert_request_files_say_to_use_turn_questions(home: &Home) {
     let question = serde_json::to_value(harness::turn()).unwrap()["questions"][0].clone();
     for (name, questions) in [
         ("standing-only", json!([])),
@@ -191,7 +205,7 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
             json!({"turn": {"state": [], "questions": questions}, "standing": {"set": [question]}});
         std::fs::write(&path, file.to_string()).unwrap();
         let standing = failure(
-            home.run(["add", "Trip", "--input", path.to_str().unwrap(), "--json"]),
+            &home.run(["add", "Trip", "--input", path.to_str().unwrap(), "--json"]),
             "invalid_standing_question",
         );
         assert!(standing.message.contains("turn.questions"), "{name}");
@@ -203,12 +217,10 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     )
     .unwrap();
     let nothing = failure(
-        home.run(["add", "Trip", "--input", empty.to_str().unwrap(), "--json"]),
+        &home.run(["add", "Trip", "--input", empty.to_str().unwrap(), "--json"]),
         "questions_required",
     );
     assert!(nothing.message.contains("turn.questions"));
-    assert_eq!(server.count(), calls);
-    assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
 }
 
 #[test]
@@ -223,28 +235,31 @@ fn new_without_facts_or_questions_creates_a_session_and_branches_ask_only_their_
         panic!("a session report")
     };
     assert_eq!(session.name.as_ref().unwrap().as_str(), "Empty");
-    assert!(session.sources.is_empty());
+    assert_eq!(session.sources, [] as [nouli_core::history::SourcePoint; 0]);
     assert_eq!(server.count(), 0);
     let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
     let saved = ledger
         .session(&SessionSelector::Id(session.session))
         .unwrap();
-    assert!(saved.frontier.is_empty());
-    assert!(ledger.list_attempts(saved.id).unwrap().is_empty());
+    assert_eq!(saved.frontier, [] as [nouli_core::identity::Id; 0]);
+    assert_eq!(
+        ledger.list_attempts(saved.id).unwrap(),
+        [] as [nouli_core::storage::turns::AttemptSnapshot; 0]
+    );
     drop(ledger);
     // The session is usable: its first turn brings the question.
     let first =
-        report(home.run([&["add", "Empty", "A fact"][..], &QUESTION, &["--json"]].concat()));
+        report(&home.run([&["add", "Empty", "A fact"][..], &QUESTION, &["--json"]].concat()));
     assert_eq!(first.session, Some(session.session));
     // A name is taken once.
     let again = home.run(["new", "Empty"]);
     assert_eq!(again.status.code(), Some(5));
     // A branch asks its own question, not its source's.
     failure(
-        home.run(["new", "Child", "A later fact", "--from", "Empty", "--json"]),
+        &home.run(["new", "Child", "A later fact", "--from", "Empty", "--json"]),
         "questions_required",
     );
-    let child = report(home.run([
+    let child = report(&home.run([
         "new",
         "Child",
         "A later fact",
@@ -265,7 +280,7 @@ fn new_without_facts_or_questions_creates_a_session_and_branches_ask_only_their_
     // A fact with no question says so.
     let blend = home.run(["new", "Blend", "--from", "Empty", "--from", "Child"]);
     assert!(blend.status.success());
-    let nothing = failure(home.run(["add", "Blend", "A fact"]), "questions_required");
+    let nothing = failure(&home.run(["add", "Blend", "A fact"]), "questions_required");
     assert!(nothing.message.contains("-q"));
 }
 
@@ -329,8 +344,8 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
         "same-command",
         "--json",
     ];
-    let saved = report(home.run(args));
-    let replay = report(home.run(args));
+    let saved = report(&home.run(args));
+    let replay = report(&home.run(args));
     assert!(replay.replayed && replay.turn == saved.turn);
     // A replacement replays too, though its fact number now names the
     // replacement; a different replacement under the same ID conflicts.
@@ -346,9 +361,9 @@ fn text_output_shows_bars_and_what_changed_since_the_last_answer() {
         "replace-command",
         "--json",
     ];
-    let saved = report(home.run(args));
+    let saved = report(&home.run(args));
     assert!(!saved.replayed);
-    let replay = report(home.run(args));
+    let replay = report(&home.run(args));
     assert!(replay.replayed && replay.turn == saved.turn);
     let other = home.run([
         "add",
@@ -374,7 +389,7 @@ fn facts_list_inherited_and_replaced_facts() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     report(
-        home.run(
+        &home.run(
             [
                 &["new", "Trip", "Fact one", "Fact two", "--json"][..],
                 &QUESTION,
@@ -382,7 +397,7 @@ fn facts_list_inherited_and_replaced_facts() {
             .concat(),
         ),
     );
-    report(home.run([
+    report(&home.run([
         "add",
         "Trip",
         "--replace",
@@ -392,7 +407,7 @@ fn facts_list_inherited_and_replaced_facts() {
         "corrected: Is fact two corrected?",
         "--json",
     ]));
-    report(home.run([
+    report(&home.run([
         "new",
         "Child",
         "A fact of its own",
@@ -405,7 +420,7 @@ fn facts_list_inherited_and_replaced_facts() {
     let facts = |session: &str, format: &str| {
         let output = home.run(["facts", session, "--format", format]);
         assert!(output.status.success(), "{output:?}");
-        assert!(output.stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
         String::from_utf8(output.stdout).unwrap()
     };
     assert_eq!(
@@ -438,7 +453,7 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     report(
-        home.run(
+        &home.run(
             [
                 &["new", "Trip", "Fact one", "Fact two", "--json"][..],
                 &QUESTION,
@@ -448,7 +463,7 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     );
     for (name, text) in [("Cheap", "Cheap fact"), ("Dear", "Dear fact")] {
         assert!(home.run(["new", name, "--from", "Trip"]).status.success());
-        report(home.run([
+        report(&home.run([
             "add",
             name,
             "--replace",
@@ -485,14 +500,14 @@ fn blending_branches_that_replaced_the_same_fact_lists_it_once_and_a_replacement
     assert_eq!(listed[0]["alternatives"].as_array().unwrap().len(), 2);
     assert_eq!(listed[1]["records"].as_array().unwrap().len(), 1);
     // Both alternatives reach the model, and a plain add still works.
-    report(home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTION].concat()));
+    report(&home.run([&["add", "Both", "A new fact", "--json"][..], &QUESTION].concat()));
     let state = server.calls.lock().unwrap().last().unwrap().to_string();
     assert!(
         state.contains("Cheap fact") && state.contains("Dear fact"),
         "{state}"
     );
     // A replacement supersedes every alternative.
-    report(home.run([
+    report(&home.run([
         "add",
         "Both",
         "--replace",

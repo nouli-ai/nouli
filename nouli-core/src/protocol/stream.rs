@@ -14,6 +14,11 @@ pub trait EventSink: Send + Sync + 'static {
 #[derive(Default)]
 pub struct CollectEvents(Mutex<Vec<EngineEvent>>);
 impl CollectEvents {
+    /// Return a copy of the collected events.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StreamError::State`] if the event lock is poisoned.
     pub fn snapshot(&self) -> Result<Vec<EngineEvent>, StreamError> {
         self.0
             .lock()
@@ -22,6 +27,10 @@ impl CollectEvents {
     }
 }
 impl EventSink for CollectEvents {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait returns a future; collecting in memory has nothing to await"
+    )]
     async fn send(&self, event: EngineEvent) -> Result<(), ErrorReport> {
         self.0.lock().map_err(|_| state_report())?.push(event);
         Ok(())
@@ -92,6 +101,14 @@ impl<S: EventSink> EventStream<S> {
     pub(crate) async fn established_run(&self) -> Option<Id> {
         self.state.lock().await.run
     }
+    /// Emit the terminal event, first emitting `Started` if the stream has not started.
+    ///
+    /// # Errors
+    ///
+    /// - [`StreamError::State`] if the stream already ended, the sequence overflows, or
+    ///   `result` does not match the stream's run.
+    /// - [`StreamError::Sink`] if the sink rejected any event, including earlier ones; the
+    ///   terminal event is still attempted once.
     pub async fn finish(&self, result: ResultEnvelope) -> Result<(), StreamError> {
         let mut state = self.state.lock().await;
         let run = if state.started {
@@ -175,6 +192,10 @@ impl<S: EventSink> ScheduleObserver for EventStream<S> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "test fakes implement async traits without needing to await"
+)]
 mod tests {
     use super::*;
     use crate::{protocol::validate_events, workflow::NodeStatus};
@@ -310,6 +331,9 @@ mod tests {
             unopened.finish(turn_result).await,
             Err(StreamError::State)
         ));
-        assert!(fresh.snapshot().unwrap().is_empty());
+        assert_eq!(
+            fresh.snapshot().unwrap(),
+            [] as [crate::protocol::EngineEvent; 0]
+        );
     }
 }

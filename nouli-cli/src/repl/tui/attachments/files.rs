@@ -9,13 +9,13 @@ pub(crate) fn discover(root: &Path) -> Vec<PathBuf> {
     let mut files = ignore::WalkBuilder::new(root)
         .require_git(false)
         .follow_links(false)
-        .sort_by_file_name(|a, b| a.cmp(b))
+        .sort_by_file_name(std::cmp::Ord::cmp)
         .build()
         .take(20_000)
         .take_while(|_| start.elapsed() < Duration::from_millis(250))
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
-        .map(|entry| entry.into_path())
+        .map(ignore::DirEntry::into_path)
         .take(5_000)
         .collect::<Vec<_>>();
     files.sort();

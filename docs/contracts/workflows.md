@@ -64,7 +64,7 @@ not treat an unfinished stream as a finalized report.
 
 `fixtures/contracts/workflow.json` is a five-node score-threshold branch/join
 with an optional skipped output. `events.json` includes an answered/refused sibling,
-partial failure, and blocked descendants. Inline tests round-trip a frozen run,
+partial failure, and blocked descendants. Inline tests validate and round-trip the workflow fixture,
 exercise state transitions, pointers and absence, and reject broken event streams.
 
 The public compact report contains the declared outputs, or per-question whole outcomes from terminal nodes when outputs are absent. Selected scalars retain the source question and answer space, selected choice identity/probability, and available native confidence, so a fractional score carries its original ordered rubric. Present null, optional absence, required-output absence, defaults, and whole native refusals remain distinct. Node summaries carry status and record references; intermediate answer bodies are retrieved separately through saved turns and run inspection. Ephemeral reports expose no persisted run, session, or turn identity.

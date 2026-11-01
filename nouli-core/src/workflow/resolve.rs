@@ -38,6 +38,19 @@ fn present(value: serde_json::Value) -> Result<ReferenceValue, ResolveError> {
         value: Data::new(value)?,
     })
 }
+/// Selects a reference's raw value from a settled node, reporting skipped,
+/// failed, blocked, interrupted, refused, or missing sources as absent.
+///
+/// # Errors
+///
+/// - Returns [`ResolveError::Contract`] if the reference is malformed.
+/// - Returns [`ResolveError::Unsettled`] if the node is pending or running.
+/// - Returns [`ResolveError::Incomplete`] if a completed node lacks an outcome
+///   for the question or the selected choice's probability.
+/// - Returns [`ResolveError::Operand`] if the field does not apply to the
+///   answer kind.
+/// - Returns [`ResolveError::Codec`] or [`ResolveError::Data`] if the selected
+///   value cannot be encoded as data.
 pub fn select(
     reference: &ResultReference,
     status: NodeStatus,
@@ -54,9 +67,7 @@ pub fn select(
     }
     let outcome = outcome
         .ok_or(ResolveError::Incomplete)?
-        .outcomes
-        .iter()
-        .find(|outcome| outcome.question_id() == reference.question)
+        .outcome_for(&reference.question)
         .ok_or(ResolveError::Incomplete)?;
     let value = if reference.field == ResultField::Outcome {
         codec::to_value(outcome)?
@@ -72,18 +83,10 @@ pub fn select(
             (ResultField::Selected, Answer::Choice { selected, .. }) => {
                 serde_json::Value::String(selected.clone())
             }
-            (
-                ResultField::Probability,
-                Answer::Choice {
-                    selected,
-                    distribution,
-                },
-            ) => codec::to_value(
-                &distribution
-                    .iter()
-                    .find(|entry| entry.option_id == *selected)
-                    .ok_or(ResolveError::Incomplete)?
-                    .probability,
+            (ResultField::Probability, Answer::Choice { .. }) => codec::to_value(
+                &answer
+                    .selected_probability()
+                    .ok_or(ResolveError::Incomplete)?,
             )?,
             (ResultField::Probability, Answer::Noul { probability }) => {
                 codec::to_value(probability)?
@@ -114,6 +117,12 @@ pub fn select(
         present(value)
     }
 }
+/// Applies a reference's missing-value policy to a selected value.
+///
+/// # Errors
+///
+/// Returns [`ResolveError::Required`] if the value is absent and the policy
+/// requires it.
 pub fn apply(
     reference: &ResultReference,
     value: ReferenceValue,
@@ -130,6 +139,11 @@ pub fn apply(
         _ => Ok(value),
     }
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "floor is checked to lie in 0..2^64, so it converts to u64 exactly"
+)]
 fn unsigned_float(integer: u64, float: f64) -> Ordering {
     if float < 0.0 {
         return Ordering::Greater;

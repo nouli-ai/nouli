@@ -7,9 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `nouli-core`: `Ledger::decode_settings` decodes a frozen-settings snapshot and distinguishes missing or unsupported format versions from malformed payloads.
+- `nouli-core`: `ErrorReport::new` constructs non-retryable diagnostic reports; `RevisionOrigin::of_turn` and `RevisionOrigin::of_base` preserve durable and ephemeral context origins; `context::validate_updates` validates update shapes and rejects duplicate new-record IDs.
+- `nouli-core`: `WorkflowRequest::validate` checks workflow graphs and request intent without a ledger or fingerprint; `workflow::RequestError` distinguishes graph-compilation errors from invalid session selections, request IDs, required records, and context updates.
+- `nouli-core`: plan-local `media::PreparedImages`/`PreparedImage` reuse image derivatives and dimensions. `TokenCounter::count_prepared` and optional owned `TokenCounter::snapshot` support prepared counting and blocking context construction; existing custom counters keep their synchronous behavior by default. `DecisionProvider::attempt_prepared` defaults to the existing attempt method. `EngineError::Internal` reports failed blocking context tasks as internal errors.
+- `nouli-core`: `provider::evaluate` sends a decision through the selected protocol; `ProviderProfile::image_encoding` returns the configured or protocol-default image encoding.
+- `nouli-core`: `Criterion::label`, `Criterion::description`, `TurnOutcome::outcome_for`, `outcome::outcome_for`, `Answer::selected_probability`, `Answer::probability_of`, and `outcome::probability_of` read a criterion's text, the outcome for a question, and a choice's probabilities.
+- `nouli-core`: `context::evidence` types saved image and saved-answer records: `DecisionReference`, `ImageSnapshot`, `image_record`, `rebind_decision_record`, `ContextRecord::as_image`, `ContextRecord::as_decision_reference`, and the `IMAGE_KEY_PREFIX`, `DECISION_KEY_PREFIX`, `IMAGE_FIELD`, and `DECISION_REFERENCE_FIELD` constants. `storage::decisions::DecisionSource` is re-exported from there.
+- `nouli-core`: `context::evidence::marker` finds, formats, parses, and strips the inline `[image:UUID]` and `[decision:UUID]` markers that bind text to saved images and saved answers.
+- `nouli-core`: `protocol::OUTCOME_UNKNOWN`, `protocol::NOT_DISPATCHED`, and `protocol::OWNER_EXITED` name the error codes that recovery reads from saved attempts and workflow nodes.
+- `nouli-core`: `Engine::planned_settings`, `Engine::planned_ephemeral_settings`, and `Engine::planned_workflow_settings` return the settings an evaluation will use, so callers can prepare credentials for the providers it will actually call.
+
+### Changed
+
+- `nouli-core`: `Ledger::decode_payload` consistently reports typed decoding failures as `StorageError::Payload`, including unsupported direct or nested settings snapshots. Use `Ledger::decode_settings` to distinguish unsupported snapshot versions as `StorageError::FrozenSettings`. Built-in frozen request and workflow loaders retain the `unsupported_frozen_settings` report.
+- `nouli-core`: converting `StorageError::Conflict` into `TurnError` now consistently produces `TurnError::Conflict` and the `head_conflict` report code, including outside turn writes.
+- `nouli-core`: `AcceptedRequest::state` now uses `storage::reservations::ReservationState` instead of `String`; exported JSON retains the same `pending`, `completed`, and `interrupted` values.
+- `nouli-core`: workflow request and node validation rejects context updates that create the same record ID more than once.
+- `nouli-core`: workflow report projection moves from `protocol::projection::workflow` and its `ProjectionError` to `engine::workflow::reporting::{workflow, ReportError}`.
+- Invalid `nouli connect --protocol` and `--binding` values now show clap usage errors listing the accepted values. REPL session creation and rename use the same session-name validation message.
+- `nouli-core`: `Ledger::decision_reference` reports an invalid snapshot value as `DecisionError::Evidence` instead of `DecisionError::Data`.
+- Report each `nouli connect` and terminal startup setup failure with its own error code and exit code instead of `connection_setup_failed` with exit 2. Invalid arguments, such as an unknown service, protocol, binding, connection name, model, environment variable, credential command, or key, are input errors (exit 2) with codes such as `unknown_service`, `invalid_protocol`, and `connection_exists`. Configuration problems keep their configuration codes and name the configuration file, such as `invalid_configuration_syntax`, `configuration_unreadable`, or `auth_store_insecure` (exit 2). Failures to write the configuration (`configuration_write_failed`) or the credential store (`auth_store_write_failed`, as `nouli auth login` reports) exit 6, and canceling setup reports `setup_canceled` and exits 130.
+- `nouli-core`: `context::projection::project_with_base`, `Ledger::record_attempt_progress`, `Ledger::record_workflow_progress`, and `Ledger::fail_workflow_attempt` take their origin or progress argument by reference, so callers no longer clone it.
+- Save each new attempt's provider error with the same category and code as the final report, such as `provider_capacity`, `provider_authentication_failed`, and `provider_transport_failed`, instead of separate attempt-only codes. Timed-out attempts keep the `provider_outcome_unknown` code under the `transport` category, and each attempt keeps its detailed message, such as the HTTP status.
+- `nouli-core`: workflow ledger methods return `WorkflowError::Conflict` instead of `WorkflowError::Storage(StorageError::Conflict)` when a run, reservation, or node changes concurrently.
+
+### Removed
+
+- `nouli-core`: remove `media::Evidence::assets`; `provider::wire::body` prepares image assets using the connection settings. Existing protocol-specific evaluation and request-body functions remain available.
+- `nouli-core`: remove the unused `history::AttemptState`, `history::AttemptRecord`, `HistoryEvent::AttemptRecorded`, and `workflow::FrozenRun` types, and the `ContextPlan::questions` and `ContextPlan::required` fields. The ledger never wrote these types, and the context a model receives is unchanged.
+
 ### Fixed
 
+- Keep the terminal responsive to cancellation while native image turns assemble context and prepare request bodies. Reuse each image derivative across budgeting, context reduction, and dispatch within a plan, while retaining original saved images and wire bytes.
+- A timed-out file import now stops converter descendants as well as their launcher, so imports cannot leave converter processes running or wait indefinitely for inherited pipes.
+- Keep fact text at normal brightness when it contains phrases such as `(from x)` or `(replaced; ...)`; dim source and replacement annotations using their saved metadata.
+- In the terminal view, a saved-answer reference recorded without a display label, such as one a `nouli-core` caller wrote, is usable as `@saved answer` instead of being reported unavailable when a draft cites it. A malformed saved-answer reference is reported as an error when the terminal view restores a session, and fails the terminal graph and `nouli view` with a message naming it, instead of being skipped silently.
+- Run only the credential commands of the providers a turn or `workflow run` uses. A `workflow run` that continues a session whose model defaults name a different provider from the configured default no longer runs the default provider's command, and runs the session provider's command once before the run instead of once per node during it. A turn that replays an earlier `--request-id` prepares the credential of the provider saved with that request, not the current default.
+- Save connection setup and startup model choices with a relative `--config` path such as `--config config.toml`, instead of reporting `connection_setup_failed` after the file was already written.
+- Report `--jsonl` on `nouli auth`, `nouli connect`, `nouli sessions`, `nouli facts`, `nouli context`, and `nouli workflow show` as the input error `unsupported_output_format` ("This command supports text, JSON, or TOON output"). `nouli auth` previously exited 2 with no output, `nouli connect` reported `connection_setup_failed`, and inspection commands reported `invalid_inspection`. Conflicting output flags given before and after any command, such as `nouli --json auth list --jsonl` or `nouli --json new Trip -q ... --jsonl`, now print `conflicting_output_options` on standard error instead of exiting silently.
+- Read `nouli connect --stdin` keys like `nouli auth login --stdin`: only the line ending is removed, so trailing spaces stay part of the key, and a line over 16 KiB is refused. `nouli auth login --stdin` now reports `credential_too_long` for such a line instead of storing a cut-off key.
 - Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
+- Show `--input` help for `new`, `add`, `ask`, and `whatif` without stray Markdown backticks.
+- List `/connect`, `/login`, `/logout`, and `/model` in `/help` only in the TUI, which supports them; the plain line loop no longer advertises commands it rejects.
+- Apply `nouli auth login` and `logout` rules to TUI `/login` and `/logout`: logging in to a provider whose connection disables authentication stores the key with a note instead of refusing, `/logout` removes a stored credential for a provider no longer in the configuration and says whether one was removed, and failures of TUI `/connect`, `/model`, `/login`, and `/logout` show their specific message instead of "invalid connection settings".
+- Report `session_name_exists` only when another session holds the name; other ledger constraint failures during session creation or rename now report as storage errors.
+- Report retrying an unknown request ID as `unknown_request` instead of `invalid_request`.
+- Report a concurrent workflow ownership or node change as `workflow_conflict` whether it is found before or during a ledger write, instead of sometimes `ledger_conflict`.
+- `nouli-core`: report invalid credential sources from `KeySource::env` and `KeySource::command` as `AuthError::InvalidEnvName` and `AuthError::InvalidCommandWords` instead of errors naming an empty provider.
+- `nouli-core`: report a non-durable workflow passed to `Ledger::accept_workflow` as `WorkflowError::NotDurable`, an invalid provider profile in request building as `ProviderError::Profile`, and finalizing a workflow attempt through `Ledger::finalize_attempt` as `TurnError::WorkflowAttempt`, instead of unrelated snapshot, protocol, and conflict errors.
 
 ## [0.4.3] - 2026-10-31
 

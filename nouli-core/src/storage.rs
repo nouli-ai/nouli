@@ -7,6 +7,7 @@ pub mod guards;
 pub mod inspection;
 mod publication;
 pub mod replay;
+pub mod reservations;
 mod schema;
 pub mod sessions;
 pub mod sources;
@@ -25,7 +26,10 @@ use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
-use crate::codec::{self, InputFormat};
+use crate::{
+    codec::{self, InputFormat},
+    config::resolve::{FROZEN_SETTINGS_VERSION, frozen_settings_version},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
@@ -65,7 +69,7 @@ pub enum StorageError {
     Conflict,
 }
 
-pub(super) fn sql_error(operation: &'static str, error: rusqlite::Error) -> StorageError {
+pub(super) fn sql_error(operation: &'static str, error: &rusqlite::Error) -> StorageError {
     let code = error.sqlite_error_code();
     if matches!(
         code,
@@ -75,6 +79,37 @@ pub(super) fn sql_error(operation: &'static str, error: rusqlite::Error) -> Stor
     } else {
         StorageError::Sqlite { operation, code }
     }
+}
+
+/// Validate frozen settings without choosing a caller's error category.
+fn freeze_settings(
+    settings: &crate::config::resolve::SettingsSnapshot,
+) -> Result<(), crate::config::ConfigError> {
+    settings.profile.validate()?;
+    settings.execution.validate()?;
+    Ok(())
+}
+
+fn freeze_store(
+    ledger: &Ledger,
+    operation: &'static str,
+) -> Result<std::path::PathBuf, StorageError> {
+    std::fs::canonicalize(ledger.path().parent().ok_or(StorageError::Payload)?).map_err(|source| {
+        StorageError::Io {
+            operation,
+            path: ledger.path().to_owned(),
+            source,
+        }
+    })
+}
+
+/// Validate a value known by its owning loader to hold frozen settings.
+fn validate_frozen_settings_version(value: &serde_json::Value) -> Result<(), StorageError> {
+    let version = frozen_settings_version(value).map_err(|_| StorageError::Payload)?;
+    if version != FROZEN_SETTINGS_VERSION {
+        return Err(StorageError::FrozenSettings);
+    }
+    Ok(())
 }
 
 pub struct Ledger {
@@ -137,6 +172,17 @@ fn check_read_only_header(path: &Path) -> Result<(), StorageError> {
 
 impl Ledger {
     /// Explicit root selection; opening read-only never creates or migrates it.
+    ///
+    /// # Errors
+    ///
+    /// - [`StorageError::Io`] if the store directory or ledger file cannot be
+    ///   created, or a read-only ledger's header cannot be read.
+    /// - [`StorageError::WrongStore`] if the file is not a Nouli ledger in
+    ///   rollback-journal mode.
+    /// - [`StorageError::NewerSchema`] if the schema is newer than supported, or
+    ///   [`StorageError::MigrationRequired`] if a read-only ledger is outdated.
+    /// - [`StorageError::Busy`] or [`StorageError::Sqlite`] if opening,
+    ///   configuring, or migrating the database fails.
     pub fn open(root: &Path, mode: OpenMode) -> Result<Self, StorageError> {
         let path = root.join("ledger.sqlite3");
         if mode == OpenMode::ReadWriteCreate {
@@ -150,16 +196,16 @@ impl Ledger {
         };
         let mut connection =
             Connection::open_with_flags(&path, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX)
-                .map_err(|error| sql_error("open", error))?;
+                .map_err(|error| sql_error("open", &error))?;
         connection
             .busy_timeout(Duration::from_secs(2))
-            .map_err(|error| sql_error("set busy timeout", error))?;
+            .map_err(|error| sql_error("set busy timeout", &error))?;
         connection
             .pragma_update(None, "foreign_keys", true)
-            .map_err(|error| sql_error("enable foreign keys", error))?;
+            .map_err(|error| sql_error("enable foreign keys", &error))?;
         connection
             .pragma_update(None, "recursive_triggers", true)
-            .map_err(|error| sql_error("enable immutable replacement guards", error))?;
+            .map_err(|error| sql_error("enable immutable replacement guards", &error))?;
         match mode {
             OpenMode::ReadWriteCreate => {
                 schema::migrate(&mut connection, schema::MIGRATIONS)?;
@@ -167,13 +213,13 @@ impl Ledger {
                 // sidecars. Short writes still permit independent model calls.
                 let journal: String = connection
                     .pragma_update_and_check(None, "journal_mode", "DELETE", |row| row.get(0))
-                    .map_err(|error| sql_error("set journal mode", error))?;
+                    .map_err(|error| sql_error("set journal mode", &error))?;
                 if !journal.eq_ignore_ascii_case("delete") {
                     return Err(StorageError::WrongStore);
                 }
                 connection
                     .pragma_update(None, "synchronous", "FULL")
-                    .map_err(|error| sql_error("set durability", error))?;
+                    .map_err(|error| sql_error("set durability", &error))?;
             }
             OpenMode::ReadOnlyExisting => schema::check_read_only(&connection)?,
         }
@@ -196,6 +242,12 @@ impl Ledger {
     }
 
     /// Synchronous closures cannot retain a transaction across an async await.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::ReadOnly`] if the ledger was opened read-only,
+    /// [`StorageError::Busy`] or [`StorageError::Sqlite`] if beginning or
+    /// committing the transaction fails, and any error returned by `write`.
     pub fn transaction<T, E: From<StorageError>>(
         &mut self,
         operation: &'static str,
@@ -207,60 +259,128 @@ impl Ledger {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|error| E::from(sql_error(operation, error)))?;
+            .map_err(|error| E::from(sql_error(operation, &error)))?;
         let result = write(&transaction)?;
         transaction
             .commit()
-            .map_err(|error| E::from(sql_error("commit", error)))?;
+            .map_err(|error| E::from(sql_error("commit", &error)))?;
         Ok(result)
     }
 
     /// Full supported data is serialized with the same strict TOON codec used
     /// for model context. Credential values have no Serialize implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Payload`] if the value cannot be encoded as TOON.
     pub fn encode_payload<T: Serialize>(value: &T) -> Result<String, StorageError> {
         codec::encode_toon(value).map_err(|_| StorageError::Payload)
     }
+    /// Decodes a stored TOON payload into `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Payload`] if the TOON payload cannot be decoded
+    /// into `T`, including when a direct or nested frozen-settings snapshot is
+    /// unsupported. Use [`Ledger::decode_settings`] for typed snapshot decoding
+    /// that distinguishes unsupported versions; built-in frozen request and
+    /// workflow loaders validate their known settings fields separately.
     pub fn decode_payload<T: DeserializeOwned>(payload: &str) -> Result<T, StorageError> {
         let value = codec::decode_value(payload.as_bytes(), InputFormat::Toon)
             .map_err(|_| StorageError::Payload)?;
-        serde_json::from_value(value).map_err(|error| {
-            if error.to_string() == "unsupported frozen settings; use a fresh store" {
-                StorageError::FrozenSettings
-            } else {
-                StorageError::Payload
-            }
-        })
+        serde_json::from_value(value).map_err(|_| StorageError::Payload)
+    }
+
+    /// Decodes a stored frozen-settings snapshot, distinguishing an unsupported
+    /// format version from a malformed payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::FrozenSettings`] if the raw snapshot has a
+    /// missing or unsupported format version, or [`StorageError::Payload`] if
+    /// its syntax, fields, or provider profile cannot be decoded.
+    pub fn decode_settings(
+        payload: &str,
+    ) -> Result<crate::config::resolve::SettingsSnapshot, StorageError> {
+        let value = codec::decode_value(payload.as_bytes(), InputFormat::Toon)
+            .map_err(|_| StorageError::Payload)?;
+        validate_frozen_settings_version(&value)?;
+        serde_json::from_value(value).map_err(|_| StorageError::Payload)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::resolve::RuntimeOverrides;
+    use crate::history::ModelSelection;
     use crate::identity::Id;
 
     #[test]
     fn real_legacy_profiles_fail_with_fresh_store_guidance_before_profile_decoding() {
         let legacy = serde_json::json!({"profile_name":"old","profile":{"protocol":"typesafe", "model":"old", "base_url":"https://example.com"}, "execution":crate::config::ExecutionSettings::default(), "output":"auto", "store":"/tmp/old"});
-        for value in [legacy.clone(), serde_json::json!({"settings":[legacy]})] {
-            let payload = Ledger::encode_payload(&value).unwrap();
-            if value.get("settings").is_some() {
-                #[derive(serde::Deserialize)]
-                struct Saved {
-                    #[allow(dead_code)]
-                    settings: Vec<crate::config::resolve::SettingsSnapshot>,
-                }
-                assert!(matches!(
-                    Ledger::decode_payload::<Saved>(&payload),
-                    Err(StorageError::FrozenSettings)
-                ));
-            } else {
-                assert!(matches!(
-                    Ledger::decode_payload::<crate::config::resolve::SettingsSnapshot>(&payload),
-                    Err(StorageError::FrozenSettings)
-                ));
-            }
-        }
+        let payload = Ledger::encode_payload(&legacy).unwrap();
+        assert!(matches!(
+            Ledger::decode_settings(&payload),
+            Err(StorageError::FrozenSettings)
+        ));
+        assert!(matches!(
+            super::workflows::decode_settings(&Ledger::encode_payload(&vec![legacy]).unwrap()),
+            Err(StorageError::FrozenSettings)
+        ));
     }
+
+    #[test]
+    fn unrelated_versions_and_snapshot_shaped_evidence_keep_the_requested_contract() {
+        #[derive(serde::Deserialize)]
+        struct OtherPayload {
+            required: bool,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct CustomWrapper {
+            settings: Vec<crate::config::resolve::SettingsSnapshot>,
+        }
+
+        let snapshot = serde_json::json!({
+            "format_version": 99, "profile_name": "evidence", "profile": {},
+            "execution": crate::config::ExecutionSettings::default(),
+            "output": "auto", "store": "/tmp/evidence"
+        });
+        let root_snapshot = Ledger::encode_payload(&snapshot).unwrap();
+        assert!(matches!(
+            Ledger::decode_payload::<bool>(&root_snapshot),
+            Err(StorageError::Payload)
+        ));
+        assert!(matches!(
+            Ledger::decode_payload::<crate::config::resolve::SettingsSnapshot>(&root_snapshot),
+            Err(StorageError::Payload)
+        ));
+        for value in [
+            snapshot.clone(),
+            serde_json::json!({"format_version":99,"evidence":snapshot}),
+            serde_json::json!({"settings":[snapshot]}),
+        ] {
+            let encoded = Ledger::encode_payload(&value).unwrap();
+            assert_eq!(
+                Ledger::decode_payload::<serde_json::Value>(&encoded).unwrap(),
+                value
+            );
+            let error = match Ledger::decode_payload::<OtherPayload>(&encoded) {
+                Err(error) => error,
+                Ok(payload) => panic!("unexpected success: {}", payload.required),
+            };
+            assert_eq!(error.report().code, "invalid_saved_payload");
+        }
+
+        let wrapper = Ledger::encode_payload(&serde_json::json!({"settings":[snapshot]})).unwrap();
+        let error = match Ledger::decode_payload::<CustomWrapper>(&wrapper) {
+            Err(error) => error,
+            Ok(wrapper) => panic!("unexpected success: {} settings", wrapper.settings.len()),
+        };
+        assert_eq!(error.report().code, "invalid_saved_payload");
+    }
+
     struct Store(PathBuf);
     impl Store {
         fn new() -> Self {
@@ -382,7 +502,7 @@ mod tests {
         let store = Store::new();
         let mut ledger = store.open();
         let failure=ledger.transaction::<_, StorageError>("test rollback",|transaction| {
-            transaction.execute("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('fixture','{}','[]')",[]).map_err(|error|sql_error("insert test session",error))?;
+            transaction.execute("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('fixture','{}','[]')",[]).map_err(|error|sql_error("insert test session",&error))?;
             Err::<(),_>(StorageError::Payload)
         });
         assert!(matches!(failure, Err(StorageError::Payload)));
@@ -392,7 +512,7 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
         assert!(ledger.transaction::<_, StorageError>("foreign key",|transaction| {
-            transaction.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('turn','missing',0,'{}')",[]).map_err(|error|sql_error("insert test turn",error))?;
+            transaction.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('turn','missing',0,'{}')",[]).map_err(|error|sql_error("insert test turn",&error))?;
             Ok(())
         }).is_err());
     }
@@ -402,7 +522,7 @@ mod tests {
         let store = Store::new();
         let mut ledger = store.open();
         ledger.transaction::<_, StorageError>("insert fixture",|transaction| {
-            transaction.execute_batch("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]'); INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'original');").map_err(|error|sql_error("insert fixtures",error))?;
+            transaction.execute_batch("INSERT INTO sessions(id,defaults_toon,frontier_toon) VALUES('s','{}','[]'); INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'original');").map_err(|error|sql_error("insert fixtures",&error))?;
             Ok(())
         }).unwrap();
         for sql in [
@@ -415,7 +535,7 @@ mod tests {
                     .transaction::<_, StorageError>("immutable write", |transaction| {
                         transaction
                             .execute(sql, [])
-                            .map_err(|error| sql_error("immutable test", error))?;
+                            .map_err(|error| sql_error("immutable test", &error))?;
                         Ok(())
                     })
                     .is_err()
@@ -432,7 +552,7 @@ mod tests {
             .transaction::<_, StorageError>("mutable projection", |transaction| {
                 transaction
                     .execute("UPDATE sessions SET revision=revision+1 WHERE id='s'", [])
-                    .map_err(|error| sql_error("update projection", error))?;
+                    .map_err(|error| sql_error("update projection", &error))?;
                 Ok(())
             })
             .unwrap();
@@ -451,9 +571,9 @@ mod tests {
                 .unwrap();
         let settings = config
             .resolve(
-                &Default::default(),
-                &Default::default(),
-                &Default::default(),
+                &RuntimeOverrides::default(),
+                &ModelSelection::default(),
+                &ModelSelection::default(),
                 Path::new("/home"),
                 |_| Some("SECRET_SENTINEL".into()),
             )
@@ -463,5 +583,9 @@ mod tests {
         let decoded: crate::config::resolve::SettingsSnapshot =
             Ledger::decode_payload(&encoded).unwrap();
         assert_eq!(decoded, settings.snapshot);
+        assert_eq!(
+            Ledger::decode_settings(&encoded).unwrap(),
+            settings.snapshot
+        );
     }
 }

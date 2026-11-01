@@ -18,6 +18,7 @@ pub mod transport;
 pub mod workflow;
 
 /// The version of the Nouli library in this build.
+#[must_use]
 pub const fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }

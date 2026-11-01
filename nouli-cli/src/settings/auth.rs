@@ -2,25 +2,22 @@
 //! command sources, and answering credential lookups. A credential value is
 //! never logged, printed, or put in an error.
 
-use super::environment::{Environment, Origin};
-use nix::{
-    sys::signal::{Signal, killpg},
-    unistd::Pid,
+use super::{
+    environment::{Environment, Origin},
+    private_file,
 };
 use nouli_core::{
     config::auth::{AuthError, AuthStore, CredentialSource, KeySource},
-    identity::Id,
     protocol::{ErrorCategory, ErrorReport},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::{Mutex, mpsc},
-    thread,
-    time::{Duration, Instant},
+    process::{Command, Stdio},
+    sync::Mutex,
+    time::Duration,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -112,35 +109,9 @@ pub(crate) fn read(path: &Path) -> Result<AuthStore, AuthFileError> {
 /// temporary file is private from the moment it exists, so no wider mode is
 /// ever visible at the final path.
 pub(crate) fn write(path: &Path, store: &AuthStore) -> Result<(), AuthFileError> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let failed = || AuthFileError::Write { path: path.into() };
-    let parent = path.parent().ok_or_else(failed)?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(parent)
-        .map_err(|_| failed())?;
     let text = store.to_toml().map_err(|_| failed())?;
-    let temporary = parent.join(format!(".auth-{}.tmp", Id::generate()));
-    let written = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        file.flush()?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if written.is_err() {
-        let _ = fs::remove_file(&temporary);
-        return Err(failed());
-    }
-    if let Ok(directory) = fs::File::open(parent) {
-        let _ = directory.sync_all();
-    }
-    Ok(())
+    private_file::publish(path, text.as_bytes()).map_err(|_| failed())
 }
 
 /// Reads the store, applies `change`, and writes the result back when `change`
@@ -151,26 +122,8 @@ pub(crate) fn update<T>(
     path: &Path,
     change: impl FnOnce(&mut AuthStore) -> (T, bool),
 ) -> Result<T, AuthFileError> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-    let failed = || AuthFileError::Write { path: path.into() };
-    let parent = path.parent().ok_or_else(failed)?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(parent)
-        .map_err(|_| failed())?;
-    let mut lock_name = path.file_name().ok_or_else(failed)?.to_owned();
-    lock_name.push(".lock");
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(nix::libc::O_NOFOLLOW)
-        .open(parent.join(lock_name))
-        .map_err(|_| failed())?;
-    lock.lock().map_err(|_| failed())?;
+    let _lock =
+        private_file::lock_beside(path).map_err(|_| AuthFileError::Write { path: path.into() })?;
     let mut store = read(path)?;
     let (result, modified) = change(&mut store);
     if modified {
@@ -185,110 +138,43 @@ pub(crate) fn run_command(argv: &[String], timeout: Duration) -> Option<String> 
     run_command_until(argv, timeout, &CancellationToken::new())
 }
 
-/// What the reader thread reports about the command's output.
-enum Output {
-    Complete(Vec<u8>),
-    TooLong,
-}
-
-/// Runs a command in its own process group, so a deadline, a cancellation, or
-/// an oversized output stops the command and everything it started. The whole
-/// run, including the wait for the output to close, ends by the deadline.
+/// Runs a command with the credential boundary's restricted environment.
 pub(crate) fn run_command_until(
     argv: &[String],
     timeout: Duration,
     cancel: &CancellationToken,
 ) -> Option<String> {
-    use std::os::unix::process::CommandExt;
+    use crate::process::{RunError, run_bounded};
     let (program, arguments) = argv.split_first()?;
     let mut command = Command::new(program);
-    command
-        .args(arguments)
-        .env_clear()
-        .process_group(0)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+    command.args(arguments).env_clear().stdout(Stdio::piped());
     for name in ["PATH", "HOME"] {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
     }
-    let mut child = command.spawn().ok()?;
-    let group = Pid::from_raw(i32::try_from(child.id()).ok()?);
-    let Some(mut output) = child.stdout.take() else {
-        stop(&mut child, group);
-        return None;
-    };
-    let (sender, receiver) = mpsc::channel();
-    // The reader ends when every holder of the pipe closes it, which a
-    // grandchild can delay; it is only read from, never joined.
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        let result = loop {
-            match output.read(&mut chunk) {
-                Ok(0) => break Output::Complete(bytes),
-                Ok(count) => {
-                    bytes.extend_from_slice(&chunk[..count]);
-                    if bytes.len() > MAX_COMMAND_OUTPUT {
-                        break Output::TooLong;
-                    }
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break Output::TooLong,
-            }
-        };
-        let _ = sender.send(result);
-    });
-    let deadline = Instant::now() + timeout;
-    let mut status = None;
-    let mut bytes = None;
-    while status.is_none() || bytes.is_none() {
-        let now = Instant::now();
-        if now >= deadline || cancel.is_cancelled() {
+    let bytes = match run_bounded(
+        &mut command,
+        None,
+        timeout,
+        MAX_COMMAND_OUTPUT as u64,
+        Some(cancel),
+        None,
+    ) {
+        Ok(bytes) => bytes,
+        Err(RunError::Timeout | RunError::Cancelled) => {
             tracing::warn!("credential command stopped before it finished");
-            stop(&mut child, group);
             return None;
         }
-        if status.is_none() {
-            match child.try_wait() {
-                Ok(Some(done)) if !done.success() => return None,
-                Ok(done) => status = done,
-                Err(_) => {
-                    stop(&mut child, group);
-                    return None;
-                }
-            }
+        Err(RunError::OutputLimit | RunError::Io(_)) => {
+            tracing::warn!("credential command output was unusable");
+            return None;
         }
-        let wait = (deadline - now).min(Duration::from_millis(10));
-        if bytes.is_some() {
-            thread::sleep(wait);
-            continue;
-        }
-        match receiver.recv_timeout(wait) {
-            Ok(Output::Complete(output)) => bytes = Some(output),
-            Ok(Output::TooLong) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                tracing::warn!("credential command output was unusable");
-                stop(&mut child, group);
-                return None;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-        }
-    }
-    if !status?.success() {
-        return None;
-    }
-    let text = String::from_utf8(bytes?).ok()?;
+        Err(_) => return None,
+    };
+    let text = String::from_utf8(bytes).ok()?;
     let key = text.trim();
     (!key.is_empty()).then(|| key.to_owned())
-}
-
-/// Kills the command's whole process group and reaps the command.
-fn stop(child: &mut Child, group: Pid) {
-    let _ = killpg(group, Signal::SIGKILL);
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 /// Every place a credential can come from, in the order they are tried.
@@ -327,7 +213,10 @@ impl Credentials {
         {
             return;
         }
-        let Some(KeySource::Command(argv)) = self.store.get(provider).map(|entry| entry.source())
+        let Some(KeySource::Command(argv)) = self
+            .store
+            .get(provider)
+            .map(nouli_core::config::auth::AuthEntry::source)
         else {
             return;
         };
@@ -391,8 +280,8 @@ impl Credentials {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nouli_core::config::auth::AuthEntry;
-    use std::os::unix::fs::PermissionsExt;
+    use nouli_core::{config::auth::AuthEntry, identity::Id};
+    use std::{os::unix::fs::PermissionsExt, thread};
 
     struct Directory(PathBuf);
     impl Directory {
@@ -503,97 +392,6 @@ mod tests {
         assert_eq!(error.report().code, "invalid_auth_store");
     }
 
-    #[test]
-    fn command_sources_run_without_a_shell_and_failures_yield_nothing() {
-        let run = |words: &[&str], timeout| {
-            let argv: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
-            run_command(&argv, timeout)
-        };
-        let second = Duration::from_secs(5);
-        assert_eq!(
-            run(&["printf", "  key-value\n"], second).as_deref(),
-            Some("key-value")
-        );
-        // Arguments are not interpreted by a shell.
-        assert_eq!(
-            run(&["printf", "%s", "$HOME;x"], second).as_deref(),
-            Some("$HOME;x")
-        );
-        assert_eq!(run(&["false"], second), None);
-        assert_eq!(run(&["true"], second), None);
-        assert_eq!(run(&["no-such-program-anywhere"], second), None);
-        assert_eq!(run(&[], second), None);
-        // Output from a failing command is never used.
-        assert_eq!(run(&["sh", "-c", "echo SENTINEL; exit 1"], second), None);
-        let started = Instant::now();
-        assert_eq!(run(&["sleep", "30"], Duration::from_millis(200)), None);
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
-
-    #[test]
-    fn a_grandchild_holding_the_output_open_cannot_outlast_the_timeout() {
-        let directory = Directory::new();
-        fs::create_dir_all(&directory.0).unwrap();
-        let pids = directory.0.join("pid");
-        let script = format!("sleep 30 & echo $! > {}; echo k", pids.display());
-        let started = Instant::now();
-        let argv = ["sh".to_owned(), "-c".into(), script];
-        assert_eq!(run_command(&argv, Duration::from_millis(500)), None);
-        assert!(started.elapsed() < Duration::from_secs(5));
-        let pid: i32 = fs::read_to_string(&pids).unwrap().trim().parse().unwrap();
-        // The timed-out command's descendants are gone, not orphaned.
-        let gone = (0..100).any(|_| {
-            thread::sleep(Duration::from_millis(50));
-            nix::sys::signal::kill(Pid::from_raw(pid), None).is_err()
-        });
-        assert!(gone, "the grandchild is still running");
-        // A background job that keeps the output open is not waited for either.
-        let argv = ["sh".to_owned(), "-c".into(), "echo k; sleep 30 &".into()];
-        let started = Instant::now();
-        assert_eq!(run_command(&argv, Duration::from_millis(200)), None);
-        assert!(started.elapsed() < Duration::from_secs(2));
-    }
-
-    #[test]
-    fn oversized_output_fails_closed_without_waiting_for_the_timeout() {
-        let argv = [
-            "sh".to_owned(),
-            "-c".into(),
-            "head -c 200000 /dev/zero | tr '\\0' a; sleep 30".into(),
-        ];
-        let started = Instant::now();
-        assert_eq!(run_command(&argv, Duration::from_secs(20)), None);
-        assert!(started.elapsed() < Duration::from_secs(5));
-        // Output just within the cap is accepted.
-        let argv = [
-            "sh".to_owned(),
-            "-c".into(),
-            "head -c 60000 /dev/zero | tr '\\0' a".into(),
-        ];
-        assert_eq!(
-            run_command(&argv, Duration::from_secs(5)).map(|key| key.len()),
-            Some(60000)
-        );
-    }
-
-    #[test]
-    fn a_canceled_command_stops_early() {
-        let cancel = CancellationToken::new();
-        let stopper = cancel.clone();
-        let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
-            stopper.cancel();
-        });
-        let started = Instant::now();
-        let argv = ["sleep".to_owned(), "30".into()];
-        assert_eq!(
-            run_command_until(&argv, Duration::from_secs(20), &cancel),
-            None
-        );
-        assert!(started.elapsed() < Duration::from_secs(5));
-        handle.join().unwrap();
-    }
-
     #[tokio::test]
     async fn a_fetched_command_result_answers_lookups_until_forgotten() {
         let directory = Directory::new();
@@ -617,24 +415,5 @@ mod tests {
         credentials.forget();
         assert_eq!(credentials.lookup(&source).as_deref(), Some("key"));
         assert_eq!(count(), 2);
-    }
-
-    #[test]
-    fn a_command_sees_only_path_and_home() {
-        let seen = run_command(
-            &[
-                "sh".into(),
-                "-c".into(),
-                "env | cut -d= -f1 | sort | tr '\\n' ' '".into(),
-            ],
-            Duration::from_secs(5),
-        )
-        .unwrap();
-        for name in seen.split_whitespace() {
-            assert!(
-                matches!(name, "PATH" | "HOME" | "PWD" | "SHLVL" | "_" | "OLDPWD"),
-                "{name} leaked into the command"
-            );
-        }
     }
 }

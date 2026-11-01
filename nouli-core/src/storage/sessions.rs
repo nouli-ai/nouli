@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use super::{Ledger, StorageError, sql_error};
 use crate::{
-    history::{HistoryEvent, ModelSelection, SourcePoint},
+    history::{HistoryEvent, ModelSelection, SessionSelection, SourcePoint},
     identity::{Id, SessionName, SessionSelector},
 };
 
@@ -34,6 +34,54 @@ pub enum SessionError {
     InvalidDefaults,
     #[error(transparent)]
     Storage(#[from] StorageError),
+}
+
+/// A resolved target identity; new sessions are inserted only in the caller's transaction.
+pub(super) struct Target {
+    pub id: Id,
+    name: Option<SessionName>,
+    new: bool,
+}
+
+pub(super) fn target(
+    ledger: &Ledger,
+    selection: &SessionSelection,
+) -> Result<Target, SessionError> {
+    let (id, name, new) = match selection {
+        SessionSelection::Continue { session } => (ledger.session(session)?.id, None, false),
+        SessionSelection::New { name } | SessionSelection::From { name, .. } => {
+            (Id::generate(), name.clone(), true)
+        }
+    };
+    Ok(Target { id, name, new })
+}
+
+pub(super) fn open_target<E>(
+    transaction: &rusqlite::Transaction<'_>,
+    target: Target,
+    selection: &SessionSelection,
+    defaults: ModelSelection,
+) -> Result<(Session, Vec<SourcePoint>), E>
+where
+    E: From<SessionError> + From<super::sources::SourceError>,
+{
+    let mut current = if target.new {
+        Session {
+            id: target.id,
+            name: target.name,
+            defaults,
+            frontier: vec![],
+            revision: 0,
+        }
+    } else {
+        read_session(transaction, &SessionSelector::Id(target.id)).map_err(E::from)?
+    };
+    let sources =
+        super::sources::resolve_selection(transaction, selection, &current).map_err(E::from)?;
+    if target.new {
+        insert_session(transaction, &mut current, &sources).map_err(E::from)?;
+    }
+    Ok((current, sources))
 }
 
 type Row = (String, Option<String>, String, String, i64);
@@ -64,20 +112,55 @@ pub(super) fn validate_defaults(defaults: &ModelSelection) -> Result<(), Session
     Ok(())
 }
 
-pub(super) fn creation_error(error: StorageError, named: bool) -> SessionError {
-    if named
-        && matches!(
-            error,
-            StorageError::Sqlite {
-                code: Some(rusqlite::ErrorCode::ConstraintViolation),
-                ..
-            }
-        )
-    {
+/// Reports a constraint failure as a name collision only when another session
+/// already holds `name`; any other constraint failure stays a storage error.
+fn creation_error(
+    connection: &rusqlite::Connection,
+    session: Id,
+    name: Option<&SessionName>,
+    error: StorageError,
+) -> SessionError {
+    let constraint = matches!(
+        error,
+        StorageError::Sqlite {
+            code: Some(rusqlite::ErrorCode::ConstraintViolation),
+            ..
+        }
+    );
+    let taken = |name: &SessionName| {
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE name=?1 AND id!=?2)",
+                params![name.as_str(), session.to_string()],
+                |row| row.get::<_, bool>(0),
+            )
+            .inspect_err(|error| {
+                tracing::warn!(%error, "session name lookup failed after a constraint violation");
+            })
+            .unwrap_or(false)
+    };
+    if constraint && name.is_some_and(taken) {
         SessionError::NameCollision
     } else {
         SessionError::Storage(error)
     }
+}
+
+/// Appends an event at the next sequence number inside the caller's transaction.
+pub(super) fn append_event(
+    transaction: &rusqlite::Transaction<'_>,
+    session: Id,
+    event: &HistoryEvent,
+    operation: &'static str,
+) -> Result<(), StorageError> {
+    const SQL: &str = "INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1";
+    transaction
+        .execute(
+            SQL,
+            params![session.to_string(), Ledger::encode_payload(event)?],
+        )
+        .map_err(|error| sql_error(operation, &error))?;
+    Ok(())
 }
 
 pub(super) fn insert_session(
@@ -85,6 +168,8 @@ pub(super) fn insert_session(
     session: &mut Session,
     sources: &[SourcePoint],
 ) -> Result<(), SessionError> {
+    const FREEZE_SESSION_SOURCE: &str = "INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)";
+
     names::assign(transaction, session)?;
     let defaults = Ledger::encode_payload(&session.defaults)?;
     let frontier = Ledger::encode_payload(&session.frontier)?;
@@ -98,7 +183,14 @@ pub(super) fn insert_session(
                 frontier
             ],
         )
-        .map_err(|error| creation_error(sql_error("insert session", error), true))?;
+        .map_err(|error| {
+            creation_error(
+                transaction,
+                session.id,
+                session.name.as_ref(),
+                sql_error("insert session", &error),
+            )
+        })?;
     let event = Ledger::encode_payload(&HistoryEvent::SessionCreated {
         session: session.id,
         sources: sources.to_vec(),
@@ -108,9 +200,19 @@ pub(super) fn insert_session(
             "INSERT INTO session_events(session_id,sequence,payload_toon) VALUES(?1,0,?2)",
             params![session.id.to_string(), event],
         )
-        .map_err(|error| sql_error("record session creation", error))?;
-    for (position, source) in sources.iter().enumerate() {
-        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position as i64,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",error))?;
+        .map_err(|error| sql_error("record session creation", &error))?;
+    for (position, source) in (0_i64..).zip(sources) {
+        transaction
+            .execute(
+                FREEZE_SESSION_SOURCE,
+                params![
+                    session.id.to_string(),
+                    position,
+                    source.session.to_string(),
+                    Ledger::encode_payload(&source.frontier)?
+                ],
+            )
+            .map_err(|error| sql_error("freeze session source", &error))?;
     }
     Ok(())
 }
@@ -140,7 +242,7 @@ pub(super) fn read_session(
             ))
         })
         .optional()
-        .map_err(|error| sql_error("read session", error))?;
+        .map_err(|error| sql_error("read session", &error))?;
     decode(row.ok_or(SessionError::UnknownSession)?)
 }
 
@@ -148,14 +250,18 @@ pub(super) fn read_sources(
     connection: &rusqlite::Connection,
     id: Id,
 ) -> Result<Vec<SourcePoint>, SessionError> {
-    let mut statement=connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",error))?;
+    const READ_FROZEN_SESSION_SOURCES: &str = "SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position";
+
+    let mut statement = connection
+        .prepare(READ_FROZEN_SESSION_SOURCES)
+        .map_err(|error| sql_error("read frozen session sources", &error))?;
     let rows = statement
         .query_map([id.to_string()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-        .map_err(|error| sql_error("read source rows", error))?;
+        .map_err(|error| sql_error("read source rows", &error))?;
     rows.map(|row| {
-        let (session, frontier) = row.map_err(|error| sql_error("decode source row", error))?;
+        let (session, frontier) = row.map_err(|error| sql_error("decode source row", &error))?;
         Ok(SourcePoint {
             session: Id::try_from(session).map_err(|_| StorageError::Payload)?,
             frontier: Ledger::decode_payload(&frontier)?,
@@ -164,11 +270,42 @@ pub(super) fn read_sources(
     .collect()
 }
 
+/// Reads the active frontier, retaining frozen sources until the first own turn.
+pub(super) fn read_context_sources(
+    connection: &rusqlite::Connection,
+    session: &Session,
+) -> Result<Vec<SourcePoint>, SessionError> {
+    if session.frontier.is_empty() {
+        read_sources(connection, session.id)
+    } else {
+        Ok(vec![SourcePoint {
+            session: session.id,
+            frontier: session.frontier.clone(),
+        }])
+    }
+}
+
 impl Ledger {
+    /// Returns the frozen source points a session was created from.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::UnknownSession`] if the session does not exist,
+    /// or [`SessionError::Storage`] if the SQLite query fails or a stored row
+    /// is invalid.
     pub fn session_sources(&self, id: Id) -> Result<Vec<SourcePoint>, SessionError> {
         self.session(&SessionSelector::Id(id))?;
         read_sources(&self.connection, id)
     }
+    /// Creates an empty session, assigning an automatic name when none is given.
+    ///
+    /// # Errors
+    ///
+    /// - [`SessionError::InvalidDefaults`] if the provider or model is blank.
+    /// - [`SessionError::NameCollision`] if the name is already taken, or
+    ///   [`SessionError::NamesExhausted`] if no automatic name is available.
+    /// - [`SessionError::Storage`] if the ledger is read-only, encoding fails,
+    ///   or the SQLite write fails.
     pub fn create_session(
         &mut self,
         name: Option<SessionName>,
@@ -187,32 +324,68 @@ impl Ledger {
         })?;
         Ok(session)
     }
+    /// Reads the session matching an ID or name selector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::UnknownSession`] if no session matches, or
+    /// [`SessionError::Storage`] if the SQLite query fails or the stored row is
+    /// invalid.
     pub fn session(&self, selector: &SessionSelector) -> Result<Session, SessionError> {
         read_session(&self.connection, selector)
     }
 
     /// Change only the human selector and record the rename atomically.
     /// Keep identity, ancestry, defaults and the accepted-writer revision fixed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::UnknownSession`] if the session does not exist,
+    /// [`SessionError::NameCollision`] if another session has the name, or
+    /// [`SessionError::Storage`] if the ledger is read-only or the SQLite write
+    /// fails.
     pub fn rename_session(&mut self, id: Id, name: SessionName) -> Result<Session, SessionError> {
-        self.transaction("rename session",|transaction|{
-            let mut session=read_session(transaction,&SessionSelector::Id(id))?;
-            if session.name.as_ref()==Some(&name){return Ok(session);}
-            let event=HistoryEvent::SessionRenamed{session:id,previous_name:session.name.clone(),name:name.clone()};
-            transaction.execute("UPDATE sessions SET name=?2 WHERE id=?1",params![id.to_string(),name.as_str()])
-                .map_err(|error|creation_error(sql_error("rename session",error),true))?;
-            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![id.to_string(),Ledger::encode_payload(&event)?])
-                .map_err(|error|sql_error("record session rename",error))?;
-            session.name=Some(name);
+        self.transaction("rename session", |transaction| {
+            let mut session = read_session(transaction, &SessionSelector::Id(id))?;
+            if session.name.as_ref() == Some(&name) {
+                return Ok(session);
+            }
+            let event = HistoryEvent::SessionRenamed {
+                session: id,
+                previous_name: session.name.clone(),
+                name: name.clone(),
+            };
+            transaction
+                .execute(
+                    "UPDATE sessions SET name=?2 WHERE id=?1",
+                    params![id.to_string(), name.as_str()],
+                )
+                .map_err(|error| {
+                    creation_error(
+                        transaction,
+                        id,
+                        Some(&name),
+                        sql_error("rename session", &error),
+                    )
+                })?;
+            append_event(transaction, id, &event, "record session rename")?;
+            session.name = Some(name);
             Ok(session)
         })
     }
+    /// Lists every session in the ledger, ordered by ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::Storage`] if the SQLite query fails or a stored
+    /// row is invalid.
     pub fn list_sessions(&self) -> Result<Vec<Session>, SessionError> {
         let mut statement = self
             .connection
             .prepare(
                 "SELECT id,name,defaults_toon,frontier_toon,revision FROM sessions ORDER BY id",
             )
-            .map_err(|error| sql_error("list sessions", error))?;
+            .map_err(|error| sql_error("list sessions", &error))?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -223,8 +396,8 @@ impl Ledger {
                     row.get(4)?,
                 ))
             })
-            .map_err(|error| sql_error("list sessions", error))?;
-        rows.map(|row| decode(row.map_err(|error| sql_error("decode session row", error))?))
+            .map_err(|error| sql_error("list sessions", &error))?;
+        rows.map(|row| decode(row.map_err(|error| sql_error("decode session row", &error))?))
             .collect()
     }
 }
@@ -232,15 +405,65 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::storage::OpenMode;
 
+    use crate::{history::FinalizedTurn, storage::turns::AttemptInput};
+
+    fn open_temp_ledger(prefix: &str) -> (std::path::PathBuf, Ledger) {
+        let root = std::env::temp_dir().join(format!("{prefix}-{}", Id::generate()));
+        let ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        (root, ledger)
+    }
+
+    fn session_name(value: &str) -> SessionName {
+        SessionName::try_from(value.to_owned()).unwrap()
+    }
+
+    fn fixture_turn() -> FinalizedTurn {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
+        serde_json::from_value(fixture["turns"][0].clone()).unwrap()
+    }
+
+    fn attempt_input(template: &FinalizedTurn) -> AttemptInput {
+        AttemptInput {
+            request: template.request.clone(),
+            updates: vec![],
+            standing: StandingChanges::default(),
+            manifest: template.manifest.clone(),
+            request_id: None,
+        }
+    }
+
+    fn session_event_count(ledger: &Ledger, session: Id) -> i64 {
+        ledger
+            .connection
+            .query_row(
+                "SELECT count(*) FROM session_events WHERE session_id=?1",
+                [session.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn latest_session_event(ledger: &Ledger, session: Id) -> HistoryEvent {
+        let payload: String = ledger
+            .connection
+            .query_row(
+                "SELECT payload_toon FROM session_events WHERE session_id=?1 ORDER BY sequence DESC LIMIT 1",
+                [session.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        Ledger::decode_payload(&payload).unwrap()
+    }
+
     #[test]
-    fn rename_is_durable_atomic_and_keeps_accepted_work_and_history_by_id() {
-        use crate::{history::FinalizedTurn, storage::turns::AttemptInput};
-        let root = std::env::temp_dir().join(format!("nouli-rename-{}", Id::generate()));
-        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
-        let old = SessionName::try_from("old-name".to_owned()).unwrap();
-        let new = SessionName::try_from("new-name".to_owned()).unwrap();
+    fn rename_is_durable_and_keeps_accepted_work_and_history_by_id() {
+        let (root, mut ledger) = open_temp_ledger("nouli-rename");
+        let old = session_name("old-name");
+        let new = session_name("new-name");
         let session = ledger
             .create_session(
                 Some(old.clone()),
@@ -250,30 +473,21 @@ mod tests {
                 },
             )
             .unwrap();
-        let taken = ledger
-            .create_session(
-                Some("taken".to_owned().try_into().unwrap()),
-                ModelSelection::default(),
-            )
-            .unwrap();
-        let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../../../fixtures/contracts/history.json")).unwrap();
-        let template: FinalizedTurn = serde_json::from_value(fixture["turns"][0].clone()).unwrap();
-        let input = || AttemptInput {
-            request: template.request.clone(),
-            updates: vec![],
-            standing: Default::default(),
-            manifest: template.manifest.clone(),
-            request_id: None,
-        };
+        let template = fixture_turn();
         let guard = ledger.session_guard(session.id).unwrap();
-        let first = ledger.prepare_attempt(&guard, input()).unwrap();
+        let first = ledger
+            .prepare_attempt(&guard, attempt_input(&template))
+            .unwrap();
         let first = ledger
             .finalize_attempt(&guard, first.id, template.outcome.clone())
             .unwrap();
-        let pending = ledger.prepare_attempt(&guard, input()).unwrap();
+        let pending = ledger
+            .prepare_attempt(&guard, attempt_input(&template))
+            .unwrap();
         let before = ledger.session(&SessionSelector::Id(session.id)).unwrap();
+
         let renamed = ledger.rename_session(session.id, new.clone()).unwrap();
+
         assert_eq!(renamed.id, before.id);
         assert_eq!(renamed.frontier, before.frontier);
         assert_eq!(renamed.defaults, before.defaults);
@@ -287,59 +501,17 @@ mod tests {
             ledger.session(&SessionSelector::Name(new.clone())).unwrap(),
             renamed
         );
-        let count = |ledger: &Ledger| {
-            ledger
-                .connection
-                .query_row(
-                    "SELECT count(*) FROM session_events WHERE session_id=?1",
-                    [session.id.to_string()],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap()
-        };
-        let events = count(&ledger);
-        assert_eq!(
-            ledger.rename_session(session.id, new.clone()).unwrap(),
-            renamed
-        );
-        assert_eq!(count(&ledger), events, "same-name rename is a no-op");
         assert!(matches!(
-            ledger.rename_session(session.id, taken.name.unwrap()),
-            Err(SessionError::NameCollision)
+            latest_session_event(&ledger, session.id),
+            HistoryEvent::SessionRenamed { session: renamed_id, .. } if renamed_id == session.id
         ));
-        assert_eq!(count(&ledger), events);
-        assert_eq!(
-            ledger.session(&SessionSelector::Id(session.id)).unwrap(),
-            renamed
-        );
-        let payload:String=ledger.connection.query_row("SELECT payload_toon FROM session_events WHERE session_id=?1 ORDER BY sequence DESC LIMIT 1",[session.id.to_string()],|row|row.get(0)).unwrap();
-        assert!(
-            matches!(Ledger::decode_payload::<HistoryEvent>(&payload).unwrap(),HistoryEvent::SessionRenamed{session:renamed_id,..} if renamed_id==session.id)
-        );
-        ledger.connection.execute_batch("CREATE TEMP TRIGGER reject_rename_event BEFORE INSERT ON session_events BEGIN SELECT RAISE(ABORT,'injected failure'); END;").unwrap();
-        assert!(
-            ledger
-                .rename_session(session.id, "rollback".to_owned().try_into().unwrap())
-                .is_err()
-        );
-        assert_eq!(
-            ledger.session(&SessionSelector::Id(session.id)).unwrap(),
-            renamed
-        );
-        ledger
-            .connection
-            .execute_batch("DROP TRIGGER reject_rename_event;")
-            .unwrap();
         ledger
             .finalize_attempt(&guard, pending.id, template.outcome)
             .unwrap();
         assert_eq!(ledger.turn(first.id).unwrap(), first);
-        assert!(matches!(
-            ledger.rename_session(Id::generate(), new.clone()),
-            Err(SessionError::UnknownSession)
-        ));
         drop(guard);
         drop(ledger);
+
         let mut reopened = Ledger::open(&root, OpenMode::ReadOnlyExisting).unwrap();
         assert_eq!(
             reopened
@@ -357,9 +529,107 @@ mod tests {
     }
 
     #[test]
+    fn rename_to_same_name_is_a_no_op_and_taken_names_collide() {
+        let (root, mut ledger) = open_temp_ledger("nouli-rename-noop");
+        let session = ledger
+            .create_session(Some(session_name("old-name")), ModelSelection::default())
+            .unwrap();
+        let taken = ledger
+            .create_session(Some(session_name("taken")), ModelSelection::default())
+            .unwrap();
+        let renamed = ledger
+            .rename_session(session.id, session_name("new-name"))
+            .unwrap();
+        let events = session_event_count(&ledger, session.id);
+
+        assert_eq!(
+            ledger
+                .rename_session(session.id, session_name("new-name"))
+                .unwrap(),
+            renamed
+        );
+        assert_eq!(
+            session_event_count(&ledger, session.id),
+            events,
+            "same-name rename is a no-op"
+        );
+        assert!(matches!(
+            ledger.rename_session(session.id, taken.name.unwrap()),
+            Err(SessionError::NameCollision)
+        ));
+        assert_eq!(session_event_count(&ledger, session.id), events);
+        assert_eq!(
+            ledger.session(&SessionSelector::Id(session.id)).unwrap(),
+            renamed
+        );
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rename_rolls_back_when_its_history_event_cannot_be_recorded() {
+        const CREATE_REJECT_RENAME_EVENT: &str = "CREATE TEMP TRIGGER reject_rename_event BEFORE INSERT ON session_events BEGIN SELECT RAISE(ABORT,'injected failure'); END;";
+
+        let (root, mut ledger) = open_temp_ledger("nouli-rename-rollback");
+        let session = ledger
+            .create_session(Some(session_name("old-name")), ModelSelection::default())
+            .unwrap();
+        ledger
+            .connection
+            .execute_batch(CREATE_REJECT_RENAME_EVENT)
+            .unwrap();
+
+        assert!(
+            ledger
+                .rename_session(session.id, session_name("rollback"))
+                .is_err()
+        );
+        assert_eq!(
+            ledger.session(&SessionSelector::Id(session.id)).unwrap(),
+            session
+        );
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rename_of_unknown_session_is_rejected() {
+        let (root, mut ledger) = open_temp_ledger("nouli-rename-unknown");
+        assert!(matches!(
+            ledger.rename_session(Id::generate(), session_name("new-name")),
+            Err(SessionError::UnknownSession)
+        ));
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn non_name_constraint_failures_are_not_reported_as_name_collisions() {
+        let (root, mut ledger) = open_temp_ledger("nouli-constraint");
+        let session = ledger
+            .create_session(None, ModelSelection::default())
+            .unwrap();
+        let mut duplicate_id = session.clone();
+        duplicate_id.name = Some(SessionName::try_from("Unused".to_owned()).unwrap());
+        let result = ledger.transaction("insert duplicate id", |transaction| {
+            insert_session(transaction, &mut duplicate_id, &[])
+        });
+        assert!(
+            matches!(
+                result,
+                Err(SessionError::Storage(StorageError::Sqlite {
+                    code: Some(rusqlite::ErrorCode::ConstraintViolation),
+                    ..
+                }))
+            ),
+            "{result:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn catalog_reopens_case_sensitive_names_and_unknown_selection_never_creates() {
-        let root = std::env::temp_dir().join(format!("nouli-catalog-{}", Id::generate()));
-        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let (root, mut ledger) = open_temp_ledger("nouli-catalog");
         let name = SessionName::try_from("Dinner".to_owned()).unwrap();
         let session = ledger
             .create_session(Some(name.clone()), ModelSelection::default())

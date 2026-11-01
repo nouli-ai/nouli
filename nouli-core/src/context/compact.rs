@@ -1,12 +1,13 @@
 //! Staged deterministic reduction, preserving typed decision meaning.
 use super::builder::{BuildError, ContextAction, ContextEntry, ContextPolicy, EntryKind};
+use super::decision_entry::DecisionEntry;
 use crate::{
     codec,
     data::Data,
-    decision::{AnswerSpace, Criterion, TurnRequest},
+    decision::AnswerSpace,
     history::Representation,
     identity::Id,
-    outcome::{Answer, Confidence, ProviderIdentity, QuestionOutcome, TurnOutcome},
+    outcome::{Answer, Confidence, ProviderIdentity, QuestionOutcome},
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,15 +33,6 @@ impl ContextPolicy for Staged {
             .find(|entry| !entry.protected && entry.representation != Representation::Omitted)
             .map(|entry| ContextAction::Omit { record: entry.id }))
     }
-}
-#[derive(Deserialize)]
-struct Decision {
-    session: Option<Id>,
-    turn: Option<Id>,
-    #[serde(default)]
-    workflow_node: Option<String>,
-    request: TurnRequest,
-    outcome: TurnOutcome,
 }
 #[derive(Serialize)]
 struct CompactDecision<'a> {
@@ -89,7 +81,7 @@ struct Scale<'a> {
 }
 
 fn compact(value: &Data) -> Result<Data, BuildError> {
-    let decision = Decision::deserialize(value.value()).map_err(|_| BuildError::Policy)?;
+    let decision = DecisionEntry::deserialize(value.value()).map_err(|_| BuildError::Policy)?;
     decision
         .outcome
         .validate(&decision.request)
@@ -98,9 +90,7 @@ fn compact(value: &Data) -> Result<Data, BuildError> {
     for question in &decision.request.questions {
         let outcome = decision
             .outcome
-            .outcomes
-            .iter()
-            .find(|outcome| outcome.question_id() == question.id)
+            .outcome_for(&question.id)
             .ok_or(BuildError::Policy)?;
         match outcome {
             QuestionOutcome::Refused {
@@ -117,25 +107,17 @@ fn compact(value: &Data) -> Result<Data, BuildError> {
                 confidence,
             } => {
                 let answer = match (answer, &question.answer_space) {
-                    (
-                        Answer::Choice {
+                    (Answer::Choice { selected, .. }, AnswerSpace::Choice { options }) => {
+                        CompactAnswer::Choice {
                             selected,
-                            distribution,
-                        },
-                        AnswerSpace::Choice { options },
-                    ) => CompactAnswer::Choice {
-                        selected,
-                        description: &options
-                            .iter()
-                            .find(|option| option.id == *selected)
-                            .ok_or(BuildError::Policy)?
-                            .description,
-                        probability: distribution
-                            .iter()
-                            .find(|entry| entry.option_id == *selected)
-                            .ok_or(BuildError::Policy)?
-                            .probability,
-                    },
+                            description: &options
+                                .iter()
+                                .find(|option| option.id == *selected)
+                                .ok_or(BuildError::Policy)?
+                                .description,
+                            probability: answer.selected_probability().ok_or(BuildError::Policy)?,
+                        }
+                    }
                     (Answer::Noul { probability }, AnswerSpace::Noul) => CompactAnswer::Noul {
                         probability: *probability,
                     },
@@ -147,10 +129,7 @@ fn compact(value: &Data) -> Result<Data, BuildError> {
                                 .enumerate()
                                 .map(|(index, level)| Scale {
                                     index,
-                                    label: match level {
-                                        Criterion::Text(label)
-                                        | Criterion::Detailed { label, .. } => label,
-                                    },
+                                    label: level.label(),
                                 })
                                 .collect(),
                         }
@@ -179,6 +158,7 @@ fn compact(value: &Data) -> Result<Data, BuildError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::StandingChanges;
     use crate::{
         config::Protocol,
         context::builder::{ContextBuilder, ContextInput, RequiredItem},
@@ -414,7 +394,7 @@ mod tests {
             .prepare_attempt(
                 &guard,
                 AttemptInput {
-                    standing: Default::default(),
+                    standing: StandingChanges::default(),
                     request: turn.request,
                     updates: turn.updates,
                     manifest: turn.manifest,

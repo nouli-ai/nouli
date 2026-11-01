@@ -4,6 +4,9 @@ mod json;
 mod serialize;
 mod toon;
 
+pub use crate::decision::input::{Request, default_turn_version, request_from_value};
+
+use std::fmt::Write as _;
 use std::path::Path;
 
 use serde::{Serialize, de::DeserializeOwned};
@@ -12,8 +15,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    decision::{CONTRACT_VERSION, ContractError, TurnRequest, grammar},
-    workflow::{WorkflowError, WorkflowSpec},
+    decision::{ContractError, grammar},
+    workflow::WorkflowError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +26,11 @@ pub enum InputFormat {
 }
 
 impl InputFormat {
+    /// Selects the input format from a path's `json` or `toon` extension.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::Format`] if the extension is missing or is neither `json` nor `toon`.
     pub fn for_path(path: &Path) -> Result<Self, CodecError> {
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("json") => Ok(Self::Json),
@@ -68,13 +76,13 @@ pub enum CodecError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum Request {
-    Turn(TurnRequest),
-    Workflow(WorkflowSpec),
-}
-
+/// Decodes bytes in the given format into a canonical JSON value.
+///
+/// # Errors
+///
+/// - [`CodecError::Utf8`] if the input is not valid UTF-8.
+/// - [`CodecError::Syntax`], [`CodecError::DuplicateKey`], or [`CodecError::Number`] if the input
+///   is malformed, repeats an object key, or contains a number outside the supported domain.
 pub fn decode_value(bytes: &[u8], format: InputFormat) -> Result<Value, CodecError> {
     let input = std::str::from_utf8(bytes).map_err(|_| CodecError::Utf8)?;
     let value = match format {
@@ -86,93 +94,43 @@ pub fn decode_value(bytes: &[u8], format: InputFormat) -> Result<Value, CodecErr
 
 /// Decode a contract shape; callers of generic contracts also run their semantic
 /// validator. `decode_request` includes turn/workflow semantic shape validation.
+///
+/// # Errors
+///
+/// Returns any [`decode_value`] error, or [`CodecError::Shape`] if the value does not deserialize
+/// into `T`.
 pub fn decode<T: DeserializeOwned>(bytes: &[u8], format: InputFormat) -> Result<T, CodecError> {
     serde_json::from_value(decode_value(bytes, format)?).map_err(|_| CodecError::Shape)
 }
 
+/// Decodes bytes into a validated turn or workflow request.
+///
+/// # Errors
+///
+/// Returns any [`decode_value`] or [`request_from_value`] error.
 pub fn decode_request(bytes: &[u8], format: InputFormat) -> Result<Request, CodecError> {
     request_from_value(decode_value(bytes, format)?)
 }
 
-/// Normalize omitted v1 fields and validate a previously decoded request value.
-pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
-    let object = value.as_object_mut().ok_or(CodecError::Kind)?;
-    let turn = object.contains_key("questions");
-    let workflow = object.contains_key("nodes");
-    if turn == workflow {
-        return Err(CodecError::Kind);
-    }
-    object
-        .entry("version")
-        .or_insert(Value::from(CONTRACT_VERSION));
-    if turn {
-        let request: TurnRequest = serde_json::from_value(value).map_err(|_| CodecError::Shape)?;
-        request.validate()?;
-        Ok(Request::Turn(request))
-    } else {
-        // Embedded turns use the same omitted-version default, and may write a
-        // question as a compact-grammar string.
-        if let Some(nodes) = object.get_mut("nodes").and_then(Value::as_array_mut) {
-            for node in nodes {
-                let id = node
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("?")
-                    .to_owned();
-                if let Some(turn) = node.get_mut("turn").and_then(Value::as_object_mut) {
-                    turn.entry("version")
-                        .or_insert(Value::from(CONTRACT_VERSION));
-                    expand_questions(&id, turn)?;
-                }
-            }
-        }
-        let request: WorkflowSpec = serde_json::from_value(value).map_err(|_| CodecError::Shape)?;
-        request.validate()?;
-        Ok(Request::Workflow(request))
-    }
-}
-
-/// Fills in the v1 `version` of the `turn` object in an evaluation request
-/// value, so a request that wraps a turn may omit it as a bare turn does.
-pub fn default_turn_version(value: &mut Value) -> Result<(), CodecError> {
-    let turn = value
-        .get_mut("turn")
-        .and_then(Value::as_object_mut)
-        .ok_or(CodecError::Shape)?;
-    turn.entry("version")
-        .or_insert(Value::from(CONTRACT_VERSION));
-    Ok(())
-}
-
-/// Replaces each compact-grammar string in a turn's `questions` with the full
-/// question it parses to; objects pass through for the contract to check.
-fn expand_questions(
-    node: &str,
-    turn: &mut serde_json::Map<String, Value>,
-) -> Result<(), CodecError> {
-    let Some(questions) = turn.get_mut("questions").and_then(Value::as_array_mut) else {
-        return Ok(());
-    };
-    for (index, question) in questions.iter_mut().enumerate() {
-        if let Value::String(line) = question {
-            let parsed = grammar::parse(line).map_err(|source| CodecError::Question {
-                node: node.to_owned(),
-                index,
-                source,
-            })?;
-            *question = to_value(&parsed)?;
-        }
-    }
-    Ok(())
-}
-
 /// Convert serializable input without allowing non-finite values to become null.
+///
+/// # Errors
+///
+/// - [`CodecError::Number`] if the value contains a non-finite float.
+/// - [`CodecError::Representation`] if the value nests more than 128 levels deep.
+/// - [`CodecError::Shape`] if the value fails to serialize or cannot be converted to JSON.
 pub fn to_value<T: Serialize>(value: &T) -> Result<Value, CodecError> {
     serialize::checked_value(value)
 }
 
 /// Official TOON encoding, checked against a strict decode before use. Numeric
 /// spelling and object-key order are canonicalized; array/history order is kept.
+///
+/// # Errors
+///
+/// Returns any [`to_value`] error, [`CodecError::Representation`] if TOON encoding fails or the
+/// encoded text decodes to a different value, or any [`decode_value`] error from decoding the
+/// encoded text.
 pub fn encode_toon<T: Serialize>(value: &T) -> Result<String, CodecError> {
     let value = canonical_value(serialize::checked_value(value)?);
     let encoded = toon_format::encode_default(&value).map_err(|_| CodecError::Representation)?;
@@ -182,13 +140,20 @@ pub fn encode_toon<T: Serialize>(value: &T) -> Result<String, CodecError> {
     Ok(encoded)
 }
 
+/// Returns the hex SHA-256 digest of the value's canonical JSON serialization.
+///
+/// # Errors
+///
+/// Returns any [`to_value`] error, or [`CodecError::Shape`] if the canonical value cannot be
+/// serialized as JSON.
 pub fn fingerprint<T: Serialize>(value: &T) -> Result<String, CodecError> {
     let value = canonical_value(serialize::checked_value(value)?);
     let bytes = serde_json::to_vec(&value).map_err(|_| CodecError::Shape)?;
-    Ok(Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    let mut hex = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
 }
 
 fn canonical_value(value: Value) -> Value {
@@ -204,17 +169,27 @@ fn canonical_value(value: Value) -> Value {
             )
         }
         Value::Array(values) => Value::Array(values.into_iter().map(canonical_value).collect()),
-        Value::Number(n) if n.is_f64() => {
-            let f = n.as_f64().expect("f64 number");
-            if f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64 {
-                Value::from(f as i64)
-            } else if f.fract() == 0.0 && f >= 0.0 && f < u64::MAX as f64 {
-                Value::from(f as u64)
-            } else {
-                Value::Number(n)
-            }
-        }
+        Value::Number(n) if n.is_f64() => canonical_number(n),
         other => other,
+    }
+}
+
+/// Spells an integral float as an integer when it fits in `i64` or `u64`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "the range checks admit only integral values that fit the target type; \
+              the bounds are powers of two, exact in f64"
+)]
+fn canonical_number(n: serde_json::Number) -> Value {
+    let f = n.as_f64().expect("f64 number");
+    if f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64 {
+        Value::from(f as i64)
+    } else if f.fract() == 0.0 && f >= 0.0 && f < u64::MAX as f64 {
+        Value::from(f as u64)
+    } else {
+        Value::Number(n)
     }
 }
 
@@ -240,62 +215,6 @@ mod tests {
                 decode_request(&serde_json::to_vec(&value).unwrap(), InputFormat::Json).unwrap()
             );
         }
-    }
-
-    #[test]
-    fn a_wrapped_turn_defaults_its_version() {
-        let mut value = serde_json::json!({"turn": {"questions": []}});
-        default_turn_version(&mut value).unwrap();
-        assert_eq!(value["turn"]["version"], CONTRACT_VERSION);
-        let mut explicit = serde_json::json!({"turn": {"version": 1, "questions": []}});
-        default_turn_version(&mut explicit).unwrap();
-        assert_eq!(explicit["turn"]["version"], 1);
-        assert_eq!(
-            default_turn_version(&mut serde_json::json!({"turn": 3})),
-            Err(CodecError::Shape)
-        );
-    }
-
-    #[test]
-    fn workflow_questions_may_be_compact_strings_or_objects() {
-        let full = include_bytes!("../../fixtures/contracts/workflow.json");
-        let expected = decode_request(full, InputFormat::Json).unwrap();
-        let mut value: Value = serde_json::from_slice(full).unwrap();
-        // Write the first node's questions in the grammar instead.
-        let questions = value["nodes"][0]["turn"]["questions"].clone();
-        let lines: Vec<Value> = questions
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|question| {
-                let parsed: crate::decision::Question =
-                    serde_json::from_value(question.clone()).unwrap();
-                Value::String(grammar::format(&parsed))
-            })
-            .collect();
-        value["nodes"][0]["turn"]["questions"] = Value::Array(lines);
-        let Request::Workflow(mixed) = request_from_value(value.clone()).unwrap() else {
-            panic!("workflow")
-        };
-        // Formatting and parsing keep a question's meaning, so the compact node
-        // matches the full one wherever the grammar can write the question.
-        let Request::Workflow(expected) = expected else {
-            panic!("workflow")
-        };
-        assert_eq!(mixed.nodes[1], expected.nodes[1]);
-        assert_eq!(
-            mixed.nodes[0].turn.questions.len(),
-            expected.nodes[0].turn.questions.len()
-        );
-        // A bad string names its node and position, and not its text.
-        value["nodes"][1]["id"] = Value::String("second".into());
-        value["nodes"][1]["turn"]["questions"][1] = Value::String("SECRET no id".into());
-        let error = request_from_value(value).unwrap_err();
-        let CodecError::Question { node, index, .. } = &error else {
-            panic!("{error:?}")
-        };
-        assert_eq!((node.as_str(), *index), ("second", 1));
-        assert!(!error.to_string().contains("SECRET"));
     }
 
     #[test]
@@ -372,7 +291,9 @@ mod tests {
                 let mut options = toon_format::DecodeOptions::new()
                     .with_strict(case["options"]["strict"].as_bool().unwrap_or(true));
                 if let Some(indent) = case["options"]["indentSize"].as_u64() {
-                    options = options.with_indent(toon_format::Indent::Spaces(indent as usize));
+                    options = options.with_indent(toon_format::Indent::Spaces(
+                        usize::try_from(indent).unwrap(),
+                    ));
                 }
                 let decoded = toon_format::decode::<Value>(input, &options);
                 if case["shouldError"].as_bool().unwrap_or(false) {

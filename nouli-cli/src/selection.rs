@@ -97,3 +97,26 @@ pub(crate) fn validate_mode(
     }
     Ok(())
 }
+
+/// Resolve explicit layers first, then optional configuration defaults.
+pub(crate) fn model(
+    config: Option<&nouli_core::config::Config>,
+    layers: &[&nouli_core::history::ModelSelection],
+) -> nouli_core::history::ModelSelection {
+    let defaults = nouli_core::history::ModelSelection {
+        provider: config.and_then(|config| config.default_provider.clone()),
+        model: config.and_then(|config| config.default_model.clone()),
+    };
+    let mut selected = nouli_core::config::resolve::select_model(layers);
+    if selected.provider.is_none() {
+        selected.provider = defaults.provider;
+    }
+    if selected.model.is_none() {
+        selected.model = defaults.model;
+    }
+    selected
+}
+
+pub(crate) fn id(value: &str) -> Result<Id, IdentityError> {
+    Id::try_from(value.to_owned())
+}

@@ -13,7 +13,34 @@ fn help_and_version_work_without_configuration() {
             .unwrap();
         assert!(output.status.success());
         assert!(String::from_utf8(output.stdout).unwrap().contains(expected));
-        assert!(output.stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+}
+
+/// Clap prints doc comments verbatim, so Markdown quoting would show up in `--help`.
+#[test]
+fn help_text_has_no_markdown_backticks() {
+    let mut pending = vec![vec![]];
+    while let Some(path) = pending.pop() {
+        let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
+            .args(&path)
+            .arg("--help")
+            .env_clear()
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "nouli {path:?} --help failed");
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            !help.contains('`'),
+            "nouli {path:?} --help contains a backtick"
+        );
+        let commands = help.lines().skip_while(|line| *line != "Commands:").skip(1);
+        for line in commands.take_while(|line| !line.is_empty()) {
+            let name = line.split_whitespace().next().unwrap();
+            if name != "help" {
+                pending.push([path.as_slice(), &[name.to_owned()]].concat());
+            }
+        }
     }
 }
 
@@ -24,8 +51,8 @@ fn unknown_arguments_fail_without_protocol_output() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
-    assert!(!output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_ne!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -55,7 +82,7 @@ fn settings_flags_validate_without_creating_a_store_or_reading_keys() {
     assert!(
         matches!(error.result,nouli_core::protocol::Report::Error(error) if error.category==nouli_core::protocol::ErrorCategory::Configuration)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -77,7 +104,7 @@ fn explicit_output_modes_never_emit_placeholder_prose_or_create_history() {
                     result.result,
                     nouli_core::protocol::Report::Error(_)
                 ));
-                assert!(output.stderr.is_empty());
+                assert_eq!(String::from_utf8_lossy(&output.stderr), "");
             }
             "--jsonl" => {
                 let events = String::from_utf8(output.stdout)
@@ -88,10 +115,10 @@ fn explicit_output_modes_never_emit_placeholder_prose_or_create_history() {
                     })
                     .collect::<Vec<_>>();
                 nouli_core::protocol::validate_events(&events).unwrap();
-                assert!(output.stderr.is_empty());
+                assert_eq!(String::from_utf8_lossy(&output.stderr), "");
             }
             _ => {
-                assert!(output.stdout.is_empty());
+                assert_eq!(String::from_utf8_lossy(&output.stdout), "");
                 assert!(
                     String::from_utf8(output.stderr)
                         .unwrap()
@@ -120,7 +147,7 @@ fn closed_help_and_version_outputs_return_the_io_exit_code() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(6));
-        assert!(output.stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     }
 }
 
@@ -138,7 +165,7 @@ fn bare_workflow_commands_provide_actionable_usage_without_configuration() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
         assert!(String::from_utf8(output.stderr).unwrap().contains("Usage:"));
     }
 }

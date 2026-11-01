@@ -1,6 +1,5 @@
 //! Versioned public reports and logical event envelopes, separate from tracing.
 
-pub mod projection;
 pub mod stream;
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +33,14 @@ pub enum ErrorCategory {
     Internal,
 }
 
+/// Error code for an attempt whose provider call may have reached the provider, so
+/// recovery cannot know whether the provider produced an outcome.
+pub const OUTCOME_UNKNOWN: &str = "provider_outcome_unknown";
+/// Error code for an attempt interrupted before its provider call was dispatched.
+pub const NOT_DISPATCHED: &str = "not_dispatched";
+/// Error code for a workflow node left unsettled when its owner exited.
+pub const OWNER_EXITED: &str = "owner_exited";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorReport {
@@ -42,6 +49,25 @@ pub struct ErrorReport {
     /// Safe diagnostic text, never request/response bodies or credentials.
     pub message: String,
     pub retryable: bool,
+}
+
+impl ErrorReport {
+    /// Build a safe diagnostic report; callers set `retryable` when an attempt
+    /// policy permits another try. The message must not contain user evidence
+    /// or credentials.
+    #[must_use]
+    pub fn new(
+        category: ErrorCategory,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            category,
+            code: code.into(),
+            message: message.into(),
+            retryable: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -161,6 +187,7 @@ pub struct ResultEnvelope {
 }
 
 impl ResultEnvelope {
+    #[must_use]
     pub fn new(result: Report) -> Self {
         Self {
             version: CONTRACT_VERSION,
@@ -224,6 +251,11 @@ fn terminal_matches(result: &ResultEnvelope, run: Option<Id>) -> bool {
 }
 
 /// Validate a terminal envelope against an incremental stream's established run.
+///
+/// # Errors
+///
+/// Returns [`EventError::InvalidStream`] if the envelope version, recovery run, or
+/// reported run does not match `run`.
 pub fn validate_terminal(result: &ResultEnvelope, run: Option<Id>) -> Result<(), EventError> {
     if terminal_matches(result, run) {
         Ok(())
@@ -232,6 +264,13 @@ pub fn validate_terminal(result: &ResultEnvelope, run: Option<Id>) -> Result<(),
     }
 }
 
+/// Check that an event stream is ordered and ends in one matching terminal event.
+///
+/// # Errors
+///
+/// Returns [`EventError::InvalidStream`] if the stream has fewer than two events, does
+/// not start with `Started`, has a wrong version, sequence, or run, repeats `Started`,
+/// lacks exactly one final `Terminal` event, or its terminal envelope does not match.
 pub fn validate_events(events: &[EngineEvent]) -> Result<(), EventError> {
     if events.len() < 2 || !matches!(events[0].event, EventKind::Started) {
         return Err(EventError::InvalidStream);
