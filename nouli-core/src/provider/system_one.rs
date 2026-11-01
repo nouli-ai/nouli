@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use super::ProviderError;
 use crate::{
     config::{Protocol, resolve::ResolvedSettings},
-    decision::{AnswerSpace, CONTRACT_VERSION, TurnRequest},
+    decision::{AnswerSpace, CONTRACT_VERSION, ChoiceOption, Criterion, Question, TurnRequest},
     limits::{ResolvedLimits, count::TokenCounter},
     outcome::{Answer, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome, Usage},
     transport::HttpTransport,
@@ -100,10 +100,6 @@ pub fn request_body(
 /// - [`ProviderError::Wire`] if the response does not match the schema, or its answers
 ///   do not cover each question once with matching kinds, options, levels, and legend.
 /// - Any error from converting native confidence.
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 pub fn normalize(
     request: &TurnRequest,
     response: Value,
@@ -127,110 +123,149 @@ pub fn normalize(
         request_id: None,
     };
     let mut answers = response.answers;
-    let mut outcomes = Vec::with_capacity(request.questions.len());
-    for question in &request.questions {
-        let native = answers.remove(&question.id).ok_or(ProviderError::Wire)?;
-        let (answer, native_confidence, selected_confidence) =
-            match (native, &question.answer_space) {
-                (
-                    NativeAnswer::Choice {
-                        choice,
-                        probabilities,
-                        confidence,
-                        answer_confidence,
-                    },
-                    AnswerSpace::Choice { options },
-                ) => {
-                    if probabilities.len() != options.len() {
-                        return Err(ProviderError::Wire);
-                    }
-                    let distribution = options
-                        .iter()
-                        .map(|option| {
-                            Ok(OptionProbability {
-                                option_id: option.id.clone(),
-                                probability: *probabilities
-                                    .get(&option.id)
-                                    .ok_or(ProviderError::Wire)?,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, ProviderError>>()?;
-                    (
-                        Answer::Choice {
-                            selected: choice,
-                            distribution,
-                        },
-                        confidence,
-                        answer_confidence,
-                    )
-                }
-                (
-                    NativeAnswer::Noul {
-                        noul,
-                        confidence,
-                        answer_confidence,
-                    },
-                    AnswerSpace::Noul,
-                ) => (
-                    Answer::Noul { probability: noul },
-                    confidence,
-                    answer_confidence,
-                ),
-                (
-                    NativeAnswer::Score {
-                        score,
-                        probabilities,
-                        legend,
-                        confidence,
-                        answer_confidence,
-                    },
-                    AnswerSpace::Score { levels },
-                ) => {
-                    if probabilities.len() != levels.len() {
-                        return Err(ProviderError::Wire);
-                    }
-                    if let Some(legend) = legend {
-                        if legend.len() != levels.len() {
-                            return Err(ProviderError::Wire);
-                        }
-                        for (index, level) in levels.iter().enumerate() {
-                            let expected =
-                                serde_json::to_value(level).map_err(|_| ProviderError::Wire)?;
-                            if legend.get(&index.to_string()) != Some(&expected) {
-                                return Err(ProviderError::Wire);
-                            }
-                        }
-                    }
-                    let probabilities = (0..levels.len())
-                        .map(|index| {
-                            probabilities
-                                .get(&index.to_string())
-                                .copied()
-                                .ok_or(ProviderError::Wire)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    (
-                        Answer::Score {
-                            value: score,
-                            probabilities,
-                        },
-                        confidence,
-                        answer_confidence,
-                    )
-                }
-                _ => return Err(ProviderError::Wire),
-            };
-        outcomes.push(QuestionOutcome::Answered {
-            question_id: question.id.clone(),
-            answer,
-            confidence: super::confidence::native_confidence(
-                native_confidence,
-                selected_confidence,
-                &identity,
-            )?,
-        });
+    let outcomes = request
+        .questions
+        .iter()
+        .map(|question| {
+            let native = answers.remove(&question.id).ok_or(ProviderError::Wire)?;
+            question_outcome(question, native, &identity)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let outcome = TurnOutcome {
+        version: CONTRACT_VERSION,
+        provider: identity,
+        outcomes,
+        usage: usage(response.usage),
+    };
+    outcome.validate(request)?;
+    Ok(outcome)
+}
+
+fn question_outcome(
+    question: &Question,
+    native: NativeAnswer,
+    identity: &ProviderIdentity,
+) -> Result<QuestionOutcome, ProviderError> {
+    let (answer, native_confidence, selected_confidence) = match (native, &question.answer_space) {
+        (
+            NativeAnswer::Choice {
+                choice,
+                probabilities,
+                confidence,
+                answer_confidence,
+            },
+            AnswerSpace::Choice { options },
+        ) => (
+            Answer::Choice {
+                selected: choice,
+                distribution: choice_distribution(options, &probabilities)?,
+            },
+            confidence,
+            answer_confidence,
+        ),
+        (
+            NativeAnswer::Noul {
+                noul,
+                confidence,
+                answer_confidence,
+            },
+            AnswerSpace::Noul,
+        ) => (
+            Answer::Noul { probability: noul },
+            confidence,
+            answer_confidence,
+        ),
+        (
+            NativeAnswer::Score {
+                score,
+                probabilities,
+                legend,
+                confidence,
+                answer_confidence,
+            },
+            AnswerSpace::Score { levels },
+        ) => (
+            Answer::Score {
+                value: score,
+                probabilities: score_probabilities(levels, &probabilities, legend.as_ref())?,
+            },
+            confidence,
+            answer_confidence,
+        ),
+        _ => return Err(ProviderError::Wire),
+    };
+    Ok(QuestionOutcome::Answered {
+        question_id: question.id.clone(),
+        answer,
+        confidence: super::confidence::native_confidence(
+            native_confidence,
+            selected_confidence,
+            identity,
+        )?,
+    })
+}
+
+/// Orders native choice probabilities, keyed by option ID, by the request's
+/// options, requiring exactly one probability per option.
+fn choice_distribution(
+    options: &[ChoiceOption],
+    probabilities: &BTreeMap<String, f64>,
+) -> Result<Vec<OptionProbability>, ProviderError> {
+    if probabilities.len() != options.len() {
+        return Err(ProviderError::Wire);
     }
-    let usage = match response.usage {
+    options
+        .iter()
+        .map(|option| {
+            Ok(OptionProbability {
+                option_id: option.id.clone(),
+                probability: *probabilities.get(&option.id).ok_or(ProviderError::Wire)?,
+            })
+        })
+        .collect()
+}
+
+/// Orders native level probabilities, keyed by level index, after checking
+/// that an echoed legend, if any, matches the request's levels exactly.
+fn score_probabilities(
+    levels: &[Criterion],
+    probabilities: &BTreeMap<String, f64>,
+    legend: Option<&BTreeMap<String, Value>>,
+) -> Result<Vec<f64>, ProviderError> {
+    if probabilities.len() != levels.len() {
+        return Err(ProviderError::Wire);
+    }
+    if let Some(legend) = legend {
+        validate_legend(levels, legend)?;
+    }
+    (0..levels.len())
+        .map(|index| {
+            probabilities
+                .get(&index.to_string())
+                .copied()
+                .ok_or(ProviderError::Wire)
+        })
+        .collect()
+}
+
+fn validate_legend(
+    levels: &[Criterion],
+    legend: &BTreeMap<String, Value>,
+) -> Result<(), ProviderError> {
+    if legend.len() != levels.len() {
+        return Err(ProviderError::Wire);
+    }
+    for (index, level) in levels.iter().enumerate() {
+        let expected = serde_json::to_value(level).map_err(|_| ProviderError::Wire)?;
+        if legend.get(&index.to_string()) != Some(&expected) {
+            return Err(ProviderError::Wire);
+        }
+    }
+    Ok(())
+}
+
+fn usage(native: Option<NativeUsage>) -> Usage {
+    match native {
         Some(usage) => Usage {
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
@@ -238,15 +273,7 @@ pub fn normalize(
             cost: None,
         },
         None => Usage::default(),
-    };
-    let outcome = TurnOutcome {
-        version: CONTRACT_VERSION,
-        provider: identity,
-        outcomes,
-        usage,
-    };
-    outcome.validate(request)?;
-    Ok(outcome)
+    }
 }
 
 /// Send a turn to a `SystemOne` provider and normalize its response.
