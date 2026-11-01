@@ -4,9 +4,11 @@ use crate::{
     input::InputError,
     present,
     render::{self, Format},
-    render_error, settings,
+    render_error,
+    repl::sessions::{create, resolve, session_report},
+    settings,
     settings::Settings,
-    turns::{Creation, Draft, Verb},
+    turns::{Draft, Verb},
 };
 use nouli_core::{
     config::resolve::RuntimeOverrides,
@@ -16,11 +18,9 @@ use nouli_core::{
     },
     history::{ModelSelection, SessionSelection},
     limits::count::ByteCounter,
-    protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
+    protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, TurnReport},
     storage::{
-        Ledger, OpenMode,
-        replay::ReplayError,
-        sessions::Session,
+        OpenMode,
         worker::{LedgerWorker, WorkerError},
     },
 };
@@ -253,62 +253,6 @@ pub(crate) fn overrides(draft: &Draft, settings: &Settings) -> RuntimeOverrides 
         context_budget_tokens: draft.context_budget,
         ..Default::default()
     }
-}
-
-pub(crate) fn create(settings: &Settings, creation: &Creation) -> Result<Session, ErrorReport> {
-    let mut ledger =
-        Ledger::open(&settings.store, OpenMode::ReadWriteCreate).map_err(|error| error.report())?;
-    let session = if creation.sources.is_empty() {
-        ledger
-            .create_session(Some(creation.name.clone()), creation.defaults.clone())
-            .map_err(|error| error.report())?
-    } else {
-        ledger
-            .create_session_from(
-                Some(creation.name.clone()),
-                creation.defaults.clone(),
-                &creation.sources,
-            )
-            .map_err(|error| EngineError::Source(error).report())?
-    };
-    Ok(session)
-}
-
-fn session_report(settings: &Settings, session: Session) -> Result<SessionReport, ErrorReport> {
-    let ledger = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
-        .map_err(|error| error.report())?;
-    let sources = ledger
-        .session_sources(session.id)
-        .map_err(|error| error.report())?;
-    Ok(SessionReport {
-        session: session.id,
-        name: session.name,
-        sources,
-    })
-}
-
-/// Replaces `--replace N` numbers with the session's current facts.
-pub(crate) fn resolve(settings: &Settings, draft: Draft) -> Result<Draft, ErrorReport> {
-    let Some(session) = draft.replaced_session().cloned() else {
-        return Ok(draft);
-    };
-    let ledger = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
-        .map_err(|error| error.report())?;
-    // A repeated command repeats its saved replacements; after the first run
-    // the numbers no longer name the facts they named then.
-    if let Some(key) = draft.request_id()
-        && let Some(saved) = ledger
-            .saved_request_by_id(key)
-            .map_err(|error| EngineError::from(error).report())?
-    {
-        return draft
-            .replay(&saved.request.updates)
-            .ok_or_else(|| EngineError::from(ReplayError::IntentConflict).report());
-    }
-    let current = ledger
-        .facts(&session)
-        .map_err(|error| EngineError::Turn(error).report())?;
-    draft.resolve(&current).map_err(|error| input_error(&error))
 }
 
 /// Runs one of the turn verbs and writes its result.

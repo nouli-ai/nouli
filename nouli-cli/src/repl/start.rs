@@ -2,7 +2,7 @@
 //! terminal or on piped input.
 use super::{Current, Open, Queue, Repl, can_draw, label, tui};
 use crate::{
-    Args, evaluate,
+    Args,
     render::{self, turn::Paint},
     render_error, settings,
     settings::Settings,
@@ -54,7 +54,7 @@ fn resolve(settings: &Settings, selector: SessionSelector) -> Result<(Session, b
         sources: vec![],
         defaults: ModelSelection::default(),
     };
-    evaluate::create(settings, &creation).map(|session| (session, true))
+    crate::repl::sessions::create(settings, &creation).map(|session| (session, true))
 }
 
 /// A new session with an automatically assigned name.

@@ -1,7 +1,10 @@
 //! The interactive loop. It is a thin layer over the verbs' own operations, and
 //! prints only what the ledger holds or the engine returned.
 mod input;
+pub(crate) mod sessions;
 mod show;
+use sessions::{label, own_turns, short};
+pub(crate) use sessions::{open_existing, own_history, session_history};
 mod start;
 pub(crate) mod tui;
 
@@ -14,21 +17,20 @@ use crate::{
     },
     selection,
     settings::Settings,
-    turns::{Common, Creation, Draft, Parts},
+    turns::{Common, Draft, Parts},
 };
 use clap::Args as ClapArgs;
 use input::{Command, Line};
 use nouli_core::{
     context::ContextUpdate,
     decision::grammar,
-    history::{FinalizedTurn, ModelSelection, SessionSelection, SourcePoint, SourceSelection},
-    identity::{Id, SessionName, SessionSelector},
+    history::{ModelSelection, SessionSelection, SourceSelection},
+    identity::{Id, SessionSelector},
     protocol::{ErrorReport, Report},
-    storage::{Ledger, OpenMode, StorageError, sessions::Session},
+    storage::{Ledger, OpenMode},
 };
 pub(crate) use start::{Target, run};
 use std::io::{self, BufRead, Write};
-use std::path::Path;
 use tokio::runtime::Runtime;
 
 /// Open the interactive session loop on a session, creating it if it is missing.
@@ -143,58 +145,6 @@ struct Repl<'a, W> {
     queue: Queue,
 }
 
-fn short(id: Id) -> String {
-    let id = id.to_string();
-    id[id.len() - 8..].to_owned()
-}
-
-fn label(session: &Session) -> String {
-    session
-        .name
-        .as_ref()
-        .map_or_else(|| short(session.id), |name| name.as_str().to_owned())
-}
-
-/// The ledger, or `None` when the store has no ledger yet.
-pub(crate) fn open_existing(store: &Path) -> Result<Option<Ledger>, ErrorReport> {
-    match Ledger::open(store, OpenMode::ReadOnlyExisting) {
-        Ok(ledger) => Ok(Some(ledger)),
-        Err(StorageError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
-            Ok(None)
-        }
-        Err(error) => Err(error.report()),
-    }
-}
-
-/// History runs oldest first, including the session's inherited turns.
-pub(crate) fn session_history(
-    ledger: &Ledger,
-    session: &Session,
-) -> Result<Vec<FinalizedTurn>, ErrorReport> {
-    if session.frontier.is_empty() {
-        return Ok(vec![]);
-    }
-    ledger
-        .ancestry(&[SourcePoint {
-            session: session.id,
-            frontier: session.frontier.clone(),
-        }])
-        .map_err(|error| nouli_core::engine::EngineError::Turn(error).report())
-}
-
-/// A session's own turns, excluding inherited history.
-pub(crate) fn own_history(
-    history: &[FinalizedTurn],
-    session: Id,
-) -> impl DoubleEndedIterator<Item = &FinalizedTurn> {
-    history.iter().filter(move |turn| turn.session == session)
-}
-
-/// How many turns a session wrote itself, not counting inherited history.
-fn own_turns(ledger: &Ledger, session: &Session) -> Result<usize, ErrorReport> {
-    Ok(own_history(&session_history(ledger, session)?, session.id).count())
-}
-
 impl<W: Write> Repl<'_, W> {
     fn say(&mut self, text: &str) -> io::Result<()> {
         show::say(&mut self.out, text)
@@ -215,13 +165,6 @@ impl<W: Write> Repl<'_, W> {
 
     fn selector(&self) -> SessionSelector {
         SessionSelector::Id(self.session.id)
-    }
-
-    fn switch(&mut self, session: &Session) {
-        self.session = Current {
-            id: session.id,
-            label: label(session),
-        };
     }
 
     fn banner(&mut self, created: bool) -> io::Result<()> {
@@ -435,7 +378,7 @@ impl<W: Write> Repl<'_, W> {
         }
         .draft_with_question(&mut io::empty(), Some(question));
         let draft = match draft {
-            Ok(draft) => evaluate::resolve(&self.settings, draft),
+            Ok(draft) => sessions::resolve(&self.settings, draft),
             Err(error) => Err(input_error(&error)),
         };
         match draft {
@@ -522,152 +465,6 @@ impl<W: Write> Repl<'_, W> {
             Err(error) => self.fail(&error.message),
         }
     }
-
-    fn use_session(&mut self, name: &str) -> io::Result<()> {
-        let Ok(selector) = selection::selector(name) else {
-            return self.fail("that is not a valid session name");
-        };
-        let found = self
-            .ledger()
-            .and_then(|ledger| ledger.session(&selector).map_err(|e| e.report()));
-        match found {
-            Ok(session) => {
-                self.switch(&session);
-                self.dim(&format!("  {}", render::clean(&label(&session))))
-            }
-            Err(_) => self.fail(&format!("no session \"{}\"", render::clean(name))),
-        }
-    }
-
-    fn create(&mut self, name: &str, sources: Vec<SourceSelection>) -> Option<Session> {
-        let name = match SessionName::try_from(name.to_owned()) {
-            Ok(name) => name,
-            Err(error) => {
-                let _ = self.fail(&error.to_string());
-                return None;
-            }
-        };
-        let creation = Creation {
-            name,
-            sources,
-            defaults: ModelSelection::default(),
-        };
-        match evaluate::create(&self.settings, &creation) {
-            Ok(session) => Some(session),
-            Err(error) => {
-                let _ = self.fail(&error.message);
-                None
-            }
-        }
-    }
-
-    fn rename_session(&mut self, name: &str) -> io::Result<()> {
-        let name = match SessionName::try_from(name.to_owned()) {
-            Ok(name) => name,
-            Err(error) => return self.fail(&error.to_string()),
-        };
-        let renamed = Ledger::open(&self.settings.store, OpenMode::ReadWriteCreate)
-            .map_err(|error| error.report())
-            .and_then(|mut ledger| {
-                ledger
-                    .rename_session(self.session.id, name)
-                    .map_err(|error| error.report())
-            });
-        match renamed {
-            Ok(session) => {
-                self.switch(&session);
-                self.dim(&format!(
-                    "  renamed to {}",
-                    render::clean(&self.session.label)
-                ))
-            }
-            Err(error) => self.fail(&error.message),
-        }
-    }
-
-    fn new_session(&mut self, name: Option<&str>) -> io::Result<()> {
-        let session = if let Some(name) = name {
-            self.create(name, vec![])
-        } else {
-            match start::new_session(&self.settings) {
-                Ok(session) => Some(session),
-                Err(error) => {
-                    self.fail(&error.message)?;
-                    None
-                }
-            }
-        };
-        if let Some(session) = session {
-            self.switch(&session);
-            self.dim(&format!(
-                "  new session \"{}\"",
-                render::clean(&self.session.label)
-            ))?;
-        }
-        Ok(())
-    }
-
-    fn branch(&mut self, name: &str) -> io::Result<()> {
-        let from = self.ledger().and_then(|ledger| {
-            let session = ledger.session(&self.selector()).map_err(|e| e.report())?;
-            let turns = own_turns(&ledger, &session)?;
-            Ok((session, turns))
-        });
-        let (source, turns) = match from {
-            Ok(found) => found,
-            Err(error) => return self.fail(&error.message),
-        };
-        if source.frontier.is_empty() {
-            return self.say("  send a turn first: a branch starts from the last one");
-        }
-        let sources = vec![SourceSelection {
-            session: self.selector(),
-            frontier: None,
-        }];
-        if let Some(session) = self.create(name, sources) {
-            self.switch(&session);
-            self.dim(&format!(
-                "  new session \"{}\" from {} @ turn {turns}",
-                render::clean(name),
-                render::clean(&label(&source))
-            ))?;
-        }
-        Ok(())
-    }
-
-    fn blend(&mut self, names: &[String], name: &str) -> io::Result<()> {
-        let mut sources = Vec::new();
-        for source in names {
-            let Ok(selector) = selection::selector(source) else {
-                return self.fail("that is not a valid session name");
-            };
-            let found = self
-                .ledger()
-                .and_then(|ledger| ledger.session(&selector).map_err(|e| e.report()));
-            match found {
-                Ok(session) if session.frontier.is_empty() => {
-                    return self.say(&format!(
-                        "  send a turn on \"{}\" first: a blend takes each source's last turn",
-                        render::clean(source)
-                    ));
-                }
-                Ok(session) => sources.push(SourceSelection {
-                    session: SessionSelector::Id(session.id),
-                    frontier: None,
-                }),
-                Err(_) => return self.fail(&format!("no session \"{}\"", render::clean(source))),
-            }
-        }
-        if let Some(session) = self.create(name, sources) {
-            self.switch(&session);
-            self.dim(&format!(
-                "  new session \"{}\" from {}",
-                render::clean(name),
-                render::clean(&names.join(" + "))
-            ))?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -688,15 +485,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn nearby_unnamed_sessions_use_randomness_in_their_short_labels() {
-        let first = Id::generate();
-        let second = Id::generate();
-        assert_ne!(short(first), short(second));
-        assert!(first.to_string().ends_with(&short(first)));
-        assert!(second.to_string().ends_with(&short(second)));
     }
 
     #[test]
