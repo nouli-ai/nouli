@@ -1390,7 +1390,9 @@ mod tests {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = app(&settings);
         app.latest_question = Some(crate::repl::tui::tests::previous(Kind::Noul));
-        let reference = format!("[image:{}]", nouli_core::identity::Id::generate());
+        let reference = nouli_core::context::evidence::marker::image_marker(
+            nouli_core::identity::Id::generate(),
+        );
         app.form.input = format!("holiday photo.png {reference}");
         app.form.cursor = app.form.input.len();
         let screen = shown(&mut app, 140, 24).join("\n");
@@ -1403,7 +1405,10 @@ mod tests {
             "{screen}"
         );
         assert!(screen.contains("holiday photo.png"), "{screen}");
-        assert!(!screen.contains("[image:"), "{screen}");
+        assert!(
+            !screen.contains(nouli_core::context::evidence::marker::IMAGE_MARKER_PREFIX),
+            "{screen}"
+        );
         assert!(
             app.form.input.contains(&reference),
             "native media reference stays intact"

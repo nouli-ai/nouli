@@ -1,6 +1,7 @@
 //! Reference dependencies are a read-only graph projection, never ledger parents.
 use crate::{inspect::InspectError, render::RenderError};
 use nouli_core::{
+    context::evidence::marker::{self, MarkerKind},
     history::{FinalizedTurn, Representation, SourcePoint},
     identity::{Id, SessionSelector},
     storage::{
@@ -39,7 +40,10 @@ pub(super) fn links(turns: &[&FinalizedTurn]) -> Result<Vec<Link>, RenderError> 
         let Some(reference) = value["reference"].as_str() else {
             continue;
         };
-        if crate::render::decision_tags(reference).first() != Some(&(0..reference.len())) {
+        if !matches!(
+            marker::parse_marker(reference),
+            Some((MarkerKind::Decision, _))
+        ) {
             continue;
         }
         let Ok(source) = serde_json::from_value::<DecisionSource>(value["source"].clone()) else {

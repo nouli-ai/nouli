@@ -32,7 +32,7 @@ use crossterm::{
 use form::{Form, Kind, Row, Section};
 use futures_util::StreamExt;
 use nouli_core::{
-    context::ContextUpdate,
+    context::{ContextUpdate, evidence::marker::MarkerKind},
     decision::{AnswerSpace, Question},
     history::ModelSelection,
     identity::{Id, SessionSelector},
@@ -1003,7 +1003,8 @@ impl<'a> App<'a> {
 
     /// Shared attachment spans for editing and @-anchor detection.
     fn attachment_ranges(&self, text: &str) -> Vec<std::ops::Range<usize>> {
-        let mut ranges: Vec<_> = render::image_tags(text)
+        let mut ranges: Vec<_> = MarkerKind::Image
+            .ranges(text)
             .into_iter()
             .map(|tag| {
                 let start = self
@@ -1019,7 +1020,7 @@ impl<'a> App<'a> {
                 start..tag.end
             })
             .collect();
-        ranges.extend(render::decision_tags(text).into_iter().map(|tag| {
+        ranges.extend(MarkerKind::Decision.ranges(text).into_iter().map(|tag| {
             let start = self
                 .references
                 .bindings
@@ -1634,7 +1635,7 @@ mod tests {
         let settings = settings();
         let mut app = app(&settings);
         let name = "photo \"中文\".png";
-        let reference = format!("[image:{}]", Id::generate());
+        let reference = MarkerKind::Image.marker(Id::generate());
         let text = format!("{name} {reference}");
         app.insert_files(vec![attachments::Loaded {
             text: text.clone(),
@@ -1694,7 +1695,7 @@ mod tests {
             .extend_from_slice(format!("photo \"中文\".png {reference}\n").as_bytes());
         app.drain();
         assert!(
-            !transcript(&app).contains("[image:"),
+            !transcript(&app).contains(MarkerKind::Image.prefix()),
             "all human transcript output hides image metadata"
         );
         app.form.question = "A text-only question?".into();
@@ -1805,7 +1806,7 @@ mod tests {
                 .unwrap()
                 .contains("\"test\"")
         );
-        assert!(app.form.options[0].contains("[image:"));
+        assert!(app.form.options[0].contains(MarkerKind::Image.prefix()));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

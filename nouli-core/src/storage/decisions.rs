@@ -8,7 +8,7 @@ use thiserror::Error;
 use super::{Ledger, StorageError, sql_error, turns::TurnError};
 use crate::{
     codec,
-    context::{ContextKind, ContextRecord},
+    context::{ContextKind, ContextRecord, evidence::marker},
     data::{Data, DataError},
     decision::Question,
     history::FinalizedTurn,
@@ -129,28 +129,7 @@ pub enum DecisionError {
 }
 
 fn visible_text(prompt: &str) -> String {
-    let mut prompt = prompt.to_owned();
-    for prefix in ["[image:", "[decision:"] {
-        let mut offset = 0;
-        while let Some(at) = prompt[offset..].find(prefix) {
-            let start = offset + at;
-            let Some(end) = prompt[start + prefix.len()..].find(']') else {
-                break;
-            };
-            let end = start + prefix.len() + end;
-            if Id::try_from(prompt[start + prefix.len()..end].to_owned()).is_ok() {
-                let from = if start > 0 && prompt.as_bytes()[start - 1] == b' ' {
-                    start - 1
-                } else {
-                    start
-                };
-                prompt.replace_range(from..=end, "");
-                offset = from;
-            } else {
-                offset = end + 1;
-            }
-        }
-    }
+    let prompt = marker::strip_markers(prompt);
     let prompt = prompt
         .chars()
         .filter(|c| !c.is_control() || c.is_whitespace())
@@ -338,7 +317,7 @@ fn reference_record(
         key: format!("decision:{id}"),
         kind: ContextKind::Evidence,
         value: Data::new(serde_json::json!({"nouli_decision_reference":{
-            "source":source,"reference":format!("[decision:{id}]"),
+            "source":source,"reference":marker::decision_marker(id),
             "question":question,"outcome":outcome,"provider":turn.outcome.provider,
             "images":images,"input_state":input
         }}))?,
@@ -526,7 +505,7 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
         let original = png.into_inner();
-        let reference = format!("[image:{}]", Id::generate());
+        let reference = marker::image_marker(Id::generate());
         let image = media::Image {
             reference: reference.clone(),
             name: "旧 image.png".into(),

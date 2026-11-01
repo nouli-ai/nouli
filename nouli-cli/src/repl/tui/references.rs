@@ -3,7 +3,7 @@ use super::{App, Row, Status};
 use crate::render;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::{
-    context::{ContextRecord, ContextUpdate},
+    context::{ContextRecord, ContextUpdate, evidence::marker::MarkerKind},
     identity::Id,
     outcome::{Answer, QuestionOutcome},
     storage::{
@@ -508,7 +508,7 @@ impl App<'_> {
         texts: &[&str],
     ) -> Result<(Vec<ContextUpdate>, Vec<Id>), String> {
         for text in texts {
-            for tag in render::decision_tags(text) {
+            for tag in MarkerKind::Decision.ranges(text) {
                 if !self
                     .references
                     .bindings
@@ -653,7 +653,7 @@ mod tests {
         let mut app = super::super::tests::app(&settings);
         app.form.row = Row::Question;
         for name in ["@photo.png", "my @photo.png"] {
-            let reference = format!("[image:{}]", Id::generate());
+            let reference = MarkerKind::Image.marker(Id::generate());
             app.images = vec![Image {
                 reference: reference.clone(),
                 name: name.into(),
@@ -667,7 +667,7 @@ mod tests {
             assert!(app.status.is_none());
         }
         let id = Id::generate();
-        let reference = format!("[decision:{id}]");
+        let reference = MarkerKind::Decision.marker(id);
         let label = "@Question about @old · source / 1";
         app.references.bindings = vec![Binding {
             record: ContextRecord {
@@ -817,8 +817,8 @@ mod tests {
             saved.to_string()
         );
         assert_ne!(record.id, app.references.bindings[0].record.id);
-        let range = render::decision_tags(&text).pop().unwrap();
-        assert!(!render::image_labels(&text).contains("[decision:"));
+        let range = MarkerKind::Decision.ranges(&text).pop().unwrap();
+        assert!(!render::image_labels(&text).contains(MarkerKind::Decision.prefix()));
         // Session switching must preserve a still-unsent reference binding.
         app.repl.session.id = source;
         app.restore_references();

@@ -2,6 +2,7 @@
 
 pub mod builder;
 pub mod compact;
+pub mod evidence;
 pub mod facts;
 pub mod projection;
 

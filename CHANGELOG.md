@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nouli-core`: `context::evidence::marker` finds, formats, parses, and strips the inline `[image:UUID]` and `[decision:UUID]` markers that bind text to saved images and saved answers.
 - `nouli-core`: `protocol::OUTCOME_UNKNOWN`, `protocol::NOT_DISPATCHED`, and `protocol::OWNER_EXITED` name the error codes that recovery reads from saved attempts and workflow nodes.
 - `nouli-core`: `Engine::planned_settings`, `Engine::planned_ephemeral_settings`, and `Engine::planned_workflow_settings` return the settings an evaluation will use, so callers can prepare credentials for the providers it will actually call.
 

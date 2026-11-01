@@ -4,7 +4,7 @@
 use super::{App, Row, Running, Status};
 use crate::{evaluate, render, turns::Draft};
 use nouli_core::{
-    context::ContextUpdate,
+    context::{ContextUpdate, evidence::marker},
     decision::{AnswerSpace, Criterion, TurnRequest},
     history::{ModelSelection, SessionSelection},
     identity::Id,
@@ -138,7 +138,10 @@ impl<'a> App<'a> {
         &self,
         texts: &[&str],
     ) -> Result<(Vec<ContextUpdate>, Vec<Id>), String> {
-        if !texts.iter().any(|text| text.contains("[decision:")) {
+        if !texts
+            .iter()
+            .any(|text| text.contains(marker::DECISION_MARKER_PREFIX))
+        {
             return Ok((Vec::new(), Vec::new()));
         }
         self.repl

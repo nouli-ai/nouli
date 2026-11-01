@@ -13,7 +13,7 @@ pub(crate) use worker::maybe_worker;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use nouli_core::{
-    context::{ContextKind, ContextRecord, ContextUpdate},
+    context::{ContextKind, ContextRecord, ContextUpdate, evidence::marker},
     data::Data,
     identity::Id,
     media::Image,
@@ -125,7 +125,7 @@ pub(super) fn load(path: &Path) -> Result<Loaded, Error> {
         }
         // References must survive textual serialization unchanged. Filenames
         // can contain quotes/backslashes, so keep them outside the opaque token.
-        let reference = format!("[image:{}]", Id::generate());
+        let reference = marker::image_marker(Id::generate());
         return Ok(Loaded {
             text: format!("{name} {reference}"),
             image: Some(Image {
