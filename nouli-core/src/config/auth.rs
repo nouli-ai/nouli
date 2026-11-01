@@ -71,12 +71,12 @@ impl KeySource {
     ///
     /// # Errors
     ///
-    /// Returns [`AuthError::InvalidEnv`] if `name` is not a valid environment variable name.
+    /// Returns [`AuthError::InvalidEnvName`] if `name` is not a valid environment variable name.
     pub fn env(name: String) -> Result<Self, AuthError> {
         if env_name(&name) {
             Ok(Self::Env(name))
         } else {
-            Err(AuthError::InvalidEnv(String::new()))
+            Err(AuthError::InvalidEnvName)
         }
     }
 
@@ -84,10 +84,10 @@ impl KeySource {
     ///
     /// # Errors
     ///
-    /// Returns [`AuthError::InvalidCommand`] if `words` is empty or contains an empty word.
+    /// Returns [`AuthError::InvalidCommandWords`] if `words` is empty or contains an empty word.
     pub fn command(words: Vec<String>) -> Result<Self, AuthError> {
         if words.is_empty() || words.iter().any(String::is_empty) {
-            Err(AuthError::InvalidCommand(String::new()))
+            Err(AuthError::InvalidCommandWords)
         } else {
             Ok(Self::Command(words))
         }
@@ -142,6 +142,12 @@ pub enum AuthError {
     EmptyKey(String),
     #[error("a credential cannot be empty or contain control characters")]
     InvalidKey,
+    #[error(
+        "an environment variable name must use letters, digits, and underscores, and not start with a digit"
+    )]
+    InvalidEnvName,
+    #[error("a credential command must be a non-empty list of non-empty strings")]
+    InvalidCommandWords,
 }
 
 /// The parsed credential store: provider name to entry.
@@ -292,6 +298,23 @@ impl AuthStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_constructors_report_errors_without_a_provider() {
+        assert_eq!(
+            KeySource::env("1BAD".into()).unwrap_err(),
+            AuthError::InvalidEnvName
+        );
+        assert_eq!(
+            KeySource::command(vec!["tool".into(), String::new()]).unwrap_err(),
+            AuthError::InvalidCommandWords
+        );
+        assert!(!AuthError::InvalidEnvName.to_string().contains("provider"));
+        assert!(matches!(
+            KeySource::env("API_KEY".into()),
+            Ok(KeySource::Env(_))
+        ));
+    }
 
     const FILE: &str = r#"
 [providers.typesafe]
