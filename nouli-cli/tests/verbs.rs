@@ -36,7 +36,7 @@ fn provider() -> Server {
 
 fn failure(output: Output, code: &str) -> ErrorReport {
     assert_eq!(output.status.code(), Some(2), "{code}");
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     let Report::Error(error) = envelope.result else {
         panic!("expected an error report")
@@ -138,7 +138,10 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     assert!(what.session.is_none() && what.turn.is_none());
     assert_eq!(ids(&what.questions), ["extra"]);
     assert_eq!(server.count(), calls + 1);
-    assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
+    assert_eq!(
+        before,
+        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+    );
     // Mistakes are input errors that never reach the provider.
     let calls = server.count();
     failure(home.run(["whatif", "Trip", "--json"]), "questions_required");
@@ -210,7 +213,10 @@ fn each_turn_asks_only_its_own_questions_and_replace_and_whatif_change_only_what
     );
     assert!(nothing.message.contains("turn.questions"));
     assert_eq!(server.count(), calls);
-    assert!(before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
+    assert_eq!(
+        before,
+        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+    );
 }
 
 #[test]
@@ -225,14 +231,17 @@ fn new_without_facts_or_questions_creates_a_session_and_branches_ask_only_their_
         panic!("a session report")
     };
     assert_eq!(session.name.as_ref().unwrap().as_str(), "Empty");
-    assert!(session.sources.is_empty());
+    assert_eq!(session.sources, [] as [nouli_core::history::SourcePoint; 0]);
     assert_eq!(server.count(), 0);
     let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
     let saved = ledger
         .session(&SessionSelector::Id(session.session))
         .unwrap();
-    assert!(saved.frontier.is_empty());
-    assert!(ledger.list_attempts(saved.id).unwrap().is_empty());
+    assert_eq!(saved.frontier, [] as [nouli_core::identity::Id; 0]);
+    assert_eq!(
+        ledger.list_attempts(saved.id).unwrap(),
+        [] as [nouli_core::storage::turns::AttemptSnapshot; 0]
+    );
     drop(ledger);
     // The session is usable: its first turn brings the question.
     let first =
@@ -407,7 +416,7 @@ fn facts_list_inherited_and_replaced_facts() {
     let facts = |session: &str, format: &str| {
         let output = home.run(["facts", session, "--format", format]);
         assert!(output.status.success(), "{output:?}");
-        assert!(output.stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
         String::from_utf8(output.stdout).unwrap()
     };
     assert_eq!(

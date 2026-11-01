@@ -68,7 +68,7 @@ fn key_request(
 }
 fn error(output: std::process::Output, code: i32) -> nouli_core::protocol::ErrorReport {
     assert_eq!(output.status.code(), Some(code));
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     let Report::Error(error) = envelope.result else {
         panic!("error report")
@@ -171,7 +171,7 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     );
     let output = child.output(Duration::from_secs(5));
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     release.send(()).unwrap();
     let ledger = Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap();
     let main = base.session.unwrap();
@@ -437,7 +437,10 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
             );
             assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 1);
         } else {
-            assert!(before.inspection.nodes[1].attempts.is_empty());
+            assert_eq!(
+                before.inspection.nodes[1].attempts,
+                [] as [nouli_core::storage::turns::AttemptSnapshot; 0]
+            );
         }
         let initial = before.inspection.run.nodes[0]
             .output

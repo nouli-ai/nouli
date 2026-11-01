@@ -816,12 +816,9 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 0);
-        assert!(
-            ledger
-                .session(&SessionSelector::Id(main))
-                .unwrap()
-                .frontier
-                .is_empty()
+        assert_eq!(
+            ledger.session(&SessionSelector::Id(main)).unwrap().frontier,
+            [] as [crate::identity::Id; 0]
         );
         assert_eq!(
             ledger.attempt(attempt.id).unwrap().progress.state,

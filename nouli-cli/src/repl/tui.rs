@@ -1822,7 +1822,10 @@ mod tests {
         let question = &draft.request.turn.questions[0];
         assert_ne!(question.id, previous.question.id);
         assert_eq!(question.prompt, previous.question.prompt);
-        assert!(question.criteria.is_empty());
+        assert_eq!(
+            question.criteria,
+            [] as [nouli_core::decision::Criterion; 0]
+        );
         assert!(!draft.request.required_records.contains(&previous.turn));
         app.form.kind = Kind::Score;
         assert!(app.prior_for_kind().is_none());
@@ -1903,7 +1906,7 @@ mod tests {
         press(&mut app, KeyCode::Right, KeyModifiers::NONE);
         assert_eq!(app.form.cursor, text.len());
         press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
-        assert!(app.form.input.is_empty());
+        assert_eq!(app.form.input, "");
         app.form.input = text.clone();
         app.form.cursor = 0;
         press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL);
@@ -2027,7 +2030,7 @@ mod tests {
             text: "/cl".into(),
             image: None,
         }]);
-        assert!(app.commands_shown().is_empty());
+        assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.repl.queue.facts, ["/cl"]);
         app.insert_files(vec![attachments::Loaded {
@@ -2036,7 +2039,7 @@ mod tests {
         }]);
         press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
         typed(&mut app, "/cl");
-        assert!(!app.commands_shown().is_empty());
+        assert_ne!(app.commands_shown(), [] as [(&str, &str); 0]);
     }
 
     #[test]
@@ -2115,7 +2118,7 @@ mod tests {
         typed(&mut app, path.to_str().unwrap());
         assert!(!app.consume_drop()); // the idle-timer path
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(app.repl.queue.facts.is_empty());
+        assert_eq!(app.repl.queue.facts, [] as [std::string::String; 0]);
         app.form.question = "Is this relevant?".into();
         assert!(app.send_form(false).unwrap().is_none());
         app.form.clear_row(&mut app.repl.queue.facts);
@@ -2169,10 +2172,10 @@ mod tests {
         let settings = settings();
         let mut app = app(&settings);
         typed(&mut app, "/");
-        assert!(!app.commands_shown().is_empty());
+        assert_ne!(app.commands_shown(), [] as [(&str, &str); 0]);
         press(&mut app, KeyCode::BackTab, KeyModifiers::NONE);
         assert_eq!(app.form.kind, Kind::Choice);
-        assert!(app.commands_shown().is_empty());
+        assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
         app.sessions = Some(vec![]);
         press(&mut app, KeyCode::Tab, KeyModifiers::SHIFT);
         assert!(app.sessions.is_none());
@@ -2255,7 +2258,7 @@ mod tests {
         typed(&mut app, "The train is late.");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.repl.queue.facts, ["The train is late."]);
-        assert!(app.form.input.is_empty());
+        assert_eq!(app.form.input, "");
         assert!(app.transcript.is_empty(), "a queued fact shows in State");
         typed(&mut app, "/nonsense");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -2319,7 +2322,7 @@ mod tests {
             press(&mut app, KeyCode::Char('c'), control),
             Flow::Continue
         ));
-        assert!(app.form.input.is_empty());
+        assert_eq!(app.form.input, "");
         assert_eq!(app.repl.queue.facts.len(), 1);
         assert!(matches!(
             press(&mut app, KeyCode::Char('c'), control),
@@ -2408,7 +2411,7 @@ mod tests {
         assert!(transcript(&app).contains("provider_transport"));
         let saved = ResultEnvelope::new(crate::repl::tests::saved_turn());
         app.finish(saved, &[], false, true).unwrap();
-        assert!(app.form.question.is_empty());
+        assert_eq!(app.form.question, "");
         assert!(app.repl.queue.is_empty());
         assert_eq!(app.form.row, Row::Input);
         assert!(app.model.is_some());
@@ -2472,12 +2475,12 @@ mod tests {
         typed(&mut app, "/us");
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         assert_eq!(app.form.input, "/use ");
-        assert!(app.commands_shown().is_empty());
+        assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
         // Esc hides the list until the row changes.
         app.form.clear_row(&mut app.repl.queue.facts);
         typed(&mut app, "/v");
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-        assert!(app.commands_shown().is_empty());
+        assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
         typed(&mut app, "i");
         assert_eq!(app.commands_shown().len(), 1);
         // With no other session, /sessions says so.

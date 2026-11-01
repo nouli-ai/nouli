@@ -340,7 +340,7 @@ mod tests {
         );
         assert_eq!(compiled.definition().nodes[0].turn.questions.len(), 4);
         assert_eq!(compiled.outputs()[0].name, "rating");
-        assert!(compiled.fallback_outputs().is_empty());
+        assert_eq!(compiled.fallback_outputs(), [] as [usize; 0]);
         assert_eq!(
             serde_json::to_value(&compiled).unwrap(),
             serde_json::to_value(compile(&spec).unwrap()).unwrap()

@@ -735,11 +735,11 @@ reserved_output_tokens = 256
             },
         )
         .unwrap();
-        assert!(
+        assert_eq!(
             crate::limits::ResolvedLimits::for_profile(&selected.profile)
                 .unwrap()
-                .budget
-                == 8192
+                .budget,
+            8192
         );
         for (request, session, expected) in [
             (None, None, "gpt-6-luna"),

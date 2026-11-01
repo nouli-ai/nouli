@@ -150,7 +150,7 @@ mod tests {
         .unwrap();
         assert!(app.selection.active);
         assert!(!app.selection.should_draw());
-        assert!(!app.transcript.is_empty());
+        assert_ne!(app.transcript, [] as [ratatui::prelude::Line<'_>; 0]);
         assert_eq!(app.form.input, "next draft");
         app.select_text(false);
         assert!(

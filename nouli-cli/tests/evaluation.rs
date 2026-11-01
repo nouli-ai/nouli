@@ -462,7 +462,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         "{:?}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let export: SessionExport = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(export.turns.len(), 4);
     assert_eq!(export.provenance.len(), 4);
@@ -604,7 +604,7 @@ fn inspection_missing_store_never_creates_files_or_requires_provider_settings() 
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let error: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     assert!(matches!(error.result,Report::Error(error) if error.code=="missing_ledger"));
     assert!(!root.exists());
@@ -869,7 +869,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
         "{}",
         String::from_utf8_lossy(&resumed.stderr)
     );
-    assert!(resumed.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&resumed.stderr), "");
     let events = String::from_utf8(resumed.stdout)
         .unwrap()
         .lines()
@@ -946,7 +946,10 @@ fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     assert!(matches!(error.result,Report::Error(error) if error.code=="advanced_session_head"));
     assert_eq!(error.recovery.unwrap().run, Some(run));
     assert_eq!(server.count(), count);
-    assert!(bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
+    assert_eq!(
+        bytes,
+        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+    );
     for args in [
         vec![
             "workflow",
@@ -1084,7 +1087,7 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
         .unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let events = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
@@ -1138,7 +1141,7 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
     let output = child.output(Duration::from_secs(5));
     release.send(()).unwrap();
     assert_eq!(output.status.code(), Some(130));
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let events = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
@@ -1226,7 +1229,10 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
     let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
     let inspection = ledger.inspect_workflow_full(run).unwrap();
     assert!(!inspection.inspection.live_owner);
-    assert!(inspection.inspection.nodes[0].attempts.is_empty());
+    assert_eq!(
+        inspection.inspection.nodes[0].attempts,
+        [] as [nouli_core::storage::turns::AttemptSnapshot; 0]
+    );
     assert_eq!(inspection.inspection.nodes[0].uncertain_prior_calls, 0);
     assert_eq!(
         inspection.inspection.run.status,
@@ -1263,7 +1269,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
         "--jsonl",
     ]);
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let events = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
@@ -1285,7 +1291,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let events = std::fs::read_to_string(path)
         .unwrap()
         .lines()
@@ -1306,7 +1312,7 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(server.count(), 3);
     assert!(!home.store().exists());
 }

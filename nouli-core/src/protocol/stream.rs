@@ -310,6 +310,9 @@ mod tests {
             unopened.finish(turn_result).await,
             Err(StreamError::State)
         ));
-        assert!(fresh.snapshot().unwrap().is_empty());
+        assert_eq!(
+            fresh.snapshot().unwrap(),
+            [] as [crate::protocol::EngineEvent; 0]
+        );
     }
 }

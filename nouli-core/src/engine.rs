@@ -659,7 +659,7 @@ mod tests {
             Err(EngineError::Turn(_))
         ));
         for session in ledger.list_sessions().unwrap() {
-            assert!(session.frontier.is_empty());
+            assert_eq!(session.frontier, [] as [crate::identity::Id; 0]);
         }
         let attempts = ledger
             .list_sessions()

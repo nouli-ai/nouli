@@ -1346,7 +1346,10 @@ mod tests {
                 .filter_map(|node| node.output.as_ref())
                 .all(|output| output.source.is_none())
         );
-        assert!(std::fs::read(store.0.join("ledger.sqlite3")).unwrap() == bytes);
+        assert_eq!(
+            std::fs::read(store.0.join("ledger.sqlite3")).unwrap(),
+            bytes
+        );
         assert_eq!(
             worker
                 .call(|ledger| ledger.list_sessions().unwrap().len())

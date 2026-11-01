@@ -463,9 +463,9 @@ mod tests {
         assert_eq!(nodes.len(), 4);
         assert_eq!(nodes[0].turn.id, export.turns[1].id);
         assert_eq!(nodes[1].question, Some(1));
-        assert!(nodes[0].parents.is_empty());
-        assert!(nodes[1].parents.is_empty());
-        assert!(nodes[2].parents.is_empty());
+        assert_eq!(nodes[0].parents, [] as [usize; 0]);
+        assert_eq!(nodes[1].parents, [] as [usize; 0]);
+        assert_eq!(nodes[2].parents, [] as [usize; 0]);
         assert_eq!(nodes[3].parents, vec![1]);
         assert_eq!(nodes[3].references, vec![1]);
         let mut mermaid = Vec::new();
@@ -514,7 +514,7 @@ mod tests {
         }];
         let nodes = nodes(&[&original, &original, &new], &new.session.frontier).unwrap();
         assert_eq!(nodes.len(), original.turns.len() + 1);
-        assert!(nodes.last().unwrap().parents.is_empty());
+        assert_eq!(nodes.last().unwrap().parents, [] as [usize; 0]);
         assert!(nodes.last().unwrap().latest);
         let mut text = Vec::new();
         assert!(

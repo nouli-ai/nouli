@@ -804,11 +804,11 @@ mod tests {
         app.form.paste(" ", &mut app.repl.queue.facts);
         press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
         assert_eq!(app.form.question, "Reconsider ");
-        assert!(
+        assert_eq!(
             app.reference_updates(&ledger, &[&app.form.question])
                 .unwrap()
-                .0
-                .is_empty()
+                .0,
+            [] as [nouli_core::context::ContextUpdate; 0]
         );
         let orphan = format!("Unknown [decision:{}]", Id::generate());
         assert!(app.reference_updates(&ledger, &[&orphan]).is_err());

@@ -496,12 +496,12 @@ mod tests {
         let guard = ledger.session_guard(session.id).unwrap();
         let prepared = ledger.prepare_attempt(&guard, input()).unwrap();
         assert_eq!(ledger.attempt(prepared.id).unwrap().intent, prepared);
-        assert!(
+        assert_eq!(
             ledger
                 .session(&SessionSelector::Id(session.id))
                 .unwrap()
-                .frontier
-                .is_empty()
+                .frontier,
+            [] as [crate::identity::Id; 0]
         );
         let first = ledger
             .finalize_attempt(&guard, prepared.id, outcome())
@@ -632,12 +632,12 @@ mod tests {
                 .finalize_attempt(&guard, attempt.id, outcome())
                 .is_err()
         );
-        assert!(
+        assert_eq!(
             ledger
                 .session(&SessionSelector::Id(session.id))
                 .unwrap()
-                .frontier
-                .is_empty()
+                .frontier,
+            [] as [crate::identity::Id; 0]
         );
         assert_eq!(
             ledger.attempt(attempt.id).unwrap().progress.state,

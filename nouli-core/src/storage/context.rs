@@ -75,7 +75,7 @@ mod tests {
             request_id: None,
         };
         let prepared = ledger.prepare_attempt(&guard, input).unwrap();
-        assert!(
+        assert_eq!(
             ledger
                 .context_at(
                     &ledger.context_sources(session.id).unwrap(),
@@ -83,8 +83,8 @@ mod tests {
                     session.id,
                     Id::generate()
                 )
-                .unwrap()
-                .is_empty()
+                .unwrap(),
+            [] as [crate::context::projection::ActiveRecord; 0]
         );
         ledger.connection.execute_batch("CREATE TRIGGER reject_context_publish BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
         assert!(
@@ -92,7 +92,10 @@ mod tests {
                 .finalize_attempt(&guard, prepared.id, fixture.outcome.clone())
                 .is_err()
         );
-        assert!(ledger.context_sources(session.id).unwrap().is_empty());
+        assert_eq!(
+            ledger.context_sources(session.id).unwrap(),
+            [] as [crate::history::SourcePoint; 0]
+        );
         ledger
             .connection
             .execute_batch("DROP TRIGGER reject_context_publish")

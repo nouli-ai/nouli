@@ -15,7 +15,7 @@ use std::process::{Command, Output};
 
 fn text(output: Output) -> String {
     assert!(output.status.success(), "{output:?}");
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     String::from_utf8(output.stdout).unwrap()
 }
 

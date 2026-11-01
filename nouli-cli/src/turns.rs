@@ -597,7 +597,10 @@ mod tests {
             SessionSelection::From { .. }
         ));
         let ask = draft(&["ask", "Trip", "-q", "q: Is it?", "--request-id", "key"]).unwrap();
-        assert!(ask.request.updates.is_empty());
+        assert_eq!(
+            ask.request.updates,
+            [] as [nouli_core::context::ContextUpdate; 0]
+        );
         assert_eq!(ask.request.request_id.as_deref(), Some("key"));
         assert!(matches!(
             draft(&["ask", "Trip", "--retry-interrupted"]),
@@ -645,7 +648,7 @@ mod tests {
         // The replacement is now fact 1; the command still repeats.
         let replayed = command("NEW", "Added").replay(&first).unwrap();
         assert_eq!(replayed.request.updates, first);
-        assert!(replayed.replaces.is_empty());
+        assert_eq!(replayed.replaces, [] as [(usize, std::string::String); 0]);
         assert!(command("OTHER", "Added").replay(&first).is_none());
         assert!(command("NEW", "Another").replay(&first).is_none());
     }

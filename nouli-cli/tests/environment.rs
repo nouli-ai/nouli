@@ -24,7 +24,7 @@ fn configure(home: &Home, server: &Server) {
 
 fn failure(output: Output, code: &str) {
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     let Report::Error(error) = envelope.result else {
         panic!("error report")

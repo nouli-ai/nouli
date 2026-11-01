@@ -202,7 +202,7 @@ fn malformed_coverage_boolean_noul_score_argmax_and_capacity_fail_without_succes
                 );
             } else {
                 assert_eq!(output.status.code(), Some(3), "{protocol}/{case}");
-                assert!(output.stderr.is_empty());
+                assert_eq!(String::from_utf8_lossy(&output.stderr), "");
                 let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
                 assert!(matches!(envelope.result, Report::Error(_)));
             }

@@ -361,7 +361,7 @@ mod tests {
             0
         );
         let text = String::from_utf8(stdout).unwrap();
-        assert!(stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&stderr), "");
         for expected in [
             "train (Rail)",
             "P(selected)=0.7",
@@ -390,7 +390,7 @@ mod tests {
                 result(&mut stdout, &mut stderr, format, &report).unwrap(),
                 0
             );
-            assert!(stderr.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stderr), "");
             diagnostic(
                 &mut stderr,
                 &ErrorReport {
@@ -469,7 +469,7 @@ mod tests {
                 result(&mut stdout, &mut stderr, Format::Json, &error(category)).unwrap(),
                 code
             );
-            assert!(stderr.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stderr), "");
             assert!(matches!(
                 serde_json::from_slice::<ResultEnvelope>(&stdout)
                     .unwrap()
@@ -498,7 +498,7 @@ mod tests {
             .unwrap(),
             2
         );
-        assert!(stdout.is_empty());
+        assert_eq!(String::from_utf8_lossy(&stdout), "");
         assert!(!String::from_utf8(stderr).unwrap().contains("SECRET_"));
         let mut report = turn();
         let Report::Turn(turn) = &mut report.result else {
@@ -527,7 +527,7 @@ mod tests {
         for format in [Format::Text, Format::Json, Format::Jsonl] {
             let mut stdout = Vec::new();
             assert!(result(&mut stdout, &mut Vec::new(), format, &report).is_err());
-            assert!(stdout.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stdout), "");
         }
     }
     struct Broken {
@@ -668,7 +668,7 @@ mod tests {
                 result(&mut stdout, &mut stderr, format, &report).unwrap(),
                 0
             );
-            assert!(stderr.is_empty());
+            assert_eq!(String::from_utf8_lossy(&stderr), "");
             match format {
                 Format::Text => {
                     let text = String::from_utf8(stdout).unwrap();

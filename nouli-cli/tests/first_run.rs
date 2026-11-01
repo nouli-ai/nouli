@@ -24,7 +24,7 @@ fn command(home: &Home) -> Command {
 }
 fn error(output: Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {
     assert_eq!(output.status.code(), Some(exit));
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     let Report::Error(error) = envelope.result else {
         panic!("expected error report")
@@ -480,7 +480,7 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
         }
         let output = call.output().unwrap();
         assert_eq!(output.status.code(), Some(4));
-        assert!(output.stderr.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(!text.contains("PRIVATE_SENTINEL_VALUE") && !text.contains("CHANGED_KEY"));
         let envelope = if jsonl {

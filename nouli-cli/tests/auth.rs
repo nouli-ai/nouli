@@ -167,7 +167,7 @@ fn a_store_others_can_read_is_refused_by_every_command_with_the_fix() {
         assert!(visible.contains("chmod 600") && visible.contains("auth.toml"));
         assert!(!visible.contains(KEY));
     }
-    assert!(login(&home, "other").status.code() == Some(2));
+    assert_eq!(login(&home, "other").status.code(), Some(2));
     assert_eq!(server.count(), 0);
     fs::set_permissions(auth_file(&home), fs::Permissions::from_mode(0o600)).unwrap();
     assert!(home.run(["auth", "list"]).status.success());

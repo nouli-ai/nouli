@@ -339,9 +339,10 @@ mod tests {
             probabilities: vec![0.0, 0.5705, 0.43],
         };
         answer.validate(question).unwrap();
-        assert!(
-            matches!(answer, Answer::Score { probabilities, .. } if probabilities[1] == 0.5705)
-        );
+        let Answer::Score { probabilities, .. } = &answer else {
+            panic!("expected a score answer");
+        };
+        assert_eq!(probabilities, &[0.0, 0.5705, 0.43]);
         assert!(
             Answer::Score {
                 value: 1.43,

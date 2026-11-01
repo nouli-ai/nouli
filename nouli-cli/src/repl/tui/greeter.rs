@@ -128,6 +128,9 @@ mod tests {
         }
         assert!(buffer[(23, 3)].modifier.contains(Modifier::BOLD));
         assert!(lines(40, true, false).iter().all(|row| row.width() < 23));
-        assert!(lines(21, true, false).is_empty());
+        assert_eq!(
+            lines(21, true, false),
+            [] as [ratatui::prelude::Line<'_>; 0]
+        );
     }
 }

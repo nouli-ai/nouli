@@ -137,7 +137,7 @@ pub fn report(output: Output) -> TurnReport {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let result: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     let Report::Turn(turn) = result.result else {
         panic!("turn report")
@@ -174,7 +174,7 @@ pub fn run_report(output: Output, expected: u8) -> nouli_core::protocol::RunRepo
         "stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
     let Report::Run(report) = envelope.result else {
         panic!("run report")

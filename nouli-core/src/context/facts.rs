@@ -423,7 +423,7 @@ mod tests {
         assert_eq!(facts[0].text, "cheap | dear");
         assert_eq!(facts[0].previous, None);
         assert_eq!(facts[1].records.len(), 1);
-        assert!(facts[1].alternatives.is_empty());
+        assert_eq!(facts[1].alternatives, [] as [std::string::String; 0]);
         // A plain append is allowed and keeps both alternatives.
         commit(&mut ledger, blend.id, vec![append("three").unwrap()]);
         let facts = list(&ledger, blend.id);
@@ -439,7 +439,7 @@ mod tests {
         let facts = list(&ledger, blend.id);
         assert_eq!(texts(&facts), [(1, "settled"), (2, "two"), (3, "three")]);
         assert_eq!(facts[0].records.len(), 1);
-        assert!(facts[0].alternatives.is_empty());
+        assert_eq!(facts[0].alternatives, [] as [std::string::String; 0]);
     }
 
     #[test]

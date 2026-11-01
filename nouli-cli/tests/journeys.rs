@@ -437,7 +437,10 @@ fn meal_budget_branch_blend_and_ephemeral_journey_asserts_dispatched_context_and
         "router",
     ]));
     assert!(ephemeral.turn.is_none());
-    assert!(bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
+    assert_eq!(
+        bytes,
+        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+    );
     let exported = home.run(["sessions", "export", "Blend", "--json"]);
     assert!(exported.status.success());
     let export: SessionExport = serde_json::from_slice(&exported.stdout).unwrap();
@@ -663,7 +666,7 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
     assert_eq!(value.value()["status"], "refused");
     let output = home.run(["workflow", "resume", &run.to_string(), "--jsonl"]);
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let events = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
@@ -763,7 +766,10 @@ fn parallel_mixed_provider_workflow_preserves_refusal_skips_retries_resume_and_c
         .collect::<Vec<_>>();
     validate_events(&events).unwrap();
     assert!(events.iter().all(|event| event.run.is_none()));
-    assert!(bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap());
+    assert_eq!(
+        bytes,
+        std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+    );
     assert_eq!((jev.count(), openai.count(), router.count()), (5, 4, 4));
 }
 
@@ -785,7 +791,7 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
     report(home.run(["new", "Meal", "--input", file_arg, "--json"]));
     let output = home.run(["whatif", "Meal", "--input", file_arg]);
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let text = String::from_utf8(output.stdout).unwrap();
     for expected in [
         "(not saved) · 0 facts · 3 questions",
@@ -804,7 +810,7 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
     report(home.run(["whatif", "Meal", "--input", file_arg, "--format", "auto"]));
     let output = home.run(["whatif", "Meal", "--input", file_arg, "--jsonl"]);
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let events = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
@@ -830,7 +836,7 @@ fn successful_output_configuration_auto_overrides_and_jsonl_keep_protocol_stdout
         "openai",
     ]);
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("refused:"), "{text}");
     assert!(text.contains("private"));

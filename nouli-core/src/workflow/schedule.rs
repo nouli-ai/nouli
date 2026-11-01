@@ -919,7 +919,7 @@ mod tests {
                 .iter()
                 .all(|node| node.status == NodeStatus::Skipped)
         );
-        assert!(skipped.start_order.is_empty());
+        assert_eq!(skipped.start_order, [] as [usize; 0]);
         child.inputs = vec![OutputBinding {
             name: "optional_parent".into(),
             reference: ResultReference {
@@ -1104,7 +1104,7 @@ mod tests {
         .unwrap();
         assert_eq!(resumed.status, RunStatus::Completed);
         assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-        assert!(resumed.start_order.is_empty());
+        assert_eq!(resumed.start_order, [] as [usize; 0]);
     }
     #[tokio::test]
     async fn typed_interruption_without_parent_cancellation_never_reports_completed_run() {
