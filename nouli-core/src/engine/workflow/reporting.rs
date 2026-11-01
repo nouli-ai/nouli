@@ -11,7 +11,7 @@ use crate::{
     },
     workflow::WorkflowSpec,
 };
-pub use projection::{ProjectionError, workflow};
+pub use projection::{ReportError, workflow};
 
 impl<
     P: DecisionProvider + Send + 'static,
@@ -101,7 +101,7 @@ async fn finish<S: EventSink>(
         Ok(result) => {
             recovery_run = result.run;
             let projected = definition
-                .ok_or(projection::ProjectionError::Snapshot)
+                .ok_or(projection::ReportError::Snapshot)
                 .and_then(|definition| projection::workflow(definition, &result, None));
             match projected {
                 Ok(report) => Report::Run(report),

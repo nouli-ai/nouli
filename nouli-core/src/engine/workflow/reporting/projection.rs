@@ -14,7 +14,7 @@ use crate::{
 };
 use thiserror::Error;
 #[derive(Debug, Error)]
-pub enum ProjectionError {
+pub enum ReportError {
     #[error("workflow result does not match its definition or inspection")]
     Snapshot,
 }
@@ -23,14 +23,14 @@ pub enum ProjectionError {
 ///
 /// # Errors
 ///
-/// Returns [`ProjectionError::Snapshot`] if the definition does not compile, or the
+/// Returns [`ReportError::Snapshot`] if the definition does not compile, or the
 /// result or `inspection` disagrees with the definition, is unfinished, or has outputs
 /// or outcomes that do not match it.
 pub fn workflow(
     definition: &WorkflowSpec,
     result: &WorkflowResult,
     inspection: Option<&RunInspection>,
-) -> Result<RunReport, ProjectionError> {
+) -> Result<RunReport, ReportError> {
     let references = verify_snapshot(definition, result, inspection)?;
     let nodes = node_reports(&references);
     let outputs = result
@@ -38,7 +38,7 @@ pub fn workflow(
         .outputs
         .iter()
         .map(|binding| projected_output(binding, &references))
-        .collect::<Result<_, ProjectionError>>()?;
+        .collect::<Result<_, ReportError>>()?;
     Ok(RunReport {
         run: result.run,
         session: result.session,
@@ -59,25 +59,24 @@ fn verify_snapshot<'a>(
     definition: &'a WorkflowSpec,
     result: &'a WorkflowResult,
     inspection: Option<&'a RunInspection>,
-) -> Result<References<'a>, ProjectionError> {
-    let graph = compile::compile(definition).map_err(|_| ProjectionError::Snapshot)?;
+) -> Result<References<'a>, ReportError> {
+    let graph = compile::compile(definition).map_err(|_| ReportError::Snapshot)?;
     if !is_finished_run_of(definition, result)
         || inspection.is_some_and(|inspection| !inspects(inspection, definition, result))
     {
-        return Err(ProjectionError::Snapshot);
+        return Err(ReportError::Snapshot);
     }
-    if schedule::project_outputs(&graph, &result.result.nodes)
-        .map_err(|_| ProjectionError::Snapshot)?
+    if schedule::project_outputs(&graph, &result.result.nodes).map_err(|_| ReportError::Snapshot)?
         != result.result.outputs
     {
-        return Err(ProjectionError::Snapshot);
+        return Err(ReportError::Snapshot);
     }
     for (node, progress) in definition.nodes.iter().zip(&result.result.nodes) {
         if let Some(output) = &progress.output {
             output
                 .outcome
                 .validate(&node.turn)
-                .map_err(|_| ProjectionError::Snapshot)?;
+                .map_err(|_| ReportError::Snapshot)?;
         }
     }
     Ok(References {
@@ -196,19 +195,19 @@ fn node_reports(references: &References<'_>) -> Vec<NodeReport> {
 fn projected_output(
     binding: &ResolvedBinding,
     references: &References<'_>,
-) -> Result<ProjectedOutput, ProjectionError> {
+) -> Result<ProjectedOutput, ReportError> {
     let definition = references.definition;
     let index = definition
         .nodes
         .iter()
         .position(|node| node.id == binding.reference.node)
-        .ok_or(ProjectionError::Snapshot)?;
+        .ok_or(ReportError::Snapshot)?;
     let question = definition.nodes[index]
         .turn
         .questions
         .iter()
         .find(|question| question.id == binding.reference.question)
-        .ok_or(ProjectionError::Snapshot)?;
+        .ok_or(ReportError::Snapshot)?;
     let output = references.output(index);
     let outcome = output.and_then(|output| output.outcome.outcome_for(&question.id));
     Ok(ProjectedOutput {
