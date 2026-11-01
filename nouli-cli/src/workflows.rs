@@ -32,16 +32,13 @@ use tokio_util::sync::CancellationToken;
 pub(crate) enum Command {
     Run(RunArgs),
     Show {
-        #[arg(value_parser=id)]
+        #[arg(value_parser=crate::selection::id)]
         run: Id,
     },
     Resume {
-        #[arg(value_parser=id)]
+        #[arg(value_parser=crate::selection::id)]
         run: Id,
     },
-}
-fn id(value: &str) -> Result<Id, nouli_core::identity::IdentityError> {
-    Id::try_from(value.to_owned())
 }
 #[derive(Debug, Error)]
 pub(crate) enum WorkflowCliError {
@@ -157,26 +154,9 @@ async fn execute(
         request.as_ref().map(|request| &request.session),
         Some(SessionSelection::New { .. })
     );
-    let worker = if mode == Some(RunMode::Ephemeral) && fresh {
-        None
-    } else {
-        Some(
-            LedgerWorker::open(
-                settings.store.clone(),
-                if mode == Some(RunMode::Ephemeral) {
-                    OpenMode::ReadOnlyExisting
-                } else {
-                    OpenMode::ReadWriteCreate
-                },
-            )
-            .await?,
-        )
-    };
-    let engine = Arc::new(Engine {
-        provider: NativeProvider,
-        counter: ByteCounter,
-        clock: TokioClock,
-    });
+    let worker =
+        crate::evaluate::ledger_worker(settings, mode == Some(RunMode::Ephemeral), fresh).await?;
+    let engine = Arc::new(crate::evaluate::engine());
     let cancel = CancellationToken::new();
     let sink = Arc::new(
         events::Output::new(format == Format::Jsonl, cancel.clone())
@@ -222,8 +202,9 @@ async fn execute(
             Command::Show { .. } => Err(boundary::InputError::Shape.into()),
         }
     };
-    tokio::pin!(evaluation);
-    tokio::select! {biased;result=&mut evaluation=>result,signal=tokio::signal::ctrl_c()=>{cancel.cancel();let result=evaluation.await;if let Err(error)=signal {return Err(WorkflowCliError::Signal(error));}result}}
+    crate::evaluate::cancel_on_interrupt(evaluation, tokio::signal::ctrl_c(), &cancel)
+        .await
+        .map_err(WorkflowCliError::Signal)?
 }
 /// Runs a workflow command. `format` is never JSONL for `Command::Show`: the
 /// caller resolves `show` with `render::resolve_report_format`.

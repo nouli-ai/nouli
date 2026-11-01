@@ -31,7 +31,7 @@ pub(crate) enum Command {
         #[arg(value_parser=selector)]
         session: SessionSelector,
         /// Defaults to the sole finalized head; required when there are several heads.
-        #[arg(long,value_parser=id)]
+        #[arg(long,value_parser=crate::selection::id)]
         turn: Option<Id>,
     },
 }
@@ -46,9 +46,6 @@ pub(crate) enum SessionCommand {
         #[arg(value_parser=selector)]
         session: SessionSelector,
     },
-}
-fn id(value: &str) -> Result<Id, nouli_core::identity::IdentityError> {
-    Id::try_from(value.to_owned())
 }
 #[derive(Debug, Error)]
 pub(crate) enum InspectError {

@@ -56,7 +56,7 @@ impl RunArgs {
             object.insert("workflow".into(), codec::to_value(&workflow)?);
             object
                 .entry("session")
-                .or_insert(serde_json::json!({"mode":"new","name":null}));
+                .or_insert(codec::to_value(&SessionSelection::New { name: None })?);
             (
                 serde_json::from_value::<WorkflowRequest>(value)
                     .map_err(|_| input::InputError::Shape)?,

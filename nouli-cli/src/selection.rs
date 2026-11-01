@@ -116,3 +116,7 @@ pub(crate) fn model(
     }
     selected
 }
+
+pub(crate) fn id(value: &str) -> Result<Id, IdentityError> {
+    Id::try_from(value.to_owned())
+}

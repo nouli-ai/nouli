@@ -17,7 +17,12 @@ use nouli_core::{
     history::{ModelSelection, SessionSelection},
     limits::count::ByteCounter,
     protocol::{ErrorCategory, ErrorReport, Report, ResultEnvelope, SessionReport, TurnReport},
-    storage::{Ledger, OpenMode, replay::ReplayError, sessions::Session, worker::LedgerWorker},
+    storage::{
+        Ledger, OpenMode,
+        replay::ReplayError,
+        sessions::Session,
+        worker::{LedgerWorker, WorkerError},
+    },
 };
 use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
@@ -99,35 +104,69 @@ async fn fetch_credential(
             .await;
     }
 }
+pub(crate) fn engine() -> Engine<NativeProvider, ByteCounter, TokioClock> {
+    Engine {
+        provider: NativeProvider,
+        counter: ByteCounter,
+        clock: TokioClock,
+    }
+}
+
+pub(crate) async fn ledger_worker(
+    settings: &Settings,
+    ephemeral: bool,
+    fresh: bool,
+) -> Result<Option<LedgerWorker>, WorkerError> {
+    if ephemeral && fresh {
+        return Ok(None);
+    }
+    LedgerWorker::open(
+        settings.store.clone(),
+        if ephemeral {
+            OpenMode::ReadOnlyExisting
+        } else {
+            OpenMode::ReadWriteCreate
+        },
+    )
+    .await
+    .map(Some)
+}
+
+/// Cancel the engine, then await its cleanup before returning a signal error.
+pub(crate) async fn cancel_on_interrupt<T>(
+    evaluation: impl Future<Output = T>,
+    interrupt: impl Future<Output = io::Result<()>>,
+    cancel: &CancellationToken,
+) -> io::Result<T> {
+    tokio::pin!(evaluation);
+    tokio::select! {
+        biased;
+        result = &mut evaluation => Ok(result),
+        signal = interrupt => {
+            cancel.cancel();
+            let result = evaluation.await;
+            signal?;
+            Ok(result)
+        }
+    }
+}
+
 async fn execute(
     draft: &Draft,
     settings: &Settings,
     interrupt: impl Future<Output = io::Result<()>>,
 ) -> Result<TurnReport, EvaluationError> {
     let request = &draft.request;
-    let engine = Engine {
-        provider: NativeProvider,
-        counter: ByteCounter,
-        clock: TokioClock,
-    };
+    let engine = engine();
     let overrides = overrides(draft, settings);
     let ephemeral = draft.ephemeral;
-    let worker = if ephemeral && matches!(request.session, SessionSelection::New { .. }) {
-        None
-    } else {
-        Some(
-            LedgerWorker::open(
-                settings.store.clone(),
-                if ephemeral {
-                    OpenMode::ReadOnlyExisting
-                } else {
-                    OpenMode::ReadWriteCreate
-                },
-            )
-            .await
-            .map_err(EngineError::from)?,
-        )
-    };
+    let worker = ledger_worker(
+        settings,
+        ephemeral,
+        matches!(request.session, SessionSelection::New { .. }),
+    )
+    .await
+    .map_err(EngineError::from)?;
     let input = EvaluationInput {
         request,
         config: &settings.config,
@@ -182,16 +221,10 @@ async fn execute(
             })
         }
     };
-    tokio::pin!(evaluation);
-    tokio::select! {
-        biased;
-        result=&mut evaluation=>result.map_err(EvaluationError::from),
-        signal=interrupt=> {
-            cancel.cancel();let result=evaluation.await;
-            if let Err(error)=signal {return Err(EvaluationError::Signal(error));}
-            result.map_err(EvaluationError::from)
-        }
-    }
+    cancel_on_interrupt(evaluation, interrupt, &cancel)
+        .await
+        .map_err(EvaluationError::Signal)?
+        .map_err(EvaluationError::from)
 }
 pub(crate) fn input_error(error: &InputError) -> ErrorReport {
     ErrorReport {
@@ -376,5 +409,35 @@ fn write_result(result: &ResultEnvelope, format: Format) -> ExitCode {
     ) {
         Ok(code) => ExitCode::from(code),
         Err(_) => ExitCode::from(6),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cancel_on_interrupt;
+    use std::{cell::Cell, io};
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn completion_wins_when_the_signal_is_also_ready() {
+        let cancel = CancellationToken::new();
+        let result = cancel_on_interrupt(async { 7 }, async { Ok(()) }, &cancel).await;
+        assert_eq!(result.unwrap(), 7);
+        assert!(!cancel.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn signal_failure_waits_for_cancelled_evaluation_cleanup() {
+        let cancel = CancellationToken::new();
+        let cleaned = Cell::new(false);
+        let evaluation = async {
+            cancel.cancelled().await;
+            cleaned.set(true);
+        };
+        let interrupt = async { Err(io::Error::other("signal installation failed")) };
+        let result = cancel_on_interrupt(evaluation, interrupt, &cancel).await;
+        assert!(result.is_err());
+        assert!(cancel.is_cancelled());
+        assert!(cleaned.get());
     }
 }
