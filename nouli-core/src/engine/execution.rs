@@ -1,6 +1,6 @@
 //! Injectable single-attempt dispatch and retry time, with no persistence.
 use crate::{
-    config::{Protocol, resolve::ResolvedSettings},
+    config::resolve::ResolvedSettings,
     decision::TurnRequest,
     limits::count::TokenCounter,
     outcome::TurnOutcome,
@@ -37,18 +37,7 @@ impl DecisionProvider for NativeProvider {
         cancel: &CancellationToken,
     ) -> Result<TurnOutcome, ProviderError> {
         let transport = HttpTransport::new(&settings.snapshot.execution)?;
-        match settings.snapshot.profile.protocol {
-            Protocol::SystemOne => {
-                provider::system_one::evaluate(
-                    &transport, settings, request, evidence, counter, cancel,
-                )
-                .await
-            }
-            Protocol::OpenaiDecisions => {
-                provider::openai::evaluate(&transport, settings, request, evidence, counter, cancel)
-                    .await
-            }
-        }
+        provider::evaluate(&transport, settings, request, evidence, counter, cancel).await
     }
 }
 

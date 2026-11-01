@@ -60,18 +60,6 @@ fn add_uses(total: u64, cost: u64, uses: u64) -> Result<u64, LimitError> {
         .ok_or(LimitError::Overflow)
 }
 
-/// The configured image encoding, or the protocol's default.
-fn image_encoding(profile: &ProviderProfile) -> ImageEncoding {
-    profile
-        .connection
-        .image_encoding
-        .unwrap_or(if profile.protocol == Protocol::SystemOne {
-            ImageEncoding::Assets
-        } else {
-            ImageEncoding::OpenaiContent
-        })
-}
-
 /// Whether the encoding sends each image once with the shared context, rather
 /// than wherever its reference appears.
 fn images_shared_only(encoding: ImageEncoding) -> bool {
@@ -184,7 +172,7 @@ impl TokenCounter for ByteCounter {
         context_toon: &str,
         questions: &[Question],
     ) -> Result<InputCounts, LimitError> {
-        let shared_only = images_shared_only(image_encoding(profile));
+        let shared_only = images_shared_only(profile.image_encoding());
         let evidence = Evidence::read(context_toon)?;
         let multimodal = !evidence.images.is_empty();
         let shared = SharedContext::count(&evidence, &profile.connection, shared_only)?;

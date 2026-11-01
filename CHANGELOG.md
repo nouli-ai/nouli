@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nouli-core`: `Ledger::decode_settings` decodes a frozen-settings snapshot and distinguishes missing or unsupported format versions from malformed payloads.
 - `nouli-core`: `ErrorReport::new` constructs non-retryable diagnostic reports; `RevisionOrigin::of_turn` and `RevisionOrigin::of_base` preserve durable and ephemeral context origins; `context::validate_updates` validates update shapes and rejects duplicate new-record IDs.
 - `nouli-core`: `WorkflowRequest::validate` checks workflow graphs and request intent without a ledger or fingerprint; `workflow::RequestError` distinguishes graph-compilation errors from invalid session selections, request IDs, required records, and context updates.
+- `nouli-core`: `provider::evaluate` sends a decision through the selected protocol; `ProviderProfile::image_encoding` returns the configured or protocol-default image encoding.
 - `nouli-core`: `Criterion::label`, `Criterion::description`, `TurnOutcome::outcome_for`, `outcome::outcome_for`, `Answer::selected_probability`, `Answer::probability_of`, and `outcome::probability_of` read a criterion's text, the outcome for a question, and a choice's probabilities.
 - `nouli-core`: `context::evidence` types saved image and saved-answer records: `DecisionReference`, `ImageSnapshot`, `image_record`, `rebind_decision_record`, `ContextRecord::as_image`, `ContextRecord::as_decision_reference`, and the `IMAGE_KEY_PREFIX`, `DECISION_KEY_PREFIX`, `IMAGE_FIELD`, and `DECISION_REFERENCE_FIELD` constants. `storage::decisions::DecisionSource` is re-exported from there.
 - `nouli-core`: `context::evidence::marker` finds, formats, parses, and strips the inline `[image:UUID]` and `[decision:UUID]` markers that bind text to saved images and saved answers.
@@ -32,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nouli-core`: workflow ledger methods return `WorkflowError::Conflict` instead of `WorkflowError::Storage(StorageError::Conflict)` when a run, reservation, or node changes concurrently.
 
 ### Removed
+
+- `nouli-core`: remove `media::Evidence::assets`; `provider::wire::body` prepares image assets using the connection settings. Existing protocol-specific evaluation and request-body functions remain available.
 
 - `nouli-core`: remove the unused `history::AttemptState`, `history::AttemptRecord`, `HistoryEvent::AttemptRecorded`, and `workflow::FrozenRun` types, and the `ContextPlan::questions` and `ContextPlan::required` fields. The ledger never wrote these types, and the context a model receives is unchanged.
 

@@ -88,28 +88,6 @@ impl Evidence {
         Ok(Self { text, images })
     }
 
-    /// Build the `assets` object that maps each image reference to its payload.
-    ///
-    /// # Errors
-    ///
-    /// Never returns `Err`; the `Result` is kept for interface stability.
-    pub fn assets(&self) -> Result<Value, codec::CodecError> {
-        let images = &self.images;
-        Ok(Value::Object(
-            images
-                .iter()
-                .map(|image| {
-                    (
-                        image.reference.clone(),
-                        json!({
-                            "type":"image", "format":image.format, "data_base64":image.data_base64
-                        }),
-                    )
-                })
-                .collect(),
-        ))
-    }
-
     /// `OpenAI` reads ordered text/image parts. Other providers use references.
     #[must_use]
     pub fn openai_parts(&self, text: &str) -> Value {
@@ -278,7 +256,7 @@ pub(crate) mod tests {
     fn payload_is_removed_from_text_and_references_become_native_image_parts() {
         let evidence = Evidence::read(&context()).unwrap();
         assert!(!evidence.text.contains("data_base64"));
-        assert_eq!(evidence.assets().unwrap()["[photo #123]"]["format"], "png");
+        assert_eq!(evidence.images[0].format, "png");
         let parts = evidence.openai_parts("Compare [photo #123] with this");
         assert_eq!(parts[0]["text"], "Compare ");
         assert_eq!(parts[2]["type"], "input_image");

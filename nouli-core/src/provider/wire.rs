@@ -15,11 +15,6 @@ use serde_json::{Value, json};
 /// - [`ProviderError::Codec`] if image evidence is malformed or an image cannot be prepared.
 /// - [`ProviderError::Limit`] with [`LimitError::RequestBytes`](crate::limits::LimitError::RequestBytes)
 ///   if the body exceeds the profile's request byte limit.
-///
-/// # Panics
-///
-/// Does not panic in practice: both protocol body builders return a JSON object, so
-/// removing `assets` from it cannot fail.
 pub fn body(
     profile: &ProviderProfile,
     request: &TurnRequest,
@@ -31,20 +26,14 @@ pub fn body(
         .wire_model
         .as_deref()
         .unwrap_or(&profile.model);
-    let mut body = match profile.protocol {
-        Protocol::OpenaiDecisions => super::openai::request_body(request, context, model)?,
-        Protocol::SystemOne => super::system_one::request_body(request, context, model)?,
-    };
-    let encoding =
-        profile
-            .connection
-            .image_encoding
-            .unwrap_or(if profile.protocol == Protocol::SystemOne {
-                ImageEncoding::Assets
-            } else {
-                ImageEncoding::OpenaiContent
-            });
+    request.validate()?;
+    crate::decision::nonempty(model, "model")?;
     let evidence = crate::media::Evidence::read(context)?;
+    let mut body = match profile.protocol {
+        Protocol::OpenaiDecisions => super::openai::body_from_evidence(request, &evidence, model)?,
+        Protocol::SystemOne => super::system_one::body_from_evidence(request, &evidence, model),
+    };
+    let encoding = profile.image_encoding();
     if !evidence.images.is_empty() {
         let prepared = evidence
             .images
@@ -53,17 +42,9 @@ pub fn body(
             .collect::<Result<Vec<_>, _>>()?;
         match encoding {
             ImageEncoding::Assets => {
-                let mut assets = serde_json::Map::new();
-                for i in prepared {
-                    assets.insert(
-                        i.reference.clone(),
-                        json!({"type":"image","format":i.format,"data_base64":i.data_base64}),
-                    );
-                }
-                body["assets"] = Value::Object(assets);
+                body["assets"] = assets(&prepared);
             }
             ImageEncoding::ImagesBase64 | ImageEncoding::ImagesDataUrls => {
-                body.as_object_mut().unwrap().remove("assets");
                 body["images"] = json!(
                     prepared
                         .iter()
@@ -76,7 +57,6 @@ pub fn body(
                 );
             }
             ImageEncoding::StateImageUrls => {
-                body.as_object_mut().unwrap().remove("assets");
                 let mut state = vec![json!(evidence.text)];
                 for i in prepared {
                     state.push(json!(format!("Image {}: {}", i.name, i.reference)));
@@ -121,6 +101,32 @@ pub fn body(
     }
     Ok(body)
 }
+/// Shared asset representation for prepared wire images and the public raw
+/// `SystemOne` request-body compatibility entry point.
+pub(super) fn assets(images: &[crate::media::Image]) -> Value {
+    Value::Object(
+        images
+            .iter()
+            .map(|image| {
+                (
+                    image.reference.clone(),
+                    json!({"type":"image","format":image.format,"data_base64":image.data_base64}),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// `OpenAI`'s native response has no `SystemOne` HTTP envelope or metadata overlay.
+pub(super) fn normalize_openai(
+    request: &TurnRequest,
+    response: Value,
+    name: &str,
+    _binding: HttpBinding,
+) -> Result<TurnOutcome, ProviderError> {
+    super::openai::normalize(request, response, name)
+}
+
 /// Convert a `SystemOne` response, unwrapping Cloudflare Workers AI envelopes, into a validated turn outcome.
 ///
 /// # Errors
@@ -163,7 +169,21 @@ pub fn normalize(
     outcome.provider.request_id = metadata.id;
     outcome.provider.upstream_provider = metadata.provider;
     outcome.usage.cost = metadata.usage.and_then(|u| u.cost);
-    outcome.validate(request)?;
+    // The protocol normalizer already validated the complete outcome. Only
+    // fields added by the HTTP binding need checks here, in the original order.
+    if let Some(provider) = &outcome.provider.upstream_provider {
+        crate::decision::nonempty(provider, "upstream_provider")?;
+    }
+    if let Some(id) = &outcome.provider.request_id {
+        crate::decision::nonempty(id, "provider.request_id")?;
+    }
+    if outcome
+        .usage
+        .cost
+        .is_some_and(|cost| !cost.is_finite() || cost < 0.0)
+    {
+        return Err(crate::decision::ContractError::Number("usage.cost").into());
+    }
     Ok(outcome)
 }
 

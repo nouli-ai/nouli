@@ -10,23 +10,12 @@ use super::{ProviderError, confidence::native_confidence};
 use crate::{
     codec,
     config::{Protocol, resolve::ResolvedSettings},
-    decision::{AnswerSpace, CONTRACT_VERSION, ChoiceOption, Criterion, Question, TurnRequest},
-    limits::{ResolvedLimits, count::TokenCounter},
-    outcome::{Answer, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome, Usage},
+    decision::{AnswerSpace, ChoiceOption, Criterion, Question, TurnRequest},
+    limits::count::TokenCounter,
+    outcome::{Answer, OptionProbability, ProviderIdentity, QuestionOutcome, TurnOutcome},
     transport::HttpTransport,
 };
 
-#[derive(Deserialize)]
-struct NativeResponse {
-    model: String,
-    answers: Vec<NativeAnswer>,
-    usage: Option<NativeUsage>,
-}
-#[derive(Deserialize)]
-struct NativeUsage {
-    input_tokens: Option<u64>,
-    output_tokens: Option<u64>,
-}
 #[derive(Deserialize)]
 struct ChoiceProbability {
     value: String,
@@ -91,6 +80,14 @@ pub fn request_body(
     request.validate()?;
     crate::decision::nonempty(model, "model")?;
     let evidence = crate::media::Evidence::read(context_toon)?;
+    body_from_evidence(request, &evidence, model)
+}
+/// Build the protocol fields from evidence already read and validated by the caller.
+pub(super) fn body_from_evidence(
+    request: &TurnRequest,
+    evidence: &crate::media::Evidence,
+    model: &str,
+) -> Result<Value, ProviderError> {
     let mut questions = Vec::with_capacity(request.questions.len());
     for question in &request.questions {
         let instructions = if question.criteria.is_empty() {
@@ -141,32 +138,25 @@ pub fn normalize(
     response: Value,
     profile_name: &str,
 ) -> Result<TurnOutcome, ProviderError> {
-    request.validate()?;
-    let response: NativeResponse =
-        serde_json::from_value(response).map_err(|_| ProviderError::Wire)?;
-    let mut answers = answers_by_question(request, response.answers)?;
-    let identity = ProviderIdentity {
-        provider: profile_name.to_owned(),
-        model: response.model,
-        upstream_provider: None,
-        request_id: None,
-    };
-    let outcomes = request
+    super::normalize_response(
+        request,
+        response,
+        profile_name,
+        ordered_answers,
+        question_outcome,
+    )
+}
+
+fn ordered_answers(
+    request: &TurnRequest,
+    answers: Vec<NativeAnswer>,
+) -> Result<Vec<NativeAnswer>, ProviderError> {
+    let mut answers = answers_by_question(request, answers)?;
+    request
         .questions
         .iter()
-        .map(|question| {
-            let native = answers.remove(&question.id).ok_or(ProviderError::Wire)?;
-            question_outcome(question, native, &identity)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let outcome = TurnOutcome {
-        version: CONTRACT_VERSION,
-        provider: identity,
-        outcomes,
-        usage: usage(response.usage),
-    };
-    outcome.validate(request)?;
-    Ok(outcome)
+        .map(|question| answers.remove(&question.id).ok_or(ProviderError::Wire))
+        .collect()
 }
 
 /// Keys native answers by question name, requiring exactly one answer per
@@ -300,18 +290,6 @@ fn score_probabilities(
         .collect()
 }
 
-fn usage(native: Option<NativeUsage>) -> Usage {
-    match native {
-        Some(usage) => Usage {
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            exact: usage.input_tokens.is_some() || usage.output_tokens.is_some(),
-            cost: None,
-        },
-        None => Usage::default(),
-    }
-}
-
 /// Send a turn to an `OpenAI` decisions provider and normalize its response.
 ///
 /// # Errors
@@ -328,27 +306,10 @@ pub async fn evaluate(
     counter: &impl TokenCounter,
     cancel: &CancellationToken,
 ) -> Result<TurnOutcome, ProviderError> {
-    let profile = &settings.snapshot.profile;
-    if profile.protocol != Protocol::OpenaiDecisions {
+    if settings.snapshot.profile.protocol != Protocol::OpenaiDecisions {
         return Err(ProviderError::Protocol);
     }
-    ResolvedLimits::for_profile(profile)?.assess(context_toon, request, counter)?;
-    let body = crate::provider::wire::body(profile, request, context_toon)?;
-    let response = transport
-        .post_with_headers(
-            profile,
-            profile
-                .connection
-                .request_path
-                .as_deref()
-                .unwrap_or("v1/decisions"),
-            &body,
-            settings.credential.as_ref(),
-            &settings.headers,
-            cancel,
-        )
-        .await?;
-    normalize(request, response.json()?, &settings.snapshot.profile_name)
+    super::evaluate(transport, settings, request, context_toon, counter, cancel).await
 }
 
 #[cfg(test)]

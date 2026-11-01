@@ -511,6 +511,17 @@ impl ProviderDefinition {
 }
 
 impl ProviderProfile {
+    /// The explicit image encoding, or the selected protocol's default.
+    #[must_use]
+    pub fn image_encoding(&self) -> ImageEncoding {
+        self.connection
+            .image_encoding
+            .unwrap_or(match self.protocol {
+                Protocol::SystemOne => ImageEncoding::Assets,
+                Protocol::OpenaiDecisions => ImageEncoding::OpenaiContent,
+            })
+    }
+
     /// Validates a resolved provider profile.
     ///
     /// # Errors
