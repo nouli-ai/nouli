@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `nouli-core`: `context::projection::project_with_base`, `Ledger::record_attempt_progress`, `Ledger::record_workflow_progress`, and `Ledger::fail_workflow_attempt` take their origin or progress argument by reference, so callers no longer clone it.
+
 ### Fixed
 
 - Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
