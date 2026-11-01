@@ -2,6 +2,7 @@
 
 pub(crate) mod auth;
 mod bootstrap;
+pub(crate) mod config_file;
 mod environment;
 pub(crate) mod preflight;
 pub(crate) mod private_file;
