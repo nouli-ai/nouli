@@ -46,6 +46,16 @@ pub trait TokenCounter {
     ) -> Result<InputCounts, LimitError> {
         self.count(profile, context_toon, questions)
     }
+    /// Return an owned counter for blocking context construction. The snapshot
+    /// must preserve this counter's behavior and own everything it needs. Its
+    /// counting work must be CPU-only and must not retain invocation-scoped
+    /// ledger guards or provider transports: a blocking job may finish after
+    /// its awaiting invocation is canceled.
+    /// Custom counters default to synchronous context construction; implement
+    /// this hook to offload their work without changing existing Engine bounds.
+    fn snapshot(&self) -> Option<std::sync::Arc<dyn TokenCounter + Send + Sync>> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -190,6 +200,9 @@ impl TokenCounter for ByteCounter {
     ) -> Result<InputCounts, LimitError> {
         self.count_prepared(profile, context_toon, questions, &PreparedImages::default())
     }
+    fn snapshot(&self) -> Option<std::sync::Arc<dyn TokenCounter + Send + Sync>> {
+        Some(std::sync::Arc::new(*self))
+    }
     fn count_prepared(
         &self,
         profile: &ProviderProfile,
@@ -266,6 +279,82 @@ pub(crate) mod tests {
     use super::*;
     use crate::config::ModelSettings;
 
+    #[derive(Clone)]
+    pub(crate) struct BlockingCounter(std::sync::Arc<Gate>);
+    struct Gate {
+        release: std::sync::Mutex<bool>,
+        wake: std::sync::Condvar,
+        first: std::sync::atomic::AtomicBool,
+        started: tokio::sync::mpsc::UnboundedSender<()>,
+        finished: tokio::sync::mpsc::UnboundedSender<()>,
+    }
+    pub(crate) struct CounterGate {
+        pub counter: BlockingCounter,
+        pub started: tokio::sync::mpsc::UnboundedReceiver<()>,
+        pub finished: tokio::sync::mpsc::UnboundedReceiver<()>,
+    }
+    impl CounterGate {
+        pub fn new() -> Self {
+            let (started, started_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (finished, finished_rx) = tokio::sync::mpsc::unbounded_channel();
+            Self {
+                counter: BlockingCounter(std::sync::Arc::new(Gate {
+                    release: std::sync::Mutex::new(false),
+                    wake: std::sync::Condvar::new(),
+                    first: std::sync::atomic::AtomicBool::new(true),
+                    started,
+                    finished,
+                })),
+                started: started_rx,
+                finished: finished_rx,
+            }
+        }
+        pub fn release(&self) {
+            *self.counter.0.release.lock().unwrap() = true;
+            self.counter.0.wake.notify_all();
+        }
+    }
+    impl Drop for CounterGate {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+    impl TokenCounter for BlockingCounter {
+        fn count(
+            &self,
+            profile: &ProviderProfile,
+            context: &str,
+            questions: &[Question],
+        ) -> Result<InputCounts, LimitError> {
+            let first = self
+                .0
+                .first
+                .swap(false, std::sync::atomic::Ordering::SeqCst);
+            if first {
+                let _ = self.0.started.send(());
+                let mut released = self.0.release.lock().unwrap();
+                while !*released {
+                    let (next, timeout) = self
+                        .0
+                        .wake
+                        .wait_timeout(released, std::time::Duration::from_secs(5))
+                        .unwrap();
+                    released = next;
+                    if timeout.timed_out() {
+                        break;
+                    }
+                }
+            }
+            let result = ByteCounter.count(profile, context, questions);
+            if first {
+                let _ = self.0.finished.send(());
+            }
+            result
+        }
+        fn snapshot(&self) -> Option<std::sync::Arc<dyn TokenCounter + Send + Sync>> {
+            Some(std::sync::Arc::new(self.clone()))
+        }
+    }
     #[test]
     fn images_use_separate_estimates_and_each_reference_is_counted() {
         let picture = crate::media::tests::picture(1912, 1044);

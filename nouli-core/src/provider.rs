@@ -136,7 +136,7 @@ pub(crate) async fn evaluate_prepared(
         Protocol::SystemOne => ("v1/systemone", wire::normalize),
         Protocol::OpenaiDecisions => ("v1/decisions", wire::normalize_openai),
     };
-    let body = prepared_body(profile, request, context_toon, counter, images)?;
+    let body = prepared_body(profile, request, context_toon, counter, cancel, images).await?;
     let response = transport
         .post_with_headers(
             profile,
@@ -159,15 +159,34 @@ pub(crate) async fn evaluate_prepared(
     )
 }
 
-fn prepared_body(
+async fn prepared_body(
     profile: &crate::config::ProviderProfile,
     request: &TurnRequest,
     context: &str,
     counter: &impl TokenCounter,
+    cancel: &CancellationToken,
     images: &crate::media::PreparedImages,
 ) -> Result<Value, ProviderError> {
-    ResolvedLimits::for_profile(profile)?.assess_prepared(context, request, counter, images)?;
-    wire::body_prepared(profile, request, context, images)
+    let limits = ResolvedLimits::for_profile(profile)?;
+    let snapshot = counter.snapshot();
+    if snapshot.is_none() {
+        // Preserve existing custom counters without imposing owned/Send bounds.
+        limits.assess_prepared(context, request, counter, images)?;
+    }
+    let profile = profile.clone();
+    let request = request.clone();
+    let context = context.to_owned();
+    let images = images.clone();
+    let mut task = tokio::task::spawn_blocking(move || {
+        if let Some(counter) = snapshot {
+            limits.assess_prepared(&context, &request, &*counter, &images)?;
+        }
+        wire::body_prepared(&profile, &request, &context, &images)
+    });
+    tokio::select! { biased;
+        () = cancel.cancelled() => { task.abort(); Err(TransportError::Canceled.into()) },
+        result = &mut task => result.map_err(|_| ProviderError::Transport(TransportError::Build))?,
+    }
 }
 
 #[cfg(test)]
@@ -224,5 +243,75 @@ mod tests {
             wire::normalize(&request, invalid, "fixture", HttpBinding::Standard),
             Err(ProviderError::Contract(ContractError::Empty("model")))
         );
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn native_body_jobs_keep_cancellation_responsive_and_reuse_prepared_pixels() {
+        use crate::{
+            engine::execution::{DecisionProvider, NativeProvider},
+            limits::count::ByteCounter,
+            media::PreparedImages,
+        };
+        let (request, _) = fixture();
+        let profile = crate::limits::count::tests::profile(Protocol::SystemOne, "fixture");
+        let context = crate::media::tests::context();
+        let images = PreparedImages::default();
+        ByteCounter
+            .count_prepared(&profile, &context, &request.questions, &images)
+            .unwrap();
+        let body = prepared_body(
+            &profile,
+            &request,
+            &context,
+            &ByteCounter,
+            &CancellationToken::new(),
+            &images,
+        )
+        .await
+        .unwrap();
+        assert_eq!(images.preparations(), 1);
+        assert_eq!(
+            serde_json::to_vec(&body).unwrap(),
+            serde_json::to_vec(&wire::body(&profile, &request, &context).unwrap()).unwrap()
+        );
+        let settings = crate::config::resolve::SettingsSnapshot {
+            format_version: 2,
+            profile_name: "fixture".into(),
+            profile,
+            execution: crate::config::ExecutionSettings::default(),
+            output: crate::config::OutputFormat::Json,
+            store: std::path::PathBuf::from("/unused"),
+        }
+        .with_credentials(|_| None)
+        .unwrap();
+        let mut gate = crate::limits::count::tests::CounterGate::new();
+        let counter = gate.counter.clone();
+        let cancel = CancellationToken::new();
+        let stopping = cancel.clone();
+        let task = tokio::spawn(async move {
+            NativeProvider
+                .attempt_prepared(&settings, &request, &context, &counter, &stopping, &images)
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), gate.started.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            gate.finished.try_recv().is_err(),
+            "body work blocked the current-thread executor"
+        );
+        cancel.cancel();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(ProviderError::Transport(TransportError::Canceled))
+        );
+        gate.release();
+        tokio::time::timeout(std::time::Duration::from_secs(2), gate.finished.recv())
+            .await
+            .unwrap()
+            .unwrap();
     }
 }

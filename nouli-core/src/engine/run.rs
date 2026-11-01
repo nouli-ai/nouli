@@ -197,17 +197,60 @@ fn build_plan(
     let plan = ContextBuilder::build_prepared(input, limits, counter, &Staged, &images)?;
     Ok(PlannedContext { plan, images })
 }
-/// Builds context plans for one run so capacity retries can rebuild under a smaller budget.
+/// Owned input lets a CPU-only planning job finish safely after cancellation.
+/// It contains neither ledger guards nor provider handles.
+struct OwnedPlanningInput {
+    context_base: Option<crate::history::base::ContextBase>,
+    runtime_only: bool,
+    request: EvaluationRequest,
+    sources: Vec<SourcePoint>,
+    history: Vec<FinalizedTurn>,
+    settings: SettingsSnapshot,
+    session: Id,
+    context_turn: Id,
+    required: Vec<RequiredItem>,
+}
+impl OwnedPlanningInput {
+    fn build(
+        &self,
+        limits: &ResolvedLimits,
+        counter: &dyn TokenCounter,
+    ) -> Result<PlannedContext, BuildError> {
+        build_plan(
+            ContextInput {
+                context_base: self.context_base.as_ref(),
+                runtime_only: self.runtime_only,
+                history: &self.history,
+                sources: &self.sources,
+                request: &self.request.turn,
+                updates: &self.request.updates,
+                required: &self.required,
+                workflow_base: &[],
+                session: self.session,
+                turn: self.context_turn,
+                provider: ProviderIdentity {
+                    provider: self.settings.profile_name.clone(),
+                    model: self.settings.profile.model.clone(),
+                    upstream_provider: None,
+                    request_id: None,
+                },
+            },
+            limits,
+            counter,
+        )
+    }
+}
+/// Builds context plans so capacity retries can rebuild under a smaller budget.
 struct ContextPlanner<'a, C> {
     input: &'a RunInput<'a>,
     required: Vec<RequiredItem>,
-    /// Pending updates are labeled pending, never assigned a persisted turn ID.
     context_turn: Id,
     counter: &'a C,
+    owned: Option<(Arc<OwnedPlanningInput>, Arc<dyn TokenCounter + Send + Sync>)>,
 }
 impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
     fn new(input: &'a RunInput<'a>, counter: &'a C) -> Self {
-        let required = input
+        let required: Vec<_> = input
             .request
             .required_records
             .iter()
@@ -216,14 +259,32 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
                 pointer: None,
             })
             .collect();
+        let context_turn = Id::generate();
+        let owned = counter.snapshot().map(|counter| {
+            (
+                Arc::new(OwnedPlanningInput {
+                    context_base: input.context_base.cloned(),
+                    runtime_only: input.runtime_only,
+                    request: input.request.clone(),
+                    sources: input.sources.to_vec(),
+                    history: input.history.to_vec(),
+                    settings: input.settings.clone(),
+                    session: input.session,
+                    context_turn,
+                    required: required.clone(),
+                }),
+                counter,
+            )
+        });
         Self {
             input,
             required,
-            context_turn: Id::generate(),
+            context_turn,
             counter,
+            owned,
         }
     }
-    fn build(&self, limits: &ResolvedLimits) -> Result<PlannedContext, BuildError> {
+    fn synchronous(&self, limits: &ResolvedLimits) -> Result<PlannedContext, BuildError> {
         let input = self.input;
         build_plan(
             ContextInput {
@@ -248,15 +309,30 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
             self.counter,
         )
     }
-    /// Rebuild `plan` under a budget of three quarters of its input tokens plus the
-    /// reserved output, lowering `limits.budget` to match only when a plan is returned.
-    ///
-    /// Returns `None` when the budget would not drop below the current budget, would not
-    /// exceed the reserved output, or the rebuilt context would be no shorter.
-    fn shrink(
+    async fn build(
+        &self,
+        limits: &ResolvedLimits,
+        cancel: &CancellationToken,
+    ) -> Result<PlannedContext, EngineError> {
+        let Some((input, counter)) = &self.owned else {
+            return Ok(self.synchronous(limits)?);
+        };
+        let input = input.clone();
+        let counter = counter.clone();
+        let limits = limits.clone();
+        let mut task = tokio::task::spawn_blocking(move || input.build(&limits, &*counter));
+        tokio::select! { biased;
+            () = cancel.cancelled() => { task.abort(); Err(EngineError::Canceled) },
+            result = &mut task => Ok(result.map_err(|_| EngineError::Internal("context planning task stopped"))??),
+        }
+    }
+    /// Rebuild under three quarters of the input tokens plus reserved output.
+    /// Only publish the reduced budget when the result is shorter.
+    async fn shrink(
         &self,
         plan: &PlannedContext,
         limits: &mut ResolvedLimits,
+        cancel: &CancellationToken,
     ) -> Result<Option<PlannedContext>, EngineError> {
         let effective = plan
             .plan
@@ -274,7 +350,7 @@ impl<'a, C: TokenCounter> ContextPlanner<'a, C> {
             budget: effective,
             ..limits.clone()
         };
-        let smaller = self.build(&reduced)?;
+        let smaller = self.build(&reduced, cancel).await?;
         if smaller.plan.manifest.context_toon.len() >= plan.plan.manifest.context_toon.len() {
             return Ok(None);
         }
@@ -292,7 +368,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
     ) -> Result<R::Output, EngineError> {
         let planner = ContextPlanner::new(&input, &self.counter);
         let mut limits = ResolvedLimits::for_profile(&input.settings.profile)?;
-        let mut plan = planner.build(&limits)?;
+        let mut plan = planner.build(&limits, cancel).await?;
         let mut settings = input.settings.clone().with_credentials(lookup)?;
         let policy = RetryPolicy::new(&settings.snapshot.execution).map_err(ProviderError::from)?;
         let timeout = attempt_timeout(&settings)?;
@@ -319,7 +395,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             if number < max_attempts
                 && matches!(error, ProviderError::Transport(TransportError::Capacity))
             {
-                let Some(smaller) = planner.shrink(&plan, &mut limits)? else {
+                let Some(smaller) = planner.shrink(&plan, &mut limits, cancel).await? else {
                     return Err(error.into());
                 };
                 plan = smaller;
@@ -520,6 +596,154 @@ mod tests {
                 serde_json::to_vec(&independent).unwrap()
             );
         }
+    }
+
+    struct UncalledProvider;
+    impl DecisionProvider for UncalledProvider {
+        fn attempt<C: TokenCounter + Sync>(
+            &self,
+            _settings: &ResolvedSettings,
+            _request: &TurnRequest,
+            _evidence: &str,
+            _counter: &C,
+            _cancel: &CancellationToken,
+        ) -> impl std::future::Future<Output = Result<TurnOutcome, ProviderError>> + Send {
+            std::future::ready(Err(ProviderError::Transport(TransportError::Contract)))
+        }
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn owned_context_planning_keeps_current_thread_cancellation_responsive() {
+        use crate::{
+            config::{Config, resolve::RuntimeOverrides},
+            engine::EvaluationInput,
+            history::{ModelSelection, SessionSelection, StandingChanges},
+        };
+        let mut gate = crate::limits::count::tests::CounterGate::new();
+        let engine = Engine {
+            provider: UncalledProvider,
+            counter: gate.counter.clone(),
+            clock: crate::engine::execution::TokioClock,
+        };
+        let config =
+            Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap();
+        let request = EvaluationRequest {
+            turn: serde_json::from_str(include_str!(
+                "../../../fixtures/contracts/decision-request.json"
+            ))
+            .unwrap(),
+            session: SessionSelection::New { name: None },
+            standing: StandingChanges::default(),
+            updates: vec![],
+            required_records: vec![],
+            model: ModelSelection::default(),
+            request_id: None,
+        };
+        let cancel = CancellationToken::new();
+        let stopping = cancel.clone();
+        let task = tokio::spawn(async move {
+            engine
+                .evaluate_ephemeral(
+                    None,
+                    EvaluationInput {
+                        request: &request,
+                        config: &config,
+                        overrides: &RuntimeOverrides::default(),
+                        home: std::path::Path::new("/unused"),
+                        retry_interrupted: false,
+                    },
+                    |_| None,
+                    &stopping,
+                )
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), gate.started.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            gate.finished.try_recv().is_err(),
+            "planning blocked the current-thread executor until the gate timed out"
+        );
+        cancel.cancel();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(EngineError::Canceled)
+        ));
+        gate.release();
+        tokio::time::timeout(Duration::from_secs(2), gate.finished.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[derive(Clone, Copy)]
+    struct PanickingCounter;
+    impl TokenCounter for PanickingCounter {
+        fn count(
+            &self,
+            _profile: &crate::config::ProviderProfile,
+            _context: &str,
+            _questions: &[crate::decision::Question],
+        ) -> Result<crate::limits::count::InputCounts, LimitError> {
+            panic!("test blocking counter stopped")
+        }
+        fn snapshot(&self) -> Option<Arc<dyn TokenCounter + Send + Sync>> {
+            Some(Arc::new(*self))
+        }
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_failed_context_worker_is_internal_instead_of_a_storage_or_input_error() {
+        use crate::{
+            config::{Config, resolve::RuntimeOverrides},
+            engine::EvaluationInput,
+            history::{ModelSelection, SessionSelection, StandingChanges},
+        };
+        let engine = Engine {
+            provider: UncalledProvider,
+            counter: PanickingCounter,
+            clock: crate::engine::execution::TokioClock,
+        };
+        let config =
+            Config::parse(include_str!("../../../fixtures/config/providers.toml")).unwrap();
+        let request = EvaluationRequest {
+            turn: serde_json::from_str(include_str!(
+                "../../../fixtures/contracts/decision-request.json"
+            ))
+            .unwrap(),
+            session: SessionSelection::New { name: None },
+            standing: StandingChanges::default(),
+            updates: vec![],
+            required_records: vec![],
+            model: ModelSelection::default(),
+            request_id: None,
+        };
+        let error = engine
+            .evaluate_ephemeral(
+                None,
+                EvaluationInput {
+                    request: &request,
+                    config: &config,
+                    overrides: &RuntimeOverrides::default(),
+                    home: std::path::Path::new("/unused"),
+                    retry_interrupted: false,
+                },
+                |_| None,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            EngineError::Internal("context planning task stopped")
+        ));
+        assert_eq!(
+            error.report().category,
+            crate::protocol::ErrorCategory::Internal
+        );
+        assert_eq!(error.report().code, "engine_internal");
     }
 
     fn every_provider_error() -> Vec<ProviderError> {

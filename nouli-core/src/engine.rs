@@ -44,6 +44,10 @@ pub struct EvaluationResult {
 }
 #[derive(Debug, Error)]
 pub enum EngineError {
+    /// A blocking engine task stopped before returning its result. The static
+    /// diagnostic never contains user evidence or credentials.
+    #[error("internal engine failure: {0}")]
+    Internal(&'static str),
     #[error(transparent)]
     Workflow(#[from] crate::storage::workflows::WorkflowError),
     #[error(transparent)]

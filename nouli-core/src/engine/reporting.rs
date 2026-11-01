@@ -257,6 +257,7 @@ impl EngineError {
     #[must_use]
     pub fn report(&self) -> ErrorReport {
         match self {
+            Self::Internal(_) => message(Category::Internal, "engine_internal"),
             Self::Workflow(error) => error.report(),
             Self::Config(error) => config(error),
             Self::Storage(error)
