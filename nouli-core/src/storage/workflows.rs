@@ -27,7 +27,6 @@ use crate::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
@@ -142,26 +141,16 @@ impl From<StorageError> for WorkflowError {
         }
     }
 }
+impl From<crate::workflow::RequestError> for WorkflowError {
+    fn from(error: crate::workflow::RequestError) -> Self {
+        match error {
+            crate::workflow::RequestError::Compile(error) => Self::Compile(error),
+            crate::workflow::RequestError::History(error) => Self::History(error),
+        }
+    }
+}
 fn validate(request: &WorkflowRequest) -> Result<(), WorkflowError> {
-    compile::compile(&request.workflow)?;
-    request.session.validate()?;
-    if request
-        .request_id
-        .as_ref()
-        .is_some_and(|id| id.trim().is_empty())
-        || request
-            .required_records
-            .iter()
-            .collect::<HashSet<_>>()
-            .len()
-            != request.required_records.len()
-    {
-        return Err(HistoryError::InvalidSelection.into());
-    }
-    for update in &request.updates {
-        update.validate().map_err(HistoryError::from)?;
-    }
-    Ok(())
+    request.validate().map_err(Into::into)
 }
 /// Validates a workflow request and returns the fingerprint of its intent.
 ///

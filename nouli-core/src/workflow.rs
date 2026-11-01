@@ -15,7 +15,7 @@ use crate::{
     context::{ContextError, ContextUpdate},
     data::Input,
     decision::{CONTRACT_VERSION, ContractError, TurnRequest},
-    history::{ModelSelection, SessionSelection},
+    history::{HistoryError, ModelSelection, SessionSelection},
     identity::Id,
 };
 use reference::{Condition, ResultReference};
@@ -84,6 +84,43 @@ pub struct WorkflowRequest {
     #[serde(default)]
     pub required_records: Vec<Id>,
     pub request_id: Option<String>,
+}
+
+/// Invalid workflow request intent, independent of ledger storage.
+#[derive(Debug, Error)]
+pub enum RequestError {
+    #[error(transparent)]
+    Compile(#[from] compile::CompileError),
+    #[error(transparent)]
+    History(#[from] HistoryError),
+}
+
+impl WorkflowRequest {
+    /// Validate the workflow graph and request intent without fingerprinting or
+    /// opening a ledger. Execution-mode options are checked by the engine.
+    ///
+    /// # Errors
+    ///
+    /// - [`RequestError::Compile`] if the workflow graph or node contracts are invalid.
+    /// - [`RequestError::History`] if the session selection, request ID, required
+    ///   records, or context updates are invalid.
+    pub fn validate(&self) -> Result<(), RequestError> {
+        compile::compile(&self.workflow)?;
+        self.session.validate()?;
+        if self
+            .request_id
+            .as_ref()
+            .is_some_and(|id| id.trim().is_empty())
+            || self.required_records.iter().collect::<HashSet<_>>().len()
+                != self.required_records.len()
+        {
+            return Err(HistoryError::InvalidSelection.into());
+        }
+        for update in &self.updates {
+            update.validate().map_err(HistoryError::from)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,5 +298,66 @@ mod tests {
         assert!(RunStatus::Interrupted.can_transition_to(RunStatus::Running));
         assert!(RunStatus::Partial.can_transition_to(RunStatus::Running));
         assert!(!RunStatus::Completed.can_transition_to(RunStatus::Running));
+    }
+    fn request() -> WorkflowRequest {
+        WorkflowRequest {
+            workflow: serde_json::from_str(include_str!("../../fixtures/contracts/workflow.json"))
+                .unwrap(),
+            session: SessionSelection::New { name: None },
+            updates: vec![],
+            required_records: vec![],
+            request_id: None,
+        }
+    }
+
+    #[test]
+    fn request_validation_preserves_graph_and_intent_error_precedence() {
+        let original = request();
+        original.validate().unwrap();
+        let mut invalid = original.clone();
+        invalid.workflow.nodes[0].dependencies = vec!["missing".into()];
+        invalid.request_id = Some(" ".into());
+        assert!(matches!(
+            invalid.validate(),
+            Err(RequestError::Compile(
+                compile::CompileError::UnknownDependency
+            ))
+        ));
+        invalid.workflow = original.workflow.clone();
+        assert!(matches!(
+            invalid.validate(),
+            Err(RequestError::History(HistoryError::InvalidSelection))
+        ));
+        invalid.request_id = None;
+        invalid.session = SessionSelection::From {
+            sources: vec![],
+            name: None,
+        };
+        assert!(matches!(
+            invalid.validate(),
+            Err(RequestError::History(HistoryError::InvalidSelection))
+        ));
+        invalid.session = original.session;
+        let id = Id::generate();
+        invalid.required_records = vec![id, id];
+        assert!(matches!(
+            invalid.validate(),
+            Err(RequestError::History(HistoryError::InvalidSelection))
+        ));
+        invalid.required_records.clear();
+        invalid.updates = vec![ContextUpdate::Append {
+            record: crate::context::ContextRecord {
+                id,
+                key: " ".into(),
+                value: crate::data::Data::new(serde_json::json!(1)).unwrap(),
+                kind: crate::context::ContextKind::Evidence,
+            },
+        }];
+        assert!(matches!(
+            invalid.validate(),
+            Err(RequestError::History(HistoryError::Context(
+                ContextError::EmptyKey
+            )))
+        ));
     }
 }

@@ -569,7 +569,7 @@ impl<
     ///   already fired, or [`EngineError::EphemeralOptions`] /
     ///   [`EngineError::EphemeralStore`] for an invalid ephemeral run.
     /// - [`WorkflowEngineError::Compile`] if the workflow definition does not compile, or
-    ///   [`WorkflowEngineError::Repository`] if it cannot be fingerprinted.
+    ///   [`WorkflowEngineError::Repository`] if the request intent is invalid.
     /// - [`WorkflowEngineError::Store`] if a durable run, or an ephemeral run with sources,
     ///   has no ledger worker.
     /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
@@ -606,7 +606,7 @@ impl<
     ///   already fired, or [`EngineError::EphemeralOptions`] /
     ///   [`EngineError::EphemeralStore`] for an invalid ephemeral run.
     /// - [`WorkflowEngineError::Compile`] if the workflow definition does not compile, or
-    ///   [`WorkflowEngineError::Repository`] if it cannot be fingerprinted.
+    ///   [`WorkflowEngineError::Repository`] if the request intent is invalid.
     /// - [`WorkflowEngineError::Store`] if a durable run, or an ephemeral run with sources,
     ///   has no ledger worker.
     /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
@@ -631,7 +631,7 @@ impl<
         }
         let mut request = effective_request(&input);
         let graph = Arc::new(compile::compile(&request.workflow)?);
-        crate::storage::workflows::fingerprint(&request)?;
+        request.validate().map_err(WorkflowError::from)?;
         if request.workflow.mode == RunMode::Ephemeral {
             let prepared = freeze_ephemeral(worker, &input, &request, &graph).await?;
             return self

@@ -91,8 +91,7 @@ impl RunArgs {
             request.workflow.mode == RunMode::Ephemeral,
             request.request_id.is_some(),
         )?;
-        nouli_core::storage::workflows::fingerprint(&request)
-            .map_err(|_| input::InputError::Shape)?;
+        request.validate().map_err(|_| input::InputError::Shape)?;
         Ok(request)
     }
     pub(super) fn overrides(&self, settings: &crate::settings::Settings) -> RuntimeOverrides {
