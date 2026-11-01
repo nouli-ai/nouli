@@ -2,7 +2,7 @@
 use super::{
     Engine, EngineError, EvaluationInput,
     execution::{DecisionProvider, RetryClock},
-    run::{Executed, Recorder, RunInput},
+    run::{EphemeralRecorder, RunInput},
 };
 use crate::{
     config::{ConfigError, resolve::SettingsSnapshot},
@@ -68,7 +68,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
             (vec![], vec![])
         };
         let settings = ephemeral_settings(&input)?;
-        match self
+        let (outcome, manifest) = self
             .execute(
                 RunInput {
                     context_base: None,
@@ -79,19 +79,16 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     settings,
                     session: Id::generate(),
                 },
-                Recorder::ephemeral(),
+                EphemeralRecorder,
                 lookup,
                 cancel,
             )
-            .await?
-        {
-            Executed::Ephemeral { outcome, manifest } => Ok(EphemeralResult {
-                request: request.turn.clone(),
-                outcome: *outcome,
-                manifest: *manifest,
-            }),
-            Executed::Saved(_) => Err(crate::storage::StorageError::Payload.into()),
-        }
+            .await?;
+        Ok(EphemeralResult {
+            request: request.turn.clone(),
+            outcome,
+            manifest,
+        })
     }
 }
 impl<P, C, T> Engine<P, C, T> {

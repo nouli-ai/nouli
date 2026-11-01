@@ -4,7 +4,7 @@ use super::{
     Engine, EngineError,
     ephemeral::{ephemeral_sources, read_only_sources},
     execution::{DecisionProvider, RetryClock},
-    run::{Executed, Recorder, RunInput},
+    run::{DurableRecorder, EphemeralRecorder, Recorder, RunInput},
     session_defaults,
 };
 use crate::history::StandingChanges;
@@ -123,10 +123,10 @@ struct Runner<P, C, T, O> {
     lookup: CredentialLookup,
 }
 /// What one node evaluates against and where its attempts are recorded.
-struct NodeContext<'a> {
+struct NodeContext<R> {
     sources: Vec<SourcePoint>,
     history: Vec<FinalizedTurn>,
-    recorder: Recorder<'a>,
+    recorder: R,
 }
 impl<
     P: DecisionProvider + Send + 'static,
@@ -164,38 +164,20 @@ impl<
         call: NodeCall,
         cancel: CancellationToken,
     ) -> Result<NodeOutput, ErrorReport> {
-        let definition = &self.frozen.definition;
         let node = call.node;
         let request = request_for(&self.frozen, node, &call.inputs).map_err(report)?;
-        let NodeContext {
-            sources,
-            history,
-            recorder,
-        } = match &self.target {
+        match &self.target {
             Target::Durable { worker, owner } => {
-                self.durable_context(worker, owner, &call, &request).await?
+                let context = self.durable_context(worker, owner, &call, &request).await?;
+                let turn = self.execute_node(context, &request, node, &cancel).await?;
+                Ok(node_output(&turn))
             }
-            Target::Ephemeral { history, ids } => self.ephemeral_context(history, ids, &call)?,
-        };
-        let executed = self
-            .engine
-            .execute(
-                RunInput {
-                    context_base: Some(&definition.base),
-                    runtime_only: definition.base.runtime_only,
-                    request: &request,
-                    sources: &sources,
-                    history: &history,
-                    settings: self.frozen.settings[node].clone(),
-                    session: definition.session,
-                },
-                recorder,
-                |name| (self.lookup)(name),
-                &cancel,
-            )
-            .await
-            .map_err(report)?;
-        Ok(node_output_of(executed, request))
+            Target::Ephemeral { history, ids } => {
+                let context = self.ephemeral_context(history, ids, &call)?;
+                let result = self.execute_node(context, &request, node, &cancel).await?;
+                Ok(ephemeral_node_output(result, request))
+            }
+        }
     }
 }
 impl<
@@ -205,6 +187,33 @@ impl<
     O: ScheduleObserver,
 > Runner<P, C, T, O>
 {
+    /// Evaluate a node while preserving the recording policy's result type.
+    async fn execute_node<R: Recorder>(
+        &self,
+        context: NodeContext<R>,
+        request: &EvaluationRequest,
+        node: usize,
+        cancel: &CancellationToken,
+    ) -> Result<R::Output, ErrorReport> {
+        let definition = &self.frozen.definition;
+        self.engine
+            .execute(
+                RunInput {
+                    context_base: Some(&definition.base),
+                    runtime_only: definition.base.runtime_only,
+                    request,
+                    sources: &context.sources,
+                    history: &context.history,
+                    settings: self.frozen.settings[node].clone(),
+                    session: definition.session,
+                },
+                context.recorder,
+                |name| (self.lookup)(name),
+                cancel,
+            )
+            .await
+            .map_err(report)
+    }
     /// Accept the node in the ledger and read the saved history of its parents' turns.
     async fn durable_context<'a>(
         &self,
@@ -212,7 +221,7 @@ impl<
         owner: &Arc<WorkflowOwner>,
         call: &NodeCall,
         request: &EvaluationRequest,
-    ) -> Result<NodeContext<'a>, ErrorReport> {
+    ) -> Result<NodeContext<DurableRecorder<'a>>, ErrorReport> {
         let node = call.node;
         let sources = if call.parents.is_empty() {
             self.frozen.definition.base.sources.clone()
@@ -236,7 +245,11 @@ impl<
         Ok(NodeContext {
             sources,
             history,
-            recorder: Recorder::workflow(worker, owner.clone(), intent),
+            recorder: DurableRecorder::Workflow {
+                worker,
+                owner: owner.clone(),
+                intent: Arc::new(intent),
+            },
         })
     }
     /// Extend the base history with in-memory turns for every completed ancestor.
@@ -245,7 +258,7 @@ impl<
         history: &[FinalizedTurn],
         ids: &[Id],
         call: &NodeCall,
-    ) -> Result<NodeContext<'static>, ErrorReport> {
+    ) -> Result<NodeContext<EphemeralRecorder>, ErrorReport> {
         let definition = &self.frozen.definition;
         let mut selected = history.to_vec();
         let active: HashSet<_> = call
@@ -270,7 +283,7 @@ impl<
         Ok(NodeContext {
             sources,
             history: selected,
-            recorder: Recorder::ephemeral(),
+            recorder: EphemeralRecorder,
         })
     }
     /// The unsaved turn an ephemeral ancestor contributes, parented on its active
@@ -332,18 +345,21 @@ fn saved_parent_sources(call: &NodeCall) -> Result<Vec<SourcePoint>, WorkflowErr
         })
         .collect()
 }
-fn node_output_of(executed: Executed, request: EvaluationRequest) -> NodeOutput {
-    match executed {
-        Executed::Saved(turn) => node_output(&turn),
-        Executed::Ephemeral { outcome, manifest } => NodeOutput {
-            outcome: *outcome,
-            source: None,
-            evaluation: Some(NodeEvaluation {
-                request: request.turn,
-                updates: request.updates,
-                manifest: *manifest,
-            }),
-        },
+fn ephemeral_node_output(
+    (outcome, manifest): (
+        crate::outcome::TurnOutcome,
+        crate::history::EvaluationManifest,
+    ),
+    request: EvaluationRequest,
+) -> NodeOutput {
+    NodeOutput {
+        outcome,
+        source: None,
+        evaluation: Some(NodeEvaluation {
+            request: request.turn,
+            updates: request.updates,
+            manifest,
+        }),
     }
 }
 fn reconciled(

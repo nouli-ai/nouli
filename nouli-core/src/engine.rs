@@ -23,7 +23,7 @@ use crate::{
     },
 };
 use execution::{DecisionProvider, RetryClock};
-use run::{Executed, Recorder, RunInput};
+use run::{DurableRecorder, RunInput};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
 use thiserror::Error;
@@ -160,7 +160,7 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
         let history = ledger
             .call(move |ledger| ledger.ancestry(&sources))
             .await??;
-        match self
+        let turn = self
             .execute(
                 RunInput {
                     context_base: None,
@@ -171,19 +171,19 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
                     settings: frozen.settings.clone(),
                     session: frozen.session,
                 },
-                Recorder::durable(ledger, owner.clone()),
+                DurableRecorder::Evaluation {
+                    worker: ledger,
+                    owner: owner.clone(),
+                },
                 lookup,
                 cancel,
             )
-            .await?
-        {
-            Executed::Saved(turn) => Ok(EvaluationResult {
-                request_id: key,
-                turn: *turn,
-                replayed: false,
-            }),
-            Executed::Ephemeral { .. } => Err(StorageError::Payload.into()),
-        }
+            .await?;
+        Ok(EvaluationResult {
+            request_id: key,
+            turn,
+            replayed: false,
+        })
     }
 }
 impl<P, C, T> Engine<P, C, T> {
