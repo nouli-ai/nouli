@@ -510,10 +510,6 @@ fn reference_menu(app: &App, theme: &Theme) -> Vec<Line<'static>> {
     rows
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -532,54 +528,9 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
     frame.render_widget(block, area);
     if let Some(index) = app.references.inspected {
         if let Some(binding) = app.references.bindings.get(index) {
-            let value = &binding.record.value.value()["nouli_decision_reference"];
-            let source = &value["source"];
-            let mut lines = vec![
-                Line::from(render::clean(&binding.label)),
-                Line::from(format!(
-                    "Question: {}",
-                    render::clean(source["question"].as_str().unwrap_or(""))
-                )),
-                Line::from(format!("Turn: {}", source["turn"].as_str().unwrap_or(""))),
-                Line::from(format!(
-                    "Session: {}",
-                    source["session"].as_str().unwrap_or("")
-                )),
-                Line::from(format!(
-                    "Model: {}",
-                    render::clean(value["provider"]["model"].as_str().unwrap_or(""))
-                )),
-                Line::from("Backspace in the form removes the reference."),
-            ];
-            if let (Ok(question), Ok(outcome)) = (
-                serde_json::from_value::<nouli_core::decision::Question>(value["question"].clone()),
-                serde_json::from_value::<nouli_core::outcome::QuestionOutcome>(
-                    value["outcome"].clone(),
-                ),
-            ) {
-                lines.insert(
-                    1,
-                    Line::from(render::clean(&render::image_labels(&question.prompt))),
-                );
-                lines.insert(
-                    2,
-                    Line::from(render::clean(&render::image_labels(
-                        &super::references::describe_answer(&question, &outcome),
-                    ))),
-                );
-            }
-            if let Some(images) = value["images"].as_array() {
-                let names = images
-                    .iter()
-                    .filter_map(|image| image["record"]["value"]["nouli_image"]["name"].as_str())
-                    .map(render::clean)
-                    .collect::<Vec<_>>();
-                if !names.is_empty() {
-                    lines.push(Line::from(format!("Images: {}", names.join(", "))));
-                }
-            }
             frame.render_widget(
-                Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }),
+                Paragraph::new(inspected_reference(binding))
+                    .wrap(ratatui::widgets::Wrap { trim: false }),
                 inner,
             );
         }
@@ -588,7 +539,81 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
     let Some(picker) = &app.references.picker else {
         return;
     };
-    let (list_area, preview_area) = if inner.width >= 80 {
+    let wide = inner.width >= 80;
+    let (list_area, preview_area) = reference_areas(inner);
+    frame.render_widget(
+        Paragraph::new(reference_list(app, picker, list_area.height, theme)),
+        list_area,
+    );
+    let Some(preview_area) = preview_area else {
+        return;
+    };
+    if let Some(file) = app.references.selected_file() {
+        frame.render_widget(
+            Paragraph::new(file_preview(app, file, theme))
+                .wrap(ratatui::widgets::Wrap { trim: false }),
+            preview_area,
+        );
+    }
+    if let Some(entry) = app.references.selected() {
+        let lines = saved_answer_preview(app, entry, theme);
+        draw_preview(frame, preview_area, wide, &lines, app, theme);
+    }
+}
+
+/// What a bound reference in the form points at, as Ctrl-O shows it.
+fn inspected_reference(binding: &super::references::Binding) -> Vec<Line<'static>> {
+    let value = &binding.record.value.value()["nouli_decision_reference"];
+    let source = &value["source"];
+    let mut lines = vec![
+        Line::from(render::clean(&binding.label)),
+        Line::from(format!(
+            "Question: {}",
+            render::clean(source["question"].as_str().unwrap_or(""))
+        )),
+        Line::from(format!("Turn: {}", source["turn"].as_str().unwrap_or(""))),
+        Line::from(format!(
+            "Session: {}",
+            source["session"].as_str().unwrap_or("")
+        )),
+        Line::from(format!(
+            "Model: {}",
+            render::clean(value["provider"]["model"].as_str().unwrap_or(""))
+        )),
+        Line::from("Backspace in the form removes the reference."),
+    ];
+    if let (Ok(question), Ok(outcome)) = (
+        serde_json::from_value::<nouli_core::decision::Question>(value["question"].clone()),
+        serde_json::from_value::<nouli_core::outcome::QuestionOutcome>(value["outcome"].clone()),
+    ) {
+        lines.insert(
+            1,
+            Line::from(render::clean(&render::image_labels(&question.prompt))),
+        );
+        lines.insert(
+            2,
+            Line::from(render::clean(&render::image_labels(
+                &super::references::describe_answer(&question, &outcome),
+            ))),
+        );
+    }
+    if let Some(images) = value["images"].as_array() {
+        let names = images
+            .iter()
+            .filter_map(|image| image["record"]["value"]["nouli_image"]["name"].as_str())
+            .map(render::clean)
+            .collect::<Vec<_>>();
+        if !names.is_empty() {
+            lines.push(Line::from(format!("Images: {}", names.join(", "))));
+        }
+    }
+    lines
+}
+
+/// The browser's result list and, when there is room, its preview beside or
+/// below it.
+fn reference_areas(inner: Rect) -> (Rect, Option<Rect>) {
+    if inner.width >= 80 {
         let [left, right] =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .areas(inner);
@@ -602,8 +627,17 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
         (list, Some(preview))
     } else {
         (inner, None)
-    };
-    let size = (usize::from(list_area.height) / 4).max(1);
+    }
+}
+
+/// The page of results around the choice that fits `height` rows.
+fn reference_list(
+    app: &App,
+    picker: &super::references::Picker,
+    height: u16,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let size = (usize::from(height) / 4).max(1);
     let first = picker.choice.saturating_sub(size - 1);
     let mut lines = Vec::new();
     if picker.matches.is_empty() {
@@ -615,164 +649,212 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
         lines.extend(reference_result(app, *index, i == picker.choice, theme));
         lines.push(Line::from(""));
     }
-    frame.render_widget(Paragraph::new(lines), list_area);
-    if let Some(preview_area) = preview_area
-        && let Some(file) = app.references.selected_file()
+    lines
+}
+
+fn file_preview(app: &App, file: &std::path::Path, theme: &Theme) -> Vec<Line<'static>> {
+    vec![
+        Line::from(Span::styled(app.references.file_label(file), theme.accent)),
+        Line::from(""),
+        Line::from("File in the launch folder"),
+        Line::from("Enter adds its contents to this field."),
+    ]
+}
+
+/// A saved answer's question, answer, distribution, saved input state, and
+/// provenance.
+fn saved_answer_preview(
+    app: &App,
+    entry: &nouli_core::storage::decisions::SavedDecision,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let kind = reference_kind(entry);
+    let mut lines = vec![
+        Line::from(Span::styled(
+            render::clean(&render::image_labels(&entry.question.prompt)),
+            theme.kind(kind, true),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            render::clean(&render::image_labels(&super::references::answer(entry))),
+            theme.kind(kind, true),
+        )),
+    ];
+    lines.extend(answer_distribution(entry));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Saved input state · PgUp/PgDn scroll",
+        theme.accent,
+    )));
+    if let Some(preview) = app
+        .references
+        .preview
+        .as_ref()
+        .filter(|preview| preview.source == entry.source)
     {
-        frame.render_widget(
-            Paragraph::new(vec![
-                Line::from(Span::styled(app.references.file_label(file), theme.accent)),
-                Line::from(""),
-                Line::from("File in the launch folder"),
-                Line::from("Enter adds its contents to this field."),
-            ])
-            .wrap(ratatui::widgets::Wrap { trim: false }),
-            preview_area,
-        );
+        for line in &preview.lines {
+            lines.push(Line::from(render::clean(&render::image_labels(line))));
+        }
+    } else {
+        lines.push(Line::from("Loading saved state…"));
     }
-    if let Some(preview_area) = preview_area
-        && let Some(entry) = app.references.selected()
-    {
-        let kind = reference_kind(entry);
-        let mut lines = vec![
-            Line::from(Span::styled(
-                render::clean(&render::image_labels(&entry.question.prompt)),
-                theme.kind(kind, true),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                render::clean(&render::image_labels(&super::references::answer(entry))),
-                theme.kind(kind, true),
-            )),
-        ];
-        match &entry.outcome {
-            nouli_core::outcome::QuestionOutcome::Answered {
-                answer: nouli_core::outcome::Answer::Choice { distribution, .. },
-                ..
-            } => {
-                if let nouli_core::decision::AnswerSpace::Choice { options } =
-                    &entry.question.answer_space
-                {
-                    for option in options {
-                        if let Some(p) = distribution.iter().find(|p| p.option_id == option.id) {
-                            lines.push(Line::from(format!(
-                                "{}  {:.2}",
-                                render::image_labels(&render::clean(&option.description)),
-                                p.probability
-                            )));
-                        }
-                    }
-                }
-            }
-            nouli_core::outcome::QuestionOutcome::Answered {
-                answer: nouli_core::outcome::Answer::Score { probabilities, .. },
-                ..
-            } => {
-                if let nouli_core::decision::AnswerSpace::Score { levels } =
-                    &entry.question.answer_space
-                {
-                    for (level, p) in levels.iter().zip(probabilities) {
-                        let label = match level {
-                            nouli_core::decision::Criterion::Text(s) => s,
-                            nouli_core::decision::Criterion::Detailed { description, .. } => {
-                                description
-                            }
-                        };
+    lines.extend([
+        Line::from(""),
+        Line::from(format!(
+            "Question {}",
+            render::clean(&entry.source.question)
+        )),
+        Line::from(format!("Turn {}", entry.source.turn)),
+        Line::from(format!(
+            "{} · {}",
+            render::clean(&entry.provider.provider),
+            render::clean(&entry.provider.model)
+        )),
+    ]);
+    lines
+}
+
+/// One line per option or level with its probability; none for a yes/no
+/// question or an outcome without an answer.
+fn answer_distribution(
+    entry: &nouli_core::storage::decisions::SavedDecision,
+) -> Vec<Line<'static>> {
+    use nouli_core::{
+        decision::{AnswerSpace, Criterion},
+        outcome::{Answer, QuestionOutcome},
+    };
+    let mut lines = Vec::new();
+    match &entry.outcome {
+        QuestionOutcome::Answered {
+            answer: Answer::Choice { distribution, .. },
+            ..
+        } => {
+            if let AnswerSpace::Choice { options } = &entry.question.answer_space {
+                for option in options {
+                    if let Some(p) = distribution.iter().find(|p| p.option_id == option.id) {
                         lines.push(Line::from(format!(
-                            "{}  {p:.2}",
-                            render::image_labels(&render::clean(label))
+                            "{}  {:.2}",
+                            render::image_labels(&render::clean(&option.description)),
+                            p.probability
                         )));
                     }
                 }
             }
-            _ => {}
         }
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "Saved input state · PgUp/PgDn scroll",
-            theme.accent,
-        )));
-        if let Some(preview) = app
-            .references
-            .preview
-            .as_ref()
-            .filter(|preview| preview.source == entry.source)
-        {
-            for line in &preview.lines {
-                lines.push(Line::from(render::clean(&render::image_labels(line))));
+        QuestionOutcome::Answered {
+            answer: Answer::Score { probabilities, .. },
+            ..
+        } => {
+            if let AnswerSpace::Score { levels } = &entry.question.answer_space {
+                for (level, p) in levels.iter().zip(probabilities) {
+                    let label = match level {
+                        Criterion::Text(s) => s,
+                        Criterion::Detailed { description, .. } => description,
+                    };
+                    lines.push(Line::from(format!(
+                        "{}  {p:.2}",
+                        render::image_labels(&render::clean(label))
+                    )));
+                }
             }
-        } else {
-            lines.push(Line::from("Loading saved state…"));
         }
-        lines.extend([
-            Line::from(""),
-            Line::from(format!(
-                "Question {}",
-                render::clean(&entry.source.question)
-            )),
-            Line::from(format!("Turn {}", entry.source.turn)),
-            Line::from(format!(
-                "{} · {}",
-                render::clean(&entry.provider.provider),
-                render::clean(&entry.provider.model)
-            )),
-        ]);
-        let block = Block::new()
-            .borders(if inner.width >= 80 {
-                Borders::LEFT
-            } else {
-                Borders::TOP
-            })
-            .padding(Padding::left(1))
-            .border_style(theme.dim);
-        let visible = block.inner(preview_area);
-        app.references.preview_page = usize::from(visible.height).saturating_sub(1).max(1);
-        let wrapped = lines
-            .iter()
-            .flat_map(|line| wrap_line(line, usize::from(visible.width).max(1)))
-            .collect::<Vec<_>>();
-        app.references.preview_scroll = app
-            .references
-            .preview_scroll
-            .min(wrapped.len().saturating_sub(usize::from(visible.height)));
-        let lines = wrapped
-            .into_iter()
-            .skip(app.references.preview_scroll)
-            .take(usize::from(visible.height))
-            .collect::<Vec<_>>();
-        frame.render_widget(Paragraph::new(lines).block(block), preview_area);
+        _ => {}
     }
+    lines
+}
+
+/// The preview's lines wrapped inside its border and scrolled to the
+/// browser's preview offset, which is clamped to the content, and the page
+/// size PgUp/PgDn move by.
+fn draw_preview(
+    frame: &mut Frame,
+    area: Rect,
+    wide: bool,
+    lines: &[Line<'static>],
+    app: &mut App,
+    theme: &Theme,
+) {
+    let block = Block::new()
+        .borders(if wide { Borders::LEFT } else { Borders::TOP })
+        .padding(Padding::left(1))
+        .border_style(theme.dim);
+    let visible = block.inner(area);
+    app.references.preview_page = usize::from(visible.height).saturating_sub(1).max(1);
+    let wrapped = lines
+        .iter()
+        .flat_map(|line| wrap_line(line, usize::from(visible.width).max(1)))
+        .collect::<Vec<_>>();
+    app.references.preview_scroll = app
+        .references
+        .preview_scroll
+        .min(wrapped.len().saturating_sub(usize::from(visible.height)));
+    let lines = wrapped
+        .into_iter()
+        .skip(app.references.preview_scroll)
+        .take(usize::from(visible.height))
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 type Composer = (Vec<Line<'static>>, Option<(usize, usize)>);
 
-/// The form as lines, with the cursor's column and row when it has the keys.
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
-fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
-    let form = &app.form;
-    let queue = &app.repl.queue;
-    let focused = (!app.graph_focused).then_some(form.row);
-    let here = |row: Row| (focused == Some(row)).then_some(form.cursor);
-    let section = focused.map(Row::section);
-    let title = |part: Section| {
-        if section == Some(part) {
-            theme.accent
+/// The form row that has the keys, if the form has them, and the cursor in it.
+#[derive(Clone, Copy)]
+struct Focus {
+    row: Option<Row>,
+    cursor: usize,
+}
+
+impl Focus {
+    /// The cursor's offset when `row` has the keys.
+    fn at(self, row: Row) -> Option<usize> {
+        (self.row == Some(row)).then_some(self.cursor)
+    }
+
+    fn section(self) -> Option<Section> {
+        self.row.map(Row::section)
+    }
+
+    /// `on` while the keys are in `part`, else `off`.
+    fn style(self, part: Section, on: Style, off: Style) -> Style {
+        if self.section() == Some(part) {
+            on
         } else {
-            Style::new()
+            off
         }
+    }
+}
+
+/// The form as lines, with the cursor's column and row when it has the keys.
+fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
+    let focus = Focus {
+        row: (!app.graph_focused).then_some(app.form.row),
+        cursor: app.form.cursor,
     };
-    let none = || Span::raw("");
     let mut rows = Rows {
         lines: Vec::new(),
         cursor: None,
         width,
         menu: reference_menu(app, theme),
     };
+    context_section(&mut rows, app, focus, theme);
+    question_section(&mut rows, app, focus, theme);
+    if app.form.kind != Kind::Noul {
+        answers_section(&mut rows, app, focus, theme);
+    }
+    rows.lines.push(send_hint(app, theme));
+    (rows.lines, rows.cursor)
+}
 
-    let mut heading = vec![Span::styled("Context", title(Section::State))];
+/// The context heading, the latest question and queued context, then the
+/// input row.
+fn context_section(rows: &mut Rows, app: &App, focus: Focus, theme: &Theme) {
+    let queue = &app.repl.queue;
+    let none = || Span::raw("");
+    let mut heading = vec![Span::styled(
+        "Context",
+        focus.style(Section::State, theme.accent, Style::new()),
+    )];
     let queued = queue.len();
     if queued > 0 {
         heading.push(Span::styled(format!(" · {queued} queued"), theme.dim));
@@ -792,8 +874,13 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     }
     for (index, fact) in queue.facts.iter().enumerate() {
         let gutter = Span::styled("  + ", theme.dim);
-
-        rows.push(gutter, fact, none(), Style::new(), here(Row::Fact(index)));
+        rows.push(
+            gutter,
+            fact,
+            none(),
+            Style::new(),
+            focus.at(Row::Fact(index)),
+        );
     }
     for (number, text) in &queue.replaces {
         let replacement = format!("{number}: {}", render::clean(text));
@@ -816,26 +903,24 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
             None,
         );
     }
-    let prompt = if section == Some(Section::State) {
-        theme.accent
-    } else {
-        theme.dim
-    };
     let placeholder = if queue.question.is_some() {
         "Add context or retry"
     } else {
         "Add context or drop a file"
     };
-    let placeholder = Span::styled(placeholder, theme.dim);
-
     rows.push(
-        Span::styled("  › ", prompt),
-        &form.input,
-        placeholder,
+        Span::styled("  › ", focus.style(Section::State, theme.accent, theme.dim)),
+        &app.form.input,
+        Span::styled(placeholder, theme.dim),
         Style::new(),
-        here(Row::Input),
+        focus.at(Row::Input),
     );
+}
 
+/// The question heading with its kinds, then the question, or the previous
+/// one dimmed while the field is blank.
+fn question_section(rows: &mut Rows, app: &App, focus: Focus, theme: &Theme) {
+    let form = &app.form;
     let mut heading = vec![
         Span::styled("Question", theme.kind(form.kind, true)),
         Span::styled(" ·", theme.dim),
@@ -859,64 +944,69 @@ fn composer(app: &App, width: usize, theme: &Theme) -> Composer {
     } else {
         Style::new()
     };
-    let placeholder = Span::styled("Ask a question", theme.dim);
-
     rows.push(
         Span::raw("    "),
         question_text,
-        placeholder,
+        Span::styled("Ask a question", theme.dim),
         question_style,
-        here(Row::Question).map(|cursor| if previous_prompt.is_some() { 0 } else { cursor }),
+        focus
+            .at(Row::Question)
+            .map(|cursor| if previous_prompt.is_some() { 0 } else { cursor }),
     );
+}
 
-    if form.kind != Kind::Noul {
-        let (name, item) = match form.kind {
-            Kind::Score => ("Levels", "a level"),
-            _ => ("Options", "an option"),
-        };
-        let mut heading = vec![Span::styled(name, theme.kind(form.kind, true))];
-        if form.kind == Kind::Score {
-            heading.push(Span::styled(" · lowest first", theme.dim));
-        }
-        if let Some(previous) = app.inherited_answers() {
-            let count = match &previous.question.answer_space {
-                nouli_core::decision::AnswerSpace::Choice { options } => options.len(),
-                nouli_core::decision::AnswerSpace::Score { levels } => levels.len(),
-                nouli_core::decision::AnswerSpace::Noul => 0,
-            };
-            heading.push(Span::styled(
-                format!(" · using previous {count}"),
-                theme.dim,
-            ));
-        }
-        rows.rule(heading, theme);
-        if form.options.is_empty() && app.inherited_answers().is_none() {
-            let placeholder = Span::styled(format!("+ Add {item}"), theme.dim);
-            rows.push(Span::raw("    "), "", placeholder, Style::new(), None);
-        }
-        for (index, option) in form.options.iter().enumerate() {
-            let gutter = Span::styled(format!("{:>3} ", index + 1), theme.dim);
-            let placeholder = Span::styled(item, theme.dim);
-
-            rows.push(
-                gutter,
-                option,
-                placeholder,
-                Style::new(),
-                here(Row::Option(index)),
-            );
-        }
+/// A choice's options or a score's levels, numbered, under a heading that
+/// says when the previous question's are reused.
+fn answers_section(rows: &mut Rows, app: &App, focus: Focus, theme: &Theme) {
+    let form = &app.form;
+    let (name, item) = match form.kind {
+        Kind::Score => ("Levels", "a level"),
+        _ => ("Options", "an option"),
+    };
+    let mut heading = vec![Span::styled(name, theme.kind(form.kind, true))];
+    if form.kind == Kind::Score {
+        heading.push(Span::styled(" · lowest first", theme.dim));
     }
-    rows.lines.push(Line::from(Span::styled(
-        match form.row {
+    if let Some(previous) = app.inherited_answers() {
+        let count = match &previous.question.answer_space {
+            nouli_core::decision::AnswerSpace::Choice { options } => options.len(),
+            nouli_core::decision::AnswerSpace::Score { levels } => levels.len(),
+            nouli_core::decision::AnswerSpace::Noul => 0,
+        };
+        heading.push(Span::styled(
+            format!(" · using previous {count}"),
+            theme.dim,
+        ));
+    }
+    rows.rule(heading, theme);
+    if form.options.is_empty() && app.inherited_answers().is_none() {
+        let placeholder = Span::styled(format!("+ Add {item}"), theme.dim);
+        rows.push(Span::raw("    "), "", placeholder, Style::new(), None);
+    }
+    for (index, option) in form.options.iter().enumerate() {
+        let gutter = Span::styled(format!("{:>3} ", index + 1), theme.dim);
+        let placeholder = Span::styled(item, theme.dim);
+        rows.push(
+            gutter,
+            option,
+            placeholder,
+            Style::new(),
+            focus.at(Row::Option(index)),
+        );
+    }
+}
+
+/// What Enter does from the focused row.
+fn send_hint(app: &App, theme: &Theme) -> Line<'static> {
+    Line::from(Span::styled(
+        match app.form.row {
             _ if app.references.picker.is_some() => "  Enter inserts reference · Esc closes",
             Row::Option(_) if app.option_enter => "  Press Enter again to send",
             Row::Option(_) => "  Enter next item · Enter twice to send",
             _ => "  Press Enter to send",
         },
-        theme.kind(form.kind, true),
-    )));
-    (rows.lines, rows.cursor)
+        theme.kind(app.form.kind, true),
+    ))
 }
 
 /// The transcript's last rows, `scroll` rows up from its end, wrapped to
