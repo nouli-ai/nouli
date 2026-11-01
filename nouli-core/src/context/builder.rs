@@ -9,7 +9,7 @@ use super::{
 use crate::{
     codec::{self, CodecError},
     data::{Data, DataError, Input},
-    decision::{Question, TurnRequest},
+    decision::TurnRequest,
     history::{
         EvaluationManifest, FinalizedTurn, HistoryError, RecordProjection, Representation,
         SourcePoint, TokenCount, order::canonical_history,
@@ -47,8 +47,6 @@ pub struct ContextEntry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextPlan {
     pub manifest: EvaluationManifest,
-    pub questions: Vec<Question>,
-    pub required: Vec<RequiredItem>,
     pub entries: Vec<ContextEntry>,
 }
 
@@ -336,12 +334,7 @@ fn plan(
         context_toon,
     };
     manifest.validate()?;
-    Ok(ContextPlan {
-        manifest,
-        questions: input.request.questions.clone(),
-        required: input.required.to_vec(),
-        entries,
-    })
+    Ok(ContextPlan { manifest, entries })
 }
 
 pub struct ContextBuilder;
@@ -651,8 +644,6 @@ mod tests {
         .unwrap();
         assert!(!plan.manifest.context_toon.contains("UNRELATED_SIBLING"));
         assert!(!plan.manifest.context_toon.contains("LIVE_QUESTION_ONLY"));
-        assert_eq!(plan.questions, request.questions);
-        assert_eq!(plan.required, required);
         assert_eq!(plan.manifest.input_count.method, CountMethod::ByteEstimate);
         let decoded: serde_json::Value = codec::decode(
             plan.manifest.context_toon.as_bytes(),
@@ -939,7 +930,7 @@ mod tests {
             &self,
             _profile: &crate::config::ProviderProfile,
             context: &str,
-            questions: &[Question],
+            questions: &[crate::decision::Question],
         ) -> Result<InputCounts, LimitError> {
             let value: serde_json::Value =
                 codec::decode(context.as_bytes(), codec::InputFormat::Toon)?;

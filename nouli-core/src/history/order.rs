@@ -69,10 +69,14 @@ pub fn canonical_history<'a>(
 mod tests {
     use super::*;
     use crate::identity::Id;
-    use crate::{
-        context::ContextUpdate,
-        history::{AttemptRecord, SessionSelection},
-    };
+    use crate::{context::ContextUpdate, history::SessionSelection};
+
+    /// An attempt is separate from finalized turns, so it cannot appear in a source head.
+    #[derive(serde::Deserialize)]
+    struct FailedAttempt {
+        id: Id,
+        session: Id,
+    }
 
     #[derive(serde::Deserialize)]
     struct Fixture {
@@ -80,7 +84,7 @@ mod tests {
         sources: Vec<SourcePoint>,
         expected: Vec<Id>,
         unrelated_pinned_record: Id,
-        failed_attempt: AttemptRecord,
+        failed_attempt: FailedAttempt,
         selections: std::collections::HashMap<String, SessionSelection>,
     }
 

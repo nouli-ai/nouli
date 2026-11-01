@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Save each new attempt's provider error with the same category and code as the final report, such as `provider_capacity`, `provider_authentication_failed`, and `provider_transport_failed`, instead of separate attempt-only codes. Timed-out attempts keep the `provider_outcome_unknown` code under the `transport` category, and each attempt keeps its detailed message, such as the HTTP status.
 - `nouli-core`: workflow ledger methods return `WorkflowError::Conflict` instead of `WorkflowError::Storage(StorageError::Conflict)` when a run, reservation, or node changes concurrently.
 
+### Removed
+
+- `nouli-core`: remove the unused `history::AttemptState`, `history::AttemptRecord`, `HistoryEvent::AttemptRecorded`, and `workflow::FrozenRun` types, and the `ContextPlan::questions` and `ContextPlan::required` fields. The ledger never wrote these types, and the context a model receives is unchanged.
+
 ### Fixed
 
 - Run only the credential commands of the providers a turn or `workflow run` uses. A `workflow run` that continues a session whose model defaults name a different provider from the configured default no longer runs the default provider's command, and runs the session provider's command once before the run instead of once per node during it. A turn that replays an earlier `--request-id` prepares the credential of the provider saved with that request, not the current default.

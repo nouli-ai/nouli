@@ -14,7 +14,7 @@ use crate::{
     context::{ContextError, ContextUpdate},
     data::Input,
     decision::{CONTRACT_VERSION, ContractError, TurnRequest},
-    history::{ModelSelection, SessionSelection, SourcePoint},
+    history::{ModelSelection, SessionSelection},
     identity::Id,
 };
 use reference::{Condition, ResultReference};
@@ -82,21 +82,6 @@ pub struct WorkflowRequest {
     pub updates: Vec<ContextUpdate>,
     #[serde(default)]
     pub required_records: Vec<Id>,
-    pub request_id: Option<String>,
-}
-
-/// Serialized once before execution. Resume uses this snapshot and recorded
-/// progress, never a changed definition, moving source, or new model override.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FrozenRun {
-    pub id: Id,
-    pub session: Option<Id>,
-    pub workflow: WorkflowSpec,
-    pub sources: Vec<SourcePoint>,
-    pub updates: Vec<ContextUpdate>,
-    pub required_records: Vec<Id>,
-    pub model: ModelSelection,
     pub request_id: Option<String>,
 }
 
@@ -246,24 +231,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn branch_join_fixture_and_frozen_resume_round_trip() {
+    fn branch_join_fixture_validates_and_round_trips() {
         let workflow: WorkflowSpec =
             serde_json::from_str(include_str!("../../fixtures/contracts/workflow.json")).unwrap();
         workflow.validate().unwrap();
         assert_eq!(workflow.nodes.len(), 5);
-        let frozen = FrozenRun {
-            id: Id::generate(),
-            session: Some(Id::generate()),
-            sources: vec![],
-            updates: vec![],
-            required_records: vec![],
-            model: workflow.model.clone(),
-            request_id: None,
-            workflow,
-        };
         assert_eq!(
-            frozen,
-            serde_json::from_str(&serde_json::to_string(&frozen).unwrap()).unwrap()
+            workflow,
+            serde_json::from_str(&serde_json::to_string(&workflow).unwrap()).unwrap()
         );
     }
 

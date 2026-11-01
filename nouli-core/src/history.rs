@@ -172,24 +172,6 @@ pub struct FinalizedTurn {
     pub manifest: EvaluationManifest,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AttemptState {
-    Pending,
-    Running,
-    Failed,
-    Interrupted,
-}
-
-/// Attempts are separate from finalized turns and cannot appear in source heads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AttemptRecord {
-    pub id: Id,
-    pub session: Id,
-    pub state: AttemptState,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HistoryEvent {
@@ -201,9 +183,6 @@ pub enum HistoryEvent {
         session: Id,
         previous_name: Option<SessionName>,
         name: SessionName,
-    },
-    AttemptRecorded {
-        attempt: AttemptRecord,
     },
     TurnFinalized {
         session: Id,
