@@ -32,6 +32,18 @@ pub struct NodePlan {
     pub inputs: Vec<CompiledBinding>,
     pub condition_references: Vec<CompiledReference>,
 }
+impl NodePlan {
+    /// A plan with nothing resolved yet.
+    fn unlinked() -> Self {
+        Self {
+            dependencies: vec![],
+            consumers: vec![],
+            ancestors: vec![],
+            inputs: vec![],
+            condition_references: vec![],
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CompiledWorkflow {
     spec: WorkflowSpec,
@@ -214,33 +226,56 @@ impl Scope<'_> {
 ///   [`CompileError::ConditionalMissing`], [`CompileError::DefaultType`], or
 ///   [`CompileError::ComparisonType`] if a reference or condition does not
 ///   resolve to a compatible ancestor answer.
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, CompileError> {
     spec.validate()?;
-    if [&spec.model.provider, &spec.model.model]
-        .iter()
-        .any(|field| field.as_ref().is_some_and(|value| value.trim().is_empty()))
-    {
-        return Err(WorkflowError::Shape("workflow model").into());
-    }
+    validate_model(spec)?;
     let index: HashMap<_, _> = spec
         .nodes
         .iter()
         .enumerate()
         .map(|(index, node)| (node.id.as_str(), index))
         .collect();
-    let mut nodes: Vec<_> = (0..spec.nodes.len())
-        .map(|_| NodePlan {
-            dependencies: vec![],
-            consumers: vec![],
-            ancestors: vec![],
-            inputs: vec![],
-            condition_references: vec![],
-        })
-        .collect();
+    let mut nodes = link_dependencies(spec, &index)?;
+    let order = topological_order(&nodes)?;
+    resolve_node_references(spec, &index, &order, &mut nodes)?;
+    let outputs = Scope {
+        spec,
+        index: &index,
+        ancestors: None,
+    }
+    .bindings(&spec.outputs)?;
+    let fallback_outputs = if outputs.is_empty() {
+        terminal_nodes(&nodes)
+    } else {
+        vec![]
+    };
+    Ok(CompiledWorkflow {
+        spec: spec.clone(),
+        nodes,
+        order,
+        outputs,
+        fallback_outputs,
+    })
+}
+
+/// Rejects a workflow model whose declared provider or model name is blank.
+fn validate_model(spec: &WorkflowSpec) -> Result<(), CompileError> {
+    if [&spec.model.provider, &spec.model.model]
+        .iter()
+        .any(|field| field.as_ref().is_some_and(|value| value.trim().is_empty()))
+    {
+        return Err(WorkflowError::Shape("workflow model").into());
+    }
+    Ok(())
+}
+
+/// Creates one plan per node with its direct dependencies and consumers
+/// resolved to node indexes.
+fn link_dependencies(
+    spec: &WorkflowSpec,
+    index: &HashMap<&str, usize>,
+) -> Result<Vec<NodePlan>, CompileError> {
+    let mut nodes: Vec<_> = spec.nodes.iter().map(|_| NodePlan::unlinked()).collect();
     for (id, node) in spec.nodes.iter().enumerate() {
         if node.required_records.iter().collect::<HashSet<_>>().len() != node.required_records.len()
         {
@@ -257,6 +292,12 @@ pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, CompileError> {
             nodes[dependency].consumers.push(id);
         }
     }
+    Ok(nodes)
+}
+
+/// Orders nodes so each follows its dependencies, taking the lowest ready
+/// index first so the order is stable.
+fn topological_order(nodes: &[NodePlan]) -> Result<Vec<usize>, CompileError> {
     let mut indegree: Vec<_> = nodes.iter().map(|node| node.dependencies.len()).collect();
     let mut ready: BTreeSet<_> = indegree
         .iter()
@@ -264,7 +305,7 @@ pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, CompileError> {
         .filter(|(_, n)| **n == 0)
         .map(|(i, _)| i)
         .collect();
-    let mut order = Vec::new();
+    let mut order = Vec::with_capacity(nodes.len());
     while let Some(id) = ready.pop_first() {
         order.push(id);
         for child in &nodes[id].consumers {
@@ -277,50 +318,50 @@ pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, CompileError> {
     if order.len() != nodes.len() {
         return Err(CompileError::Cycle);
     }
-    for id in &order {
+    Ok(order)
+}
+
+/// Fills in each node's ancestors and compiles its input and condition
+/// references against them, visiting nodes in dependency order.
+fn resolve_node_references(
+    spec: &WorkflowSpec,
+    index: &HashMap<&str, usize>,
+    order: &[usize],
+    nodes: &mut [NodePlan],
+) -> Result<(), CompileError> {
+    for &id in order {
         let mut ancestors = HashSet::new();
-        for parent in &nodes[*id].dependencies {
+        for parent in &nodes[id].dependencies {
             ancestors.insert(*parent);
             ancestors.extend(nodes[*parent].ancestors.iter().copied());
         }
         let scope = Scope {
             spec,
-            index: &index,
+            index,
             ancestors: Some(&ancestors),
         };
-        nodes[*id].inputs = scope.bindings(&spec.nodes[*id].inputs)?;
-        if let Some(condition) = &spec.nodes[*id].when {
-            scope.condition(condition, &mut nodes[*id].condition_references)?;
+        let node = &mut nodes[id];
+        node.inputs = scope.bindings(&spec.nodes[id].inputs)?;
+        if let Some(condition) = &spec.nodes[id].when {
+            scope.condition(condition, &mut node.condition_references)?;
         }
-        nodes[*id].ancestors = order
+        node.ancestors = order
             .iter()
             .filter(|parent| ancestors.contains(parent))
             .copied()
             .collect();
     }
-    let outputs = Scope {
-        spec,
-        index: &index,
-        ancestors: None,
-    }
-    .bindings(&spec.outputs)?;
-    let fallback_outputs = if outputs.is_empty() {
-        nodes
-            .iter()
-            .enumerate()
-            .filter(|(_, node)| node.consumers.is_empty())
-            .map(|(i, _)| i)
-            .collect()
-    } else {
-        vec![]
-    };
-    Ok(CompiledWorkflow {
-        spec: spec.clone(),
-        nodes,
-        order,
-        outputs,
-        fallback_outputs,
-    })
+    Ok(())
+}
+
+/// Nodes that no other node consumes.
+fn terminal_nodes(nodes: &[NodePlan]) -> Vec<usize> {
+    nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| node.consumers.is_empty())
+        .map(|(i, _)| i)
+        .collect()
 }
 
 #[cfg(test)]
