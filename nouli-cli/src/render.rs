@@ -76,6 +76,31 @@ pub(crate) fn resolve(
         selected
     })
 }
+/// Resolves the format of a command that reports once rather than streaming
+/// events, so JSONL is refused with an input error.
+pub(crate) fn resolve_report_format(
+    args: &OutputArgs,
+    configured: OutputFormat,
+    terminal: bool,
+) -> Result<Format, ErrorReport> {
+    let input = |code: &str, message: &str| ErrorReport {
+        category: ErrorCategory::Input,
+        code: code.into(),
+        message: message.into(),
+        retryable: false,
+    };
+    match resolve(args, configured, terminal) {
+        Ok(Format::Jsonl) => Err(input(
+            "unsupported_output_format",
+            "This command supports text, JSON, or TOON output",
+        )),
+        Ok(format) => Ok(format),
+        Err(_) => Err(input(
+            "conflicting_output_options",
+            "Choose only one of --json, --jsonl, or --format",
+        )),
+    }
+}
 /// Color only on a terminal, with `NO_COLOR` unset or empty and `TERM` not `dumb`.
 pub(crate) fn color_enabled(terminal: bool) -> bool {
     color_for(
@@ -239,6 +264,61 @@ mod tests {
         outcome::{Answer, QuestionOutcome, TurnOutcome},
         protocol::{TurnReport, validate_events},
     };
+    #[test]
+    fn report_formats_refuse_jsonl_and_keep_the_others() {
+        let resolve = |args: OutputArgs, configured| {
+            resolve_report_format(&args, configured, false).map_err(|error| error.code)
+        };
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    jsonl: true,
+                    ..Default::default()
+                },
+                OutputFormat::Auto
+            ),
+            Err("unsupported_output_format".into())
+        );
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    format: Some(Format::Jsonl),
+                    ..Default::default()
+                },
+                OutputFormat::Text
+            ),
+            Err("unsupported_output_format".into())
+        );
+        assert_eq!(
+            resolve(OutputArgs::default(), OutputFormat::Auto),
+            Ok(Format::Json)
+        );
+        assert_eq!(
+            resolve(OutputArgs::default(), OutputFormat::Text),
+            Ok(Format::Text)
+        );
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    format: Some(Format::Toon),
+                    ..Default::default()
+                },
+                OutputFormat::Auto
+            ),
+            Ok(Format::Toon)
+        );
+        assert_eq!(
+            resolve(
+                OutputArgs {
+                    json: true,
+                    jsonl: true,
+                    ..Default::default()
+                },
+                OutputFormat::Auto
+            ),
+            Err("conflicting_output_options".into())
+        );
+    }
     #[test]
     fn color_needs_a_terminal_a_clear_no_color_and_a_capable_term() {
         use std::ffi::OsStr;

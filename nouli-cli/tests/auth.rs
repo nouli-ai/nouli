@@ -372,6 +372,46 @@ fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
 }
 
 #[test]
+fn report_commands_refuse_jsonl_with_one_error_code() {
+    let server = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    home.configure(&server, "typesafe", false);
+    let run = nouli_core::identity::Id::generate().to_string();
+    for arguments in [
+        &["auth", "list"][..],
+        &["auth", "logout", "local"][..],
+        &["connect", "ollama", "--model", "clef", "--non-interactive"][..],
+        &["sessions", "list"][..],
+        &["workflow", "show", &run][..],
+    ] {
+        let output = home.run([arguments, &["--jsonl"]].concat());
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}: {output:?}");
+        let events = harness::jsonl_events(&output);
+        let nouli_core::protocol::EventKind::Terminal { result } = &events.last().unwrap().event
+        else {
+            panic!("a terminal event: {output:?}")
+        };
+        let Report::Error(error) = &result.result else {
+            panic!("an error report: {output:?}")
+        };
+        assert_eq!(error.code, "unsupported_output_format", "{arguments:?}");
+        assert_eq!(
+            error.message,
+            "This command supports text, JSON, or TOON output"
+        );
+    }
+    assert!(!auth_file(&home).exists());
+    // Global output flags on both sides of the subcommand pass clap's checks.
+    let conflicting = home.run(["--json", "auth", "list", "--jsonl"]);
+    assert_eq!(conflicting.status.code(), Some(2));
+    assert_eq!(String::from_utf8_lossy(&conflicting.stdout), "");
+    assert!(
+        String::from_utf8_lossy(&conflicting.stderr).contains("conflicting_output_options"),
+        "{conflicting:?}"
+    );
+}
+
+#[test]
 fn login_and_connect_read_standard_input_keys_the_same_way() {
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();

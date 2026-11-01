@@ -510,12 +510,12 @@ pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
     let output = (|| {
         let file = path(args)?;
         let config = Config::parse(&read(&file)?.to_string())?;
-        let format =
-            crate::render::resolve(&args.output, config.output, io::stdout().is_terminal())
-                .map_err(|_| SetupError::Invalid)?;
-        if format == crate::render::Format::Jsonl {
-            return Err(SetupError::Invalid);
-        }
+        let format = crate::render::resolve_report_format(
+            &args.output,
+            config.output,
+            io::stdout().is_terminal(),
+        )
+        .map_err(SetupError::Report)?;
         let selection = configure(args, options)?;
         Ok((selection, format))
     })();
@@ -538,6 +538,9 @@ pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
             } else {
                 ExitCode::from(6)
             }
+        }
+        Err(SetupError::Report(report)) => {
+            crate::render_error(args, nouli_core::config::OutputFormat::Auto, report)
         }
         Err(error) => crate::render_error(
             args,

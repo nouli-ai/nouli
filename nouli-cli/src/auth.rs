@@ -157,13 +157,13 @@ pub(crate) fn run(args: &Args, command: &Command) -> ExitCode {
             );
         }
     };
-    let format = match render::resolve(
+    let format = match render::resolve_report_format(
         &args.output,
         settings.config.output,
         io::stdout().is_terminal(),
     ) {
-        Ok(format) if format != render::Format::Jsonl => format,
-        _ => return ExitCode::from(2),
+        Ok(format) => format,
+        Err(error) => return render_error(args, settings.config.output, error),
     };
     let path = store::path_for(&settings.config_path);
     let outcome = match command {

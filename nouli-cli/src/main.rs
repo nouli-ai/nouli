@@ -43,9 +43,10 @@ pub(crate) fn render_error(
     configured: nouli_core::config::OutputFormat,
     error: nouli_core::protocol::ErrorReport,
 ) -> ExitCode {
-    let Ok(format) = render::resolve(&args.output, configured, io::stdout().is_terminal()) else {
-        return ExitCode::from(2);
-    };
+    // Conflicting output options leave no format to honor, so the error is
+    // reported as a text diagnostic.
+    let format = render::resolve(&args.output, configured, io::stdout().is_terminal())
+        .unwrap_or(render::Format::Text);
     let report =
         nouli_core::protocol::ResultEnvelope::new(nouli_core::protocol::Report::Error(error));
     match render::result(
@@ -145,11 +146,14 @@ fn run_workflow(args: &Args, command: &workflows::Command) -> ExitCode {
         Ok(settings) => settings,
         Err(code) => return code,
     };
-    match render::resolve(
-        &args.output,
-        settings.config.output,
-        io::stdout().is_terminal(),
-    ) {
+    let terminal = io::stdout().is_terminal();
+    if matches!(command, workflows::Command::Show { .. })
+        && let Err(error) =
+            render::resolve_report_format(&args.output, settings.config.output, terminal)
+    {
+        return render_error(args, settings.config.output, error);
+    }
+    match render::resolve(&args.output, settings.config.output, terminal) {
         Ok(format) => ExitCode::from(workflows::run(command, &settings, format)),
         Err(_) => ExitCode::from(2),
     }
@@ -164,13 +168,6 @@ fn run_inspect(args: &Args, command: &inspect::Command) -> ExitCode {
         Ok(format) => format,
         Err(code) => return code,
     };
-    if format == render::Format::Jsonl {
-        return render_error(
-            args,
-            settings.config.output,
-            inspect::input_error("Inspection supports text, JSON, or TOON"),
-        );
-    }
     match inspect::run(
         command,
         &settings.store,
@@ -192,12 +189,12 @@ fn inspection_format(
     command: &inspect::Command,
 ) -> Result<render::Format, ExitCode> {
     let inspect::Command::View(view) = command else {
-        return render::resolve(
+        return render::resolve_report_format(
             &args.output,
             settings.config.output,
             io::stdout().is_terminal(),
         )
-        .map_err(|_| ExitCode::from(2));
+        .map_err(|error| render_error(args, settings.config.output, error));
     };
     view::format(&args.output, view.mermaid).map_err(|_| {
         let message = if view.mermaid {
