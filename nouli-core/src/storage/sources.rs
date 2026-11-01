@@ -321,13 +321,6 @@ mod tests {
             .unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].record, diamond.record);
-        assert_eq!(
-            ledger
-                .resolve_sources(&[selection(diamond.root.id, Some(vec![diamond.first.id]))])
-                .unwrap()[0]
-                .frontier,
-            vec![diamond.first.id]
-        );
         assert!(
             ledger
                 .create_session_from(
@@ -361,6 +354,13 @@ mod tests {
                 .context_at(&captured, &[], diamond.blend.id, Id::generate())
                 .unwrap(),
             active
+        );
+        assert_eq!(
+            ledger
+                .resolve_sources(&[selection(diamond.root.id, Some(vec![diamond.first.id]))])
+                .unwrap()[0]
+                .frontier,
+            vec![diamond.first.id]
         );
         drop(ledger);
         let read = Ledger::open(&store.0, OpenMode::ReadOnlyExisting).unwrap();
