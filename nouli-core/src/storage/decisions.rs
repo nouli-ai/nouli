@@ -159,9 +159,12 @@ impl Ledger {
         &self,
         known: &HashSet<Id>,
     ) -> Result<(Vec<Id>, Vec<SavedDecision>), DecisionError> {
-        let mut statement = self.connection.prepare(
-            "SELECT t.id, COALESCE(s.name,s.id), t.ordinal, t.rowid FROM turns t JOIN sessions s ON s.id=t.session_id ORDER BY t.rowid DESC"
-        ).map_err(|error| sql_error("list saved decisions", &error))?;
+        const LIST_SAVED_DECISIONS: &str = "SELECT t.id, COALESCE(s.name,s.id), t.ordinal, t.rowid FROM turns t JOIN sessions s ON s.id=t.session_id ORDER BY t.rowid DESC";
+
+        let mut statement = self
+            .connection
+            .prepare(LIST_SAVED_DECISIONS)
+            .map_err(|error| sql_error("list saved decisions", &error))?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -225,12 +228,18 @@ impl Ledger {
         source: &DecisionSource,
         id: Id,
     ) -> Result<ContextRecord, DecisionError> {
+        const READ_REFERENCE_SOURCE_LABEL: &str = "SELECT COALESCE(s.name,s.id),t.ordinal FROM turns t JOIN sessions s ON s.id=t.session_id WHERE t.id=?1";
+
         let turn = self.turn(source.turn)?;
         let mut reference = reference_snapshot(&turn, source, id)?;
-        let (name,ordinal):(String,i64)=self.connection.query_row(
-            "SELECT COALESCE(s.name,s.id),t.ordinal FROM turns t JOIN sessions s ON s.id=t.session_id WHERE t.id=?1",
-            [source.turn.to_string()],|row|Ok((row.get(0)?,row.get(1)?)))
-            .map_err(|e|sql_error("read reference source label",&e))?;
+        let (name, ordinal): (String, i64) = self
+            .connection
+            .query_row(
+                READ_REFERENCE_SOURCE_LABEL,
+                [source.turn.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| sql_error("read reference source label", &e))?;
         let prompt = &turn
             .request
             .questions

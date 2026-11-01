@@ -1,30 +1,9 @@
 //! Node intents, attempts and branch-frontier publication for one run owner.
-use crate::history::StandingChanges;
-use crate::{
-    history::{EvaluationRequest, SourcePoint},
-    identity::Id,
-};
-use serde::{Deserialize, Serialize};
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NodeAttemptScope {
-    pub run: Id,
-    pub node: usize,
-    pub round: u32,
-    pub sources: Vec<SourcePoint>,
-}
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NodeIntent {
-    pub run: Id,
-    pub node: usize,
-    pub round: u32,
-    pub request: EvaluationRequest,
-    pub sources: Vec<SourcePoint>,
-}
-
 use super::{
     WorkflowError, WorkflowEvent, WorkflowEventKind, WorkflowOwner, child_key, event, node_name,
     validate_owner,
 };
+use crate::history::StandingChanges;
 use crate::storage::{
     Ledger, StorageError, sql_error,
     turns::{
@@ -43,8 +22,29 @@ use crate::{
         schedule::{NodeEvaluation, NodeOutput, NodeProgress, compiled_binding},
     },
 };
+use crate::{
+    history::{EvaluationRequest, SourcePoint},
+    identity::Id,
+};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeAttemptScope {
+    pub run: Id,
+    pub node: usize,
+    pub round: u32,
+    pub sources: Vec<SourcePoint>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeIntent {
+    pub run: Id,
+    pub node: usize,
+    pub round: u32,
+    pub request: EvaluationRequest,
+    pub sources: Vec<SourcePoint>,
+}
 
 fn read_progress(
     connection: &Connection,
@@ -73,8 +73,21 @@ fn put_progress(
     progress: &NodeProgress,
     turn: Option<Id>,
 ) -> Result<(), StorageError> {
+    const RECORD_NODE_PROGRESS: &str = "UPDATE workflow_nodes SET state=?3,turn_id=?4,payload_toon=?5 WHERE run_id=?1 AND node_id=?2";
+
     let definition = &owner.frozen.definition;
-    let changed=tx.execute("UPDATE workflow_nodes SET state=?3,turn_id=?4,payload_toon=?5 WHERE run_id=?1 AND node_id=?2",params![definition.run.to_string(),definition.request.workflow.nodes[node].id,node_name(progress.status),turn.map(|id|id.to_string()),Ledger::encode_payload(progress)?]).map_err(|error|sql_error("record node progress",&error))?;
+    let changed = tx
+        .execute(
+            RECORD_NODE_PROGRESS,
+            params![
+                definition.run.to_string(),
+                definition.request.workflow.nodes[node].id,
+                node_name(progress.status),
+                turn.map(|id| id.to_string()),
+                Ledger::encode_payload(progress)?
+            ],
+        )
+        .map_err(|error| sql_error("record node progress", &error))?;
     if changed != 1 {
         return Err(StorageError::Conflict);
     }
@@ -288,6 +301,8 @@ impl Ledger {
         node: usize,
         progress: &NodeProgress,
     ) -> Result<(), WorkflowError> {
+        const READ_INTERRUPTED_NODE_ATTEMPTS: &str = "SELECT a.id,s.state FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND a.node_id=?2 AND s.state IN ('pending','running')";
+
         validate_owner(self, owner)?;
         let definition = &owner.frozen.definition;
         let name = &definition
@@ -324,17 +339,46 @@ impl Ledger {
         if progress.status == NodeStatus::Completed {
             return Err(WorkflowError::Conflict);
         }
-        self.transaction::<_,StorageError>("record workflow node transition",|tx| {
-            put_progress(tx,owner,node,progress,None)?;
-            if matches!(progress.status,NodeStatus::Interrupted|NodeStatus::Failed) {
-                let mut statement=tx.prepare("SELECT a.id,s.state FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND a.node_id=?2 AND s.state IN ('pending','running')").map_err(|error|sql_error("read interrupted node attempts",&error))?;
-                let rows=statement.query_map(params![definition.run.to_string(),name],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))).map_err(|error|sql_error("read node attempt states",&error))?.collect::<Result<Vec<_>,_>>().map_err(|error|sql_error("read node attempts",&error))?;drop(statement);
-                for (id,state) in rows {
-                    let id=Id::try_from(id).map_err(|_|StorageError::Payload)?;
-                    interrupt_attempt(tx,id,AttemptStatus::parse(&state)?,"Workflow node interrupted")?;
+        self.transaction::<_, StorageError>("record workflow node transition", |tx| {
+            put_progress(tx, owner, node, progress, None)?;
+            if matches!(
+                progress.status,
+                NodeStatus::Interrupted | NodeStatus::Failed
+            ) {
+                let mut statement = tx
+                    .prepare(READ_INTERRUPTED_NODE_ATTEMPTS)
+                    .map_err(|error| sql_error("read interrupted node attempts", &error))?;
+                let rows = statement
+                    .query_map(params![definition.run.to_string(), name], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|error| sql_error("read node attempt states", &error))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| sql_error("read node attempts", &error))?;
+                drop(statement);
+                for (id, state) in rows {
+                    let id = Id::try_from(id).map_err(|_| StorageError::Payload)?;
+                    interrupt_attempt(
+                        tx,
+                        id,
+                        AttemptStatus::parse(&state)?,
+                        "Workflow node interrupted",
+                    )?;
                 }
             }
-            event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeState,Some(progress.clone()),None,None))?;Ok(())
+            event(
+                tx,
+                definition.run,
+                &node_event(
+                    owner.round,
+                    node,
+                    WorkflowEventKind::NodeState,
+                    Some(progress.clone()),
+                    None,
+                    None,
+                ),
+            )?;
+            Ok(())
         })?;
         Ok(())
     }
@@ -359,6 +403,9 @@ impl Ledger {
         request: &EvaluationRequest,
         sources: &[SourcePoint],
     ) -> Result<NodeIntent, WorkflowError> {
+        const INSPECT_NODE_INTENT: &str = "SELECT payload_toon FROM workflow_node_intents WHERE run_id=?1 AND node_id=?2 AND round=?3";
+        const SAVE_NODE_INTENT: &str = "INSERT INTO workflow_node_intents(run_id,node_id,round,payload_toon) VALUES(?1,?2,?3,?4)";
+
         validate_owner(self, owner)?;
         let definition = &owner.frozen.definition;
         let name = &definition
@@ -390,10 +437,39 @@ impl Ledger {
             sources: sources.to_vec(),
         };
         let payload = Self::encode_payload(&intent)?;
-        self.transaction::<_,StorageError>("accept workflow node intent",|tx| {
-            let existing:Option<String>=tx.query_row("SELECT payload_toon FROM workflow_node_intents WHERE run_id=?1 AND node_id=?2 AND round=?3",params![definition.run.to_string(),name,owner.round],|row|row.get(0)).optional().map_err(|error|sql_error("inspect node intent",&error))?;
-            if let Some(existing)=existing {if existing!=payload {return Err(StorageError::Conflict);}}
-            else {tx.execute("INSERT INTO workflow_node_intents(run_id,node_id,round,payload_toon) VALUES(?1,?2,?3,?4)",params![definition.run.to_string(),name,owner.round,payload]).map_err(|error|sql_error("save node intent",&error))?;event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeIntent,None,None,None))?;}Ok(())
+        self.transaction::<_, StorageError>("accept workflow node intent", |tx| {
+            let existing: Option<String> = tx
+                .query_row(
+                    INSPECT_NODE_INTENT,
+                    params![definition.run.to_string(), name, owner.round],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| sql_error("inspect node intent", &error))?;
+            if let Some(existing) = existing {
+                if existing != payload {
+                    return Err(StorageError::Conflict);
+                }
+            } else {
+                tx.execute(
+                    SAVE_NODE_INTENT,
+                    params![definition.run.to_string(), name, owner.round, payload],
+                )
+                .map_err(|error| sql_error("save node intent", &error))?;
+                event(
+                    tx,
+                    definition.run,
+                    &node_event(
+                        owner.round,
+                        node,
+                        WorkflowEventKind::NodeIntent,
+                        None,
+                        None,
+                        None,
+                    ),
+                )?;
+            }
+            Ok(())
         })?;
         Ok(intent)
     }
@@ -487,13 +563,8 @@ impl Ledger {
                 request_id: intent.request.request_id.clone(),
             },
         };
-        self.transaction::<_,StorageError>("prepare workflow attempt",|tx| {
-            let saved:String=tx.query_row("SELECT payload_toon FROM workflow_node_intents WHERE run_id=?1 AND node_id=?2 AND round=?3",params![definition.run.to_string(),name,owner.round],|row|row.get(0)).map_err(|error|sql_error("verify accepted node intent",&error))?;
-            if saved!=Self::encode_payload(intent)? {return Err(StorageError::Conflict);}
-            let live:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND a.node_id=?2 AND s.state IN ('pending','running'))",params![definition.run.to_string(),name],|row|row.get(0)).map_err(|error|sql_error("check live node attempt",&error))?;if live {return Err(StorageError::Conflict);}
-            tx.execute("INSERT INTO attempts(id,session_id,run_id,node_id,payload_toon) VALUES(?1,?2,?3,?4,?5)",params![attempt.id.to_string(),definition.session.to_string(),definition.run.to_string(),name,Self::encode_payload(&attempt)?]).map_err(|error|sql_error("insert workflow attempt",&error))?;
-            tx.execute("INSERT INTO attempt_states(attempt_id,state) VALUES(?1,'running')",[attempt.id.to_string()]).map_err(|error|sql_error("start workflow attempt",&error))?;
-            progress_event(tx,attempt.id,&AttemptProgress {state:AttemptStatus::Running,error:None})?;event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::AttemptStarted,None,Some(attempt.id),None))?;Ok(())
+        self.transaction::<_, StorageError>("prepare workflow attempt", |tx| {
+            insert_attempt(tx, owner, intent, name, &attempt)
         })?;
         Ok(attempt)
     }
@@ -518,6 +589,8 @@ impl Ledger {
         attempt: Id,
         progress: &AttemptProgress,
     ) -> Result<(), WorkflowError> {
+        const RECORD_FAILED_WORKFLOW_ATTEMPT: &str = "UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state IN ('pending','running')";
+
         validate_owner(self, owner)?;
         let snapshot = self.attempt(attempt)?;
         let scope = snapshot.intent.workflow.ok_or(WorkflowError::Snapshot)?;
@@ -536,10 +609,35 @@ impl Ledger {
         {
             return Err(WorkflowError::Conflict);
         }
-        self.transaction::<_,StorageError>("finish workflow attempt",|tx| {
-            let state=if progress.state==AttemptStatus::Failed {"failed"} else {"interrupted"};
-            let changed=tx.execute("UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state IN ('pending','running')",params![attempt.to_string(),state]).map_err(|error|sql_error("record failed workflow attempt",&error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            progress_event(tx,attempt,progress)?;event(tx,scope.run,&node_event(owner.round,scope.node,WorkflowEventKind::AttemptFinished,None,Some(attempt),None))?;Ok(())
+        self.transaction::<_, StorageError>("finish workflow attempt", |tx| {
+            let state = if progress.state == AttemptStatus::Failed {
+                "failed"
+            } else {
+                "interrupted"
+            };
+            let changed = tx
+                .execute(
+                    RECORD_FAILED_WORKFLOW_ATTEMPT,
+                    params![attempt.to_string(), state],
+                )
+                .map_err(|error| sql_error("record failed workflow attempt", &error))?;
+            if changed != 1 {
+                return Err(StorageError::Conflict);
+            }
+            progress_event(tx, attempt, progress)?;
+            event(
+                tx,
+                scope.run,
+                &node_event(
+                    owner.round,
+                    scope.node,
+                    WorkflowEventKind::AttemptFinished,
+                    None,
+                    Some(attempt),
+                    None,
+                ),
+            )?;
+            Ok(())
         })?;
         Ok(())
     }
@@ -631,19 +729,171 @@ impl Ledger {
         progress.status = NodeStatus::Completed;
         progress.output = Some(node_output(&turn));
         progress.error = None;
-        self.transaction::<_,StorageError>("publish workflow node",|tx| {
-            let (revision,published):(i64,i64)=tx.query_row("SELECT s.revision,r.published_revision FROM sessions s JOIN workflow_runs r ON r.session_id=s.id WHERE r.id=?1 AND r.state='running' AND r.owner_id=?2",params![definition.run.to_string(),owner.session_guard.owner.to_string()],|row|Ok((row.get(0)?,row.get(1)?))).map_err(|error|sql_error("verify workflow publication owner",&error))?;
-            if revision!=published || revision==i64::MAX {return Err(StorageError::Conflict);}
-            super::super::publication::insert_turn(tx,&turn,attempt,revision)?;put_progress(tx,owner,node,&progress,Some(turn.id))?;
-            let mut statement=tx.prepare("WITH RECURSIVE ancestors(id) AS (SELECT p.parent_id FROM turn_parents p JOIN workflow_nodes n ON n.turn_id=p.turn_id WHERE n.run_id=?1 AND n.state='completed' UNION SELECT p.parent_id FROM turn_parents p JOIN ancestors a ON p.turn_id=a.id) SELECT n.turn_id FROM workflow_nodes n WHERE n.run_id=?1 AND n.state='completed' AND n.turn_id NOT IN (SELECT id FROM ancestors) ORDER BY n.declaration_order").map_err(|error|sql_error("project workflow branch frontier",&error))?;
-            let heads=statement.query_map([definition.run.to_string()],|row|row.get::<_,String>(0)).map_err(|error|sql_error("read completed branches",&error))?.collect::<Result<Vec<_>,_>>().map_err(|error|sql_error("read branch heads",&error))?;drop(statement);
-            let heads=heads.into_iter().map(|id|Id::try_from(id).map_err(|_|StorageError::Payload)).collect::<Result<Vec<_>,_>>()?;let frontier=Self::encode_payload(&heads)?;
-            let changed=tx.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3",params![definition.session.to_string(),frontier,revision]).map_err(|error|sql_error("publish workflow branch frontier",&error))?;if changed!=1 {return Err(StorageError::Conflict);}
-            tx.execute("UPDATE workflow_runs SET frontier_toon=?2,published_revision=?3 WHERE id=?1",params![definition.run.to_string(),frontier,revision+1]).map_err(|error|sql_error("record published workflow frontier",&error))?;
-            super::super::reservations::complete_node(tx, &child_key(definition.run,node), &Self::encode_payload(&turn)?, owner.session_guard.owner)?;
-            super::super::sessions::append_event(tx, definition.session, &HistoryEvent::TurnFinalized {session:definition.session,turn:turn.id,frontier:heads}, "record workflow publication")?;
-            event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeState,None,Some(attempt),Some(turn.id)))?;Ok(())
+        self.transaction::<_, StorageError>("publish workflow node", |tx| {
+            publish_attempt(tx, owner, attempt, &turn, node, &progress)
         })?;
         Ok(turn)
     }
+}
+
+fn insert_attempt(
+    tx: &Transaction<'_>,
+    owner: &WorkflowOwner,
+    intent: &NodeIntent,
+    name: &str,
+    attempt: &PreparedAttempt,
+) -> Result<(), StorageError> {
+    const VERIFY_ACCEPTED_NODE_INTENT: &str = "SELECT payload_toon FROM workflow_node_intents WHERE run_id=?1 AND node_id=?2 AND round=?3";
+    const CHECK_LIVE_NODE_ATTEMPT: &str = "SELECT EXISTS(SELECT 1 FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.run_id=?1 AND a.node_id=?2 AND s.state IN ('pending','running'))";
+    const INSERT_WORKFLOW_ATTEMPT: &str =
+        "INSERT INTO attempts(id,session_id,run_id,node_id,payload_toon) VALUES(?1,?2,?3,?4,?5)";
+    const START_WORKFLOW_ATTEMPT: &str =
+        "INSERT INTO attempt_states(attempt_id,state) VALUES(?1,'running')";
+    let definition = &owner.frozen.definition;
+    let node = intent.node;
+
+    let saved: String = tx
+        .query_row(
+            VERIFY_ACCEPTED_NODE_INTENT,
+            params![definition.run.to_string(), name, owner.round],
+            |row| row.get(0),
+        )
+        .map_err(|error| sql_error("verify accepted node intent", &error))?;
+    if saved != Ledger::encode_payload(intent)? {
+        return Err(StorageError::Conflict);
+    }
+    let live: bool = tx
+        .query_row(
+            CHECK_LIVE_NODE_ATTEMPT,
+            params![definition.run.to_string(), name],
+            |row| row.get(0),
+        )
+        .map_err(|error| sql_error("check live node attempt", &error))?;
+    if live {
+        return Err(StorageError::Conflict);
+    }
+    tx.execute(
+        INSERT_WORKFLOW_ATTEMPT,
+        params![
+            attempt.id.to_string(),
+            definition.session.to_string(),
+            definition.run.to_string(),
+            name,
+            Ledger::encode_payload(attempt)?
+        ],
+    )
+    .map_err(|error| sql_error("insert workflow attempt", &error))?;
+    tx.execute(START_WORKFLOW_ATTEMPT, [attempt.id.to_string()])
+        .map_err(|error| sql_error("start workflow attempt", &error))?;
+    progress_event(
+        tx,
+        attempt.id,
+        &AttemptProgress {
+            state: AttemptStatus::Running,
+            error: None,
+        },
+    )?;
+    event(
+        tx,
+        definition.run,
+        &node_event(
+            owner.round,
+            node,
+            WorkflowEventKind::AttemptStarted,
+            None,
+            Some(attempt.id),
+            None,
+        ),
+    )?;
+    Ok(())
+}
+
+fn publish_attempt(
+    tx: &Transaction<'_>,
+    owner: &WorkflowOwner,
+    attempt: Id,
+    turn: &FinalizedTurn,
+    node: usize,
+    progress: &NodeProgress,
+) -> Result<(), StorageError> {
+    const PROJECT_WORKFLOW_BRANCH_FRONTIER: &str = "WITH RECURSIVE ancestors(id) AS (SELECT p.parent_id FROM turn_parents p JOIN workflow_nodes n ON n.turn_id=p.turn_id WHERE n.run_id=?1 AND n.state='completed' UNION SELECT p.parent_id FROM turn_parents p JOIN ancestors a ON p.turn_id=a.id) SELECT n.turn_id FROM workflow_nodes n WHERE n.run_id=?1 AND n.state='completed' AND n.turn_id NOT IN (SELECT id FROM ancestors) ORDER BY n.declaration_order";
+    const VERIFY_WORKFLOW_PUBLICATION_OWNER: &str = "SELECT s.revision,r.published_revision FROM sessions s JOIN workflow_runs r ON r.session_id=s.id WHERE r.id=?1 AND r.state='running' AND r.owner_id=?2";
+    const PUBLISH_WORKFLOW_BRANCH_FRONTIER: &str =
+        "UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3";
+    const RECORD_PUBLISHED_WORKFLOW_FRONTIER: &str =
+        "UPDATE workflow_runs SET frontier_toon=?2,published_revision=?3 WHERE id=?1";
+    let definition = &owner.frozen.definition;
+
+    let (revision, published): (i64, i64) = tx
+        .query_row(
+            VERIFY_WORKFLOW_PUBLICATION_OWNER,
+            params![
+                definition.run.to_string(),
+                owner.session_guard.owner.to_string()
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| sql_error("verify workflow publication owner", &error))?;
+    if revision != published || revision == i64::MAX {
+        return Err(StorageError::Conflict);
+    }
+    super::super::publication::insert_turn(tx, turn, attempt, revision)?;
+    put_progress(tx, owner, node, progress, Some(turn.id))?;
+    let mut statement = tx
+        .prepare(PROJECT_WORKFLOW_BRANCH_FRONTIER)
+        .map_err(|error| sql_error("project workflow branch frontier", &error))?;
+    let heads = statement
+        .query_map([definition.run.to_string()], |row| row.get::<_, String>(0))
+        .map_err(|error| sql_error("read completed branches", &error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| sql_error("read branch heads", &error))?;
+    drop(statement);
+    let heads = heads
+        .into_iter()
+        .map(|id| Id::try_from(id).map_err(|_| StorageError::Payload))
+        .collect::<Result<Vec<_>, _>>()?;
+    let frontier = Ledger::encode_payload(&heads)?;
+    let changed = tx
+        .execute(
+            PUBLISH_WORKFLOW_BRANCH_FRONTIER,
+            params![definition.session.to_string(), frontier, revision],
+        )
+        .map_err(|error| sql_error("publish workflow branch frontier", &error))?;
+    if changed != 1 {
+        return Err(StorageError::Conflict);
+    }
+    tx.execute(
+        RECORD_PUBLISHED_WORKFLOW_FRONTIER,
+        params![definition.run.to_string(), frontier, revision + 1],
+    )
+    .map_err(|error| sql_error("record published workflow frontier", &error))?;
+    super::super::reservations::complete_node(
+        tx,
+        &child_key(definition.run, node),
+        &Ledger::encode_payload(turn)?,
+        owner.session_guard.owner,
+    )?;
+    super::super::sessions::append_event(
+        tx,
+        definition.session,
+        &HistoryEvent::TurnFinalized {
+            session: definition.session,
+            turn: turn.id,
+            frontier: heads,
+        },
+        "record workflow publication",
+    )?;
+    event(
+        tx,
+        definition.run,
+        &node_event(
+            owner.round,
+            node,
+            WorkflowEventKind::NodeState,
+            None,
+            Some(attempt),
+            Some(turn.id),
+        ),
+    )?;
+    Ok(())
 }

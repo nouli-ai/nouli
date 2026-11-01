@@ -1,7 +1,29 @@
 //! Explicit retry rounds and read-only inspection of uncertain work.
 use super::StoredRun;
+use super::{
+    WorkflowDecision, WorkflowError, WorkflowEvent, WorkflowEventKind, WorkflowOwner, child_key,
+    event,
+};
 use crate::{identity::Id, storage::turns::AttemptSnapshot};
+use crate::{
+    identity::SessionSelector,
+    protocol::{ErrorCategory, ErrorReport, OUTCOME_UNKNOWN, OWNER_EXITED},
+    storage::{
+        Ledger,
+        guards::{self, GuardError},
+        reservations,
+        sessions::Session,
+        sql_error,
+        turns::{AttemptStatus, interrupt_attempt},
+    },
+    workflow::{
+        NodeStatus, RunStatus,
+        schedule::{NodeProgress, ScheduleResult, project_outputs},
+    },
+};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Disposition {
@@ -37,28 +59,6 @@ pub struct RoundResult {
     pub published_revision: i64,
     pub result: ScheduleResult,
 }
-
-use super::{
-    WorkflowDecision, WorkflowError, WorkflowEvent, WorkflowEventKind, WorkflowOwner, child_key,
-    event,
-};
-use crate::{
-    identity::SessionSelector,
-    protocol::{ErrorCategory, ErrorReport, OUTCOME_UNKNOWN, OWNER_EXITED},
-    storage::{
-        Ledger,
-        guards::{self, GuardError},
-        reservations,
-        sessions::Session,
-        sql_error,
-        turns::{AttemptStatus, interrupt_attempt},
-    },
-    workflow::{
-        NodeStatus, RunStatus,
-        schedule::{NodeProgress, ScheduleResult, project_outputs},
-    },
-};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 fn attempts(
     ledger: &Ledger,
@@ -160,9 +160,11 @@ pub(in crate::storage) fn read_round_results(
     connection: &Connection,
     run: Id,
 ) -> Result<Vec<RoundResult>, WorkflowError> {
-    let mut statement = connection.prepare(
-            "SELECT round,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id=?1 ORDER BY round"
-        ).map_err(|error| sql_error("list workflow retry rounds", &error))?;
+    const LIST_WORKFLOW_RETRY_ROUNDS: &str = "SELECT round,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id=?1 ORDER BY round";
+
+    let mut statement = connection
+        .prepare(LIST_WORKFLOW_RETRY_ROUNDS)
+        .map_err(|error| sql_error("list workflow retry rounds", &error))?;
     let rows = statement
         .query_map([run.to_string()], |row| {
             Ok((
@@ -557,6 +559,8 @@ impl RetryRound<'_> {
     /// Records the previous round's interrupted result and node outcomes,
     /// unless that round already settled with a result of its own.
     fn preserve_previous_round(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        const PRESERVE_INTERRUPTED_RETRY_ROUND: &str = "INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES(?1,?2,'interrupted',?3,?4,?5)";
+
         let old: Option<String> = tx
             .query_row(
                 "SELECT payload_toon FROM workflow_round_results WHERE run_id=?1 AND round=?2",
@@ -568,7 +572,17 @@ impl RetryRound<'_> {
         if old.is_some() {
             return Ok(());
         }
-        tx.execute("INSERT INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES(?1,?2,'interrupted',?3,?4,?5)",params![self.run.to_string(),self.previous,Ledger::encode_payload(&self.stored.frontier)?,self.stored.published_revision,Ledger::encode_payload(&self.previous_result)?]).map_err(|error|sql_error("preserve interrupted retry round",&error))?;
+        tx.execute(
+            PRESERVE_INTERRUPTED_RETRY_ROUND,
+            params![
+                self.run.to_string(),
+                self.previous,
+                Ledger::encode_payload(&self.stored.frontier)?,
+                self.stored.published_revision,
+                Ledger::encode_payload(&self.previous_result)?
+            ],
+        )
+        .map_err(|error| sql_error("preserve interrupted retry round", &error))?;
         for (node, progress) in self.settled_nodes.iter().enumerate() {
             if matches!(
                 self.stored.nodes[node].status,
@@ -596,7 +610,14 @@ impl RetryRound<'_> {
     /// Hands the run and its request reservation to the new owner and opens the
     /// new round.
     fn renew_run_ownership(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
-        let changed=tx.execute("UPDATE workflow_runs SET owner_id=?2,state='running',result_toon=NULL WHERE id=?1 AND state!='completed'",params![self.run.to_string(),self.owner.to_string()]).map_err(|error|sql_error("renew workflow owner",&error))?;
+        const RENEW_WORKFLOW_OWNER: &str = "UPDATE workflow_runs SET owner_id=?2,state='running',result_toon=NULL WHERE id=?1 AND state!='completed'";
+
+        let changed = tx
+            .execute(
+                RENEW_WORKFLOW_OWNER,
+                params![self.run.to_string(), self.owner.to_string()],
+            )
+            .map_err(|error| sql_error("renew workflow owner", &error))?;
         if changed != 1 {
             return Err(WorkflowError::Conflict);
         }
@@ -621,6 +642,8 @@ impl RetryRound<'_> {
     /// Returns every node that did not complete or skip to pending under the
     /// new owner, so the new round can run it again.
     fn reset_unsettled_nodes(&self, tx: &Transaction<'_>) -> Result<(), WorkflowError> {
+        const RESET_ELIGIBLE_NODE_FOR_EXPLICIT_RETRY: &str = "UPDATE workflow_nodes SET state='pending',turn_id=NULL,payload_toon=?3 WHERE run_id=?1 AND node_id=?2 AND state!='completed'";
+
         for (node, progress) in self.settled_nodes.iter().enumerate() {
             if matches!(progress.status, NodeStatus::Completed | NodeStatus::Skipped) {
                 continue;
@@ -638,7 +661,16 @@ impl RetryRound<'_> {
                 self.run,
                 &node_recovered(self.round, node, pending.clone()),
             )?;
-            let changed=tx.execute("UPDATE workflow_nodes SET state='pending',turn_id=NULL,payload_toon=?3 WHERE run_id=?1 AND node_id=?2 AND state!='completed'",params![self.run.to_string(),name,Ledger::encode_payload(&pending)?]).map_err(|error|sql_error("reset eligible node for explicit retry",&error))?;
+            let changed = tx
+                .execute(
+                    RESET_ELIGIBLE_NODE_FOR_EXPLICIT_RETRY,
+                    params![
+                        self.run.to_string(),
+                        name,
+                        Ledger::encode_payload(&pending)?
+                    ],
+                )
+                .map_err(|error| sql_error("reset eligible node for explicit retry", &error))?;
             if changed != 1 {
                 return Err(WorkflowError::Conflict);
             }

@@ -128,8 +128,12 @@ pub(super) fn progress_event(
     attempt: Id,
     progress: &AttemptProgress,
 ) -> Result<(), StorageError> {
+    const APPEND_ATTEMPT_EVENT: &str = "INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1";
+
     let payload = Ledger::encode_payload(progress)?;
-    transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![attempt.to_string(),payload]).map_err(|error|sql_error("append attempt event",&error))?;
+    transaction
+        .execute(APPEND_ATTEMPT_EVENT, params![attempt.to_string(), payload])
+        .map_err(|error| sql_error("append attempt event", &error))?;
     Ok(())
 }
 
@@ -283,7 +287,15 @@ impl Ledger {
     /// [`TurnError::Storage`] if the SQLite query fails or the stored attempt is
     /// invalid or inconsistent.
     pub fn attempt(&self, id: Id) -> Result<AttemptSnapshot, TurnError> {
-        let row:Option<(String,String,Option<String>,String)>=self.connection.query_row("SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1",[id.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))).optional().map_err(|error|sql_error("read attempt",&error))?;
+        const READ_ATTEMPT: &str = "SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1";
+
+        let row: Option<(String, String, Option<String>, String)> = self
+            .connection
+            .query_row(READ_ATTEMPT, [id.to_string()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .optional()
+            .map_err(|error| sql_error("read attempt", &error))?;
         let (intent, state, turn, progress) = row.ok_or(TurnError::UnknownAttempt)?;
         let intent: PreparedAttempt = Self::decode_payload(&intent)?;
         let progress: AttemptProgress = Self::decode_payload(&progress)?;
@@ -394,6 +406,9 @@ impl Ledger {
         id: Id,
         outcome: TurnOutcome,
     ) -> Result<FinalizedTurn, TurnError> {
+        const CHECK_EXPECTED_HEAD: &str = "SELECT revision FROM sessions WHERE id=?1";
+        const PUBLISH_SESSION_HEAD: &str = "UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807";
+
         let snapshot = self.attempt(id)?;
         guard.validate(self, snapshot.intent.session)?;
         if snapshot.intent.owner != Some(guard.owner) {
@@ -451,16 +466,44 @@ impl Ledger {
             turn: turn.id,
             frontier: vec![turn.id],
         };
-        self.transaction::<_, StorageError>("finalize turn",|transaction| {
-            let current:i64=transaction.query_row("SELECT revision FROM sessions WHERE id=?1",[turn.session.to_string()],|row|row.get(0)).map_err(|error|sql_error("check expected head",&error))?;
-            if current!=prepared.expected_revision {return Err(StorageError::Conflict);}
-            super::publication::insert_turn(transaction,&turn,id,prepared.expected_revision)?;
-            let changed=transaction.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3 AND revision<9223372036854775807",params![turn.session.to_string(),frontier,prepared.expected_revision]).map_err(|error|sql_error("publish session head",&error))?;
-            if changed!=1 {return Err(StorageError::Conflict);}
-            if let Some(key)=&prepared.input.request_id {
-                super::reservations::complete_evaluation(transaction, key, &payload, guard.owner, turn.session)?;
+        self.transaction::<_, StorageError>("finalize turn", |transaction| {
+            let current: i64 = transaction
+                .query_row(CHECK_EXPECTED_HEAD, [turn.session.to_string()], |row| {
+                    row.get(0)
+                })
+                .map_err(|error| sql_error("check expected head", &error))?;
+            if current != prepared.expected_revision {
+                return Err(StorageError::Conflict);
             }
-            super::sessions::append_event(transaction, turn.session, &event, "record finalized head")?;
+            super::publication::insert_turn(transaction, &turn, id, prepared.expected_revision)?;
+            let changed = transaction
+                .execute(
+                    PUBLISH_SESSION_HEAD,
+                    params![
+                        turn.session.to_string(),
+                        frontier,
+                        prepared.expected_revision
+                    ],
+                )
+                .map_err(|error| sql_error("publish session head", &error))?;
+            if changed != 1 {
+                return Err(StorageError::Conflict);
+            }
+            if let Some(key) = &prepared.input.request_id {
+                super::reservations::complete_evaluation(
+                    transaction,
+                    key,
+                    &payload,
+                    guard.owner,
+                    turn.session,
+                )?;
+            }
+            super::sessions::append_event(
+                transaction,
+                turn.session,
+                &event,
+                "record finalized head",
+            )?;
             Ok(())
         })?;
         Ok(turn)
@@ -839,6 +882,8 @@ mod tests {
 
     #[test]
     fn injected_finalization_failure_rolls_back_records_context_and_head() {
+        const INJECT_FINALIZATION_FAILURE: &str = "CREATE TRIGGER fail_publish BEFORE UPDATE ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected failure'); END;";
+
         let store = Store::new();
         let mut ledger = store.open();
         let session = ledger
@@ -846,7 +891,13 @@ mod tests {
             .unwrap();
         let guard = ledger.session_guard(session.id).unwrap();
         let attempt = ledger.prepare_attempt(&guard, input()).unwrap();
-        ledger.transaction::<_, StorageError>("inject failure",|transaction| {transaction.execute_batch("CREATE TRIGGER fail_publish BEFORE UPDATE ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected failure'); END;").map_err(|error|sql_error("inject finalization failure",&error))}).unwrap();
+        ledger
+            .transaction::<_, StorageError>("inject failure", |transaction| {
+                transaction
+                    .execute_batch(INJECT_FINALIZATION_FAILURE)
+                    .map_err(|error| sql_error("inject finalization failure", &error))
+            })
+            .unwrap();
         assert!(
             ledger
                 .finalize_attempt(&guard, attempt.id, outcome())

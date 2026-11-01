@@ -177,7 +177,11 @@ pub(super) fn state(turn: &FinalizedTurn) -> Result<Vec<String>, DecisionError> 
                 lines.push("Earlier decision in the saved input:".into());
                 if entry["value"]["request"].is_object() {
                     add_state(
-                        &json!({"Input":entry["value"]["request"]["state"],"Questions":entry["value"]["request"]["questions"],"Results":entry["value"]["outcome"]["outcomes"]}),
+                        &json!({
+                            "Input": entry["value"]["request"]["state"],
+                            "Questions": entry["value"]["request"]["questions"],
+                            "Results": entry["value"]["outcome"]["outcomes"]
+                        }),
                         &mut lines,
                     );
                 } else if entry["value"]["results"].is_array() {

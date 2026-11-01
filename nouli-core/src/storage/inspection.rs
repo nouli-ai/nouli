@@ -133,6 +133,8 @@ fn node_intents(
     ledger: &Ledger,
     attempts: &[AttemptSnapshot],
 ) -> Result<Vec<NodeIntent>, InspectionError> {
+    const READ_ACCEPTED_NODE_METADATA: &str = "SELECT i.payload_toon FROM workflow_node_intents i JOIN workflow_nodes n ON n.run_id=i.run_id AND n.node_id=i.node_id WHERE i.run_id=?1 AND n.declaration_order=?2 AND i.round=?3";
+
     let mut seen = HashSet::new();
     let mut intents = vec![];
     for attempt in attempts {
@@ -140,7 +142,14 @@ fn node_intents(
             && seen.insert((scope.run, scope.node, scope.round))
         {
             let node = i64::try_from(scope.node).map_err(|_| StorageError::Payload)?;
-            let payload:String=ledger.connection.query_row("SELECT i.payload_toon FROM workflow_node_intents i JOIN workflow_nodes n ON n.run_id=i.run_id AND n.node_id=i.node_id WHERE i.run_id=?1 AND n.declaration_order=?2 AND i.round=?3",rusqlite::params![scope.run.to_string(),node,scope.round],|row|row.get(0)).map_err(|error|sql_error("read accepted node metadata",&error))?;
+            let payload: String = ledger
+                .connection
+                .query_row(
+                    READ_ACCEPTED_NODE_METADATA,
+                    rusqlite::params![scope.run.to_string(), node, scope.round],
+                    |row| row.get(0),
+                )
+                .map_err(|error| sql_error("read accepted node metadata", &error))?;
             intents.push(Ledger::decode_payload(&payload)?);
         }
     }

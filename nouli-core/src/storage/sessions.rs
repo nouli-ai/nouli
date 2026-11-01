@@ -168,6 +168,8 @@ pub(super) fn insert_session(
     session: &mut Session,
     sources: &[SourcePoint],
 ) -> Result<(), SessionError> {
+    const FREEZE_SESSION_SOURCE: &str = "INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)";
+
     names::assign(transaction, session)?;
     let defaults = Ledger::encode_payload(&session.defaults)?;
     let frontier = Ledger::encode_payload(&session.frontier)?;
@@ -200,7 +202,17 @@ pub(super) fn insert_session(
         )
         .map_err(|error| sql_error("record session creation", &error))?;
     for (position, source) in (0_i64..).zip(sources) {
-        transaction.execute("INSERT INTO session_sources(session_id,position,source_session,frontier_toon) VALUES(?1,?2,?3,?4)",params![session.id.to_string(),position,source.session.to_string(),Ledger::encode_payload(&source.frontier)?]).map_err(|error|sql_error("freeze session source",&error))?;
+        transaction
+            .execute(
+                FREEZE_SESSION_SOURCE,
+                params![
+                    session.id.to_string(),
+                    position,
+                    source.session.to_string(),
+                    Ledger::encode_payload(&source.frontier)?
+                ],
+            )
+            .map_err(|error| sql_error("freeze session source", &error))?;
     }
     Ok(())
 }
@@ -238,7 +250,11 @@ pub(super) fn read_sources(
     connection: &rusqlite::Connection,
     id: Id,
 ) -> Result<Vec<SourcePoint>, SessionError> {
-    let mut statement=connection.prepare("SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position").map_err(|error|sql_error("read frozen session sources",&error))?;
+    const READ_FROZEN_SESSION_SOURCES: &str = "SELECT source_session,frontier_toon FROM session_sources WHERE session_id=?1 ORDER BY position";
+
+    let mut statement = connection
+        .prepare(READ_FROZEN_SESSION_SOURCES)
+        .map_err(|error| sql_error("read frozen session sources", &error))?;
     let rows = statement
         .query_map([id.to_string()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -552,13 +568,15 @@ mod tests {
 
     #[test]
     fn rename_rolls_back_when_its_history_event_cannot_be_recorded() {
+        const CREATE_REJECT_RENAME_EVENT: &str = "CREATE TEMP TRIGGER reject_rename_event BEFORE INSERT ON session_events BEGIN SELECT RAISE(ABORT,'injected failure'); END;";
+
         let (root, mut ledger) = open_temp_ledger("nouli-rename-rollback");
         let session = ledger
             .create_session(Some(session_name("old-name")), ModelSelection::default())
             .unwrap();
         ledger
             .connection
-            .execute_batch("CREATE TEMP TRIGGER reject_rename_event BEFORE INSERT ON session_events BEGIN SELECT RAISE(ABORT,'injected failure'); END;")
+            .execute_batch(CREATE_REJECT_RENAME_EVENT)
             .unwrap();
 
         assert!(

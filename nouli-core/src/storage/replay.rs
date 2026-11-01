@@ -245,10 +245,14 @@ fn interrupt(
     key: &str,
     saved: &Reservation,
 ) -> Result<RecoveryKind, ReplayError> {
+    const INSPECT_ORPHAN_ATTEMPTS: &str = "SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id";
+
     if saved.state == ReservationState::Interrupted {
         return Ok(saved.recovery.unwrap_or(RecoveryKind::Interrupted));
     }
-    let mut statement=transaction.prepare("SELECT a.id,a.payload_toon,s.state,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.session_id=?1 ORDER BY a.id").map_err(|error|sql_error("inspect orphan attempts",&error))?;
+    let mut statement = transaction
+        .prepare(INSPECT_ORPHAN_ATTEMPTS)
+        .map_err(|error| sql_error("inspect orphan attempts", &error))?;
     let rows = statement
         .query_map([saved.session.to_string()], |row| {
             Ok((

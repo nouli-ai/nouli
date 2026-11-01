@@ -147,6 +147,8 @@ mod tests {
     }
     #[test]
     fn existing_v3_context_records_survive_shared_base_migration() {
+        const INSERT_CONTEXT_RECORDS: &str = "INSERT INTO context_records(id,turn_id,record_key,payload_toon) VALUES('r','t','budget','value: 18446744073709551615')";
+
         let mut connection = Connection::open_in_memory().unwrap();
         connection
             .pragma_update(None, "foreign_keys", true)
@@ -162,7 +164,7 @@ mod tests {
             )
             .unwrap();
         connection.execute("INSERT INTO turns(id,session_id,ordinal,payload_toon) VALUES('t','s',0,'state: retained')",[]).unwrap();
-        connection.execute("INSERT INTO context_records(id,turn_id,record_key,payload_toon) VALUES('r','t','budget','value: 18446744073709551615')",[]).unwrap();
+        connection.execute(INSERT_CONTEXT_RECORDS, []).unwrap();
         migrate(&mut connection, MIGRATIONS).unwrap();
         let row: (String, Option<String>, Option<String>, String, String) = connection
             .query_row(
@@ -212,6 +214,10 @@ mod tests {
     }
     #[test]
     fn existing_v4_terminal_run_is_backfilled_as_an_immutable_round_result() {
+        const INSERT_WORKFLOW_RUNS: &str = "INSERT INTO workflow_runs(id,session_id,definition_toon,settings_toon,state,frontier_toon,result_toon,published_revision) VALUES('r','s','definition','settings','interrupted','frontier','saved-result',3)";
+        const SELECT_WORKFLOW_ROUND_RESULTS: &str = "SELECT round,state,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id='r'";
+        const INSERT_WORKFLOW_ROUND_RESULTS: &str = "INSERT OR REPLACE INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES('r',0,'completed','[]',4,'changed')";
+
         let mut connection = Connection::open_in_memory().unwrap();
         connection
             .pragma_update(None, "foreign_keys", true)
@@ -226,7 +232,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        connection.execute("INSERT INTO workflow_runs(id,session_id,definition_toon,settings_toon,state,frontier_toon,result_toon,published_revision) VALUES('r','s','definition','settings','interrupted','frontier','saved-result',3)",[]).unwrap();
+        connection.execute(INSERT_WORKFLOW_RUNS, []).unwrap();
         connection
             .execute(
                 "INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES('r',0,'old-owner')",
@@ -234,7 +240,17 @@ mod tests {
             )
             .unwrap();
         migrate(&mut connection, MIGRATIONS).unwrap();
-        let saved:(u32,String,String,i64,String)=connection.query_row("SELECT round,state,frontier_toon,published_revision,payload_toon FROM workflow_round_results WHERE run_id='r'",[],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).unwrap();
+        let saved: (u32, String, String, i64, String) = connection
+            .query_row(SELECT_WORKFLOW_ROUND_RESULTS, [], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .unwrap();
         assert_eq!(
             saved,
             (
@@ -248,7 +264,7 @@ mod tests {
         for sql in [
             "UPDATE workflow_round_results SET state='completed'",
             "DELETE FROM workflow_round_results",
-            "INSERT OR REPLACE INTO workflow_round_results(run_id,round,state,frontier_toon,published_revision,payload_toon) VALUES('r',0,'completed','[]',4,'changed')",
+            INSERT_WORKFLOW_ROUND_RESULTS,
         ] {
             assert!(connection.execute(sql, []).is_err());
         }

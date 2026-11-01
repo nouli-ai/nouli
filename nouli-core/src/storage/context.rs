@@ -159,6 +159,8 @@ mod tests {
     };
     #[test]
     fn pending_updates_publish_only_with_successful_finalization() {
+        const CREATE_REJECT_CONTEXT_PUBLISH: &str = "CREATE TRIGGER reject_context_publish BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;";
+
         let root = std::env::temp_dir().join(format!("nouli-context-{}", Id::generate()));
         let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
         let session = ledger
@@ -197,7 +199,10 @@ mod tests {
                 .unwrap(),
             [] as [crate::context::projection::ActiveRecord; 0]
         );
-        ledger.connection.execute_batch("CREATE TRIGGER reject_context_publish BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
+        ledger
+            .connection
+            .execute_batch(CREATE_REJECT_CONTEXT_PUBLISH)
+            .unwrap();
         assert!(
             ledger
                 .finalize_attempt(&guard, prepared.id, fixture.outcome.clone())

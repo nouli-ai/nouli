@@ -213,7 +213,13 @@ pub(super) fn event(
     run: Id,
     event: &WorkflowEvent,
 ) -> Result<(), StorageError> {
-    tx.execute("INSERT INTO workflow_events(run_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM workflow_events WHERE run_id=?1",params![run.to_string(),Ledger::encode_payload(event)?]).map_err(|error|sql_error("append workflow event",&error))?;
+    const APPEND_WORKFLOW_EVENT: &str = "INSERT INTO workflow_events(run_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM workflow_events WHERE run_id=?1";
+
+    tx.execute(
+        APPEND_WORKFLOW_EVENT,
+        params![run.to_string(), Ledger::encode_payload(event)?],
+    )
+    .map_err(|error| sql_error("append workflow event", &error))?;
     Ok(())
 }
 pub(super) fn round_order(
@@ -348,8 +354,15 @@ pub(super) fn read_run(
     run: Id,
     before_nodes: impl FnOnce(),
 ) -> Result<StoredRun, WorkflowError> {
+    const READ_WORKFLOW_PROGRESS: &str =
+        "SELECT state,frontier_toon,published_revision,result_toon FROM workflow_runs WHERE id=?1";
+
     let frozen = frozen(connection, run)?;
-    let row:(String,String,i64,Option<String>)=connection.query_row("SELECT state,frontier_toon,published_revision,result_toon FROM workflow_runs WHERE id=?1",[run.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))).map_err(|error|sql_error("read workflow progress",&error))?;
+    let row: (String, String, i64, Option<String>) = connection
+        .query_row(READ_WORKFLOW_PROGRESS, [run.to_string()], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .map_err(|error| sql_error("read workflow progress", &error))?;
     let status: RunStatus = serde_json::from_value(serde_json::Value::String(row.0))
         .map_err(|_| WorkflowError::Snapshot)?;
     before_nodes();
@@ -455,6 +468,8 @@ impl Ledger {
         mut settings: Vec<SettingsSnapshot>,
         defaults: ModelSelection,
     ) -> Result<WorkflowDecision, WorkflowError> {
+        const INTERRUPT_EXITED_WORKFLOW: &str = "UPDATE workflow_runs SET state='interrupted' WHERE id=?1 AND state IN ('pending','running')";
+
         if request.workflow.mode != crate::workflow::RunMode::Durable {
             return Err(WorkflowError::NotDurable);
         }
@@ -482,9 +497,11 @@ impl Ledger {
             if saved.status == RunStatus::Completed {
                 return Ok(WorkflowDecision::Saved(Box::new(saved)));
             }
-            self.transaction::<_,StorageError>("record exited workflow owner",|tx| {
-                tx.execute("UPDATE workflow_runs SET state='interrupted' WHERE id=?1 AND state IN ('pending','running')",[run.to_string()]).map_err(|error|sql_error("interrupt exited workflow",&error))?;
-                reservations::interrupt_workflow(tx, key)?;Ok(())
+            self.transaction::<_, StorageError>("record exited workflow owner", |tx| {
+                tx.execute(INTERRUPT_EXITED_WORKFLOW, [run.to_string()])
+                    .map_err(|error| sql_error("interrupt exited workflow", &error))?;
+                reservations::interrupt_workflow(tx, key)?;
+                Ok(())
             })?;
             return Ok(WorkflowDecision::Existing {
                 run,
@@ -510,20 +527,26 @@ impl Ledger {
         let session_guard = guards::acquire_session(self, session)?;
         let run = Id::generate();
         let run_guard = self.run_guard(run)?;
-        let definition=self.transaction::<_,WorkflowError>("accept frozen workflow",|tx| {
-            let (current, sources) = sessions::open_target::<WorkflowError>(tx, target, &request.session, defaults.clone())?;
-            let base=ContextBase {id:run,session,sources,state:request.workflow.state.clone(),updates:request.updates.clone(),runtime_only:false};
-            let definition=WorkflowDefinition {run,session,request:request.clone(),base,defaults,initial_frontier:current.frontier.clone(),initial_revision:current.revision,plan:Data::new(codec::to_value(&plan).map_err(|_|WorkflowError::Snapshot)?).map_err(|_|WorkflowError::Snapshot)?};
-            reservations::insert_workflow(tx, session, key, &hash, session_guard.owner, &Self::encode_payload(&run)?)?;
-            tx.execute("INSERT INTO workflow_runs(id,session_id,definition_toon,settings_toon,state,frontier_toon,owner_id,published_revision) VALUES(?1,?2,?3,?4,'running',?5,?6,?7)",params![run.to_string(),session.to_string(),Self::encode_payload(&definition)?,Self::encode_payload(&settings)?,Self::encode_payload(&current.frontier)?,session_guard.owner.to_string(),current.revision]).map_err(|error|sql_error("save frozen workflow",&error))?;
-            tx.execute("INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES(?1,0,?2)",params![run.to_string(),session_guard.owner.to_string()]).map_err(|error|sql_error("record initial workflow round",&error))?;
-            for ((index,node),order) in request.workflow.nodes.iter().enumerate().zip(0_i64..) {
-                let pending=NodeProgress {status:NodeStatus::Pending,output:None,error:None,ancestors:vec![],inputs:vec![]};
-                tx.execute("INSERT INTO workflow_nodes(run_id,node_id,declaration_order,state,payload_toon) VALUES(?1,?2,?3,'pending',?4)",params![run.to_string(),node.id,order,Self::encode_payload(&pending)?]).map_err(|error|sql_error("save pending node",&error))?;
-                reservations::insert_node(tx, session, &child_key(run,index), &codec::fingerprint(&(run,index)).map_err(|_|WorkflowError::Snapshot)?, session_guard.owner, &Self::encode_payload(&(run,index))?)?;
-            }
-            event(tx,run,&WorkflowEvent {version:crate::decision::CONTRACT_VERSION,
-                    round:0,kind:WorkflowEventKind::RunStarted,progress:None,node:None,node_status:None,run_status:Some(RunStatus::Running),attempt:None,turn:None})?;Ok(definition)
+        let definition = self.transaction::<_, WorkflowError>("accept frozen workflow", |tx| {
+            let definition = prepare_definition(tx, target, request, defaults, run, &plan)?;
+            insert_run(tx, &definition, &settings, session_guard.owner, key, &hash)?;
+            insert_pending_nodes(tx, &definition, session_guard.owner)?;
+            event(
+                tx,
+                run,
+                &WorkflowEvent {
+                    version: crate::decision::CONTRACT_VERSION,
+                    round: 0,
+                    kind: WorkflowEventKind::RunStarted,
+                    progress: None,
+                    node: None,
+                    node_status: None,
+                    run_status: Some(RunStatus::Running),
+                    attempt: None,
+                    turn: None,
+                },
+            )?;
+            Ok(definition)
         })?;
         Ok(WorkflowDecision::Accepted(Box::new(WorkflowOwner {
             round: 0,
@@ -536,6 +559,120 @@ impl Ledger {
             _request_guard: request_guard,
         })))
     }
+}
+
+fn prepare_definition(
+    tx: &rusqlite::Transaction<'_>,
+    target: sessions::Target,
+    request: &WorkflowRequest,
+    defaults: ModelSelection,
+    run: Id,
+    plan: &compile::CompiledWorkflow,
+) -> Result<WorkflowDefinition, WorkflowError> {
+    let session = target.id;
+    let (current, sources) =
+        sessions::open_target::<WorkflowError>(tx, target, &request.session, defaults.clone())?;
+    let base = ContextBase {
+        id: run,
+        session,
+        sources,
+        state: request.workflow.state.clone(),
+        updates: request.updates.clone(),
+        runtime_only: false,
+    };
+    let definition = WorkflowDefinition {
+        run,
+        session,
+        request: request.clone(),
+        base,
+        defaults,
+        initial_frontier: current.frontier.clone(),
+        initial_revision: current.revision,
+        plan: Data::new(codec::to_value(plan).map_err(|_| WorkflowError::Snapshot)?)
+            .map_err(|_| WorkflowError::Snapshot)?,
+    };
+    Ok(definition)
+}
+
+fn insert_run(
+    tx: &rusqlite::Transaction<'_>,
+    definition: &WorkflowDefinition,
+    settings: &[SettingsSnapshot],
+    owner: Id,
+    key: &str,
+    hash: &str,
+) -> Result<(), StorageError> {
+    const SAVE_FROZEN_WORKFLOW: &str = "INSERT INTO workflow_runs(id,session_id,definition_toon,settings_toon,state,frontier_toon,owner_id,published_revision) VALUES(?1,?2,?3,?4,'running',?5,?6,?7)";
+    const RECORD_INITIAL_WORKFLOW_ROUND: &str =
+        "INSERT INTO workflow_rounds(run_id,round,owner_id) VALUES(?1,0,?2)";
+    let run = definition.run;
+    let session = definition.session;
+    reservations::insert_workflow(
+        tx,
+        session,
+        key,
+        hash,
+        owner,
+        &Ledger::encode_payload(&run)?,
+    )?;
+    tx.execute(
+        SAVE_FROZEN_WORKFLOW,
+        params![
+            run.to_string(),
+            session.to_string(),
+            Ledger::encode_payload(definition)?,
+            Ledger::encode_payload(&settings)?,
+            Ledger::encode_payload(&definition.initial_frontier)?,
+            owner.to_string(),
+            definition.initial_revision
+        ],
+    )
+    .map_err(|error| sql_error("save frozen workflow", &error))?;
+    tx.execute(
+        RECORD_INITIAL_WORKFLOW_ROUND,
+        params![run.to_string(), owner.to_string()],
+    )
+    .map_err(|error| sql_error("record initial workflow round", &error))?;
+    Ok(())
+}
+
+fn insert_pending_nodes(
+    tx: &rusqlite::Transaction<'_>,
+    definition: &WorkflowDefinition,
+    owner: Id,
+) -> Result<(), WorkflowError> {
+    const SAVE_PENDING_NODE: &str = "INSERT INTO workflow_nodes(run_id,node_id,declaration_order,state,payload_toon) VALUES(?1,?2,?3,'pending',?4)";
+    let run = definition.run;
+    let session = definition.session;
+    let request = &definition.request;
+    for ((index, node), order) in request.workflow.nodes.iter().enumerate().zip(0_i64..) {
+        let pending = NodeProgress {
+            status: NodeStatus::Pending,
+            output: None,
+            error: None,
+            ancestors: vec![],
+            inputs: vec![],
+        };
+        tx.execute(
+            SAVE_PENDING_NODE,
+            params![
+                run.to_string(),
+                node.id,
+                order,
+                Ledger::encode_payload(&pending)?
+            ],
+        )
+        .map_err(|error| sql_error("save pending node", &error))?;
+        reservations::insert_node(
+            tx,
+            session,
+            &child_key(run, index),
+            &codec::fingerprint(&(run, index)).map_err(|_| WorkflowError::Snapshot)?,
+            owner,
+            &Ledger::encode_payload(&(run, index))?,
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -659,6 +796,8 @@ mod tests {
     }
     #[test]
     fn terminal_publication_rejects_unsettled_nodes_live_attempts_and_misclassified_outputs() {
+        const INSERT_ATTEMPTS: &str = "INSERT INTO attempts(id,session_id,run_id,node_id,payload_toon) VALUES(?1,?2,?3,'initial','audit fault')";
+
         let store = Store::new();
         let mut ledger = store.open();
         let request = request();
@@ -685,7 +824,13 @@ mod tests {
         assert!(ledger.finish_workflow(&owner, &wrong).is_err());
         let attempt = Id::generate();
         let session = owner.frozen().definition.session;
-        ledger.connection.execute("INSERT INTO attempts(id,session_id,run_id,node_id,payload_toon) VALUES(?1,?2,?3,'initial','audit fault')",params![attempt.to_string(),session.to_string(),run.to_string()]).unwrap();
+        ledger
+            .connection
+            .execute(
+                INSERT_ATTEMPTS,
+                params![attempt.to_string(), session.to_string(), run.to_string()],
+            )
+            .unwrap();
         ledger
             .connection
             .execute(
@@ -741,6 +886,8 @@ mod tests {
 
     #[test]
     fn aggregate_read_keeps_header_nodes_and_result_in_one_snapshot() {
+        const UPDATE_WORKFLOW_NODES: &str = "UPDATE workflow_nodes SET state='skipped',payload_toon=?3 WHERE run_id=?1 AND node_id=?2";
+
         let store = Store::new();
         let mut ledger = store.open();
         let request = request();
@@ -758,7 +905,14 @@ mod tests {
                 .connection
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             for (index, node) in request.workflow.nodes.iter().enumerate() {
-                tx.execute("UPDATE workflow_nodes SET state='skipped',payload_toon=?3 WHERE run_id=?1 AND node_id=?2",params![run.to_string(),node.id,Ledger::encode_payload(&result.nodes[index]).unwrap()])?;
+                tx.execute(
+                    UPDATE_WORKFLOW_NODES,
+                    params![
+                        run.to_string(),
+                        node.id,
+                        Ledger::encode_payload(&result.nodes[index]).unwrap()
+                    ],
+                )?;
             }
             tx.execute(
                 "UPDATE workflow_runs SET state='completed',result_toon=?2 WHERE id=?1",
@@ -880,6 +1034,8 @@ mod tests {
     }
     #[test]
     fn first_node_publication_rolls_back_shared_base_and_branch_head_on_failure() {
+        const CREATE_REJECT_WORKFLOW_PUBLICATION: &str = "CREATE TRIGGER reject_workflow_publication BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;";
+
         use crate::{history::SourcePoint, outcome::TurnOutcome, storage::turns::AttemptStatus};
         let store = Store::new();
         let mut ledger = store.open();
@@ -897,7 +1053,10 @@ mod tests {
             Err(TurnError::WorkflowAttempt)
         ));
 
-        ledger.connection.execute_batch("CREATE TRIGGER reject_workflow_publication BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
+        ledger
+            .connection
+            .execute_batch(CREATE_REJECT_WORKFLOW_PUBLICATION)
+            .unwrap();
         assert!(
             ledger
                 .finalize_workflow_attempt(&owner, attempt.id, outcome.clone())
