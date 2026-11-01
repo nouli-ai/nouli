@@ -7,7 +7,8 @@ use nouli_core::{
     context::{ContextKind, ContextRecord, ContextUpdate, PinTarget},
     data::Data,
     engine::{
-        Engine, EngineError, EvaluationInput, execution::TokioClock, workflow::WorkflowInput,
+        Engine, EngineError, EvaluationInput, EvaluationResult, execution::TokioClock,
+        workflow::WorkflowInput,
     },
     history::{
         EvaluationRequest, ModelSelection, SessionSelection, SourceSelection, StandingChanges,
@@ -23,7 +24,7 @@ use nouli_core::{
     },
 };
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, atomic::Ordering},
 };
 use thiserror::Error;
@@ -63,20 +64,6 @@ fn request(selection: SessionSelection) -> Result<EvaluationRequest, ExampleErro
         request_id: None,
     })
 }
-fn input<'a>(
-    request: &'a EvaluationRequest,
-    config: &'a Config,
-    options: &'a RuntimeOverrides,
-    root: &'a Path,
-) -> EvaluationInput<'a> {
-    EvaluationInput {
-        request,
-        config,
-        overrides: options,
-        home: root,
-        retry_interrupted: false,
-    }
-}
 fn sources(sessions: &[Id]) -> SessionSelection {
     SessionSelection::From {
         sources: sessions
@@ -89,24 +76,78 @@ fn sources(sessions: &[Id]) -> SessionSelection {
         name: None,
     }
 }
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
+type FakeEngine = Engine<fake::FakeProvider, ByteCounter, TokioClock>;
+/// What every evaluation in the journey shares: the embedding's home, store,
+/// configuration, and engine.
+struct Journey<'a> {
+    root: &'a Path,
+    store: PathBuf,
+    config: Config,
+    options: RuntimeOverrides,
+    cancel: CancellationToken,
+    engine: Arc<FakeEngine>,
+}
+impl Journey<'_> {
+    fn input<'a>(&'a self, request: &'a EvaluationRequest) -> EvaluationInput<'a> {
+        EvaluationInput {
+            request,
+            config: &self.config,
+            overrides: &self.options,
+            home: self.root,
+            retry_interrupted: false,
+        }
+    }
+    async fn evaluate(
+        &self,
+        ledger: &LedgerWorker,
+        request: &EvaluationRequest,
+    ) -> Result<EvaluationResult, EngineError> {
+        self.engine
+            .evaluate(ledger, self.input(request), |_| None, &self.cancel)
+            .await
+    }
+    fn provider_calls(&self) -> usize {
+        self.engine.provider.calls.load(Ordering::SeqCst)
+    }
+}
 async fn journey(root: &Path) -> Result<(), ExampleError> {
     let store = root.join("ledger");
     let ledger = LedgerWorker::open(store.clone(), OpenMode::ReadWriteCreate).await?;
-    let config = fake::config()?;
-    let options = RuntimeOverrides {
-        store: Some(store.clone()),
-        ..Default::default()
+    let journey = Journey {
+        root,
+        options: RuntimeOverrides {
+            store: Some(store.clone()),
+            ..Default::default()
+        },
+        store,
+        config: fake::config()?,
+        cancel: CancellationToken::new(),
+        engine: Arc::new(Engine {
+            provider: fake::FakeProvider::default(),
+            counter: ByteCounter,
+            clock: TokioClock,
+        }),
     };
-    let cancel = CancellationToken::new();
-    let engine = Arc::new(Engine {
-        provider: fake::FakeProvider::default(),
-        counter: ByteCounter,
-        clock: TokioClock,
-    });
+    let (initial, commitment) = first_turn(&journey, &ledger).await?;
+    let blended = branch_and_blend(&journey, &ledger, &initial, &commitment).await?;
+    drop(ledger);
+    ephemeral_evaluation_leaves_the_store_unchanged(&journey, &initial, &blended).await?;
+    canceled_evaluation_never_calls_the_provider(&journey).await?;
+    let Journey {
+        store,
+        config,
+        options,
+        engine,
+        ..
+    } = journey;
+    workflow_journey(root, store, &engine, &config, &options).await
+}
+/// Starts a session with a pinned commitment, checks the provider's native
+/// outcomes, and replays the same request without calling the provider again.
+async fn first_turn(
+    journey: &Journey<'_>,
+    ledger: &LedgerWorker,
+) -> Result<(EvaluationResult, ContextRecord), ExampleError> {
     let commitment = ContextRecord {
         id: Id::generate(),
         key: "selected_route".into(),
@@ -120,14 +161,23 @@ async fn journey(root: &Path) -> Result<(), ExampleError> {
             record: commitment.clone(),
         },
     });
-    let initial = engine
-        .evaluate(
-            &ledger,
-            input(&first, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
+    let initial = journey.evaluate(ledger, &first).await?;
+    assert_native_outcomes(&initial);
+    let accepted = first.clone();
+    let frozen = ledger
+        .call(move |ledger| ledger.saved_request(&accepted))
+        .await??
+        .expect("accepted request");
+    assert_eq!(frozen.settings.store, journey.store);
+    let replay = journey.evaluate(ledger, &first).await?;
+    assert!(replay.replayed);
+    assert_eq!(replay.turn.id, initial.turn.id);
+    assert_eq!(journey.provider_calls(), 1);
+    Ok((initial, commitment))
+}
+/// The first turn keeps the provider's own model, confidence, score scale, and
+/// each answer kind, including a refusal.
+fn assert_native_outcomes(initial: &EvaluationResult) {
     assert_eq!(initial.turn.outcome.provider.provider, "fake");
     assert_eq!(initial.turn.outcome.provider.model, "fake-served-version-1");
     let QuestionOutcome::Answered {
@@ -148,23 +198,6 @@ async fn journey(root: &Path) -> Result<(), ExampleError> {
         levels[2],
         nouli_core::decision::Criterion::Text("Excellent".into())
     );
-    let accepted = first.clone();
-    let frozen = ledger
-        .call(move |ledger| ledger.saved_request(&accepted))
-        .await??
-        .expect("accepted request");
-    assert_eq!(frozen.settings.store, store);
-    let replay = engine
-        .evaluate(
-            &ledger,
-            input(&first, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
-    assert!(replay.replayed);
-    assert_eq!(replay.turn.id, initial.turn.id);
-    assert_eq!(engine.provider.calls.load(Ordering::SeqCst), 1);
     assert!(matches!(
         initial.turn.outcome.outcomes[0],
         QuestionOutcome::Answered {
@@ -190,64 +223,38 @@ async fn journey(root: &Path) -> Result<(), ExampleError> {
         initial.turn.outcome.outcomes[3],
         QuestionOutcome::Refused { .. }
     ));
+}
+/// Continues the first session, branches from it, and blends both. Advancing
+/// a source after the blend captured it leaves the blend's saved base alone.
+async fn branch_and_blend(
+    journey: &Journey<'_>,
+    ledger: &LedgerWorker,
+    initial: &EvaluationResult,
+    commitment: &ContextRecord,
+) -> Result<EvaluationResult, ExampleError> {
     let continued = request(SessionSelection::Continue {
         session: SessionSelector::Id(initial.turn.session),
     })?;
-    let continuation = engine
-        .evaluate(
-            &ledger,
-            input(&continued, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
+    let continuation = journey.evaluate(ledger, &continued).await?;
     let mut branch = request(sources(&[initial.turn.session]))?;
     branch.required_records = vec![commitment.id, initial.turn.id];
     branch.updates.push(ContextUpdate::Unpin {
         target: commitment.id,
     });
-    let branched = engine
-        .evaluate(
-            &ledger,
-            input(&branch, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
+    let branched = journey.evaluate(ledger, &branch).await?;
     assert_eq!(
         branched.turn.manifest.sources[0].frontier,
         vec![continuation.turn.id]
     );
     let blend = request(sources(&[initial.turn.session, branched.turn.session]))?;
-    let blended = engine
-        .evaluate(
-            &ledger,
-            input(&blend, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
+    let blended = journey.evaluate(ledger, &blend).await?;
     assert_eq!(blended.turn.outcome.outcomes, initial.turn.outcome.outcomes);
     // Advance a source after capture. Continuing the blend retains the saved base.
-    let later = engine
-        .evaluate(
-            &ledger,
-            input(&continued, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
+    let later = journey.evaluate(ledger, &continued).await?;
     let follow = request(SessionSelection::Continue {
         session: SessionSelector::Id(blended.turn.session),
     })?;
-    let followed = engine
-        .evaluate(
-            &ledger,
-            input(&follow, &config, &options, root),
-            |_| None,
-            &cancel,
-        )
-        .await?;
+    let followed = journey.evaluate(ledger, &follow).await?;
     assert!(
         !followed
             .turn
@@ -255,46 +262,57 @@ async fn journey(root: &Path) -> Result<(), ExampleError> {
             .context_toon
             .contains(&later.turn.id.to_string())
     );
-    drop(ledger);
-    let bytes = std::fs::read(store.join("ledger.sqlite3"))?;
-    let readonly = LedgerWorker::open(store.clone(), OpenMode::ReadOnlyExisting).await?;
+    Ok(blended)
+}
+/// An ephemeral evaluation reads the blend from a read-only store and leaves
+/// its bytes unchanged.
+async fn ephemeral_evaluation_leaves_the_store_unchanged(
+    journey: &Journey<'_>,
+    initial: &EvaluationResult,
+    blended: &EvaluationResult,
+) -> Result<(), ExampleError> {
+    let bytes = std::fs::read(journey.store.join("ledger.sqlite3"))?;
+    let readonly = LedgerWorker::open(journey.store.clone(), OpenMode::ReadOnlyExisting).await?;
     let ephemeral = request(sources(&[blended.turn.session]))?;
-    let temporary = engine
+    let temporary = journey
+        .engine
         .evaluate_ephemeral(
             Some(&readonly),
-            input(&ephemeral, &config, &options, root),
+            journey.input(&ephemeral),
             |_| None,
-            &cancel,
+            &journey.cancel,
         )
         .await?;
     assert_eq!(temporary.outcome.outcomes, initial.turn.outcome.outcomes);
     drop(readonly);
     assert!(
-        bytes == std::fs::read(store.join("ledger.sqlite3"))?,
+        bytes == std::fs::read(journey.store.join("ledger.sqlite3"))?,
         "ephemeral evaluation changed source store"
     );
+    Ok(())
+}
+/// An evaluation canceled before it starts fails without calling the provider.
+async fn canceled_evaluation_never_calls_the_provider(
+    journey: &Journey<'_>,
+) -> Result<(), ExampleError> {
     let canceled = CancellationToken::new();
     canceled.cancel();
     let fresh = request(SessionSelection::New { name: None })?;
-    let before = engine.provider.calls.load(Ordering::SeqCst);
+    let before = journey.provider_calls();
     assert!(matches!(
-        engine
-            .evaluate_ephemeral(
-                None,
-                input(&fresh, &config, &options, root),
-                |_| None,
-                &canceled
-            )
+        journey
+            .engine
+            .evaluate_ephemeral(None, journey.input(&fresh), |_| None, &canceled)
             .await,
         Err(EngineError::Canceled)
     ));
-    assert_eq!(engine.provider.calls.load(Ordering::SeqCst), before);
-    workflow_journey(root, store, &engine, &config, &options).await
+    assert_eq!(journey.provider_calls(), before);
+    Ok(())
 }
 async fn workflow_journey(
     root: &Path,
-    store: std::path::PathBuf,
-    engine: &Arc<Engine<fake::FakeProvider, ByteCounter, TokioClock>>,
+    store: PathBuf,
+    engine: &Arc<FakeEngine>,
     config: &Config,
     options: &RuntimeOverrides,
 ) -> Result<(), ExampleError> {
