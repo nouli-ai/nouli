@@ -149,7 +149,12 @@ pub(crate) fn run(
                 .facts(session)
                 .map_err(nouli_core::storage::inspection::InspectionError::from)?;
             if format == Format::Text {
-                crate::present::facts_text(&ledger, &facts, sink)?;
+                crate::present::facts_text(
+                    &ledger,
+                    &facts,
+                    crate::render::turn::Paint(false),
+                    sink,
+                )?;
                 return Ok(());
             }
             (
@@ -163,4 +168,101 @@ pub(crate) fn run(
         ),
     };
     render::labelled(label, &value, sink, format).map_err(InspectError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nouli_core::{
+        context::{ContextUpdate, facts},
+        history::{FinalizedTurn, ModelSelection, SourceSelection, StandingChanges},
+        storage::turns::AttemptInput,
+    };
+
+    fn save_facts(ledger: &mut Ledger, session: Id, updates: Vec<ContextUpdate>) {
+        let data: serde_json::Value =
+            serde_json::from_str(include_str!("../../fixtures/contracts/history.json")).unwrap();
+        let mut template: FinalizedTurn = serde_json::from_value(data["turns"][0].clone()).unwrap();
+        template.manifest.sources = ledger.context_sources(session).unwrap();
+        let guard = ledger.session_guard(session).unwrap();
+        let attempt = ledger
+            .prepare_attempt(
+                &guard,
+                AttemptInput {
+                    request: template.request,
+                    updates,
+                    standing: StandingChanges::default(),
+                    manifest: template.manifest,
+                    request_id: None,
+                },
+            )
+            .unwrap();
+        ledger
+            .finalize_attempt(&guard, attempt.id, template.outcome)
+            .unwrap();
+    }
+
+    #[test]
+    fn standalone_fact_text_keeps_plain_bytes_when_color_is_enabled() {
+        let root = std::env::temp_dir().join(format!("nouli-inspect-facts-{}", Id::generate()));
+        let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let source = ledger
+            .create_session(
+                Some("source".to_owned().try_into().unwrap()),
+                ModelSelection::default(),
+            )
+            .unwrap();
+        let mut out = Vec::new();
+        run(
+            &Command::Facts {
+                session: SessionSelector::Id(source.id),
+            },
+            &root,
+            &mut out,
+            Format::Text,
+            true,
+        )
+        .unwrap();
+        assert_eq!(out, b"  no facts yet\n");
+        save_facts(
+            &mut ledger,
+            source.id,
+            vec![
+                facts::append("inherited").unwrap(),
+                facts::append("before").unwrap(),
+            ],
+        );
+        let branch = ledger
+            .create_session_from(
+                None,
+                ModelSelection::default(),
+                &[SourceSelection {
+                    session: SessionSelector::Id(source.id),
+                    frontier: None,
+                }],
+            )
+            .unwrap();
+        let selector = SessionSelector::Id(branch.id);
+        let before = ledger.facts(&selector).unwrap();
+        save_facts(
+            &mut ledger,
+            branch.id,
+            vec![facts::replace(&before[1], "after").unwrap()],
+        );
+        out.clear();
+        run(
+            &Command::Facts { session: selector },
+            &root,
+            &mut out,
+            Format::Text,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            b"   1  inherited   (from source)\n   2  after   (replaced; was: before)\n"
+        );
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

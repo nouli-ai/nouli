@@ -149,10 +149,7 @@ pub(super) fn append(
             _ => return Err(RenderError::Protocol),
         },
     }
-    lines.accent(
-        start,
-        crate::palette::Tone::for_space(&question.answer_space),
-    );
+    lines.accent(start, crate::palette::Tone::from(&question.answer_space));
     Ok(())
 }
 
@@ -183,7 +180,7 @@ mod tests {
             let (question, outcome) = fixture(index);
             let start = rows.len();
             append(&mut rows, &question, &outcome).unwrap();
-            let tone = crate::palette::Tone::for_space(&question.answer_space);
+            let tone = crate::palette::Tone::from(&question.answer_space);
             assert_eq!(rows[start].accent, Some(tone));
             for row in rows[start..].iter().filter(|row| row.highlighted) {
                 assert_eq!(row.accent, Some(tone));

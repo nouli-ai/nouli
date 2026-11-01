@@ -5,40 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::decision::{AnswerSpace, ChoiceOption, ContractError, Criterion, Question};
 use unicode_segmentation::UnicodeSegmentation;
 
-/// A question's answer type, chosen with Shift-Tab.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
-    Noul,
-    Choice,
-    Score,
-}
-
-impl Kind {
-    pub(super) fn tone(self) -> crate::palette::Tone {
-        match self {
-            Self::Noul => crate::palette::Tone::Noul,
-            Self::Choice => crate::palette::Tone::Choice,
-            Self::Score => crate::palette::Tone::Score,
-        }
-    }
-    pub(super) const ALL: [Kind; 3] = [Kind::Noul, Kind::Choice, Kind::Score];
-
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Kind::Noul => "Yes / No",
-            Kind::Choice => "Choose one",
-            Kind::Score => "Score",
-        }
-    }
-
-    fn next(self) -> Self {
-        match self {
-            Kind::Noul => Kind::Choice,
-            Kind::Choice => Kind::Score,
-            Kind::Score => Kind::Noul,
-        }
-    }
-}
+pub(super) use crate::palette::Tone as Kind;
 
 /// The parts of the form that Tab moves between.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -9,7 +9,7 @@ use crate::{
     evaluate::{self, input_error},
     present,
     render::{
-        self,
+        self, plural,
         turn::{Paint, TEAL},
     },
     selection,
@@ -153,10 +153,6 @@ fn label(session: &Session) -> String {
         .name
         .as_ref()
         .map_or_else(|| short(session.id), |name| name.as_str().to_owned())
-}
-
-fn plural(count: usize, noun: &str) -> String {
-    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
 /// The ledger, or `None` when the store has no ledger yet.
@@ -544,11 +540,12 @@ impl<W: Write> Repl<'_, W> {
     }
 
     fn create(&mut self, name: &str, sources: Vec<SourceSelection>) -> Option<Session> {
-        let Ok(name) = SessionName::try_from(name.to_owned()) else {
-            let _ = self.fail(
-                "a session name starts with a letter and uses letters, digits, `.`, `_` or `-`",
-            );
-            return None;
+        let name = match SessionName::try_from(name.to_owned()) {
+            Ok(name) => name,
+            Err(error) => {
+                let _ = self.fail(&error.to_string());
+                return None;
+            }
         };
         let creation = Creation {
             name,
@@ -565,8 +562,9 @@ impl<W: Write> Repl<'_, W> {
     }
 
     fn rename_session(&mut self, name: &str) -> io::Result<()> {
-        let Ok(name) = SessionName::try_from(name.to_owned()) else {
-            return self.fail("Use a session name of up to 64 letters, digits, dots, underscores or hyphens, starting with a letter.");
+        let name = match SessionName::try_from(name.to_owned()) {
+            Ok(name) => name,
+            Err(error) => return self.fail(&error.to_string()),
         };
         let renamed = Ledger::open(&self.settings.store, OpenMode::ReadWriteCreate)
             .map_err(|error| error.report())

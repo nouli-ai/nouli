@@ -60,7 +60,7 @@ impl Theme {
     fn kind(&self, kind: Kind, selected: bool) -> Style {
         let mut style = Style::new();
         if self.color {
-            style = style.fg(kind.tone().color());
+            style = style.fg(kind.color());
         }
         style.add_modifier(if selected {
             Modifier::BOLD
@@ -385,11 +385,7 @@ fn list(app: &App, height: usize, theme: &Theme) -> Vec<Line<'static>> {
 }
 
 fn reference_kind(entry: &nouli_core::storage::decisions::SavedDecision) -> Kind {
-    match entry.question.answer_space {
-        nouli_core::decision::AnswerSpace::Noul => Kind::Noul,
-        nouli_core::decision::AnswerSpace::Choice { .. } => Kind::Choice,
-        nouli_core::decision::AnswerSpace::Score { .. } => Kind::Score,
-    }
+    Kind::from(&entry.question.answer_space)
 }
 
 fn reference_row(
@@ -1369,8 +1365,8 @@ mod tests {
         let theme = Theme::new(true);
         let plain = Theme::new(false);
         for kind in Kind::ALL {
-            assert_eq!(theme.kind(kind, true).fg, Some(kind.tone().color()));
-            assert_eq!(theme.kind(kind, false).fg, Some(kind.tone().color()));
+            assert_eq!(theme.kind(kind, true).fg, Some(kind.color()));
+            assert_eq!(theme.kind(kind, false).fg, Some(kind.color()));
             assert_eq!(plain.kind(kind, true).fg, None);
             assert!(plain.kind(kind, true).add_modifier.contains(Modifier::BOLD));
         }

@@ -135,10 +135,11 @@ pub(crate) fn turn_text(
 pub(crate) fn facts_text(
     ledger: &Ledger,
     facts: &[Fact],
+    paint: Paint,
     sink: &mut impl Write,
 ) -> Result<(), crate::inspect::InspectError> {
     if facts.is_empty() {
-        writeln!(sink, "  no facts yet")?;
+        writeln!(sink, "{}", paint.apply(DIM, "  no facts yet"))?;
     }
     for fact in facts {
         let mut line = if fact.alternatives.is_empty() {
@@ -162,13 +163,61 @@ pub(crate) fn facts_text(
                 .ok()
                 .and_then(|session| session.name)
                 .map_or_else(|| source.to_string(), |name| name.as_str().to_owned());
-            let _ = write!(line, "   (from {})", clean(&name));
+            let _ = write!(
+                line,
+                "{}",
+                paint.apply(DIM, &format!("   (from {})", clean(&name)))
+            );
         }
         if let Some(previous) = &fact.previous {
-            let _ = write!(line, "   (replaced; was: {})", clean(previous));
+            let _ = write!(
+                line,
+                "{}",
+                paint.apply(DIM, &format!("   (replaced; was: {})", clean(previous)))
+            );
         }
         writeln!(sink, "{line}")?;
     }
     sink.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nouli_core::identity::Id;
+
+    #[test]
+    fn fact_words_never_act_as_source_or_replacement_annotations() {
+        let root = std::env::temp_dir().join(format!("nouli-fact-paint-{}", Id::generate()));
+        let ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+        let mut fact = Fact {
+            number: 1,
+            records: vec![],
+            key: "fact:x".into(),
+            text: "arrived (from x) (replaced; literally)".into(),
+            alternatives: vec![],
+            turn: Id::generate(),
+            source_session: None,
+            previous: None,
+        };
+        let mut out = Vec::new();
+        facts_text(&ledger, &[fact.clone()], Paint(true), &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "   1  arrived (from x) (replaced; literally)\n"
+        );
+        fact.previous = Some("earlier".into());
+        let mut out = Vec::new();
+        facts_text(&ledger, &[fact], Paint(true), &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            format!(
+                "   1  arrived (from x) (replaced; literally){}\n",
+                Paint(true).apply(DIM, "   (replaced; was: earlier)")
+            )
+        );
+        drop(ledger);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

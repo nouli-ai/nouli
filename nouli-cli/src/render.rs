@@ -191,6 +191,10 @@ pub(crate) fn labelled(
     Ok(())
 }
 
+pub(crate) fn plural(count: usize, noun: &str) -> String {
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
 fn json_value(sink: &mut impl Write, value: &serde_json::Value) -> Result<(), RenderError> {
     serde_json::to_writer(&mut *sink, &value)?;
     sink.write_all(b"\n")?;

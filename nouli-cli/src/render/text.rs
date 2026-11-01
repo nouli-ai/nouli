@@ -19,6 +19,40 @@ pub(crate) fn clean(value: &str) -> String {
         })
         .collect()
 }
+fn absence_name(value: nouli_core::workflow::reference::Absence) -> &'static str {
+    use nouli_core::workflow::reference::Absence;
+    match value {
+        Absence::Interrupted => "Interrupted",
+        Absence::Skipped => "Skipped",
+        Absence::Refused => "Refused",
+        Absence::Failed => "Failed",
+        Absence::Blocked => "Blocked",
+        Absence::MissingField => "MissingField",
+    }
+}
+fn run_status_name(value: nouli_core::workflow::RunStatus) -> &'static str {
+    use nouli_core::workflow::RunStatus;
+    match value {
+        RunStatus::Pending => "Pending",
+        RunStatus::Running => "Running",
+        RunStatus::Completed => "Completed",
+        RunStatus::Partial => "Partial",
+        RunStatus::Failed => "Failed",
+        RunStatus::Interrupted => "Interrupted",
+    }
+}
+fn node_status_name(value: nouli_core::workflow::NodeStatus) -> &'static str {
+    use nouli_core::workflow::NodeStatus;
+    match value {
+        NodeStatus::Pending => "Pending",
+        NodeStatus::Running => "Running",
+        NodeStatus::Completed => "Completed",
+        NodeStatus::Skipped => "Skipped",
+        NodeStatus::Failed => "Failed",
+        NodeStatus::Blocked => "Blocked",
+        NodeStatus::Interrupted => "Interrupted",
+    }
+}
 fn criterion(value: &Criterion) -> String {
     match value {
         Criterion::Text(text) => clean(text),
@@ -132,7 +166,8 @@ fn projection(sink: &mut impl Write, output: &ProjectedOutput) -> Result<(), Ren
         if let ReferenceValue::Absent { reason } = &output.value {
             writeln!(
                 sink,
-                "unavailable ({reason:?}){}",
+                "unavailable ({}){}",
+                absence_name(*reason),
                 if output.required_missing {
                     ", required"
                 } else {
@@ -230,17 +265,22 @@ pub(super) fn result(sink: &mut impl Write, envelope: &ResultEnvelope) -> Result
             match report.run {
                 Some(run) => writeln!(
                     sink,
-                    "Run: {run} ({:?}){}",
-                    report.status,
+                    "Run: {run} ({}){}",
+                    run_status_name(report.status),
                     if report.replayed { " (replayed)" } else { "" }
                 )?,
-                None => writeln!(sink, "Ephemeral run ({:?})", report.status)?,
+                None => writeln!(sink, "Ephemeral run ({})", run_status_name(report.status))?,
             }
             if let Some(session) = report.session {
                 writeln!(sink, "Session: {session}")?;
             }
             for node in &report.nodes {
-                write!(sink, "{}: {:?}", clean(&node.node), node.status)?;
+                write!(
+                    sink,
+                    "{}: {}",
+                    clean(&node.node),
+                    node_status_name(node.status)
+                )?;
                 if let Some(turn) = node.turn {
                     write!(sink, " (turn {turn})")?;
                 }

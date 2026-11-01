@@ -9,12 +9,30 @@ pub(crate) enum Tone {
     Score,
 }
 
-impl Tone {
-    pub(crate) fn for_space(space: &AnswerSpace) -> Self {
+impl From<&AnswerSpace> for Tone {
+    fn from(space: &AnswerSpace) -> Self {
         match space {
             AnswerSpace::Noul => Self::Noul,
             AnswerSpace::Choice { .. } => Self::Choice,
             AnswerSpace::Score { .. } => Self::Score,
+        }
+    }
+}
+
+impl Tone {
+    pub(crate) const ALL: [Self; 3] = [Self::Noul, Self::Choice, Self::Score];
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Noul => "Yes / No",
+            Self::Choice => "Choose one",
+            Self::Score => "Score",
+        }
+    }
+    pub(crate) fn next(self) -> Self {
+        match self {
+            Self::Noul => Self::Choice,
+            Self::Choice => Self::Score,
+            Self::Score => Self::Noul,
         }
     }
 
@@ -46,7 +64,7 @@ impl Tone {
     }
 }
 
-fn true_color() -> bool {
+pub(crate) fn true_color() -> bool {
     std::env::var("COLORTERM")
         .is_ok_and(|value| matches!(value.to_ascii_lowercase().as_str(), "truecolor" | "24bit"))
 }

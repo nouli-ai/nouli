@@ -18,8 +18,7 @@ pub(super) fn lines(width: u16, color: bool, drafting: bool) -> Vec<Line<'static
     }
     let bold = Style::new().add_modifier(Modifier::BOLD);
     // Brand-kit honey, teal, and teal glass, with 256-color equivalents.
-    let rgb = std::env::var("COLORTERM")
-        .is_ok_and(|value| matches!(value.to_ascii_lowercase().as_str(), "truecolor" | "24bit"));
+    let rgb = crate::palette::true_color();
     let tone = |red, green, blue, indexed| {
         if !color {
             bold

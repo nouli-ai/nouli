@@ -265,11 +265,7 @@ struct PreviousQuestion {
 
 impl PreviousQuestion {
     fn kind(&self) -> Kind {
-        match self.question.answer_space {
-            AnswerSpace::Noul => Kind::Noul,
-            AnswerSpace::Choice { .. } => Kind::Choice,
-            AnswerSpace::Score { .. } => Kind::Score,
-        }
+        Kind::from(&self.question.answer_space)
     }
 }
 

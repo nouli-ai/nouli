@@ -4,7 +4,7 @@
 //! label field, a 20-cell bar, and the probability to two decimals. Color only
 //! styles a row; turning it off never changes the layout.
 
-use super::{RenderError, clean};
+use super::{RenderError, clean, plural};
 use nouli_core::{
     decision::{AnswerSpace, ChoiceOption, Criterion, Question},
     outcome::{Answer, OptionProbability, QuestionOutcome, outcome_for, probability_of},
@@ -41,9 +41,6 @@ pub(crate) struct Header {
 
 impl Header {
     pub(crate) fn text(&self) -> String {
-        let plural = |count: usize, noun: &str| {
-            format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
-        };
         let mut parts = vec![match self.turn {
             Some(turn) => format!("turn {turn}"),
             None => "(not saved)".into(),
@@ -316,7 +313,7 @@ fn question_rows(
         paint,
         layout,
         lead: &lead,
-        accent: crate::palette::Tone::for_space(&question.answer_space).ansi(),
+        accent: crate::palette::Tone::from(&question.answer_space).ansi(),
     };
     match (&question.answer_space, answer) {
         (
