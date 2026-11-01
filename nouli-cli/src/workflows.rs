@@ -227,12 +227,6 @@ async fn execute(
 }
 pub(crate) fn run(command: &Command, settings: &Settings, format: Format) -> u8 {
     if let Command::Show { run } = command {
-        if format == Format::Jsonl {
-            return output_error(
-                crate::inspect::input_error("Workflow inspection supports text, JSON, or TOON"),
-                format,
-            );
-        }
         let result = Ledger::open(&settings.store, OpenMode::ReadOnlyExisting)
             .map_err(crate::inspect::InspectError::from)
             .and_then(|ledger| {
