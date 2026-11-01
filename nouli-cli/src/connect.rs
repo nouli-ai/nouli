@@ -715,17 +715,8 @@ pub(crate) fn startup(
     selection: &mut ModelSelection,
 ) -> Result<(), SetupError> {
     use nouli_core::config::resolve::RuntimeOverrides;
-    if selection
-        .provider
-        .as_ref()
-        .or(settings.config.default_provider.as_ref())
-        .is_none()
-        || selection
-            .model
-            .as_ref()
-            .or(settings.config.default_model.as_ref())
-            .is_none()
-    {
+    let selected = crate::selection::model(Some(&settings.config), &[selection]);
+    if selected.provider.is_none() || selected.model.is_none() {
         *selection = pick_model(settings, selection.provider.as_deref().unwrap_or(""))?;
     }
     let overrides = RuntimeOverrides {

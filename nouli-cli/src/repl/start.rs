@@ -188,7 +188,7 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
         if let Some(ledger) = ledger {
             match ledger.session(selector) {
                 Ok(session) => {
-                    model = nouli_core::config::resolve::select_model(&[&model, &session.defaults]);
+                    model = crate::selection::model(None, &[&model, &session.defaults]);
                 }
                 Err(SessionError::UnknownSession) => {}
                 Err(error) => return render_error(args, settings.config.output, error.report()),

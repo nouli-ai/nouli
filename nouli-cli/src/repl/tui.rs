@@ -1362,12 +1362,10 @@ impl<'a> App<'a> {
             })
             .map(|session| session.defaults)
             .unwrap_or_default();
-        let defaults = ModelSelection {
-            provider: self.repl.settings.config.default_provider.clone(),
-            model: self.repl.settings.config.default_model.clone(),
-        };
-        self.selected_model =
-            nouli_core::config::resolve::select_model(&[&self.repl.model, &session, &defaults]);
+        self.selected_model = crate::selection::model(
+            Some(&self.repl.settings.config),
+            &[&self.repl.model, &session],
+        );
         self.model = None;
     }
 

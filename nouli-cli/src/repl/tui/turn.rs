@@ -175,17 +175,10 @@ impl<'a> App<'a> {
                 _ => ModelSelection::default(),
             }
         };
-        let settings = &self.repl.settings;
-        let defaults = ModelSelection {
-            provider: settings.config.default_provider.clone(),
-            model: settings.config.default_model.clone(),
-        };
-        nouli_core::config::resolve::select_model(&[
-            &draft.common_model,
-            &draft.request.model,
-            &session,
-            &defaults,
-        ])
+        crate::selection::model(
+            Some(&self.repl.settings.config),
+            &[&draft.common_model, &draft.request.model, &session],
+        )
     }
 
     /// The turn as a future the loop polls, cancelled through its token.
