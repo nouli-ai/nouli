@@ -359,34 +359,46 @@ fn default_model_budget_works_and_competing_file_modes_fail_before_inference() {
     assert_eq!(before_count(&home), 2);
 }
 
-#[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
-fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_later_or_unrelated_work()
- {
-    use nouli_core::{
-        history::Representation,
-        identity::SessionSelector,
-        storage::inspection::{ContextView, SessionExport, TurnInspection},
-    };
-    let server = Server::with_handler(harness::typesafe);
-    let home = Home::create();
-    home.configure(&server, "typesafe", true);
-    let keyed = |args: &[&str]| {
-        home.command()
-            .args(args)
-            .env("NOULI_FIXTURE_KEY", "EXPORT_PRIVATE_TOKEN")
-            .output()
-            .unwrap()
-    };
-    let pinned = ContextRecord {
+fn context_record(key: &str, value: serde_json::Value, kind: ContextKind) -> ContextRecord {
+    ContextRecord {
         id: Id::generate(),
-        key: "budget".into(),
-        value: Data::new(serde_json::json!(8)).unwrap(),
-        kind: ContextKind::Commitment,
-    };
+        key: key.into(),
+        value: Data::new(value).unwrap(),
+        kind,
+    }
+}
+fn ledger_bytes(home: &Home) -> Vec<u8> {
+    std::fs::read(home.store().join("ledger.sqlite3")).unwrap()
+}
+/// The engine events a `--jsonl` command wrote, checked to form a valid stream.
+fn jsonl_events(output: &std::process::Output) -> Vec<nouli_core::protocol::EngineEvent> {
+    let events = String::from_utf8(output.stdout.clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect::<Vec<_>>();
+    nouli_core::protocol::validate_events(&events).unwrap();
+    events
+}
+/// Runs a command with the provider credential in its environment.
+fn keyed(home: &Home, args: &[&str]) -> std::process::Output {
+    home.command()
+        .args(args)
+        .env("NOULI_FIXTURE_KEY", "EXPORT_PRIVATE_TOKEN")
+        .output()
+        .unwrap()
+}
+/// The sessions of a diamond: a `Root` with a pinned budget and a large state,
+/// `Left` and `Right` branches from it, and their compacted `Diamond` blend.
+struct Diamond {
+    pinned: ContextRecord,
+    original: String,
+    root: nouli_core::protocol::TurnReport,
+    blend: nouli_core::protocol::TurnReport,
+}
+fn diamond(home: &Home) -> Diamond {
+    use nouli_core::history::Representation;
+    let pinned = context_record("budget", serde_json::json!(8), ContextKind::Commitment);
     let original = "ARCHIVED_EVIDENCE_".repeat(3000);
     let root = home.request(
         "root.json",
@@ -397,33 +409,34 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             },
         }],
     );
-    let root = report(&keyed(&["new", "Root", "--input", root.to_str().unwrap()]));
-    let mut branches = vec![];
+    let root = report(&keyed(
+        home,
+        &["new", "Root", "--input", root.to_str().unwrap()],
+    ));
     for (name, kind) in [
         ("Left", ContextKind::Evidence),
         ("Right", ContextKind::Commitment),
     ] {
-        let record = ContextRecord {
-            id: Id::generate(),
-            key: name.to_lowercase(),
-            value: Data::new(serde_json::json!(name)).unwrap(),
-            kind,
-        };
+        let record = context_record(&name.to_lowercase(), serde_json::json!(name), kind);
         let path = home.request(
             &format!("{name}.json"),
             name,
             vec![ContextUpdate::Append { record }],
         );
-        branches.push(report(&keyed(&[
-            "new",
-            name,
-            "--from",
-            &root.session.unwrap().to_string(),
-            "--input",
-            path.to_str().unwrap(),
-        ])));
+        report(&keyed(
+            home,
+            &[
+                "new",
+                name,
+                "--from",
+                &root.session.unwrap().to_string(),
+                "--input",
+                path.to_str().unwrap(),
+            ],
+        ));
     }
     let blend = report(&keyed(
+        home,
         &[
             &[
                 "new", "Diamond", "BLENDED", "--from", "Left", "--from", "Right",
@@ -441,10 +454,27 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             .any(|record| record.record == root.turn.unwrap()
                 && record.representation != Representation::Full)
     );
+    Diamond {
+        pinned,
+        original,
+        root,
+        blend,
+    }
+}
+#[test]
+fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_later_or_unrelated_work()
+ {
+    use nouli_core::{identity::SessionSelector, storage::inspection::SessionExport};
+    let server = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    home.configure(&server, "typesafe", true);
+    let diamond = diamond(&home);
     report(&keyed(
+        &home,
         &[&["add", "Root", "AFTER_CAPTURE"][..], &QUESTION].concat(),
     ));
     report(&keyed(
+        &home,
         &[
             &["new", "Unrelated", "UNRELATED_PRIVATE_STATE"][..],
             &QUESTION,
@@ -452,7 +482,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         .concat(),
     ));
     let count = server.count();
-    let before = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    let before = ledger_bytes(&home);
     // A changed/invalid provider profile must not block store-only inspection.
     let config = std::fs::read_to_string(home.0.join("config.toml"))
         .unwrap()
@@ -469,29 +499,65 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let export: SessionExport = serde_json::from_slice(&output.stdout).unwrap();
+    assert_export_keeps_captured_originals(&export, &diamond);
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(!json.contains("AFTER_CAPTURE"));
+    assert!(!json.contains("UNRELATED_PRIVATE_STATE"));
+    assert!(json.contains("NOULI_FIXTURE_KEY"));
+    assert!(!json.contains("EXPORT_PRIVATE_TOKEN"));
+    let toon = home.run(["sessions", "export", "Diamond", "--format", "toon"]);
+    assert!(toon.status.success());
+    let decoded: SessionExport = codec::decode(&toon.stdout, codec::InputFormat::Toon).unwrap();
+    assert_eq!(decoded, export);
+    assert_turn_context_is_the_blend_own(&home, &diamond);
+    let list = home.run(["sessions", "list", "--format", "text"]);
+    assert!(list.status.success());
+    let text = String::from_utf8(list.stdout).unwrap();
+    assert!(text.contains("Diamond"));
+    assert!(text.contains("Unrelated"));
+    let shown = home.run(["sessions", "show", "Diamond", "--format", "text"]);
+    assert!(shown.status.success());
+    assert!(
+        String::from_utf8(shown.stdout)
+            .unwrap()
+            .contains("context_toon")
+    );
+    assert!(
+        before == ledger_bytes(&home),
+        "Read-only operations changed ledger bytes"
+    );
+    assert_eq!(server.count(), count);
+    let reopened = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    assert_eq!(
+        reopened
+            .export_session(&SessionSelector::Id(diamond.blend.session.unwrap()))
+            .unwrap(),
+        export
+    );
+}
+/// The export holds each captured turn once, the root turn with its original
+/// uncompacted request, and the blend's resolved context.
+fn assert_export_keeps_captured_originals(
+    export: &nouli_core::storage::inspection::SessionExport,
+    diamond: &Diamond,
+) {
+    use nouli_core::storage::inspection::ContextView;
+    let root = diamond.root.turn.unwrap();
     assert_eq!(export.turns.len(), 4);
     assert_eq!(export.provenance.len(), 4);
-    assert_eq!(export.session.id, blend.session.unwrap());
+    assert_eq!(export.session.id, diamond.blend.session.unwrap());
     assert_eq!(export.sources.len(), 2);
     assert_eq!(
-        export
-            .turns
-            .iter()
-            .filter(|turn| turn.id == root.turn.unwrap())
-            .count(),
+        export.turns.iter().filter(|turn| turn.id == root).count(),
         1
     );
-    let saved = export
-        .turns
-        .iter()
-        .find(|turn| turn.id == root.turn.unwrap())
-        .unwrap();
+    let saved = export.turns.iter().find(|turn| turn.id == root).unwrap();
     assert!(
         saved
             .request
             .state
             .iter()
-            .any(|input| matches!(input,Input::Text {text} if text==&original))
+            .any(|input| matches!(input,Input::Text {text} if text==&diamond.original))
     );
     assert_eq!(
         saved.request.questions[0].answer_space,
@@ -501,7 +567,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         saved.request.questions[2].answer_space,
         turn().questions[2].answer_space
     );
-    assert_eq!(saved.outcome.outcomes, root.outcome.outcomes);
+    assert_eq!(saved.outcome.outcomes, diamond.root.outcome.outcomes);
     let ContextView::Resolved { records } = &export.context else {
         panic!("resolved context")
     };
@@ -510,7 +576,7 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
     assert!(
         records
             .iter()
-            .any(|record| record.record.id == pinned.id && record.pinned)
+            .any(|record| record.record.id == diamond.pinned.id && record.pinned)
     );
     assert_eq!(
         records
@@ -529,22 +595,17 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
             .iter()
             .any(|record| record.record.kind == ContextKind::Commitment)
     );
-    let json = String::from_utf8(output.stdout).unwrap();
-    assert!(!json.contains("AFTER_CAPTURE"));
-    assert!(!json.contains("UNRELATED_PRIVATE_STATE"));
-    assert!(json.contains("NOULI_FIXTURE_KEY"));
-    assert!(!json.contains("EXPORT_PRIVATE_TOKEN"));
     assert_eq!(export.attempts.len(), 4);
     assert_eq!(export.requests.len(), 4);
-    let toon = home.run(["sessions", "export", "Diamond", "--format", "toon"]);
-    assert!(toon.status.success());
-    let decoded: SessionExport = codec::decode(&toon.stdout, codec::InputFormat::Toon).unwrap();
-    assert_eq!(decoded, export);
+}
+/// `context` shows the blend turn as dispatched, and refuses a turn the
+/// session only inherited.
+fn assert_turn_context_is_the_blend_own(home: &Home, diamond: &Diamond) {
     let context = home.run([
         "context",
         "Diamond",
         "--turn",
-        &blend.turn.unwrap().to_string(),
+        &diamond.blend.turn.unwrap().to_string(),
         "--json",
     ]);
     assert!(
@@ -554,42 +615,19 @@ fn readonly_diamond_exports_preserve_originals_after_compaction_and_exclude_late
         String::from_utf8_lossy(&context.stdout),
         String::from_utf8_lossy(&context.stderr)
     );
-    let context: TurnInspection = serde_json::from_slice(&context.stdout).unwrap();
-    assert_eq!(context.turn.manifest, blend.manifest);
+    let context: nouli_core::storage::inspection::TurnInspection =
+        serde_json::from_slice(&context.stdout).unwrap();
+    assert_eq!(context.turn.manifest, diamond.blend.manifest);
     assert_eq!(context.attempts.len(), 1);
-    assert_eq!(context.turn.outcome.usage, blend.outcome.usage);
+    assert_eq!(context.turn.outcome.usage, diamond.blend.outcome.usage);
     let foreign = home.run([
         "context",
         "Diamond",
         "--turn",
-        &root.turn.unwrap().to_string(),
+        &diamond.root.turn.unwrap().to_string(),
         "--json",
     ]);
     assert_eq!(foreign.status.code(), Some(2));
-    let list = home.run(["sessions", "list", "--format", "text"]);
-    assert!(list.status.success());
-    let text = String::from_utf8(list.stdout).unwrap();
-    assert!(text.contains("Diamond"));
-    assert!(text.contains("Unrelated"));
-    let shown = home.run(["sessions", "show", "Diamond", "--format", "text"]);
-    assert!(shown.status.success());
-    assert!(
-        String::from_utf8(shown.stdout)
-            .unwrap()
-            .contains("context_toon")
-    );
-    assert!(
-        before == std::fs::read(home.store().join("ledger.sqlite3")).unwrap(),
-        "Read-only operations changed ledger bytes"
-    );
-    assert_eq!(server.count(), count);
-    let reopened = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    assert_eq!(
-        reopened
-            .export_session(&SessionSelector::Id(blend.session.unwrap()))
-            .unwrap(),
-        export
-    );
 }
 #[test]
 fn inspection_missing_store_never_creates_files_or_requires_provider_settings() {
@@ -644,15 +682,8 @@ fn readonly_inspection_rejects_newer_and_migration_required_stores_without_chang
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_outputs() {
-    use nouli_core::{
-        protocol::{EngineEvent, EventKind, validate_events},
-        workflow::{NodeStatus, RunStatus},
-    };
+    use nouli_core::workflow::{NodeStatus, RunStatus};
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -682,75 +713,14 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     );
     assert!(result.nodes[4].turn.is_some());
     assert_eq!(server.count(), 4);
-    let bytes = std::fs::read(home.store().join("ledger.sqlite3")).unwrap();
-    let output = home.run([
-        "workflow",
-        "show",
-        &result.run.unwrap().to_string(),
-        "--format",
-        "toon",
-    ]);
-    assert!(output.status.success());
-    let shown: nouli_core::storage::workflows::recovery::WorkflowInspection =
-        codec::decode(&output.stdout, codec::InputFormat::Toon).unwrap();
-    assert_eq!(shown.rounds.len(), 1);
-    assert!(
-        shown
-            .inspection
-            .run
-            .frozen
-            .settings
-            .iter()
-            .all(|settings| settings.execution.max_parallel == 2)
-    );
-    assert_eq!(shown.inspection.run.nodes[2].status, NodeStatus::Skipped);
-    assert_eq!(before_count(&home), 1);
-    let replay = home.run([
-        "workflow",
-        "resume",
-        &result.run.unwrap().to_string(),
-        "--jsonl",
-    ]);
-    assert!(replay.status.success());
-    let events = String::from_utf8(replay.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
-    assert_eq!(events.len(), 2);
-    assert!(
-        matches!(&events.last().unwrap().event,EventKind::Terminal {result} if matches!(&result.result,Report::Run(report) if report.replayed))
-    );
+    let bytes = ledger_bytes(&home);
+    let run = result.run.unwrap();
+    assert_show_keeps_frozen_settings_and_skipped_node(&home, run);
+    assert_resume_of_a_completed_run_replays(&home, run);
     assert_eq!(server.count(), 4);
-    let ephemeral = home.run([
-        "workflow",
-        "run",
-        file.to_str().unwrap(),
-        "--from",
-        "Travel",
-        "--no-session",
-        "--jsonl",
-    ]);
-    assert!(ephemeral.status.success());
-    let events = String::from_utf8(ephemeral.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
-    assert!(events.iter().all(|event| event.run.is_none()));
+    assert_ephemeral_run_from_a_session_saves_nothing(&home, &file);
     assert!(
-        events
-            .iter()
-            .filter_map(|event| match &event.event {
-                EventKind::NodeState { turn, .. } => Some(turn),
-                _ => None,
-            })
-            .all(Option::is_none)
-    );
-    assert!(
-        bytes == std::fs::read(home.store().join("ledger.sqlite3")).unwrap(),
+        bytes == ledger_bytes(&home),
         "Read-only operations changed ledger bytes"
     );
     let fresh = home.0.join("fresh-workflow-store");
@@ -766,6 +736,62 @@ fn workflow_cli_conditional_join_streaming_and_ephemeral_paths_keep_typed_output
     assert!(result.run.is_none());
     assert!(!fresh.exists());
 }
+fn assert_show_keeps_frozen_settings_and_skipped_node(home: &Home, run: Id) {
+    let output = home.run(["workflow", "show", &run.to_string(), "--format", "toon"]);
+    assert!(output.status.success());
+    let shown: nouli_core::storage::workflows::recovery::WorkflowInspection =
+        codec::decode(&output.stdout, codec::InputFormat::Toon).unwrap();
+    assert_eq!(shown.rounds.len(), 1);
+    assert!(
+        shown
+            .inspection
+            .run
+            .frozen
+            .settings
+            .iter()
+            .all(|settings| settings.execution.max_parallel == 2)
+    );
+    assert_eq!(
+        shown.inspection.run.nodes[2].status,
+        nouli_core::workflow::NodeStatus::Skipped
+    );
+    assert_eq!(before_count(home), 1);
+}
+fn assert_resume_of_a_completed_run_replays(home: &Home, run: Id) {
+    use nouli_core::protocol::EventKind;
+    let replay = home.run(["workflow", "resume", &run.to_string(), "--jsonl"]);
+    assert!(replay.status.success());
+    let events = jsonl_events(&replay);
+    assert_eq!(events.len(), 2);
+    assert!(
+        matches!(&events.last().unwrap().event,EventKind::Terminal {result} if matches!(&result.result,Report::Run(report) if report.replayed))
+    );
+}
+/// A `--no-session` run from `Travel` reports no run and no node turns.
+fn assert_ephemeral_run_from_a_session_saves_nothing(home: &Home, file: &std::path::Path) {
+    use nouli_core::protocol::EventKind;
+    let ephemeral = home.run([
+        "workflow",
+        "run",
+        file.to_str().unwrap(),
+        "--from",
+        "Travel",
+        "--no-session",
+        "--jsonl",
+    ]);
+    assert!(ephemeral.status.success());
+    let events = jsonl_events(&ephemeral);
+    assert!(events.iter().all(|event| event.run.is_none()));
+    assert!(
+        events
+            .iter()
+            .filter_map(|event| match &event.event {
+                EventKind::NodeState { turn, .. } => Some(turn),
+                _ => None,
+            })
+            .all(Option::is_none)
+    );
+}
 fn before_count(home: &Home) -> usize {
     Ledger::open(&home.store(), OpenMode::ReadOnlyExisting)
         .unwrap()
@@ -773,36 +799,76 @@ fn before_count(home: &Home) -> usize {
         .unwrap()
         .len()
 }
-#[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
-fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_completed_siblings() {
-    use nouli_core::{
-        context::PinTarget,
-        protocol::{EngineEvent, EventKind, validate_events},
-        workflow::{NodeStatus, RunStatus},
-    };
-    let fail = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let failed = fail.clone();
-    let server = Server::with_handler(move |body| {
+/// A provider whose first request for the `high` node fails with a 503.
+fn high_fails_once() -> Server {
+    let fail = std::sync::atomic::AtomicBool::new(true);
+    Server::with_handler(move |body| {
         if body["state"].as_str().unwrap().contains("NODE:high")
-            && failed.swap(false, std::sync::atomic::Ordering::SeqCst)
+            && fail.swap(false, std::sync::atomic::Ordering::SeqCst)
         {
             (503, "{}".into())
         } else {
             harness::typesafe(body)
         }
-    });
+    })
+}
+/// Adds the model aliases that the partial run freezes to the local provider.
+fn add_frozen_model_aliases(home: &Home) {
+    let config_path = home.0.join("config.toml");
+    let mut config = std::fs::read_to_string(&config_path).unwrap();
+    for model in ["high-frozen-alias", "run-frozen-alias"] {
+        write!(
+            config,
+            "\n[providers.local.models.'{model}']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n"
+        )
+        .unwrap();
+    }
+    std::fs::write(config_path, config).unwrap();
+}
+/// After the run is captured: supersedes the source's budget, breaks the
+/// workflow file, and removes the provider and model the run used. Returns the
+/// replacement budget.
+fn change_everything_the_run_froze(
+    home: &Home,
+    source: &nouli_core::protocol::TurnReport,
+    budget: &ContextRecord,
+    file: &std::path::Path,
+) -> ContextRecord {
+    let replacement = context_record("budget", serde_json::json!(12), ContextKind::Commitment);
+    let change = home.request(
+        "source-change.json",
+        "SOURCE_AFTER",
+        vec![ContextUpdate::Supersede {
+            targets: vec![budget.id],
+            replacement: replacement.clone(),
+            pinned: None,
+        }],
+    );
+    report(&home.run([
+        "add",
+        &source.session.unwrap().to_string(),
+        "--input",
+        change.to_str().unwrap(),
+    ]));
+    std::fs::write(file, "edited invalid workflow").unwrap();
+    let config = std::fs::read_to_string(home.0.join("config.toml"))
+        .unwrap()
+        .replace("typesafe", "removed-protocol")
+        .replace("offline", "changed-model");
+    std::fs::write(home.0.join("config.toml"), config).unwrap();
+    replacement
+}
+#[test]
+fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_completed_siblings() {
+    use nouli_core::{
+        context::PinTarget,
+        protocol::EventKind,
+        workflow::{NodeStatus, RunStatus},
+    };
+    let server = high_fails_once();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
-    let budget = ContextRecord {
-        id: Id::generate(),
-        key: "budget".into(),
-        value: Data::new(serde_json::json!(8)).unwrap(),
-        kind: ContextKind::Commitment,
-    };
+    let budget = context_record("budget", serde_json::json!(8), ContextKind::Commitment);
     let seed = home.request(
         "seed.json",
         "SOURCE_BEFORE",
@@ -817,16 +883,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     definition.nodes[1].when = None;
     definition.nodes[2].when = None;
     definition.nodes[1].model.model = Some("high-frozen-alias".into());
-    let config_path = home.0.join("config.toml");
-    let mut config = std::fs::read_to_string(&config_path).unwrap();
-    for model in ["high-frozen-alias", "run-frozen-alias"] {
-        write!(
-            config,
-            "\n[providers.local.models.'{model}']\ncontext_budget_tokens=100000\nreserved_output_tokens=128\n"
-        )
-        .unwrap();
-    }
-    std::fs::write(config_path, config).unwrap();
+    add_frozen_model_aliases(&home);
     let file = home.0.join("parallel.json");
     std::fs::write(&file, serde_json::to_vec(&definition).unwrap()).unwrap();
     let partial = run_report(
@@ -849,33 +906,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     assert_eq!(partial.nodes[1].status, NodeStatus::Failed);
     assert_eq!(partial.nodes[2].status, NodeStatus::Completed);
     let run = partial.run.unwrap();
-    let replacement = ContextRecord {
-        id: Id::generate(),
-        key: "budget".into(),
-        value: Data::new(serde_json::json!(12)).unwrap(),
-        kind: ContextKind::Commitment,
-    };
-    let change = home.request(
-        "source-change.json",
-        "SOURCE_AFTER",
-        vec![ContextUpdate::Supersede {
-            targets: vec![budget.id],
-            replacement: replacement.clone(),
-            pinned: None,
-        }],
-    );
-    report(&home.run([
-        "add",
-        &source.session.unwrap().to_string(),
-        "--input",
-        change.to_str().unwrap(),
-    ]));
-    std::fs::write(&file, "edited invalid workflow").unwrap();
-    let config = std::fs::read_to_string(home.0.join("config.toml"))
-        .unwrap()
-        .replace("typesafe", "removed-protocol")
-        .replace("offline", "changed-model");
-    std::fs::write(home.0.join("config.toml"), config).unwrap();
+    let replacement = change_everything_the_run_froze(&home, &source, &budget, &file);
     let before = server.count();
     let resumed = home.run(["workflow", "resume", &run.to_string(), "--jsonl"]);
     assert!(
@@ -884,12 +915,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
         String::from_utf8_lossy(&resumed.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&resumed.stderr), "");
-    let events = String::from_utf8(resumed.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
+    let events = jsonl_events(&resumed);
     let EventKind::Terminal { result } = &events.last().unwrap().event else {
         panic!("terminal")
     };
@@ -925,17 +951,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
 #[test]
 fn workflow_resume_rejects_advanced_head_and_invalid_modes_before_dispatch() {
     use nouli_core::workflow::NodeStatus;
-    let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let fail = failed.clone();
-    let server = Server::with_handler(move |body| {
-        if body["state"].as_str().unwrap().contains("NODE:high")
-            && fail.swap(false, std::sync::atomic::Ordering::SeqCst)
-        {
-            (503, "{}".into())
-        } else {
-            harness::typesafe(body)
-        }
-    });
+    let server = high_fails_once();
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     let file = home.0.join("workflow.json");
