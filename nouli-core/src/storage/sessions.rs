@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use super::{Ledger, StorageError, sql_error};
 use crate::{
-    history::{HistoryEvent, ModelSelection, SourcePoint},
+    history::{HistoryEvent, ModelSelection, SessionSelection, SourcePoint},
     identity::{Id, SessionName, SessionSelector},
 };
 
@@ -34,6 +34,54 @@ pub enum SessionError {
     InvalidDefaults,
     #[error(transparent)]
     Storage(#[from] StorageError),
+}
+
+/// A resolved target identity; new sessions are inserted only in the caller's transaction.
+pub(super) struct Target {
+    pub id: Id,
+    name: Option<SessionName>,
+    new: bool,
+}
+
+pub(super) fn target(
+    ledger: &Ledger,
+    selection: &SessionSelection,
+) -> Result<Target, SessionError> {
+    let (id, name, new) = match selection {
+        SessionSelection::Continue { session } => (ledger.session(session)?.id, None, false),
+        SessionSelection::New { name } | SessionSelection::From { name, .. } => {
+            (Id::generate(), name.clone(), true)
+        }
+    };
+    Ok(Target { id, name, new })
+}
+
+pub(super) fn open_target<E>(
+    transaction: &rusqlite::Transaction<'_>,
+    target: Target,
+    selection: &SessionSelection,
+    defaults: ModelSelection,
+) -> Result<(Session, Vec<SourcePoint>), E>
+where
+    E: From<SessionError> + From<super::sources::SourceError>,
+{
+    let mut current = if target.new {
+        Session {
+            id: target.id,
+            name: target.name,
+            defaults,
+            frontier: vec![],
+            revision: 0,
+        }
+    } else {
+        read_session(transaction, &SessionSelector::Id(target.id)).map_err(E::from)?
+    };
+    let sources =
+        super::sources::resolve_selection(transaction, selection, &current).map_err(E::from)?;
+    if target.new {
+        insert_session(transaction, &mut current, &sources).map_err(E::from)?;
+    }
+    Ok((current, sources))
 }
 
 type Row = (String, Option<String>, String, String, i64);

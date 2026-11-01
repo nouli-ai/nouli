@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    Ledger, StorageError,
+    Ledger, StorageError, freeze_settings, freeze_store,
     guards::{self, FileGuard, GuardError, SessionGuard},
     reservations::{self, ReservationKind, ReservationState},
-    sessions::{Session, SessionError, insert_session, read_session},
+    sessions::{self, SessionError},
     sql_error,
     turns::{self, AttemptInput, AttemptProgress, AttemptStatus, PreparedAttempt, TurnError},
 };
@@ -459,7 +459,9 @@ impl Ledger {
         if retry {
             return Err(ReplayError::UnknownRequest);
         }
-        let settings = self.freeze_settings(settings.ok_or(StorageError::Payload)?)?;
+        let mut settings = settings.ok_or(StorageError::Payload)?;
+        freeze_settings(&settings).map_err(|_| StorageError::Payload)?;
+        settings.store = freeze_store(self, "freeze store path")?;
         self.reserve_new_request(request, key, &hash, settings, request_guard)
     }
 
@@ -510,29 +512,6 @@ impl Ledger {
         Ok(accepted(key, saved.frozen, guard, request_guard))
     }
 
-    /// Validates the submitted settings and pins the store to this ledger's
-    /// canonical directory.
-    fn freeze_settings(
-        &self,
-        mut settings: SettingsSnapshot,
-    ) -> Result<SettingsSnapshot, StorageError> {
-        settings
-            .profile
-            .validate()
-            .map_err(|_| StorageError::Payload)?;
-        settings
-            .execution
-            .validate()
-            .map_err(|_| StorageError::Payload)?;
-        settings.store = std::fs::canonicalize(self.path().parent().ok_or(StorageError::Payload)?)
-            .map_err(|source| StorageError::Io {
-                operation: "freeze store path",
-                path: self.path().to_owned(),
-                source,
-            })?;
-        Ok(settings)
-    }
-
     /// Reserves a request ID that has never been used: resolves or creates the
     /// target session, captures its sources, and saves the frozen request.
     fn reserve_new_request(
@@ -543,34 +522,20 @@ impl Ledger {
         settings: SettingsSnapshot,
         request_guard: FileGuard,
     ) -> Result<RequestDecision, ReplayError> {
-        let (id, name, new) = match &request.session {
-            SessionSelection::Continue { session } => (self.session(session)?.id, None, false),
-            SessionSelection::New { name } | SessionSelection::From { name, .. } => {
-                (Id::generate(), name.clone(), true)
-            }
-        };
+        let target = sessions::target(self, &request.session)?;
+        let id = target.id;
         let guard = guards::acquire_session(self, id)?;
         let frozen =
             self.transaction::<_, ReplayError>("accept unique request", |transaction| {
-                let mut current = if new {
-                    Session {
-                        id,
-                        name,
-                        defaults: ModelSelection {
-                            provider: Some(settings.profile_name.clone()),
-                            model: Some(settings.profile.model.clone()),
-                        },
-                        frontier: vec![],
-                        revision: 0,
-                    }
-                } else {
-                    read_session(transaction, &SessionSelector::Id(id))?
-                };
-                let captured =
-                    super::sources::resolve_selection(transaction, &request.session, &current)?;
-                if new {
-                    insert_session(transaction, &mut current, &captured)?;
-                }
+                let (current, captured) = sessions::open_target::<ReplayError>(
+                    transaction,
+                    target,
+                    &request.session,
+                    ModelSelection {
+                        provider: Some(settings.profile_name.clone()),
+                        model: Some(settings.profile.model.clone()),
+                    },
+                )?;
                 let frozen = FrozenRequest {
                     request: request.clone(),
                     settings,

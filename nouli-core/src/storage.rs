@@ -78,6 +78,28 @@ pub(super) fn sql_error(operation: &'static str, error: &rusqlite::Error) -> Sto
     }
 }
 
+/// Validate frozen settings without choosing a caller's error category.
+fn freeze_settings(
+    settings: &crate::config::resolve::SettingsSnapshot,
+) -> Result<(), crate::config::ConfigError> {
+    settings.profile.validate()?;
+    settings.execution.validate()?;
+    Ok(())
+}
+
+fn freeze_store(
+    ledger: &Ledger,
+    operation: &'static str,
+) -> Result<std::path::PathBuf, StorageError> {
+    std::fs::canonicalize(ledger.path().parent().ok_or(StorageError::Payload)?).map_err(|source| {
+        StorageError::Io {
+            operation,
+            path: ledger.path().to_owned(),
+            source,
+        }
+    })
+}
+
 pub struct Ledger {
     connection: Connection,
     path: PathBuf,

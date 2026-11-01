@@ -4,11 +4,11 @@ pub mod events;
 pub mod nodes;
 pub mod recovery;
 use super::{
-    Ledger, StorageError,
+    Ledger, StorageError, freeze_settings, freeze_store,
     guards::{self, FileGuard, GuardError, RunGuard, SessionGuard},
     reservations,
-    sessions::{self, Session, SessionError},
-    sources::{self, SourceError},
+    sessions::{self, SessionError},
+    sources::SourceError,
     sql_error,
     turns::TurnError,
 };
@@ -17,7 +17,7 @@ use crate::{
     config::resolve::SettingsSnapshot,
     data::Data,
     history::{HistoryError, ModelSelection, SessionSelection, base::ContextBase},
-    identity::{Id, SessionSelector},
+    identity::Id,
     workflow::{
         NodeStatus, RunStatus, WorkflowRequest,
         compile::{self, CompileError},
@@ -26,7 +26,7 @@ use crate::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fs};
+use std::collections::HashSet;
 use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
@@ -485,37 +485,18 @@ impl Ledger {
             return Err(WorkflowError::Snapshot);
         }
         sessions::validate_defaults(&defaults)?;
-        let store = fs::canonicalize(self.path().parent().ok_or(StorageError::Payload)?).map_err(
-            |source| StorageError::Io {
-                operation: "freeze workflow store",
-                path: self.path().to_owned(),
-                source,
-            },
-        )?;
+        let store = freeze_store(self, "freeze workflow store")?;
         for setting in &mut settings {
-            setting
-                .profile
-                .validate()
-                .map_err(|_| WorkflowError::Snapshot)?;
-            setting
-                .execution
-                .validate()
-                .map_err(|_| WorkflowError::Snapshot)?;
+            freeze_settings(setting).map_err(|_| WorkflowError::Snapshot)?;
             setting.store.clone_from(&store);
         }
-        let (session, name, new) = match &request.session {
-            SessionSelection::Continue { session } => (self.session(session)?.id, None, false),
-            SessionSelection::New { name } | SessionSelection::From { name, .. } => {
-                (Id::generate(), name.clone(), true)
-            }
-        };
+        let target = sessions::target(self, &request.session)?;
+        let session = target.id;
         let session_guard = guards::acquire_session(self, session)?;
         let run = Id::generate();
         let run_guard = self.run_guard(run)?;
         let definition=self.transaction::<_,WorkflowError>("accept frozen workflow",|tx| {
-            let mut current=if new {Session {id:session,name,defaults:defaults.clone(),frontier:vec![],revision:0}} else {sessions::read_session(tx,&SessionSelector::Id(session))?};
-            let sources=sources::resolve_selection(tx,&request.session,&current)?;
-            if new {sessions::insert_session(tx,&mut current,&sources)?;}
+            let (current, sources) = sessions::open_target::<WorkflowError>(tx, target, &request.session, defaults.clone())?;
             let base=ContextBase {id:run,session,sources,state:request.workflow.state.clone(),updates:request.updates.clone(),runtime_only:false};
             let definition=WorkflowDefinition {run,session,request:request.clone(),base,defaults,initial_frontier:current.frontier.clone(),initial_revision:current.revision,plan:Data::new(codec::to_value(&plan).map_err(|_|WorkflowError::Snapshot)?).map_err(|_|WorkflowError::Snapshot)?};
             reservations::insert_workflow(tx, session, key, &hash, session_guard.owner, &Self::encode_payload(&run)?)?;
@@ -554,7 +535,7 @@ mod tests {
             schedule::project_outputs,
         },
     };
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
     struct Store(PathBuf);
     impl Store {
         fn new() -> Self {
