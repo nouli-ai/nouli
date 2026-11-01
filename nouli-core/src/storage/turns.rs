@@ -452,11 +452,11 @@ impl Ledger {
         turn.validate()?;
         let payload = Self::encode_payload(&turn)?;
         let frontier = Self::encode_payload(&vec![turn.id])?;
-        let event = Self::encode_payload(&HistoryEvent::TurnFinalized {
+        let event = HistoryEvent::TurnFinalized {
             session: turn.session,
             turn: turn.id,
             frontier: vec![turn.id],
-        })?;
+        };
         self.transaction::<_, StorageError>("finalize turn",|transaction| {
             let current:i64=transaction.query_row("SELECT revision FROM sessions WHERE id=?1",[turn.session.to_string()],|row|row.get(0)).map_err(|error|sql_error("check expected head",&error))?;
             if current!=prepared.expected_revision {return Err(StorageError::Conflict);}
@@ -466,7 +466,7 @@ impl Ledger {
             if let Some(key)=&prepared.input.request_id {
                 super::reservations::complete_evaluation(transaction, key, &payload, guard.owner, turn.session)?;
             }
-            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![turn.session.to_string(),event]).map_err(|error|sql_error("record finalized head",&error))?;
+            super::sessions::append_event(transaction, turn.session, &event, "record finalized head")?;
             Ok(())
         }).map_err(write_error)?;
         Ok(turn)

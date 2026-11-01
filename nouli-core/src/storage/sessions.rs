@@ -146,6 +146,23 @@ fn creation_error(
     }
 }
 
+/// Appends an event at the next sequence number inside the caller's transaction.
+pub(super) fn append_event(
+    transaction: &rusqlite::Transaction<'_>,
+    session: Id,
+    event: &HistoryEvent,
+    operation: &'static str,
+) -> Result<(), StorageError> {
+    const SQL: &str = "INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1";
+    transaction
+        .execute(
+            SQL,
+            params![session.to_string(), Ledger::encode_payload(event)?],
+        )
+        .map_err(|error| sql_error(operation, &error))?;
+    Ok(())
+}
+
 pub(super) fn insert_session(
     transaction: &rusqlite::Connection,
     session: &mut Session,
@@ -297,15 +314,31 @@ impl Ledger {
     /// [`SessionError::Storage`] if the ledger is read-only or the SQLite write
     /// fails.
     pub fn rename_session(&mut self, id: Id, name: SessionName) -> Result<Session, SessionError> {
-        self.transaction("rename session",|transaction|{
-            let mut session=read_session(transaction,&SessionSelector::Id(id))?;
-            if session.name.as_ref()==Some(&name){return Ok(session);}
-            let event=HistoryEvent::SessionRenamed{session:id,previous_name:session.name.clone(),name:name.clone()};
-            transaction.execute("UPDATE sessions SET name=?2 WHERE id=?1",params![id.to_string(),name.as_str()])
-                .map_err(|error|creation_error(transaction,id,Some(&name),sql_error("rename session",&error)))?;
-            transaction.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![id.to_string(),Ledger::encode_payload(&event)?])
-                .map_err(|error|sql_error("record session rename",&error))?;
-            session.name=Some(name);
+        self.transaction("rename session", |transaction| {
+            let mut session = read_session(transaction, &SessionSelector::Id(id))?;
+            if session.name.as_ref() == Some(&name) {
+                return Ok(session);
+            }
+            let event = HistoryEvent::SessionRenamed {
+                session: id,
+                previous_name: session.name.clone(),
+                name: name.clone(),
+            };
+            transaction
+                .execute(
+                    "UPDATE sessions SET name=?2 WHERE id=?1",
+                    params![id.to_string(), name.as_str()],
+                )
+                .map_err(|error| {
+                    creation_error(
+                        transaction,
+                        id,
+                        Some(&name),
+                        sql_error("rename session", &error),
+                    )
+                })?;
+            append_event(transaction, id, &event, "record session rename")?;
+            session.name = Some(name);
             Ok(session)
         })
     }

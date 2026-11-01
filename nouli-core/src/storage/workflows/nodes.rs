@@ -641,7 +641,7 @@ impl Ledger {
             let changed=tx.execute("UPDATE sessions SET frontier_toon=?2,revision=revision+1 WHERE id=?1 AND revision=?3",params![definition.session.to_string(),frontier,revision]).map_err(|error|sql_error("publish workflow branch frontier",&error))?;if changed!=1 {return Err(StorageError::Conflict);}
             tx.execute("UPDATE workflow_runs SET frontier_toon=?2,published_revision=?3 WHERE id=?1",params![definition.run.to_string(),frontier,revision+1]).map_err(|error|sql_error("record published workflow frontier",&error))?;
             super::super::reservations::complete_node(tx, &child_key(definition.run,node), &Self::encode_payload(&turn)?, owner.session_guard.owner)?;
-            tx.execute("INSERT INTO session_events(session_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM session_events WHERE session_id=?1",params![definition.session.to_string(),Self::encode_payload(&HistoryEvent::TurnFinalized {session:definition.session,turn:turn.id,frontier:heads})?]).map_err(|error|sql_error("record workflow publication",&error))?;
+            super::super::sessions::append_event(tx, definition.session, &HistoryEvent::TurnFinalized {session:definition.session,turn:turn.id,frontier:heads}, "record workflow publication")?;
             event(tx,definition.run,&node_event(owner.round,node,WorkflowEventKind::NodeState,None,Some(attempt),Some(turn.id)))?;Ok(())
         })?;
         Ok(turn)
