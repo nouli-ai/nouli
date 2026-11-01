@@ -9,6 +9,17 @@ use crate::{
 };
 use rusqlite::params;
 impl Ledger {
+    /// Interrupts every pending or running node and finishes the run as
+    /// interrupted.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Conflict`] or [`WorkflowError::Storage`] if the
+    ///   owner no longer holds the running workflow or the ledger is read-only.
+    /// - Returns any error from [`Ledger::record_workflow_progress`] or
+    ///   [`Ledger::finish_workflow`].
+    /// - Returns [`WorkflowError::Compile`] or [`WorkflowError::Snapshot`] if the
+    ///   frozen workflow or its stored events or outputs are inconsistent.
     pub fn interrupt_workflow(
         &mut self,
         owner: &WorkflowOwner,
@@ -45,6 +56,22 @@ impl Ledger {
         )
     }
 
+    /// Publishes the terminal result of a workflow run and settles its request
+    /// reservation.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Conflict`] or [`WorkflowError::Storage`] if the
+    ///   owner no longer holds the running workflow or the ledger is read-only.
+    /// - Returns [`WorkflowError::Conflict`] if `result` does not match the
+    ///   stored nodes, any node or attempt is still live, or the result status
+    ///   is neither the derived terminal status nor interrupted.
+    /// - Returns [`WorkflowError::Snapshot`] if the outputs or orders do not
+    ///   match the stored nodes or the request has no request ID, and
+    ///   [`WorkflowError::Compile`] if the frozen workflow does not compile.
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read or
+    ///   written, including [`StorageError::Conflict`] when the run or
+    ///   reservation changed owner or state concurrently.
     pub fn finish_workflow(
         &mut self,
         owner: &WorkflowOwner,

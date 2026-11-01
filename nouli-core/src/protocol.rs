@@ -225,6 +225,11 @@ fn terminal_matches(result: &ResultEnvelope, run: Option<Id>) -> bool {
 }
 
 /// Validate a terminal envelope against an incremental stream's established run.
+///
+/// # Errors
+///
+/// Returns [`EventError::InvalidStream`] if the envelope version, recovery run, or
+/// reported run does not match `run`.
 pub fn validate_terminal(result: &ResultEnvelope, run: Option<Id>) -> Result<(), EventError> {
     if terminal_matches(result, run) {
         Ok(())
@@ -233,6 +238,13 @@ pub fn validate_terminal(result: &ResultEnvelope, run: Option<Id>) -> Result<(),
     }
 }
 
+/// Check that an event stream is ordered and ends in one matching terminal event.
+///
+/// # Errors
+///
+/// Returns [`EventError::InvalidStream`] if the stream has fewer than two events, does
+/// not start with `Started`, has a wrong version, sequence, or run, repeats `Started`,
+/// lacks exactly one final `Terminal` event, or its terminal envelope does not match.
 pub fn validate_events(events: &[EngineEvent]) -> Result<(), EventError> {
     if events.len() < 2 || !matches!(events[0].event, EventKind::Started) {
         return Err(EventError::InvalidStream);

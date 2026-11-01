@@ -73,6 +73,11 @@ pub enum ContextError {
 }
 
 impl ContextRecord {
+    /// Checks that the record has a non-blank key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContextError::EmptyKey`] if the key is blank.
     pub fn validate(&self) -> Result<(), ContextError> {
         if self.key.trim().is_empty() {
             return Err(ContextError::EmptyKey);
@@ -96,6 +101,12 @@ impl ContextUpdate {
 
     /// Validates shape only. Reachability, active targets, and inherited retention
     /// are validated against the selected branch by the context projector.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContextError::EmptyKey`] if a new record has a blank key.
+    /// - [`ContextError::InvalidTargets`] if a supersession has no targets, repeats a target, or
+    ///   targets its own replacement.
     pub fn validate(&self) -> Result<(), ContextError> {
         if let Some(record) = self.new_record() {
             record.validate()?;

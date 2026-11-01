@@ -148,6 +148,17 @@ fn expectation_range(probabilities: &[f64]) -> (f64, f64) {
 }
 
 impl Answer {
+    /// Check that an answer matches the question's answer space.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from validating `question`.
+    /// - [`ContractError::AnswerType`] if the answer kind differs from the answer space.
+    /// - [`ContractError::Unknown`], [`ContractError::Duplicate`], or [`ContractError::Missing`]
+    ///   if a choice selection or distribution does not cover the options exactly once.
+    /// - [`ContractError::Number`] or [`ContractError::Distribution`] if a probability or
+    ///   score is out of range, or a distribution does not sum to one.
+    /// - [`ContractError::ScoreExpectation`] if a score is too far from its expectation.
     pub fn validate(&self, question: &Question) -> Result<(), ContractError> {
         question.validate()?;
         match (self, &question.answer_space) {
@@ -211,6 +222,14 @@ impl QuestionOutcome {
         }
     }
 
+    /// Check that a question outcome belongs to `question` and is well formed.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContractError::Unknown`] if the question ID differs.
+    /// - Any error from [`Answer::validate`].
+    /// - [`ContractError::Empty`] or [`ContractError::Number`] if confidence is empty,
+    ///   non-finite, or out of range, or a refusal reason is blank.
     pub fn validate(&self, question: &Question) -> Result<(), ContractError> {
         if self.question_id() != question.id {
             return Err(ContractError::Unknown("outcome.question_id"));
@@ -240,6 +259,17 @@ impl QuestionOutcome {
 }
 
 impl TurnOutcome {
+    /// Check that a turn outcome answers each requested question exactly once.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from validating `request`.
+    /// - [`ContractError::Version`] if the contract version differs.
+    /// - [`ContractError::Empty`] if a provider identity field is blank, or
+    ///   [`ContractError::Number`] if the usage cost is negative or non-finite.
+    /// - [`ContractError::Unknown`], [`ContractError::Duplicate`], or [`ContractError::Missing`]
+    ///   if outcomes do not cover the questions exactly once.
+    /// - Any error from [`QuestionOutcome::validate`].
     pub fn validate(&self, request: &TurnRequest) -> Result<(), ContractError> {
         request.validate()?;
         if self.version != CONTRACT_VERSION {

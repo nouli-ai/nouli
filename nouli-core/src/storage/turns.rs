@@ -130,6 +130,21 @@ pub(super) fn progress_event(
 }
 
 impl Ledger {
+    /// Validates and durably records a pending attempt against the session's
+    /// current head.
+    ///
+    /// # Errors
+    ///
+    /// - [`TurnError::Conflict`] if the guard belongs to another session or
+    ///   ledger, or the input does not match its pending request reservation.
+    /// - [`TurnError::History`] if the request, manifest, or updates are
+    ///   invalid, records repeat, or the request ID is blank.
+    /// - [`TurnError::Session`] if the session cannot be read.
+    /// - [`TurnError::Projection`], [`TurnError::UnknownTurn`], or
+    ///   [`TurnError::History`] if the updates cannot be projected onto the
+    ///   session's context.
+    /// - [`TurnError::Storage`] if the ledger is read-only, encoding fails, or
+    ///   the SQLite write fails.
     pub fn prepare_attempt(
         &mut self,
         guard: &SessionGuard,
@@ -207,6 +222,13 @@ impl Ledger {
         Ok(prepared)
     }
 
+    /// Reads an attempt's accepted intent, latest progress, and finalized turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownAttempt`] if no attempt has the ID, or
+    /// [`TurnError::Storage`] if the SQLite query fails or the stored attempt is
+    /// invalid or inconsistent.
     pub fn attempt(&self, id: Id) -> Result<AttemptSnapshot, TurnError> {
         let row:Option<(String,String,Option<String>,String)>=self.connection.query_row("SELECT a.payload_toon,s.state,s.finalized_turn,(SELECT payload_toon FROM attempt_events e WHERE e.attempt_id=a.id ORDER BY sequence DESC LIMIT 1) FROM attempts a JOIN attempt_states s ON s.attempt_id=a.id WHERE a.id=?1",[id.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))).optional().map_err(|error|sql_error("read attempt",error))?;
         let (intent, state, turn, progress) = row.ok_or(TurnError::UnknownAttempt)?;
@@ -225,6 +247,13 @@ impl Ledger {
         })
     }
 
+    /// Lists every attempt in a session in acceptance order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::Session`] if the session does not exist or cannot
+    /// be read, or [`TurnError::Storage`] if the SQLite query fails or a stored
+    /// attempt is invalid.
     pub fn list_attempts(&self, session: Id) -> Result<Vec<AttemptSnapshot>, TurnError> {
         self.session(&SessionSelector::Id(session))?;
         let mut statement = self
@@ -241,6 +270,16 @@ impl Ledger {
             .collect()
     }
 
+    /// Advances a pending or running attempt to a later non-final state.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Ledger::attempt`] reading the attempt.
+    /// - [`TurnError::Conflict`] if the guard does not own the attempt or its
+    ///   state changed concurrently.
+    /// - [`TurnError::AttemptState`] if the transition is not allowed.
+    /// - [`TurnError::Storage`] if the ledger is read-only or the SQLite write
+    ///   fails.
     pub fn record_attempt_progress(
         &mut self,
         guard: &SessionGuard,
@@ -282,6 +321,21 @@ impl Ledger {
         .map_err(write_error)
     }
 
+    /// Publishes an attempt's outcome as an immutable turn and advances the
+    /// session head atomically.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Ledger::attempt`] reading the attempt.
+    /// - [`TurnError::Conflict`] if the guard does not own the attempt, the
+    ///   attempt belongs to a workflow, the session head moved since
+    ///   preparation, or its request reservation is no longer pending.
+    /// - [`TurnError::AttemptState`] if the attempt already finished.
+    /// - [`TurnError::Session`], [`TurnError::Projection`], or
+    ///   [`TurnError::History`] if the session, its context, or the resulting
+    ///   turn is invalid.
+    /// - [`TurnError::Storage`] if the ledger is read-only, encoding fails, or
+    ///   the SQLite write fails.
     pub fn finalize_attempt(
         &mut self,
         guard: &SessionGuard,
@@ -367,6 +421,13 @@ impl Ledger {
         Ok(turn)
     }
 
+    /// Reads and validates a finalized turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownTurn`] if no turn has the ID,
+    /// [`TurnError::Storage`] if the SQLite query fails or the stored payload is
+    /// invalid, or [`TurnError::History`] if the turn fails validation.
     pub fn turn(&self, id: Id) -> Result<FinalizedTurn, TurnError> {
         let payload: Option<String> = self
             .connection
@@ -385,6 +446,13 @@ impl Ledger {
         Ok(turn)
     }
 
+    /// Reads and validates the evaluation manifest saved for a turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownTurn`] if the turn has no manifest,
+    /// [`TurnError::Storage`] if the SQLite query fails or the stored payload is
+    /// invalid, or [`TurnError::History`] if the manifest fails validation.
     pub fn manifest(&self, id: Id) -> Result<EvaluationManifest, TurnError> {
         let payload: Option<String> = self
             .connection
@@ -401,6 +469,13 @@ impl Ledger {
         Ok(manifest)
     }
 
+    /// Collects every turn reachable from the source frontiers in canonical
+    /// history order.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error from [`Ledger::turn`] for a reachable turn, or
+    /// [`TurnError::History`] if the turns cannot be ordered canonically.
     pub fn ancestry(&self, sources: &[SourcePoint]) -> Result<Vec<FinalizedTurn>, TurnError> {
         let mut pending: Vec<_> = sources
             .iter()

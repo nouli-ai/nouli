@@ -137,6 +137,17 @@ fn check_read_only_header(path: &Path) -> Result<(), StorageError> {
 
 impl Ledger {
     /// Explicit root selection; opening read-only never creates or migrates it.
+    ///
+    /// # Errors
+    ///
+    /// - [`StorageError::Io`] if the store directory or ledger file cannot be
+    ///   created, or a read-only ledger's header cannot be read.
+    /// - [`StorageError::WrongStore`] if the file is not a Nouli ledger in
+    ///   rollback-journal mode.
+    /// - [`StorageError::NewerSchema`] if the schema is newer than supported, or
+    ///   [`StorageError::MigrationRequired`] if a read-only ledger is outdated.
+    /// - [`StorageError::Busy`] or [`StorageError::Sqlite`] if opening,
+    ///   configuring, or migrating the database fails.
     pub fn open(root: &Path, mode: OpenMode) -> Result<Self, StorageError> {
         let path = root.join("ledger.sqlite3");
         if mode == OpenMode::ReadWriteCreate {
@@ -196,6 +207,12 @@ impl Ledger {
     }
 
     /// Synchronous closures cannot retain a transaction across an async await.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::ReadOnly`] if the ledger was opened read-only,
+    /// [`StorageError::Busy`] or [`StorageError::Sqlite`] if beginning or
+    /// committing the transaction fails, and any error returned by `write`.
     pub fn transaction<T, E: From<StorageError>>(
         &mut self,
         operation: &'static str,
@@ -217,9 +234,19 @@ impl Ledger {
 
     /// Full supported data is serialized with the same strict TOON codec used
     /// for model context. Credential values have no Serialize implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Payload`] if the value cannot be encoded as TOON.
     pub fn encode_payload<T: Serialize>(value: &T) -> Result<String, StorageError> {
         codec::encode_toon(value).map_err(|_| StorageError::Payload)
     }
+    /// Decodes a stored TOON payload into `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::FrozenSettings`] if the payload holds unsupported
+    /// frozen settings, or [`StorageError::Payload`] if it is otherwise invalid.
     pub fn decode_payload<T: DeserializeOwned>(payload: &str) -> Result<T, StorageError> {
         let value = codec::decode_value(payload.as_bytes(), InputFormat::Toon)
             .map_err(|_| StorageError::Payload)?;

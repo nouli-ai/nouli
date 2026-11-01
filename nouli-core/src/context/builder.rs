@@ -95,6 +95,13 @@ pub enum ContextAction {
     Omit { record: Id },
 }
 pub trait ContextPolicy {
+    /// Chooses the next reduction for context that exceeds capacity, or `None`
+    /// to stop reducing.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`BuildError`] when the policy cannot choose a reduction; the
+    /// builder passes it on unchanged.
     fn next(&self, entries: &[ContextEntry]) -> Result<Option<ContextAction>, BuildError>;
 }
 #[derive(Debug, Default, Clone, Copy)]
@@ -346,6 +353,28 @@ fn reported_sources(history: &[FinalizedTurn], sources: &[SourcePoint]) -> Vec<S
 
 pub struct ContextBuilder;
 impl ContextBuilder {
+    /// Assembles the evidence for a turn, reducing optional history with `policy` until it fits
+    /// `limits`.
+    ///
+    /// # Errors
+    ///
+    /// - [`BuildError::Limit`] if the request violates `limits`, or assessment fails for a reason
+    ///   other than capacity.
+    /// - [`BuildError::Provider`] if the provider name is blank or the model differs from the
+    ///   limits' model.
+    /// - [`BuildError::History`] if the history cannot be ordered, already contains the turn,
+    ///   yields duplicate entry IDs, or produces an invalid manifest.
+    /// - [`BuildError::Projection`] if the context updates cannot be projected.
+    /// - [`BuildError::RequiredMissing`], [`BuildError::RequiredRefused`], or
+    ///   [`BuildError::InvalidPointer`] if a required item is absent, points into a refused result,
+    ///   or has a malformed pointer.
+    /// - [`BuildError::ProtectedCapacity`] if protected evidence and live questions alone exceed
+    ///   capacity.
+    /// - [`BuildError::OptionalCapacity`] if the policy stops before the context fits, or
+    ///   [`BuildError::Policy`] if it targets an unknown, protected, or omitted entry or proposes
+    ///   an invalid compaction.
+    /// - Any error the policy returns, or [`BuildError::Codec`] or [`BuildError::Data`] if evidence
+    ///   cannot be encoded.
     pub fn build(
         input: ContextInput<'_>,
         limits: &ResolvedLimits,

@@ -53,6 +53,11 @@ enum NativeAnswer {
 
 /// Complete live criteria remain in the native question. Shared context is one
 /// escaped string field, never concatenated into provider JSON syntax.
+///
+/// # Errors
+///
+/// - [`ProviderError::Contract`] if the request is invalid or `model` is blank.
+/// - [`ProviderError::Codec`] if the context has malformed image evidence.
 pub fn request_body(
     request: &TurnRequest,
     context_toon: &str,
@@ -88,6 +93,13 @@ pub fn request_body(
 
 /// Normalize only documented primitives. Unknown refusal types fail rather than
 /// inventing a native abstention protocol or a successful missing answer.
+///
+/// # Errors
+///
+/// - [`ProviderError::Contract`] if the request or resulting outcome is invalid.
+/// - [`ProviderError::Wire`] if the response does not match the schema, or its answers
+///   do not cover each question once with matching kinds, options, levels, and legend.
+/// - Any error from converting native confidence.
 pub fn normalize(
     request: &TurnRequest,
     response: Value,
@@ -233,6 +245,14 @@ pub fn normalize(
     Ok(outcome)
 }
 
+/// Send a turn to a `SystemOne` provider and normalize its response.
+///
+/// # Errors
+///
+/// - [`ProviderError::Protocol`] if the profile does not use `SystemOne`.
+/// - [`ProviderError::Limit`] if the profile limits are invalid or the input exceeds them.
+/// - Any error from [`crate::provider::wire::body`] or [`crate::provider::wire::normalize`].
+/// - [`ProviderError::Transport`] if the request fails or the response is not JSON.
 pub async fn evaluate(
     transport: &HttpTransport,
     settings: &ResolvedSettings,

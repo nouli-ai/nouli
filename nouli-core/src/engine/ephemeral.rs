@@ -22,6 +22,22 @@ pub struct EphemeralResult {
     pub manifest: EvaluationManifest,
 }
 impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T> {
+    /// Evaluate one turn without writing to the ledger.
+    ///
+    /// # Errors
+    ///
+    /// - [`EngineError::Canceled`] if `cancel` fires before or during evaluation.
+    /// - [`EngineError::History`] if the request fails validation.
+    /// - [`EngineError::EphemeralOptions`] if the request sets a request ID, interrupted
+    ///   retry, session name, or continuation.
+    /// - [`EngineError::EphemeralStore`] if sources are selected without a read-only
+    ///   ledger worker; [`EngineError::Worker`], [`EngineError::Source`], or
+    ///   [`EngineError::History`] if those sources cannot be resolved.
+    /// - [`EngineError::Config`] if settings cannot be resolved.
+    /// - [`EngineError::Limit`], [`EngineError::Build`], or [`EngineError::Config`] if the
+    ///   resolved profile, context plan, credentials, or attempt timeout are invalid.
+    /// - [`EngineError::Provider`] if every provider attempt fails or a capacity failure
+    ///   cannot be retried with a smaller context.
     pub async fn evaluate_ephemeral(
         &self,
         ledger: Option<&LedgerWorker>,

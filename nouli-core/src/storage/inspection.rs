@@ -190,6 +190,15 @@ fn related_attempts(
         .collect()
 }
 impl Ledger {
+    /// Reads a finalized turn with its attempts, request, workflow definition,
+    /// and resulting context from one consistent snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InspectionError::Turn`] if the turn or its attempts or context
+    /// cannot be read, [`InspectionError::Workflow`] if its workflow definition
+    /// cannot be read, or [`InspectionError::Storage`] if the SQLite read fails
+    /// or a stored payload is invalid.
     pub fn inspect_turn(&self, id: Id) -> Result<TurnInspection, InspectionError> {
         let tx = self
             .connection
@@ -200,6 +209,16 @@ impl Ledger {
             .map_err(|error| sql_error("finish turn inspection", error))?;
         Ok(result)
     }
+    /// Inspects the given turn of a session, or the session's single head turn
+    /// when none is given.
+    ///
+    /// # Errors
+    ///
+    /// - [`InspectionError::Session`] if the session cannot be read.
+    /// - [`InspectionError::Head`] if no turn is given and the session does not
+    ///   have exactly one head turn.
+    /// - [`InspectionError::ForeignTurn`] if the turn belongs to another session.
+    /// - Any error from [`Ledger::inspect_turn`] reading the turn's records.
     pub fn inspect_session_turn(
         &self,
         selector: &SessionSelector,
@@ -262,6 +281,16 @@ impl Ledger {
             context,
         })
     }
+    /// Exports a session's complete history, provenance, attempts, requests,
+    /// workflows, and current context from one consistent snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InspectionError::Session`] if the session or one of its source
+    /// sessions cannot be read, [`InspectionError::Turn`] if its history or
+    /// context cannot be read, [`InspectionError::Workflow`] if a workflow
+    /// record cannot be read, or [`InspectionError::Storage`] if the SQLite
+    /// read fails or a stored payload is invalid.
     pub fn export_session(
         &self,
         selector: &SessionSelector,

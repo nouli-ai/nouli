@@ -86,6 +86,11 @@ pub(crate) fn nonempty(value: &str, field: &'static str) -> Result<(), ContractE
 }
 
 impl Criterion {
+    /// Checks that the criterion's text is not blank.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContractError::Empty`] if the text, label, or description is blank.
     pub fn validate(&self) -> Result<(), ContractError> {
         match self {
             Self::Text(text) => nonempty(text, "criterion"),
@@ -98,6 +103,15 @@ impl Criterion {
 }
 
 impl Question {
+    /// Validates the question's fields and answer space.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContractError::Empty`] if the ID, prompt, a criterion, a score level, or an option's ID
+    ///   or description is blank.
+    /// - [`ContractError::Cardinality`] if a choice does not have 2 to 255 options or a score does
+    ///   not have 2 to 10 levels.
+    /// - [`ContractError::Duplicate`] if two choice options share an ID.
     pub fn validate(&self) -> Result<(), ContractError> {
         nonempty(&self.id, "question.id")?;
         nonempty(&self.prompt, "question.prompt")?;
@@ -133,6 +147,14 @@ impl Question {
 }
 
 impl TurnRequest {
+    /// Validates the request version and every question.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContractError::Version`] if the version is not [`CONTRACT_VERSION`].
+    /// - [`ContractError::Empty`] if there are no questions.
+    /// - [`ContractError::Duplicate`] if two questions share an ID, or any [`Question::validate`]
+    ///   error.
     pub fn validate(&self) -> Result<(), ContractError> {
         if self.version != CONTRACT_VERSION {
             return Err(ContractError::Version(self.version));

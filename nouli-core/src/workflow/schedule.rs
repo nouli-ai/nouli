@@ -445,6 +445,18 @@ pub(crate) fn project_outputs(
     Ok(outputs)
 }
 
+/// Executes a compiled workflow from scratch with at most `parallelism`
+/// concurrent nodes, without observing progress.
+///
+/// # Errors
+///
+/// - Returns [`ScheduleError::Parallelism`] if `parallelism` is zero.
+/// - Returns [`ScheduleError::Observer`] if the observer rejects a progress
+///   change.
+/// - Returns [`ScheduleError::State`] if scheduler task bookkeeping becomes
+///   inconsistent.
+/// - Returns [`ScheduleError::Resolve`] if a workflow output cannot be
+///   resolved from the final node states.
 pub async fn schedule<E: NodeExecutor>(
     graph: Arc<CompiledWorkflow>,
     executor: Arc<E>,
@@ -454,6 +466,18 @@ pub async fn schedule<E: NodeExecutor>(
     schedule_observed(graph, executor, Arc::new(NoopObserver), parallelism, cancel).await
 }
 
+/// Executes a compiled workflow from scratch, reporting each node state change
+/// to `observer`.
+///
+/// # Errors
+///
+/// - Returns [`ScheduleError::Parallelism`] if `parallelism` is zero.
+/// - Returns [`ScheduleError::Observer`] if the observer rejects a progress
+///   change.
+/// - Returns [`ScheduleError::State`] if scheduler task bookkeeping becomes
+///   inconsistent.
+/// - Returns [`ScheduleError::Resolve`] if a workflow output cannot be
+///   resolved from the final node states.
 pub async fn schedule_observed<E: NodeExecutor, O: ScheduleObserver>(
     graph: Arc<CompiledWorkflow>,
     executor: Arc<E>,

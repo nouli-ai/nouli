@@ -71,6 +71,13 @@ pub struct BudgetAssessment {
 }
 
 impl ResolvedLimits {
+    /// Resolve the context budget and count limits declared by a provider profile.
+    ///
+    /// # Errors
+    ///
+    /// - [`LimitError::Profile`] if the profile is invalid.
+    /// - [`LimitError::InvalidBudget`] if the effective budget is zero or the output reserve
+    ///   does not fit within it.
     pub fn for_profile(profile: &ProviderProfile) -> Result<Self, LimitError> {
         profile.validate().map_err(|_| LimitError::Profile)?;
         let configured = profile.context_window_tokens;
@@ -96,6 +103,15 @@ impl ResolvedLimits {
         })
     }
 
+    /// Check a request against the profile's modality and count limits.
+    ///
+    /// # Errors
+    ///
+    /// - [`LimitError::Contract`] if the request is invalid.
+    /// - [`LimitError::Modality`] if the profile does not accept `modality`, or it is
+    ///   neither text nor image.
+    /// - [`LimitError::Count`] if the questions, choice options, or score levels exceed the
+    ///   profile's limits.
     pub fn validate_request(
         &self,
         request: &TurnRequest,
@@ -138,6 +154,17 @@ impl ResolvedLimits {
         Ok(())
     }
 
+    /// Count the complete input and check it against the context budget.
+    ///
+    /// # Errors
+    ///
+    /// - [`LimitError::Codec`] if `context_toon` contains malformed image evidence.
+    /// - Any error from [`Self::validate_request`] or from `counter`.
+    /// - [`LimitError::Counter`] if the counts are inconsistent, provider-reported, or a
+    ///   question count exceeds the total.
+    /// - [`LimitError::Overflow`] if adding the output reserve overflows.
+    /// - [`LimitError::TotalCapacity`] if input plus reserve exceeds the budget, or
+    ///   [`LimitError::QuestionCapacity`] if any question exceeds the per-question limit.
     pub fn assess(
         &self,
         context_toon: &str,

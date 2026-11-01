@@ -23,6 +23,14 @@ pub struct Evidence {
 }
 
 impl Evidence {
+    /// Extract saved images from TOON context, replacing each with its reference.
+    ///
+    /// # Errors
+    ///
+    /// - Any [`codec::CodecError`] from decoding or re-encoding the context.
+    /// - [`codec::CodecError::Shape`] if an image record is malformed, empty, or not PNG or JPEG.
+    /// - [`codec::CodecError::ImageReferenceConflict`] if two images share a reference but
+    ///   differ in format or bytes.
     pub fn read(context: &str) -> Result<Self, codec::CodecError> {
         if !context.contains("nouli_image") {
             return Ok(Self {
@@ -90,6 +98,11 @@ impl Evidence {
         Ok(Self { text, images })
     }
 
+    /// Build the `assets` object that maps each image reference to its payload.
+    ///
+    /// # Errors
+    ///
+    /// Never returns `Err`; the `Result` is kept for interface stability.
     pub fn assets(&self) -> Result<Value, codec::CodecError> {
         let images = &self.images;
         Ok(Value::Object(
@@ -150,6 +163,12 @@ impl Image {
             .map_err(|_| codec::CodecError::Shape)
     }
 
+    /// Read the image's pixel dimensions from its header.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`codec::CodecError::Shape`] if the payload exceeds 16 MiB, is not valid
+    /// base64, or its format or dimensions cannot be read.
     pub fn dimensions(&self) -> Result<(u32, u32), codec::CodecError> {
         image::ImageReader::new(Cursor::new(self.bytes()?))
             .with_guessed_format()
@@ -178,6 +197,13 @@ impl Image {
         (width, height, width.max(minimum), height.max(minimum))
     }
 
+    /// Resize and pad the image to the configured dimension bounds, re-encoding it as PNG.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`codec::CodecError::Shape`] if the payload exceeds 16 MiB, cannot be decoded,
+    /// or the re-encoded PNG exceeds 16 MiB. Returns the image unchanged, without
+    /// decoding, when no bounds are configured.
     pub fn prepare(
         &self,
         settings: &crate::config::ConnectionSettings,

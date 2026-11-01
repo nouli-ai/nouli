@@ -6,6 +6,15 @@ use super::{FinalizedTurn, HistoryError, SourcePoint};
 
 /// Sources, frontier entries, and parent lists supply tie order. Storage order
 /// and wall-clock completion times never influence this projection.
+///
+/// # Errors
+///
+/// - [`HistoryError::DuplicateTurn`] if `turns` repeats a turn ID.
+/// - [`HistoryError::InvalidFrontier`] if a source frontier is empty or repeats a turn.
+/// - [`HistoryError::UnknownTurn`] if a frontier entry or parent is missing from `turns`.
+/// - [`HistoryError::ForeignHead`] if a frontier turn belongs to another session.
+/// - [`HistoryError::Cycle`] if the parent links form a cycle.
+/// - Any error from [`FinalizedTurn::validate`] for a reachable turn.
 pub fn canonical_history<'a>(
     turns: &'a [FinalizedTurn],
     sources: &[SourcePoint],

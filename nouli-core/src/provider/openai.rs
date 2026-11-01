@@ -79,6 +79,13 @@ fn level(criterion: &Criterion) -> (&str, &str) {
     }
 }
 
+/// Build the `OpenAI` decisions request body for a turn.
+///
+/// # Errors
+///
+/// - [`ProviderError::Contract`] if the request is invalid or `model` is blank.
+/// - [`ProviderError::Codec`] if the context has malformed image evidence or criteria
+///   cannot be encoded.
 pub fn request_body(
     request: &TurnRequest,
     context_toon: &str,
@@ -124,6 +131,14 @@ pub fn request_body(
     Ok(json!({"model":model,"input":input,"questions":questions}))
 }
 
+/// Convert an `OpenAI` decisions response into a validated turn outcome.
+///
+/// # Errors
+///
+/// - [`ProviderError::Contract`] if the request or resulting outcome is invalid.
+/// - [`ProviderError::Wire`] if the response does not match the schema, or its answers
+///   do not cover each question once with matching kinds, options, and levels.
+/// - Any error from converting native confidence.
 pub fn normalize(
     request: &TurnRequest,
     response: Value,
@@ -265,6 +280,14 @@ pub fn normalize(
     Ok(outcome)
 }
 
+/// Send a turn to an `OpenAI` decisions provider and normalize its response.
+///
+/// # Errors
+///
+/// - [`ProviderError::Protocol`] if the profile does not use `OpenAI` decisions.
+/// - [`ProviderError::Limit`] if the profile limits are invalid or the input exceeds them.
+/// - Any error from [`crate::provider::wire::body`] or [`normalize`].
+/// - [`ProviderError::Transport`] if the request fails or the response is not JSON.
 pub async fn evaluate(
     transport: &HttpTransport,
     settings: &ResolvedSettings,

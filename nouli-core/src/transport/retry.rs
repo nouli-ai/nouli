@@ -33,6 +33,12 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
+    /// Builds a retry policy from the attempt and delay limits in `settings`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError::Settings`] if the settings are invalid or the
+    /// maximum retry delay overflows the clock.
     pub fn new(settings: &ExecutionSettings) -> Result<Self, TransportError> {
         settings.validate().map_err(|_| TransportError::Settings)?;
         let max_delay = Duration::from_secs(settings.max_retry_delay_seconds);

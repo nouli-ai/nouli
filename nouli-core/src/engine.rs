@@ -86,6 +86,22 @@ pub struct Engine<P, C, T> {
     pub clock: T,
 }
 impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T> {
+    /// Evaluate one durable turn, replaying a saved result for a known request ID.
+    ///
+    /// # Errors
+    ///
+    /// - [`EngineError::Canceled`] if `cancel` fires before or during evaluation.
+    /// - [`EngineError::History`] if the request fails validation.
+    /// - [`EngineError::Worker`], [`EngineError::Replay`], [`EngineError::Session`],
+    ///   [`EngineError::Storage`], or [`EngineError::Turn`] if the ledger cannot look up,
+    ///   accept, or record the request.
+    /// - [`EngineError::Config`] if settings cannot be resolved for a new request.
+    /// - [`EngineError::InProgress`] if another live owner is evaluating the request, or
+    ///   [`EngineError::Interrupted`] if it needs an explicit interrupted retry.
+    /// - [`EngineError::Limit`], [`EngineError::Build`], or [`EngineError::Config`] if the
+    ///   resolved profile, context plan, credentials, or attempt timeout are invalid.
+    /// - [`EngineError::Provider`] if every provider attempt fails or a capacity failure
+    ///   cannot be retried with a smaller context.
     pub async fn evaluate(
         &self,
         ledger: &LedgerWorker,

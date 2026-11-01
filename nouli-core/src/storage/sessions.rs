@@ -165,10 +165,26 @@ pub(super) fn read_sources(
 }
 
 impl Ledger {
+    /// Returns the frozen source points a session was created from.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::UnknownSession`] if the session does not exist,
+    /// or [`SessionError::Storage`] if the SQLite query fails or a stored row
+    /// is invalid.
     pub fn session_sources(&self, id: Id) -> Result<Vec<SourcePoint>, SessionError> {
         self.session(&SessionSelector::Id(id))?;
         read_sources(&self.connection, id)
     }
+    /// Creates an empty session, assigning an automatic name when none is given.
+    ///
+    /// # Errors
+    ///
+    /// - [`SessionError::InvalidDefaults`] if the provider or model is blank.
+    /// - [`SessionError::NameCollision`] if the name is already taken, or
+    ///   [`SessionError::NamesExhausted`] if no automatic name is available.
+    /// - [`SessionError::Storage`] if the ledger is read-only, encoding fails,
+    ///   or the SQLite write fails.
     pub fn create_session(
         &mut self,
         name: Option<SessionName>,
@@ -187,12 +203,26 @@ impl Ledger {
         })?;
         Ok(session)
     }
+    /// Reads the session matching an ID or name selector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::UnknownSession`] if no session matches, or
+    /// [`SessionError::Storage`] if the SQLite query fails or the stored row is
+    /// invalid.
     pub fn session(&self, selector: &SessionSelector) -> Result<Session, SessionError> {
         read_session(&self.connection, selector)
     }
 
     /// Change only the human selector and record the rename atomically.
     /// Keep identity, ancestry, defaults and the accepted-writer revision fixed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::UnknownSession`] if the session does not exist,
+    /// [`SessionError::NameCollision`] if another session has the name, or
+    /// [`SessionError::Storage`] if the ledger is read-only or the SQLite write
+    /// fails.
     pub fn rename_session(&mut self, id: Id, name: SessionName) -> Result<Session, SessionError> {
         self.transaction("rename session",|transaction|{
             let mut session=read_session(transaction,&SessionSelector::Id(id))?;
@@ -206,6 +236,12 @@ impl Ledger {
             Ok(session)
         })
     }
+    /// Lists every session in the ledger, ordered by ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::Storage`] if the SQLite query fails or a stored
+    /// row is invalid.
     pub fn list_sessions(&self) -> Result<Vec<Session>, SessionError> {
         let mut statement = self
             .connection

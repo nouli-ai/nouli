@@ -14,6 +14,11 @@ pub trait EventSink: Send + Sync + 'static {
 #[derive(Default)]
 pub struct CollectEvents(Mutex<Vec<EngineEvent>>);
 impl CollectEvents {
+    /// Return a copy of the collected events.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StreamError::State`] if the event lock is poisoned.
     pub fn snapshot(&self) -> Result<Vec<EngineEvent>, StreamError> {
         self.0
             .lock()
@@ -92,6 +97,14 @@ impl<S: EventSink> EventStream<S> {
     pub(crate) async fn established_run(&self) -> Option<Id> {
         self.state.lock().await.run
     }
+    /// Emit the terminal event, first emitting `Started` if the stream has not started.
+    ///
+    /// # Errors
+    ///
+    /// - [`StreamError::State`] if the stream already ended, the sequence overflows, or
+    ///   `result` does not match the stream's run.
+    /// - [`StreamError::Sink`] if the sink rejected any event, including earlier ones; the
+    ///   terminal event is still attempted once.
     pub async fn finish(&self, result: ResultEnvelope) -> Result<(), StreamError> {
         let mut state = self.state.lock().await;
         let run = if state.started {

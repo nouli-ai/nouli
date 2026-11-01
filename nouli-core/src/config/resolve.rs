@@ -23,6 +23,13 @@ impl fmt::Debug for Credential {
 }
 
 impl Credential {
+    /// Wraps a credential value for use in a request header.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::MissingCredential`] if the value is empty.
+    /// - [`ConfigError::InvalidCredential`] if it contains anything other than visible ASCII
+    ///   characters.
     pub fn new(value: String) -> Result<Self, ConfigError> {
         if value.is_empty() {
             return Err(ConfigError::MissingCredential);
@@ -114,6 +121,17 @@ impl SettingsSnapshot {
     /// Re-resolve only the saved source, preserving every saved setting. An
     /// environment variable comes first, and the provider's stored entry is the
     /// fallback when the variable is not set at all.
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigError::Invalid`] if the snapshot's format version is unsupported, or any
+    ///   [`ProviderProfile::validate`] or [`ExecutionSettings::validate`] error.
+    /// - [`ConfigError::HeaderCredential`] if a header's environment variable is unset, empty, or
+    ///   not a valid header value.
+    /// - [`ConfigError::CredentialSource`] if `api_key_env` is set and the resolved credential (the
+    ///   variable, or the stored entry when the variable is unset) is missing or invalid.
+    /// - [`ConfigError::StoredCredential`] if the profile relies on the stored credential and it is
+    ///   missing or invalid.
     pub fn with_credentials(
         self,
         lookup: impl Fn(&CredentialSource) -> Option<String>,
@@ -180,6 +198,10 @@ impl SettingsSnapshot {
 
 impl Config {
     /// Resolve connection overlays for selection/setup without reading credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::UnknownProvider`] if `provider` is not defined.
     pub fn connection_settings(
         &self,
         provider: &str,
@@ -199,6 +221,12 @@ impl Config {
         }
         Ok(connection)
     }
+    /// Chooses the store directory: the explicit path, then the configured store, then `.nouli`
+    /// under `home`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Invalid`] if the chosen path is empty.
     pub fn store_path(&self, home: &Path, explicit: Option<&Path>) -> Result<PathBuf, ConfigError> {
         let store = explicit
             .or(self.store.as_deref())
@@ -210,6 +238,10 @@ impl Config {
     }
     /// CLI selection precedes request then session defaults. For workflow nodes,
     /// pass node selection as the override and the frozen run selection as layer 1.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`Config::resolve_snapshot`] or [`SettingsSnapshot::with_credentials`] error.
     pub fn resolve(
         &self,
         overrides: &RuntimeOverrides,
@@ -222,6 +254,18 @@ impl Config {
             .with_credentials(lookup)
     }
 
+    /// Resolves the selected provider and model into frozen settings without reading credentials.
+    ///
+    /// # Errors
+    ///
+    /// - Any [`Config::validate`] error.
+    /// - [`ConfigError::NoProviders`] if no provider is defined.
+    /// - [`ConfigError::MissingProvider`] or [`ConfigError::MissingModel`] if no layer selects a
+    ///   provider or a model.
+    /// - [`ConfigError::UnknownProvider`] if the selected provider is not defined.
+    /// - Any [`ProviderProfile::validate`] or [`ExecutionSettings::validate`] error for the
+    ///   resolved settings, such as a zero `max_parallel` override, or [`ConfigError::Invalid`] if
+    ///   the store path is empty.
     pub fn resolve_snapshot(
         &self,
         overrides: &RuntimeOverrides,

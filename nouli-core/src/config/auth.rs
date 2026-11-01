@@ -31,6 +31,11 @@ impl fmt::Display for CredentialSource {
 pub struct Secret(String);
 
 impl Secret {
+    /// Wraps a credential value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::InvalidKey`] if the value is blank or contains control characters.
     pub fn new(value: String) -> Result<Self, AuthError> {
         if value.trim().is_empty() || value.chars().any(char::is_control) {
             return Err(AuthError::InvalidKey);
@@ -63,6 +68,10 @@ pub enum KeySource {
 
 impl KeySource {
     /// A source that reads the key from a named environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::InvalidEnv`] if `name` is not a valid environment variable name.
     pub fn env(name: String) -> Result<Self, AuthError> {
         if env_name(&name) {
             Ok(Self::Env(name))
@@ -72,6 +81,10 @@ impl KeySource {
     }
 
     /// A source that runs a program, with no shell, and reads its output.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::InvalidCommand`] if `words` is empty or contains an empty word.
     pub fn command(words: Vec<String>) -> Result<Self, AuthError> {
         if words.is_empty() || words.iter().any(String::is_empty) {
             Err(AuthError::InvalidCommand(String::new()))
@@ -199,6 +212,14 @@ fn entry(provider: &str, table: &toml::Table) -> Result<AuthEntry, AuthError> {
 impl AuthStore {
     /// Parses the file's text. The parser's own errors are never passed on,
     /// because they quote the line they failed on.
+    ///
+    /// # Errors
+    ///
+    /// - [`AuthError::Syntax`] if the text is not valid TOML.
+    /// - [`AuthError::Layout`] if it contains anything other than `[providers.NAME]` tables.
+    /// - [`AuthError::Field`], [`AuthError::MissingType`], [`AuthError::UnknownType`],
+    ///   [`AuthError::Source`], [`AuthError::EmptyKey`], [`AuthError::InvalidEnv`], or
+    ///   [`AuthError::InvalidCommand`] if a provider entry is invalid.
     pub fn parse(input: &str) -> Result<Self, AuthError> {
         let table: toml::Table = input.parse().map_err(|_| AuthError::Syntax)?;
         let mut entries = BTreeMap::new();
@@ -217,6 +238,10 @@ impl AuthStore {
     }
 
     /// The file's text, including any stored key. Only the writer should call it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Syntax`] if the store cannot be serialized as TOML.
     pub fn to_toml(&self) -> Result<String, AuthError> {
         let mut providers = toml::Table::new();
         for (provider, entry) in &self.entries {

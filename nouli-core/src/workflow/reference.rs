@@ -105,6 +105,14 @@ pub enum Condition {
 }
 
 impl ResultReference {
+    /// Checks that the reference names a node and question and has a
+    /// well-formed JSON pointer.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Shape`] if the node or question ID is blank.
+    /// - Returns [`WorkflowError::Pointer`] if the pointer does not start with
+    ///   `/` or contains an invalid `~` escape.
     pub fn validate(&self) -> Result<(), WorkflowError> {
         if self.node.trim().is_empty() || self.question.trim().is_empty() {
             return Err(WorkflowError::Shape("reference IDs"));
@@ -125,6 +133,14 @@ impl ResultReference {
 }
 
 impl Condition {
+    /// Checks the condition tree's shape and every reference within it.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::ConditionDepth`] if nesting exceeds 64 levels.
+    /// - Returns [`WorkflowError::Shape`] if a group is empty or a refusal test
+    ///   has a blank ID.
+    /// - Returns any [`ResultReference::validate`] error for a reference.
     pub fn validate(&self) -> Result<(), WorkflowError> {
         let mut stack = vec![(self, 0)];
         while let Some((condition, depth)) = stack.pop() {

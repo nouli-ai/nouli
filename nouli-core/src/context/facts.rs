@@ -67,12 +67,20 @@ fn record(id: Id, key: String, text: &str) -> Result<ContextRecord, FactError> {
 }
 
 /// Appends a new fact. The text is trimmed; empty text is rejected.
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn append(text: &str) -> Result<ContextUpdate, FactError> {
     append_with(Id::generate(), text)
 }
 
 /// Appends a fact under a chosen record ID. Callers that replay a request use
 /// IDs derived from the request, so the repeated request has the same intent.
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn append_with(id: Id, text: &str) -> Result<ContextUpdate, FactError> {
     Ok(ContextUpdate::Append {
         record: record(id, format!("{KEY_PREFIX}{id}"), text)?,
@@ -82,11 +90,19 @@ pub fn append_with(id: Id, text: &str) -> Result<ContextUpdate, FactError> {
 /// Replaces a fact's text, keeping its key and number. The earlier version
 /// stays in the ledger. A fact with conflicting alternatives has them all
 /// superseded.
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn replace(fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     replace_with(Id::generate(), fact, text)
 }
 
 /// Replaces a fact with a record of a chosen ID; see [`append_with`].
+///
+/// # Errors
+///
+/// Returns [`FactError::Empty`] if the trimmed text is empty.
 pub fn replace_with(id: Id, fact: &Fact, text: &str) -> Result<ContextUpdate, FactError> {
     Ok(ContextUpdate::Supersede {
         targets: fact.records.clone(),
@@ -99,6 +115,12 @@ impl Ledger {
     /// The active facts at the session's head. They follow the order in which
     /// each fact was first added, so a replacement keeps its predecessor's
     /// number. A blend lists the facts of every source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::Session`] if the session cannot be selected, [`TurnError::Projection`]
+    /// if its context cannot be projected, or another [`TurnError`] if reading its context sources
+    /// or ancestry fails.
     pub fn facts(&self, selector: &SessionSelector) -> Result<Vec<Fact>, TurnError> {
         let session = self.session(selector)?;
         let sources = self.context_sources(session.id)?;

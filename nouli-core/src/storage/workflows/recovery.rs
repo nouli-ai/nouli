@@ -186,11 +186,28 @@ pub(in crate::storage) fn read_round_results(
 }
 impl Ledger {
     /// Immutable results of every settled retry round, in acceptance order.
+    ///
+    /// # Errors
+    ///
+    /// - Returns any [`Ledger::workflow_run`] error for the run.
+    /// - Returns [`WorkflowError::Storage`] if the round results cannot be read
+    ///   or decoded.
     pub fn workflow_round_results(&self, run: Id) -> Result<Vec<RoundResult>, WorkflowError> {
         self.workflow_run(run)?;
         read_round_results(&self.connection, run)
     }
 
+    /// Inspects a run's stored progress, attempts, live ownership, and session
+    /// head compatibility in one read snapshot without changing it.
+    ///
+    /// # Errors
+    ///
+    /// - Returns any [`Ledger::workflow_run`] error for the run.
+    /// - Returns [`WorkflowError::Turn`] if an attempt cannot be read, and
+    ///   [`WorkflowError::Snapshot`] if an attempt ID is invalid.
+    /// - Returns [`WorkflowError::Guard`] if the run lock cannot be probed, and
+    ///   [`WorkflowError::Session`] if the run's session cannot be read.
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read.
     pub fn inspect_workflow(&self, run: Id) -> Result<RunInspection, WorkflowError> {
         let tx = self
             .connection
@@ -201,6 +218,20 @@ impl Ledger {
             .map_err(|error| sql_error("finish recovery inspection", error))?;
         Ok(inspection)
     }
+    /// Inspects a run together with its ordered events and settled round
+    /// results in one read snapshot.
+    ///
+    /// # Errors
+    ///
+    /// - Returns any [`Ledger::workflow_run`] error for the run.
+    /// - Returns [`WorkflowError::Turn`] if an attempt cannot be read, and
+    ///   [`WorkflowError::Snapshot`] if an attempt ID is invalid.
+    /// - Returns [`WorkflowError::Guard`] if the run lock cannot be probed, and
+    ///   [`WorkflowError::Session`] if the run's session cannot be read.
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read.
+    /// - Returns [`WorkflowError::Snapshot`] if the stored events are
+    ///   inconsistent, and [`WorkflowError::Storage`] if events or round results
+    ///   cannot be decoded.
     pub fn inspect_workflow_full(&self, run: Id) -> Result<WorkflowInspection, WorkflowError> {
         let tx = self
             .connection
@@ -265,6 +296,27 @@ impl Ledger {
             nodes,
         })
     }
+    /// Starts an explicit retry round for an unfinished run, interrupting
+    /// orphaned attempts and resetting unsettled nodes, or reports a completed
+    /// or in-progress run.
+    ///
+    /// # Errors
+    ///
+    /// - Returns any [`Ledger::workflow_run`] error for the run.
+    /// - Returns [`WorkflowError::AdvancedHead`] if the session head moved past
+    ///   the run's published frontier.
+    /// - Returns [`WorkflowError::Snapshot`] if the run has no request ID, its
+    ///   reservation does not point at the run, or its rounds, attempts, or
+    ///   outputs are inconsistent.
+    /// - Returns [`WorkflowError::Conflict`] if the run, its reservations, or a
+    ///   node changed state concurrently.
+    /// - Returns [`WorkflowError::Guard`] if a guard cannot be acquired for a
+    ///   reason other than an active request or run writer, including an
+    ///   active session writer.
+    /// - Returns [`WorkflowError::Session`], [`WorkflowError::Turn`],
+    ///   [`WorkflowError::History`], [`WorkflowError::Compile`],
+    ///   [`WorkflowError::IntentConflict`], or [`WorkflowError::Storage`] if the
+    ///   session, attempts, frozen request, or ledger cannot be read or written.
     pub fn resume_workflow(&mut self, run: Id) -> Result<WorkflowDecision, WorkflowError> {
         let first = self.workflow_run(run)?;
         if first.status == RunStatus::Completed {

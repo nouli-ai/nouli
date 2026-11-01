@@ -6,6 +6,20 @@ use crate::{
     outcome::TurnOutcome,
 };
 use serde_json::{Value, json};
+/// Build the provider request body for the profile's protocol and image encoding.
+///
+/// # Errors
+///
+/// - [`ProviderError::Protocol`] if the profile is invalid.
+/// - Any error from the protocol's request body builder.
+/// - [`ProviderError::Codec`] if image evidence is malformed or an image cannot be prepared.
+/// - [`ProviderError::Limit`] with [`LimitError::RequestBytes`](crate::limits::LimitError::RequestBytes)
+///   if the body exceeds the profile's request byte limit.
+///
+/// # Panics
+///
+/// Does not panic in practice: both protocol body builders return a JSON object, so
+/// removing `assets` from it cannot fail.
 pub fn body(
     profile: &ProviderProfile,
     request: &TurnRequest,
@@ -107,6 +121,14 @@ pub fn body(
     }
     Ok(body)
 }
+/// Convert a `SystemOne` response, unwrapping Cloudflare Workers AI envelopes, into a validated turn outcome.
+///
+/// # Errors
+///
+/// - [`ProviderError::Wire`] if a Cloudflare envelope is unsuccessful, incomplete, or
+///   missing its result, or the response metadata does not match the schema.
+/// - Any error from [`crate::provider::system_one::normalize`].
+/// - [`ProviderError::Contract`] if the outcome with metadata is invalid.
 pub fn normalize(
     request: &TurnRequest,
     mut response: Value,

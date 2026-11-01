@@ -10,6 +10,13 @@ use crate::{
 };
 
 impl Ledger {
+    /// Returns the session's current frontier, or its frozen sources while it
+    /// has no turns of its own.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::Session`] if the session does not exist, the SQLite
+    /// query fails, or a stored row is invalid.
     pub fn context_sources(&self, session: Id) -> Result<Vec<SourcePoint>, TurnError> {
         let current = self.session(&SessionSelector::Id(session))?;
         if current.frontier.is_empty() {
@@ -22,6 +29,15 @@ impl Ledger {
         }
     }
 
+    /// Projects the active context records for a turn from the given sources
+    /// and pending updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TurnError::UnknownTurn`] or [`TurnError::Storage`] if an
+    /// ancestor turn is missing or unreadable, [`TurnError::History`] if the
+    /// ancestry is invalid, or [`TurnError::Projection`] if the updates cannot
+    /// be applied.
     pub fn context_at(
         &self,
         sources: &[SourcePoint],

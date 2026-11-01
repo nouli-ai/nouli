@@ -48,6 +48,16 @@ pub enum GrammarError {
 }
 
 /// Parse one question written in the compact grammar.
+///
+/// # Errors
+///
+/// - [`GrammarError::MissingId`] or [`GrammarError::InvalidId`] if the ID before the colon is
+///   absent or invalid.
+/// - [`GrammarError::EmptyPrompt`] if the prompt is empty.
+/// - Another [`GrammarError`], such as [`GrammarError::Unbalanced`] or
+///   [`GrammarError::ChoiceCount`], if the trailing answer list is malformed, has the wrong number
+///   of items, or derives an empty or duplicate option ID.
+/// - [`GrammarError::Contract`] if the question fails [`Question::validate`].
 pub fn parse(line: &str) -> Result<Question, GrammarError> {
     let colon = line.find(':').ok_or(GrammarError::MissingId)?;
     let id = line[..colon].trim();

@@ -338,6 +338,28 @@ impl<
     T: RetryClock + Send + 'static,
 > Engine<P, C, T>
 {
+    /// Evaluate a workflow without observing its progress.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::evaluate_workflow_observed`]:
+    ///
+    /// - [`WorkflowEngineError::Engine`] wrapping [`EngineError::Canceled`] if `cancel` has
+    ///   already fired, or [`EngineError::EphemeralOptions`] /
+    ///   [`EngineError::EphemeralStore`] for an invalid ephemeral run.
+    /// - [`WorkflowEngineError::Compile`] if the workflow definition does not compile, or
+    ///   [`WorkflowEngineError::Repository`] if it cannot be fingerprinted.
+    /// - [`WorkflowEngineError::Store`] if a durable run, or an ephemeral run with sources,
+    ///   has no ledger worker.
+    /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
+    /// - [`WorkflowEngineError::Schedule`] if an ephemeral run fails to schedule.
+    /// - [`WorkflowEngineError::InProgress`] if another live owner is executing the run, or
+    ///   [`WorkflowEngineError::Existing`] if it needs explicit recovery.
+    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
+    ///   ledger cannot load, interrupt, or finish the run.
+    /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
+    /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
+    ///   run is marked interrupted first.
     pub async fn evaluate_workflow(
         self: &Arc<Self>,
         worker: Option<&LedgerWorker>,
@@ -355,6 +377,26 @@ impl<
         .await
     }
 
+    /// Evaluate a workflow, reporting its start and node progress to `observer`.
+    ///
+    /// # Errors
+    ///
+    /// - [`WorkflowEngineError::Engine`] wrapping [`EngineError::Canceled`] if `cancel` has
+    ///   already fired, or [`EngineError::EphemeralOptions`] /
+    ///   [`EngineError::EphemeralStore`] for an invalid ephemeral run.
+    /// - [`WorkflowEngineError::Compile`] if the workflow definition does not compile, or
+    ///   [`WorkflowEngineError::Repository`] if it cannot be fingerprinted.
+    /// - [`WorkflowEngineError::Store`] if a durable run, or an ephemeral run with sources,
+    ///   has no ledger worker.
+    /// - [`WorkflowEngineError::Config`] if node settings cannot be resolved.
+    /// - [`WorkflowEngineError::Schedule`] if an ephemeral run fails to schedule.
+    /// - [`WorkflowEngineError::InProgress`] if another live owner is executing the run, or
+    ///   [`WorkflowEngineError::Existing`] if it needs explicit recovery.
+    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
+    ///   ledger cannot load, interrupt, or finish the run.
+    /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
+    /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
+    ///   run is marked interrupted first.
     pub async fn evaluate_workflow_observed<O: ScheduleObserver>(
         self: &Arc<Self>,
         worker: Option<&LedgerWorker>,
@@ -506,6 +548,21 @@ impl<
 
     /// Explicitly begin a new bounded retry round using the saved definition and settings.
     /// Credentials are resolved afresh by the original source names.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::resume_workflow_observed`]:
+    ///
+    /// - [`WorkflowEngineError::Engine`] wrapping [`EngineError::Canceled`] if `cancel` has
+    ///   already fired.
+    /// - [`WorkflowEngineError::Compile`] if the saved workflow definition does not compile.
+    /// - [`WorkflowEngineError::InProgress`] if another live owner is executing the run, or
+    ///   [`WorkflowEngineError::Existing`] if it needs explicit recovery.
+    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
+    ///   ledger cannot load, interrupt, or finish the run.
+    /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
+    /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
+    ///   run is marked interrupted first.
     pub async fn resume_workflow(
         self: &Arc<Self>,
         worker: &LedgerWorker,
@@ -523,6 +580,20 @@ impl<
         .await
     }
 
+    /// Resume a saved workflow run, reporting its start and node progress to `observer`.
+    ///
+    /// # Errors
+    ///
+    /// - [`WorkflowEngineError::Engine`] wrapping [`EngineError::Canceled`] if `cancel` has
+    ///   already fired.
+    /// - [`WorkflowEngineError::Compile`] if the saved workflow definition does not compile.
+    /// - [`WorkflowEngineError::InProgress`] if another live owner is executing the run, or
+    ///   [`WorkflowEngineError::Existing`] if it needs explicit recovery.
+    /// - [`WorkflowEngineError::Worker`] or [`WorkflowEngineError::Repository`] if the
+    ///   ledger cannot load, interrupt, or finish the run.
+    /// - [`WorkflowEngineError::Schedule`] if the observer rejects the start event.
+    /// - [`WorkflowEngineError::Execution`] if scheduling fails after the run starts; the
+    ///   run is marked interrupted first.
     pub async fn resume_workflow_observed<O: ScheduleObserver>(
         self: &Arc<Self>,
         worker: &LedgerWorker,

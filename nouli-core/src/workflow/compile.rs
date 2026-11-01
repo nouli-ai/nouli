@@ -200,6 +200,20 @@ impl Scope<'_> {
     }
 }
 
+/// Validates a workflow and compiles it into a dependency-ordered plan with
+/// typed input, condition, and output references.
+///
+/// # Errors
+///
+/// - Returns [`CompileError::Contract`] if [`WorkflowSpec::validate`] fails,
+///   the workflow model is blank, or a node repeats a required record.
+/// - Returns [`CompileError::UnknownDependency`] or [`CompileError::Cycle`] if
+///   the dependency graph is not a valid DAG.
+/// - Returns [`CompileError::UnknownReference`],
+///   [`CompileError::ForeignReference`], [`CompileError::Selector`],
+///   [`CompileError::ConditionalMissing`], [`CompileError::DefaultType`], or
+///   [`CompileError::ComparisonType`] if a reference or condition does not
+///   resolve to a compatible ancestor answer.
 pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, CompileError> {
     spec.validate()?;
     if [&spec.model.provider, &spec.model.model]

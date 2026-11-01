@@ -240,6 +240,15 @@ pub enum HistoryError {
 
 impl EvaluationRequest {
     /// A turn asks exactly its own questions, so it needs at least one.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::Standing`] if the request uses standing questions.
+    /// - [`HistoryError::Decision`] if the turn is invalid, or [`HistoryError::Context`]
+    ///   if a context update is invalid.
+    /// - [`HistoryError::InvalidSelection`] if the request ID, provider, or model is blank,
+    ///   or required records repeat.
+    /// - Any error from [`SessionSelection::validate`].
     pub fn validate(&self) -> Result<(), HistoryError> {
         // First, so a 0.2.0 request with only standing questions says why.
         if !self.standing.is_empty() {
@@ -278,6 +287,12 @@ impl EvaluationRequest {
 }
 
 impl SessionSelection {
+    /// Check that a source selection names at least one source with a valid frontier.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::InvalidSelection`] if `From` lists no sources.
+    /// - [`HistoryError::InvalidFrontier`] if an explicit frontier is empty or repeats a turn.
     pub fn validate(&self) -> Result<(), HistoryError> {
         if let Self::From { sources, .. } = self {
             if sources.is_empty() {
@@ -301,6 +316,16 @@ impl SessionSelection {
 }
 
 impl FinalizedTurn {
+    /// Check that a finalized turn is internally consistent.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::InvalidManifest`] if workflow node, run, context base, session, or
+    ///   runtime-only flags disagree, or the manifest provider differs from the outcome's.
+    /// - Any error from [`ContextBase::validate`](base::ContextBase::validate) or
+    ///   [`EvaluationManifest::validate`].
+    /// - [`HistoryError::Decision`] if the outcome does not match the request.
+    /// - [`HistoryError::Context`] if an update is invalid or two updates create the same record.
     pub fn validate(&self) -> Result<(), HistoryError> {
         if self
             .workflow_node
@@ -350,6 +375,14 @@ impl FinalizedTurn {
 }
 
 impl EvaluationManifest {
+    /// Check that a manifest's provider, token counts, and record projections are consistent.
+    ///
+    /// # Errors
+    ///
+    /// - [`HistoryError::Decision`] if the provider or model name is blank.
+    /// - [`HistoryError::InvalidManifest`] if the input count is inconsistent, the budget is
+    ///   zero or exceeded by input plus reserved output, a record is projected twice, or a
+    ///   protected record is omitted.
     pub fn validate(&self) -> Result<(), HistoryError> {
         crate::decision::nonempty(&self.provider.provider, "manifest.provider")?;
         crate::decision::nonempty(&self.provider.model, "manifest.model")?;

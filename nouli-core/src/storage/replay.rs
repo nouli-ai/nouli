@@ -74,6 +74,14 @@ impl RequestOwner {
     pub fn guard(&self) -> &SessionGuard {
         &self.session_guard
     }
+    /// Prepares the reserved request's attempt with the frozen intent and the
+    /// given manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplayError::Session`] if the session cannot be read,
+    /// [`ReplayError::Conflict`] if its head moved since the request was
+    /// frozen, or [`ReplayError::Turn`] if [`Ledger::prepare_attempt`] fails.
     pub fn prepare(
         &self,
         ledger: &mut Ledger,
@@ -122,6 +130,11 @@ pub enum ReplayError {
 
 /// Presentation/config defaults are not part of submitted intent. Resolve
 /// explicit CLI provider/model overrides into request.model before this call.
+///
+/// # Errors
+///
+/// Returns [`ReplayError::History`] if the request is invalid, or
+/// [`ReplayError::Fingerprint`] if its intent cannot be hashed.
 pub fn fingerprint(request: &EvaluationRequest) -> Result<String, ReplayError> {
     request.validate()?;
     intent_hash(request)
@@ -341,6 +354,14 @@ pub(super) fn validate_reserved_input(
 
 impl Ledger {
     /// Inspect validated frozen settings without acquiring ownership or credentials.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`fingerprint`] for the request.
+    /// - [`ReplayError::IntentConflict`] if the request ID already identifies
+    ///   different intent or a non-evaluation request.
+    /// - [`ReplayError::Storage`] or [`ReplayError::Fingerprint`] if the SQLite
+    ///   query fails or the saved reservation is invalid.
     pub fn saved_request(
         &self,
         request: &EvaluationRequest,
@@ -361,9 +382,32 @@ impl Ledger {
     /// The frozen request saved under a request ID, whatever its intent. A
     /// caller that builds a request from the ledger's current state uses it to
     /// rebuild the same request when the ID was already used.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplayError::IntentConflict`] if the ID identifies a
+    /// non-evaluation request, or [`ReplayError::Storage`] or
+    /// [`ReplayError::Fingerprint`] if the SQLite query fails or the saved
+    /// reservation is invalid.
     pub fn saved_request_by_id(&self, key: &str) -> Result<Option<FrozenRequest>, ReplayError> {
         Ok(reservation(&self.connection, key)?.map(|saved| saved.frozen))
     }
+    /// Reserves a request ID with frozen intent and settings, or reports the
+    /// existing reservation's completed, in-progress, or interrupted state.
+    ///
+    /// # Errors
+    ///
+    /// - [`ReplayError::MissingId`] if the request ID is missing or blank.
+    /// - [`ReplayError::History`] or [`ReplayError::Fingerprint`] if the
+    ///   request is invalid or cannot be hashed.
+    /// - [`ReplayError::IntentConflict`] if the ID already identifies
+    ///   different intent.
+    /// - [`ReplayError::Guard`] if the ledger is read-only or another writer
+    ///   owns the session.
+    /// - [`ReplayError::Session`] or [`ReplayError::Source`] if the selected
+    ///   session or its sources cannot be resolved or created.
+    /// - [`ReplayError::Storage`] if the settings are invalid, the store path
+    ///   cannot be resolved, or the SQLite write fails.
     pub fn accept_request(
         &mut self,
         request: &EvaluationRequest,
@@ -371,6 +415,22 @@ impl Ledger {
     ) -> Result<RequestDecision, ReplayError> {
         self.request_decision(request, Some(settings), false)
     }
+    /// Retakes ownership of an interrupted reservation for the same request
+    /// under its frozen intent.
+    ///
+    /// # Errors
+    ///
+    /// - [`ReplayError::MissingId`] if the request ID is missing or blank, or
+    ///   no reservation exists for it.
+    /// - [`ReplayError::History`] or [`ReplayError::Fingerprint`] if the
+    ///   request is invalid or cannot be hashed.
+    /// - [`ReplayError::IntentConflict`] if the ID identifies different intent.
+    /// - [`ReplayError::Guard`] if the ledger is read-only or another writer
+    ///   owns the session.
+    /// - [`ReplayError::Conflict`] if the session head moved since the request
+    ///   was frozen.
+    /// - [`ReplayError::Session`] or [`ReplayError::Storage`] if reading the
+    ///   session or the SQLite write fails.
     pub fn retry_interrupted_request(
         &mut self,
         request: &EvaluationRequest,

@@ -74,6 +74,11 @@ impl fmt::Debug for HttpResponse {
 }
 
 impl HttpResponse {
+    /// Decodes the response body as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError::Contract`] if the body is not valid JSON.
     pub fn json(&self) -> Result<Value, TransportError> {
         codec::decode_value(&self.body, InputFormat::Json).map_err(|_| TransportError::Contract)
     }
@@ -86,6 +91,13 @@ pub struct HttpTransport {
 }
 
 /// Appends protocol path segments without dropping a reverse proxy's prefix.
+///
+/// # Errors
+///
+/// Returns [`TransportError::Endpoint`] if the profile is invalid, its base URL
+/// cannot carry path segments, or the request path or a Cloudflare model ID
+/// contains an empty, `.`, or `..` segment (or a `?`, `#`, or `\` in the
+/// request path).
 pub fn endpoint(profile: &ProviderProfile, path: &str) -> Result<Url, TransportError> {
     profile.validate().map_err(|_| TransportError::Endpoint)?;
     let mut url = Url::parse(&profile.base_url).map_err(|_| TransportError::Endpoint)?;
@@ -180,6 +192,14 @@ fn status_error(status: u16, retry_after: Option<RetryAfter>, body: &[u8]) -> Tr
 }
 
 impl HttpTransport {
+    /// Builds a transport that enforces the attempt timeout and response size
+    /// limit from `settings`, without retries, redirects, or proxies.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`TransportError::Settings`] if the settings are invalid or the
+    ///   timeout overflows the clock.
+    /// - Returns [`TransportError::Build`] if the HTTP client cannot be built.
     pub fn new(settings: &ExecutionSettings) -> Result<Self, TransportError> {
         settings.validate().map_err(|_| TransportError::Settings)?;
         let timeout = Duration::from_secs(settings.attempt_timeout_seconds);
@@ -199,6 +219,23 @@ impl HttpTransport {
         })
     }
 
+    /// Sends one cancellable JSON POST attempt to the profile's endpoint.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`TransportError::Endpoint`] if the endpoint cannot be built,
+    ///   and [`TransportError::Settings`] if a header or credential is not a
+    ///   valid HTTP header.
+    /// - Returns [`TransportError::Canceled`] if `cancel` fires first, and
+    ///   [`TransportError::Timeout`] if the attempt exceeds its timeout.
+    /// - Returns [`TransportError::Connect`], [`TransportError::Body`],
+    ///   [`TransportError::Truncated`], or [`TransportError::Oversize`] if the
+    ///   exchange fails or the response body is incomplete or too large.
+    /// - Returns a status classification such as
+    ///   [`TransportError::Authentication`], [`TransportError::RateLimited`],
+    ///   [`TransportError::Capacity`], [`TransportError::Capability`],
+    ///   [`TransportError::Contract`], or [`TransportError::Status`] for a
+    ///   non-2xx response.
     #[tracing::instrument(skip_all, name = "provider_attempt")]
     pub async fn post(
         &self,
@@ -219,6 +256,24 @@ impl HttpTransport {
         .await
     }
 
+    /// Sends one cancellable JSON POST attempt with additional sensitive
+    /// headers.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`TransportError::Endpoint`] if the endpoint cannot be built,
+    ///   and [`TransportError::Settings`] if a header or credential is not a
+    ///   valid HTTP header.
+    /// - Returns [`TransportError::Canceled`] if `cancel` fires first, and
+    ///   [`TransportError::Timeout`] if the attempt exceeds its timeout.
+    /// - Returns [`TransportError::Connect`], [`TransportError::Body`],
+    ///   [`TransportError::Truncated`], or [`TransportError::Oversize`] if the
+    ///   exchange fails or the response body is incomplete or too large.
+    /// - Returns a status classification such as
+    ///   [`TransportError::Authentication`], [`TransportError::RateLimited`],
+    ///   [`TransportError::Capacity`], [`TransportError::Capability`],
+    ///   [`TransportError::Contract`], or [`TransportError::Status`] for a
+    ///   non-2xx response.
     #[allow(clippy::too_many_arguments)]
     pub async fn post_with_headers(
         &self,

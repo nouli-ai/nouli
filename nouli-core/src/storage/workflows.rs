@@ -148,6 +148,14 @@ fn validate(request: &WorkflowRequest) -> Result<(), WorkflowError> {
     }
     Ok(())
 }
+/// Validates a workflow request and returns the fingerprint of its intent.
+///
+/// # Errors
+///
+/// - Returns [`WorkflowError::Compile`] if the workflow does not compile.
+/// - Returns [`WorkflowError::History`] if the session selection, request ID,
+///   required records, or context updates are invalid.
+/// - Returns [`WorkflowError::Snapshot`] if the intent cannot be fingerprinted.
 pub fn fingerprint(request: &WorkflowRequest) -> Result<String, WorkflowError> {
     validate(request)?;
     #[derive(Serialize)]
@@ -351,6 +359,16 @@ pub(super) fn read_run(
 }
 
 impl Ledger {
+    /// Returns the frozen workflow previously saved for the request's ID, if any.
+    ///
+    /// # Errors
+    ///
+    /// - Returns any [`fingerprint`] validation error for the request.
+    /// - Returns [`WorkflowError::IntentConflict`] if the request ID was saved
+    ///   for a different intent or request kind.
+    /// - Returns [`WorkflowError::UnknownRun`] or [`WorkflowError::Snapshot`] if
+    ///   the saved run is missing or inconsistent, and [`WorkflowError::Storage`]
+    ///   if the ledger cannot be read or decoded.
     pub fn saved_workflow(
         &self,
         request: &WorkflowRequest,
@@ -363,6 +381,15 @@ impl Ledger {
             .map(|run| frozen(&self.connection, run))
             .transpose()
     }
+    /// Reads a consistent snapshot of a stored workflow run.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::UnknownRun`] if the run does not exist.
+    /// - Returns [`WorkflowError::Snapshot`] or [`WorkflowError::Compile`] if the
+    ///   frozen definition, settings, or status are inconsistent.
+    /// - Returns [`WorkflowError::Storage`] if the ledger cannot be read or a
+    ///   stored payload cannot be decoded.
     pub fn workflow_run(&self, run: Id) -> Result<StoredRun, WorkflowError> {
         self.read_workflow_with(run, || {})
     }
@@ -380,6 +407,23 @@ impl Ledger {
             .map_err(|error| sql_error("finish workflow snapshot", error))?;
         Ok(stored)
     }
+    /// Freezes a durable workflow request and takes ownership of its new run,
+    /// or reports a saved, in-progress, or previously exited run for the same
+    /// request ID.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Snapshot`] if the workflow is not durable, the
+    ///   settings do not match the compiled nodes, or a setting is invalid.
+    /// - Returns [`WorkflowError::History`] if the request has no request ID or
+    ///   fails [`fingerprint`] validation, and [`WorkflowError::IntentConflict`]
+    ///   if the request ID was saved for a different intent.
+    /// - Returns [`WorkflowError::Guard`] if a request, session, or run guard
+    ///   cannot be acquired for a reason other than an active writer.
+    /// - Returns [`WorkflowError::Session`] or [`WorkflowError::Source`] if the
+    ///   selected session, defaults, or sources cannot be resolved.
+    /// - Returns [`WorkflowError::Storage`] if the ledger is read-only, busy, or
+    ///   cannot be read or written.
     pub fn accept_workflow(
         &mut self,
         request: &WorkflowRequest,

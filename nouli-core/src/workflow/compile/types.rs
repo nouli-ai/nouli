@@ -94,6 +94,12 @@ fn answer_path(space: &AnswerSpace, path: &[&str]) -> Result<ValueType, CompileE
         _ => return Err(CompileError::Selector),
     })
 }
+/// Returns the value type selected by a reference's field and pointer.
+///
+/// # Errors
+///
+/// Returns [`CompileError::Selector`] if the pointer is malformed or the field
+/// or pointer does not apply to the question's answer space.
 pub fn reference_type(
     reference: &ResultReference,
     question: &Question,

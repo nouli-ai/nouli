@@ -38,6 +38,19 @@ fn present(value: serde_json::Value) -> Result<ReferenceValue, ResolveError> {
         value: Data::new(value)?,
     })
 }
+/// Selects a reference's raw value from a settled node, reporting skipped,
+/// failed, blocked, interrupted, refused, or missing sources as absent.
+///
+/// # Errors
+///
+/// - Returns [`ResolveError::Contract`] if the reference is malformed.
+/// - Returns [`ResolveError::Unsettled`] if the node is pending or running.
+/// - Returns [`ResolveError::Incomplete`] if a completed node lacks an outcome
+///   for the question or the selected choice's probability.
+/// - Returns [`ResolveError::Operand`] if the field does not apply to the
+///   answer kind.
+/// - Returns [`ResolveError::Codec`] or [`ResolveError::Data`] if the selected
+///   value cannot be encoded as data.
 pub fn select(
     reference: &ResultReference,
     status: NodeStatus,
@@ -114,6 +127,12 @@ pub fn select(
         present(value)
     }
 }
+/// Applies a reference's missing-value policy to a selected value.
+///
+/// # Errors
+///
+/// Returns [`ResolveError::Required`] if the value is absent and the policy
+/// requires it.
 pub fn apply(
     reference: &ResultReference,
     value: ReferenceValue,

@@ -151,12 +151,27 @@ impl SessionGuard {
 }
 
 impl Ledger {
+    /// Acquires the exclusive cross-process scheduler guard for a workflow run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GuardError::WriterActive`] if another handle holds the guard,
+    /// or [`GuardError::Storage`] if the ledger is read-only or the lock file
+    /// cannot be created, opened, or locked.
     pub fn run_guard(&self, run: Id) -> Result<RunGuard, GuardError> {
         Ok(RunGuard {
             run,
             _lock: lock(self, &format!("run-{run}"))?,
         })
     }
+    /// Acquires the exclusive cross-process writer guard for an existing session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GuardError::Session`] if the session does not exist or cannot
+    /// be read, [`GuardError::WriterActive`] if another handle holds the guard,
+    /// or [`GuardError::Storage`] if the ledger is read-only or the lock file
+    /// or ledger path cannot be accessed.
     pub fn session_guard(&self, id: Id) -> Result<SessionGuard, GuardError> {
         self.session(&SessionSelector::Id(id))?;
         acquire_session(self, id)

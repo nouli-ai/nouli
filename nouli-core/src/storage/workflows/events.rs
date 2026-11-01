@@ -13,6 +13,15 @@ pub struct StoredEvent {
     pub event: WorkflowEvent,
 }
 impl Ledger {
+    /// Lists a workflow run's events in stored sequence order.
+    ///
+    /// # Errors
+    ///
+    /// - Returns any [`Ledger::workflow_run`] error for the run.
+    /// - Returns [`WorkflowError::Snapshot`] if an event has an unsupported
+    ///   version or the sequence has gaps.
+    /// - Returns [`WorkflowError::Storage`] if the events cannot be read or
+    ///   decoded.
     pub fn workflow_events(&self, run: Id) -> Result<Vec<StoredEvent>, WorkflowError> {
         self.workflow_run(run)?;
         read_events(&self.connection, run)

@@ -12,6 +12,12 @@ pub enum ProjectionError {
 }
 /// The full intermediate outcomes remain in the engine result and ledger.
 /// This public report includes only selected outputs and structural node metadata.
+///
+/// # Errors
+///
+/// Returns [`ProjectionError::Snapshot`] if the definition does not compile, or the
+/// result or `inspection` disagrees with the definition, is unfinished, or has outputs
+/// or outcomes that do not match it.
 pub fn workflow(
     definition: &WorkflowSpec,
     result: &WorkflowResult,

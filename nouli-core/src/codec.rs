@@ -24,6 +24,11 @@ pub enum InputFormat {
 }
 
 impl InputFormat {
+    /// Selects the input format from a path's `json` or `toon` extension.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::Format`] if the extension is missing or is neither `json` nor `toon`.
     pub fn for_path(path: &Path) -> Result<Self, CodecError> {
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("json") => Ok(Self::Json),
@@ -76,6 +81,13 @@ pub enum Request {
     Workflow(WorkflowSpec),
 }
 
+/// Decodes bytes in the given format into a canonical JSON value.
+///
+/// # Errors
+///
+/// - [`CodecError::Utf8`] if the input is not valid UTF-8.
+/// - [`CodecError::Syntax`], [`CodecError::DuplicateKey`], or [`CodecError::Number`] if the input
+///   is malformed, repeats an object key, or contains a number outside the supported domain.
 pub fn decode_value(bytes: &[u8], format: InputFormat) -> Result<Value, CodecError> {
     let input = std::str::from_utf8(bytes).map_err(|_| CodecError::Utf8)?;
     let value = match format {
@@ -87,15 +99,33 @@ pub fn decode_value(bytes: &[u8], format: InputFormat) -> Result<Value, CodecErr
 
 /// Decode a contract shape; callers of generic contracts also run their semantic
 /// validator. `decode_request` includes turn/workflow semantic shape validation.
+///
+/// # Errors
+///
+/// Returns any [`decode_value`] error, or [`CodecError::Shape`] if the value does not deserialize
+/// into `T`.
 pub fn decode<T: DeserializeOwned>(bytes: &[u8], format: InputFormat) -> Result<T, CodecError> {
     serde_json::from_value(decode_value(bytes, format)?).map_err(|_| CodecError::Shape)
 }
 
+/// Decodes bytes into a validated turn or workflow request.
+///
+/// # Errors
+///
+/// Returns any [`decode_value`] or [`request_from_value`] error.
 pub fn decode_request(bytes: &[u8], format: InputFormat) -> Result<Request, CodecError> {
     request_from_value(decode_value(bytes, format)?)
 }
 
 /// Normalize omitted v1 fields and validate a previously decoded request value.
+///
+/// # Errors
+///
+/// - [`CodecError::Kind`] if the value is not an object or does not contain exactly one of
+///   `questions` and `nodes`.
+/// - [`CodecError::Question`] if a workflow node's compact-grammar question does not parse.
+/// - [`CodecError::Shape`] if the value does not match the turn or workflow contract.
+/// - [`CodecError::Decision`] or [`CodecError::Workflow`] if the request fails semantic validation.
 pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
     let object = value.as_object_mut().ok_or(CodecError::Kind)?;
     let turn = object.contains_key("questions");
@@ -135,6 +165,10 @@ pub fn request_from_value(mut value: Value) -> Result<Request, CodecError> {
 
 /// Fills in the v1 `version` of the `turn` object in an evaluation request
 /// value, so a request that wraps a turn may omit it as a bare turn does.
+///
+/// # Errors
+///
+/// Returns [`CodecError::Shape`] if the value has no `turn` object.
 pub fn default_turn_version(value: &mut Value) -> Result<(), CodecError> {
     let turn = value
         .get_mut("turn")
@@ -168,12 +202,24 @@ fn expand_questions(
 }
 
 /// Convert serializable input without allowing non-finite values to become null.
+///
+/// # Errors
+///
+/// - [`CodecError::Number`] if the value contains a non-finite float.
+/// - [`CodecError::Representation`] if the value nests more than 128 levels deep.
+/// - [`CodecError::Shape`] if the value fails to serialize or cannot be converted to JSON.
 pub fn to_value<T: Serialize>(value: &T) -> Result<Value, CodecError> {
     serialize::checked_value(value)
 }
 
 /// Official TOON encoding, checked against a strict decode before use. Numeric
 /// spelling and object-key order are canonicalized; array/history order is kept.
+///
+/// # Errors
+///
+/// Returns any [`to_value`] error, [`CodecError::Representation`] if TOON encoding fails or the
+/// encoded text decodes to a different value, or any [`decode_value`] error from decoding the
+/// encoded text.
 pub fn encode_toon<T: Serialize>(value: &T) -> Result<String, CodecError> {
     let value = canonical_value(serialize::checked_value(value)?);
     let encoded = toon_format::encode_default(&value).map_err(|_| CodecError::Representation)?;
@@ -183,6 +229,12 @@ pub fn encode_toon<T: Serialize>(value: &T) -> Result<String, CodecError> {
     Ok(encoded)
 }
 
+/// Returns the hex SHA-256 digest of the value's canonical JSON serialization.
+///
+/// # Errors
+///
+/// Returns any [`to_value`] error, or [`CodecError::Shape`] if the canonical value cannot be
+/// serialized as JSON.
 pub fn fingerprint<T: Serialize>(value: &T) -> Result<String, CodecError> {
     let value = canonical_value(serialize::checked_value(value)?);
     let bytes = serde_json::to_vec(&value).map_err(|_| CodecError::Shape)?;

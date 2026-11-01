@@ -186,6 +186,10 @@ impl Projector {
 
 /// Request updates are projected without mutating their source histories.
 /// The caller publishes them only as part of a successfully finalized turn.
+///
+/// # Errors
+///
+/// Returns any [`project_with_base`] error.
 pub fn project(
     turns: &[FinalizedTurn],
     sources: &[SourcePoint],
@@ -277,6 +281,17 @@ fn apply_base(
     Ok(heads)
 }
 
+/// Projects the active context records at `sources`, applying an optional context base and then
+/// `updates` under `origin`.
+///
+/// # Errors
+///
+/// - [`ProjectionError::History`] if the history cannot be ordered or a context base is invalid,
+///   unreachable, or inconsistent with the history.
+/// - [`ProjectionError::Context`] if an update is invalid, repeats a record ID, or targets a record
+///   that is unavailable or no longer active.
+/// - [`ProjectionError::Conflicts`] if independent revisions of a non-fact key remain unresolved,
+///   or a pin or unpin target has several active revisions.
 pub fn project_with_base(
     turns: &[FinalizedTurn],
     sources: &[SourcePoint],

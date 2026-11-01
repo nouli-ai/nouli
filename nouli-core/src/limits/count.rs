@@ -17,6 +17,13 @@ pub struct InputCounts {
 /// A verified implementation must account for the complete selected protocol,
 /// model context, and live question envelope, not just tokenize the state string.
 pub trait TokenCounter {
+    /// Count the tokens for the shared context and each question under `profile`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LimitError`] if the input cannot be counted. [`ByteCounter`] returns
+    /// [`LimitError::Codec`] for malformed or undecodable image evidence and
+    /// [`LimitError::Overflow`] if a count overflows.
     fn count(
         &self,
         profile: &ProviderProfile,

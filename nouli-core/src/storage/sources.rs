@@ -84,6 +84,13 @@ pub(super) fn resolve_selection(
 impl Ledger {
     /// One read transaction freezes all unspecified heads together. This also
     /// works on a read-only ledger and creates no session or guard files.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SourceError::History`] if no sources are selected, a frontier
+    /// is empty or repeats a turn, or a frontier turn belongs to another
+    /// session; [`SourceError::Session`] if a selected session cannot be read;
+    /// or [`SourceError::Storage`] if the SQLite read fails.
     pub fn resolve_sources(
         &self,
         selections: &[SourceSelection],
@@ -101,6 +108,14 @@ impl Ledger {
 
     /// Record references without copying or changing the selected sources.
     /// Evaluation updates can subsequently resolve conflicts during preparation.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Ledger::resolve_sources`] for the selections.
+    /// - [`SourceError::Session`] if the defaults are invalid, the name is
+    ///   taken, or no automatic name is available.
+    /// - [`SourceError::Storage`] if the ledger is read-only or the SQLite
+    ///   write fails.
     pub fn create_session_from(
         &mut self,
         name: Option<SessionName>,

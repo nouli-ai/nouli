@@ -173,6 +173,12 @@ impl Ledger {
     /// historical image payloads on each keystroke or subsequent picker open.
     /// Checking identities, rather than a UUID watermark, includes late workflow
     /// publications whose IDs precede another already-published turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecisionError::Turn`] if a listed turn cannot be read, or
+    /// [`DecisionError::Storage`] if the SQLite query fails or a stored turn
+    /// has an invalid ID or lacks an outcome for one of its questions.
     pub fn saved_decisions(
         &self,
         known: &HashSet<Id>,
@@ -230,6 +236,16 @@ impl Ledger {
     /// Snapshot one exact answer as ordinary durable evidence, without blending
     /// source-session ancestry, changing its active facts, or re-evaluating it.
     /// Native image inputs are copied from the immutable saved input manifest.
+    ///
+    /// # Errors
+    ///
+    /// - [`DecisionError::Turn`] if the source turn cannot be read.
+    /// - [`DecisionError::Missing`] if the turn is runtime-only, belongs to
+    ///   another session, or lacks the question or its outcome.
+    /// - [`DecisionError::Refused`] if the question was not answered.
+    /// - [`DecisionError::Codec`] if the saved input manifest cannot be
+    ///   decoded, [`DecisionError::Data`] if the record value is invalid, or
+    ///   [`DecisionError::Storage`] if the label query fails.
     pub fn decision_reference(
         &self,
         source: &DecisionSource,
@@ -258,6 +274,13 @@ impl Ledger {
 
     /// The immutable input state actually sent for this saved answer. Read it
     /// only for the selected preview, rather than caching every full history.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecisionError::Turn`] if the source turn cannot be read,
+    /// [`DecisionError::Missing`] if it belongs to another session or lacks the
+    /// question, or [`DecisionError::Codec`] if the saved input manifest cannot
+    /// be decoded.
     pub fn decision_state(&self, source: &DecisionSource) -> Result<Vec<String>, DecisionError> {
         let turn = self.turn(source.turn)?;
         if turn.session != source.session

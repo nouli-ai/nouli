@@ -194,6 +194,18 @@ fn validate_bindings(bindings: &[OutputBinding]) -> Result<(), WorkflowError> {
 
 impl WorkflowSpec {
     /// Shape validation; DAG/type/ancestry compilation is a later engine phase.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`WorkflowError::Decision`] if the contract version is
+    ///   unsupported or a node's turn request is invalid.
+    /// - Returns [`WorkflowError::Shape`] if there are no nodes, parallelism is
+    ///   zero, or node IDs, dependencies, node models, or binding names are
+    ///   empty or duplicated.
+    /// - Returns [`WorkflowError::Context`] if a node's context update is
+    ///   invalid.
+    /// - Returns [`WorkflowError::Pointer`] or [`WorkflowError::ConditionDepth`]
+    ///   if a condition or binding reference is malformed.
     pub fn validate(&self) -> Result<(), WorkflowError> {
         if self.version != CONTRACT_VERSION {
             return Err(ContractError::Version(self.version).into());
