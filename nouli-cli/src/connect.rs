@@ -249,12 +249,14 @@ fn publish(path: &Path, doc: &DocumentMut) -> Result<(), SetupError> {
     }
     result.map_err(|_| SetupError::Write)
 }
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
+/// A validated connection, ready to be written to the configuration.
+struct Draft {
+    name: String,
+    model: String,
+    definition: ProviderDefinition,
+    key: Option<KeySource>,
+}
 pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection, SetupError> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let interactive =
         !options.non_interactive && io::stdin().is_terminal() && io::stdout().is_terminal();
     let file = path(args)?;
@@ -269,11 +271,12 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
     if recipe.is_none() && service != "custom" {
         return Err(SetupError::Invalid);
     }
+    let recipe = recipe.as_ref();
     let name = choose(
         options
             .name
             .clone()
-            .or_else(|| recipe.as_ref().map(|_| service.clone())),
+            .or_else(|| recipe.map(|_| service.clone())),
         "Connection name",
         &service,
         interactive,
@@ -281,55 +284,86 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
     if name.trim().is_empty() {
         return Err(SetupError::Invalid);
     }
-    if !options.replace
-        && read(&file)?
-            .get("providers")
-            .and_then(|providers| providers.get(&name))
-            .is_some()
-    {
+    if !options.replace && has_provider(&read(&file)?, &name) {
         return Err(SetupError::Exists);
     }
-    let proto = choose(
-        options.protocol.clone().or_else(|| {
-            recipe.as_ref().map(|r| {
-                if r.protocol == Protocol::SystemOne {
-                    "system-one"
-                } else {
-                    "openai-decisions"
-                }
-                .into()
-            })
-        }),
+    let protocol = choose_protocol(options, recipe, interactive)?;
+    let mut connection = recipe.map(|r| r.connection.clone()).unwrap_or_default();
+    if let Some(binding) = &options.binding {
+        connection.binding = Some(parse_binding(binding)?);
+    }
+    let base_url = choose_endpoint(options, &service, recipe, interactive)?;
+    let key = choose_credential(options, &mut connection, interactive)?;
+    let model = choose_model(options, recipe, interactive)?;
+    if service == "cloudflare" {
+        connection.wire_model = Some(model.rsplit('/').next().unwrap_or(&model).into());
+    }
+    let definition = provider_definition(connection, protocol, base_url, &model)?;
+    let default = options.default || (interactive && prompt_default(&file)?);
+    save(
+        &file,
+        Draft {
+            name,
+            model,
+            definition,
+            key,
+        },
+        default,
+        options.replace,
+    )
+}
+fn has_provider(doc: &DocumentMut, name: &str) -> bool {
+    doc.get("providers")
+        .and_then(|providers| providers.get(name))
+        .is_some()
+}
+fn protocol_name(protocol: Protocol) -> &'static str {
+    if protocol == Protocol::SystemOne {
+        "system-one"
+    } else {
+        "openai-decisions"
+    }
+}
+fn choose_protocol(
+    options: &Connect,
+    recipe: Option<&Recipe>,
+    interactive: bool,
+) -> Result<Protocol, SetupError> {
+    let suggested = recipe.map(|r| protocol_name(r.protocol));
+    let chosen = choose(
+        options
+            .protocol
+            .clone()
+            .or_else(|| suggested.map(Into::into)),
         "Protocol (system-one or openai-decisions)",
-        recipe.as_ref().map_or("", |r| {
-            if r.protocol == Protocol::SystemOne {
-                "system-one"
-            } else {
-                "openai-decisions"
-            }
-        }),
+        suggested.unwrap_or(""),
         interactive,
     )?;
-    let protocol = match proto.as_str() {
-        "system-one" => Protocol::SystemOne,
-        "openai-decisions" => Protocol::OpenaiDecisions,
-        _ => return Err(SetupError::Invalid),
-    };
-    let mut connection = recipe
-        .as_ref()
-        .map(|r| r.connection.clone())
-        .unwrap_or_default();
-    if let Some(binding) = &options.binding {
-        connection.binding = Some(match binding.as_str() {
-            "standard" => HttpBinding::Standard,
-            "cloudflare-workers-ai" => HttpBinding::CloudflareWorkersAi,
-            _ => return Err(SetupError::Invalid),
-        });
+    match chosen.as_str() {
+        "system-one" => Ok(Protocol::SystemOne),
+        "openai-decisions" => Ok(Protocol::OpenaiDecisions),
+        _ => Err(SetupError::Invalid),
     }
+}
+fn parse_binding(binding: &str) -> Result<HttpBinding, SetupError> {
+    match binding {
+        "standard" => Ok(HttpBinding::Standard),
+        "cloudflare-workers-ai" => Ok(HttpBinding::CloudflareWorkersAi),
+        _ => Err(SetupError::Invalid),
+    }
+}
+/// The endpoint from the options or recipe. Interactive Cloudflare setup
+/// builds it from the account ID, since its recipe has no fixed endpoint.
+fn choose_endpoint(
+    options: &Connect,
+    service: &str,
+    recipe: Option<&Recipe>,
+    interactive: bool,
+) -> Result<String, SetupError> {
     let mut url = options
         .base_url
         .clone()
-        .unwrap_or_else(|| recipe.as_ref().map_or("", |r| r.url).into());
+        .unwrap_or_else(|| recipe.map_or("", |r| r.url).into());
     if url.is_empty() && service == "cloudflare" && interactive {
         let account = prompt("Cloudflare account ID", "")?;
         if !account.bytes().all(|b| b.is_ascii_alphanumeric()) || account.is_empty() {
@@ -337,55 +371,73 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
         }
         url = format!("https://api.cloudflare.com/client/v4/accounts/{account}/ai");
     }
-    let base_url = choose(
+    choose(
         if url.is_empty() { None } else { Some(url) },
         "Endpoint",
         "",
         interactive,
-    )?;
-    let mut key = None;
+    )
+}
+/// The credential source from the options, or from a prompt when the
+/// connection needs one. Records the authentication choice on `connection`.
+fn choose_credential(
+    options: &Connect,
+    connection: &mut ConnectionSettings,
+    interactive: bool,
+) -> Result<Option<KeySource>, SetupError> {
     if options.no_auth {
         connection.no_auth = Some(true);
-    } else if let Some(env) = &options.env {
-        connection.no_auth = Some(false);
-        key = Some(KeySource::env(env.clone()).map_err(|_| SetupError::Invalid)?);
+        return Ok(None);
+    }
+    let key = if let Some(env) = &options.env {
+        KeySource::env(env.clone()).map_err(|_| SetupError::Invalid)?
     } else if !options.command.is_empty() {
-        connection.no_auth = Some(false);
-        key = Some(KeySource::command(options.command.clone()).map_err(|_| SetupError::Invalid)?);
+        KeySource::command(options.command.clone()).map_err(|_| SetupError::Invalid)?
     } else if options.stdin {
-        connection.no_auth = Some(false);
         let mut s = String::new();
         io::stdin().read_line(&mut s)?;
-        key = Some(KeySource::Key(
+        KeySource::Key(
             nouli_core::config::auth::Secret::new(s.trim_end().into())
                 .map_err(|_| SetupError::Invalid)?,
-        ));
+        )
     } else if connection.no_auth != Some(true) {
         if !interactive {
             return Err(SetupError::Terminal);
         }
-        let method = prompt("Authentication (key, env, command, none)", "key")?;
-        key = match method.as_str() {
-            "key" => Some(KeySource::Key(read_key("API key: ")?)),
-            "env" => Some(
-                KeySource::env(prompt("Environment variable", "")?)
-                    .map_err(|_| SetupError::Invalid)?,
-            ),
-            "command" => Some(
-                KeySource::command(
-                    shlex::split(&prompt("Credential program and arguments", "")?)
-                        .ok_or(SetupError::Invalid)?,
-                )
-                .map_err(|_| SetupError::Invalid)?,
-            ),
-            "none" => {
-                connection.no_auth = Some(true);
-                None
-            }
-            _ => return Err(SetupError::Invalid),
-        };
+        return prompt_credential(connection);
+    } else {
+        return Ok(None);
+    };
+    connection.no_auth = Some(false);
+    Ok(Some(key))
+}
+fn prompt_credential(connection: &mut ConnectionSettings) -> Result<Option<KeySource>, SetupError> {
+    let method = prompt("Authentication (key, env, command, none)", "key")?;
+    match method.as_str() {
+        "key" => Ok(Some(KeySource::Key(read_key("API key: ")?))),
+        "env" => Ok(Some(
+            KeySource::env(prompt("Environment variable", "")?).map_err(|_| SetupError::Invalid)?,
+        )),
+        "command" => Ok(Some(
+            KeySource::command(
+                shlex::split(&prompt("Credential program and arguments", "")?)
+                    .ok_or(SetupError::Invalid)?,
+            )
+            .map_err(|_| SetupError::Invalid)?,
+        )),
+        "none" => {
+            connection.no_auth = Some(true);
+            Ok(None)
+        }
+        _ => Err(SetupError::Invalid),
     }
-    let suggestions = recipe.as_ref().map_or(&[][..], |r| r.models);
+}
+fn choose_model(
+    options: &Connect,
+    recipe: Option<&Recipe>,
+    interactive: bool,
+) -> Result<String, SetupError> {
+    let suggestions = recipe.map_or(&[][..], |r| r.models);
     if interactive && !suggestions.is_empty() {
         let _ = writeln!(
             io::stdout(),
@@ -393,15 +445,21 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
             suggestions.join(", ")
         );
     }
-    let model = choose(
+    choose(
         options.model.clone(),
         "Model ID",
         suggestions.first().copied().unwrap_or(""),
         interactive,
-    )?;
-    if service == "cloudflare" {
-        connection.wire_model = Some(model.rsplit('/').next().unwrap_or(&model).into());
-    }
+    )
+}
+/// A provider with one model. The connection's wire model moves to that
+/// model's settings so it can be edited per model.
+fn provider_definition(
+    mut connection: ConnectionSettings,
+    protocol: Protocol,
+    base_url: String,
+    model: &str,
+) -> Result<ProviderDefinition, SetupError> {
     let defaults = ModelSettings {
         connection: ConnectionSettings {
             wire_model: connection.wire_model.take(),
@@ -417,19 +475,22 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
         api_key_env: None,
         max_attempts: None,
         attempt_timeout_seconds: None,
-        models: std::collections::BTreeMap::from([(model.clone(), defaults)]),
+        models: std::collections::BTreeMap::from([(model.to_owned(), defaults)]),
     };
     definition.validate().map_err(|_| SetupError::Invalid)?;
-    let default = options.default
-        || (interactive
-            && prompt(
-                "Make startup default? (yes/no)",
-                if read(&file)?.get("default_provider").is_none() {
-                    "yes"
-                } else {
-                    "no"
-                },
-            )? == "yes");
+    Ok(definition)
+}
+fn prompt_default(file: &Path) -> Result<bool, SetupError> {
+    let suggested = if read(file)?.get("default_provider").is_none() {
+        "yes"
+    } else {
+        "no"
+    };
+    Ok(prompt("Make startup default? (yes/no)", suggested)? == "yes")
+}
+/// Opens and locks the configuration's lock file, creating its directory.
+fn lock_config(file: &Path) -> Result<fs::File, SetupError> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -443,33 +504,40 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
         .custom_flags(nix::libc::O_NOFOLLOW)
         .open(file.with_extension("toml.lock"))?;
     lock.lock()?;
-    let mut doc = read(&file)?;
-    if doc
-        .get("providers")
-        .and_then(|providers| providers.get(&name))
-        .is_some()
-        && !options.replace
-    {
+    Ok(lock)
+}
+/// Writes the draft under the configuration lock, storing its credential
+/// before publishing the configuration.
+fn save(
+    file: &Path,
+    draft: Draft,
+    default: bool,
+    replace: bool,
+) -> Result<ModelSelection, SetupError> {
+    let _lock = lock_config(file)?;
+    let mut doc = read(file)?;
+    if has_provider(&doc, &draft.name) && !replace {
         return Err(SetupError::Exists);
     }
-    let provider = toml_edit::ser::to_document(&definition).map_err(|_| SetupError::Invalid)?;
-    doc["providers"][&name] = Item::Table(provider.as_table().clone());
+    let provider =
+        toml_edit::ser::to_document(&draft.definition).map_err(|_| SetupError::Invalid)?;
+    doc["providers"][&draft.name] = Item::Table(provider.as_table().clone());
     if default {
-        doc["default_provider"] = value(&name);
-        doc["default_model"] = value(&model);
+        doc["default_provider"] = value(&draft.name);
+        doc["default_model"] = value(&draft.model);
     }
     Config::parse(&doc.to_string()).map_err(|_| SetupError::Invalid)?;
-    if let Some(key) = key {
-        settings::auth::update(&settings::auth::path_for(&file), |store| {
-            store.insert(name.clone(), AuthEntry::ApiKey(key));
+    if let Some(key) = draft.key {
+        settings::auth::update(&settings::auth::path_for(file), |store| {
+            store.insert(draft.name.clone(), AuthEntry::ApiKey(key));
             ((), true)
         })
         .map_err(|_| SetupError::Write)?;
     }
-    publish(&file, &doc)?;
+    publish(file, &doc)?;
     Ok(ModelSelection {
-        provider: Some(name),
-        model: Some(model),
+        provider: Some(draft.name),
+        model: Some(draft.model),
     })
 }
 pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
