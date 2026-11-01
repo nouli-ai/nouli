@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Enter on a blank TUI form row advances to the next section without sending. Nonempty Context and Options/Levels rows still add items; send from a nonempty Question or use Ctrl-S from any section, including to reuse a previous question.
+
 ## [0.5.0] - 2026-11-01
 
 ### Added

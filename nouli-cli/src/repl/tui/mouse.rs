@@ -33,7 +33,6 @@ impl App<'_> {
     pub(super) fn select_text(&mut self, active: bool) {
         self.selection.set_active(active);
         self.graph.dragging = false;
-        self.option_enter = false;
     }
 
     pub(super) fn graph_mouse(&mut self, event: MouseEvent) {
@@ -168,7 +167,6 @@ mod tests {
         app.form.cursor = 4;
         app.graph_focused = true;
         app.sessions = Some(vec![]);
-        app.option_enter = true;
         let mut running = None;
         let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
         app.event(
@@ -177,7 +175,6 @@ mod tests {
         )
         .unwrap();
         assert!(app.selection.active);
-        assert!(!app.option_enter);
         for event in [
             key(KeyCode::Char('x')),
             key(KeyCode::Enter),
@@ -283,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn pointer_wheel_routes_by_pane_and_drag_disarms_double_enter() {
+    fn pointer_wheel_routes_by_pane_and_drag_keeps_focus() {
         let settings = crate::settings::Settings::for_test(std::env::temp_dir());
         let mut app = super::super::tests::app(&settings);
         app.graph.body = Rect::new(0, 1, 200, 30);
@@ -306,12 +303,12 @@ mod tests {
             app.scroll, 3,
             "an overlay leaves the underlying transcript still"
         );
-        app.option_enter = true;
         app.event(
             crossterm::event::Event::Mouse(event(MouseEventKind::Down(MouseButton::Left), 120)),
             &mut None,
         )
         .unwrap();
-        assert!(!app.option_enter);
+        assert!(app.graph_focused);
+        assert!(app.graph.dragging);
     }
 }

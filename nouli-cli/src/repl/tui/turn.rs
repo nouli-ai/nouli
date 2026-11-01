@@ -20,7 +20,6 @@ impl<'a> App<'a> {
     /// Sends the form's question with the queue, or says what to fix and
     /// moves there.
     pub(super) fn send_form(&mut self, ephemeral: bool) -> io::Result<Option<Running<'a>>> {
-        self.option_enter = false;
         if !self.prepare_input() {
             return Ok(None);
         }

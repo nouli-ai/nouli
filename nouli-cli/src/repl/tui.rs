@@ -166,8 +166,6 @@ struct App<'a> {
     previous_question: Option<PreviousQuestion>,
     /// The latest saved question reachable from the selected session.
     latest_question: Option<PreviousQuestion>,
-    /// The previous Enter added/finished a list item; another Enter sends.
-    option_enter: bool,
     references: references::References,
 }
 
@@ -204,7 +202,6 @@ impl<'a> App<'a> {
             failed_drop: None,
             previous_question: None,
             latest_question: None,
-            option_enter: false,
             references: references::References::in_directory(std::env::current_dir().ok()),
         };
         app.drain();

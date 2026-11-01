@@ -48,11 +48,13 @@ pub(super) fn activity(app: &App, running: Option<&Running>, theme: &Theme) -> O
         }
         (None, Some(status)) if status.error => Activity {
             line: Line::from(Span::styled(format!("! {}", status.text), theme.error)),
-            action: status.retry.then_some(if app.form.row == Row::Question {
-                "Enter retry"
-            } else {
-                "Ctrl-S retry"
-            }),
+            action: status.retry.then_some(
+                if app.form.row == Row::Question && !app.form.question.trim().is_empty() {
+                    "Enter retry"
+                } else {
+                    "Ctrl-S retry"
+                },
+            ),
         },
         (None, Some(status)) => Activity::note(status.text.clone(), theme.dim),
         (None, None) if app.references.picker.is_some() => Activity::note(
@@ -84,9 +86,6 @@ pub(super) fn activity(app: &App, running: Option<&Running>, theme: &Theme) -> O
             },
             theme.dim,
         ),
-        (None, None) if app.option_enter => {
-            Activity::note("Press Enter again to send", theme.kind(app.form.kind, true))
-        }
         (None, None) => return None,
     })
 }
@@ -136,7 +135,11 @@ mod tests {
             "Enter never sends here"
         );
         app.form.row = Row::Question;
+        assert!(row(&mut app).contains("Ctrl-S retry"));
+        app.form.question = "Try again?".into();
         assert!(row(&mut app).contains("Enter retry"));
+        app.form.question = "  ".into();
+        assert!(row(&mut app).contains("Ctrl-S retry"));
         app.form.options = vec!["One".into()];
         app.form.row = Row::Option(0);
         assert!(row(&mut app).contains("Ctrl-S retry"));

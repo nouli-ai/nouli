@@ -110,7 +110,7 @@ fn ask(terminal: &mut Terminal, server: &Server, question: &str, answers: &[&str
     }
     terminal.pump(STEP).unwrap();
     let sent = server.count();
-    terminal.send(b"\r").unwrap();
+    terminal.send(b"\x13").unwrap(); // Ctrl-S submits from any section.
     settle(terminal, server, sent);
 }
 

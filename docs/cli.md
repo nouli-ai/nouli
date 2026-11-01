@@ -87,15 +87,15 @@ A turn that fails prints its error and keeps the queue.
 
 In a terminal, the form asks for ordinary text:
 
-- **Context** holds the facts for the next question, one row each. Enter adds a row and never sends. Up and Down move between rows, and Backspace on an empty row reopens the row above.
+- **Context** holds the facts for the next question, one row each. Enter adds a nonempty row; Enter on a blank row moves to Question without sending. Up and Down move between rows, and Backspace on an empty row reopens the row above.
 
 When saved history is available, Context shows **latest question included** and previews that question. The next TUI request requires its saved question and answer, its used image inputs, and your new/replacement evidence. This also applies to a fresh Yes/No follow-up. Including prior history does not reuse a Yes/No prompt. New independent sessions have no preceding question; branches can show inherited history. If required context cannot fit, the request fails explicitly and keeps your draft.
 - **Question** holds the question exactly as you write it. There is no ID, colon, bracket, quoting, or option-label syntax to remember.
 - Choose **Yes / No**, **Choose one**, or **Score** with Shift-Tab from any field. Choices show Options; scores show Levels, lowest first. Type one per row or paste a list to fill several at once. Each choice needs at least two options; each score needs at least two levels.
 
-Press **Enter** in Question to send. In Options/Levels, Enter adds the next row; press Enter again on the empty row to send. Typing or pasting another item continues the list. Navigating away cancels the pending second Enter. **Ctrl-S** sends from any field. Tab moves between Context, Question and Options without changing the answer type. Up and Down walk the rows of Context and Options/Levels and move to the next box past the last row. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
+Press **Enter** on a nonempty Question to send. Enter on a blank row moves to the next section, like Tab, without sending. In Options/Levels, Enter adds the next row after a nonempty item; Enter on the blank row finishes the list and returns to Context. **Ctrl-S** sends from any field. Tab moves between Context, Question and Options without changing the answer type. Up and Down walk the rows of Context and Options/Levels and move to the next box past the last row. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
 
-After a choice or score, leave Options or Levels empty to reuse the latest matching question's exact answer list and criteria. The Options/Levels heading says **using previous N**. Entering any new list replaces the old one; a partial list must still meet the minimum of two items. Leave Question empty too to reuse the preceding prompt, add new context, and press Tab then Enter (or Ctrl-S) to get an updated judgment. Reusing a list keeps the question ID so results can show how the answer changed; each Send saves a new turn and preserves earlier answers. Yes/No has no fallback. Reuse is scoped to the current session's latest single question, and an empty new session or branch starts without a prior list. The question grammar for CLI verbs and piped input is unchanged.
+After a choice or score, leave Options or Levels empty to reuse the latest matching question's exact answer list and criteria. The Options/Levels heading says **using previous N**. Entering any new list replaces the old one; a partial list must still meet the minimum of two items. Leave Question empty too to reuse the preceding prompt, add new context, and press Ctrl-S to get an updated judgment. Enter on the blank Question navigates instead of sending. Reusing a list keeps the question ID so results can show how the answer changed; each Send saves a new turn and preserves earlier answers. Yes/No has no fallback. Reuse is scoped to the current session's latest single question, and an empty new session or branch starts without a prior list. The question grammar for CLI verbs and piped input is unchanged.
 
 The Citrus palette gives Yes/No a lime accent, Choose one cyan, and Score rose. Results and graph cards keep their own question type's color. Labels, brackets, and emphasis still identify types with `NO_COLOR` set.
 
@@ -113,9 +113,9 @@ References connect the exact saved source question to the question using it, inc
 | Tab | Moves to the next box: Context, Question, then Options/Levels. |
 | Up, Down | Move between rows in Context and Options/Levels, and between boxes past either end. |
 | Ctrl-S | Sends the question and queued context. |
-| Enter in Question | Sends. |
-| Enter in Context | Adds a row or runs a slash command; it never sends. |
-| Enter in Options/Levels | Adds a row; a second consecutive Enter sends. Typing, pasting, or navigation cancels the second-Enter state. |
+| Enter in Question | Sends a nonempty question; a blank row moves to Options/Levels or Context. |
+| Enter in Context | Adds a nonempty row or runs a slash command; a blank row moves to Question. It never sends. |
+| Enter in Options/Levels | Adds a row after a nonempty item; a blank row finishes the list and moves to Context without sending. |
 | Drop files | Inserts their contents into the focused field without sending. |
 | `/` in Context | Lists optional session commands; pasted/imported files are literal evidence. |
 | `/sessions` | Lists sessions to resume. |
