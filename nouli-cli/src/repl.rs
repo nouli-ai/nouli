@@ -96,7 +96,7 @@ struct Current {
     label: String,
 }
 
-const HELP: [(&str, &str); 18] = [
+const HELP: [(&str, &str); 14] = [
     ("plain text", "queue a fact for the next question"),
     (
         "?id: prompt [a, b]",
@@ -116,10 +116,6 @@ const HELP: [(&str, &str); 18] = [
     ("/blend A B as NAME", "combine histories into a new session"),
     ("/view", "the sessions and how they connect"),
     ("/context", "what the model saw last turn"),
-    ("/connect", "configure a connection"),
-    ("/login [NAME]", "store an API key"),
-    ("/logout [NAME]", "remove a stored credential"),
-    ("/model", "choose a connection and model"),
     ("/quit, /exit", "leave (or Ctrl-C on an empty prompt)"),
 ];
 
@@ -665,6 +661,22 @@ impl<W: Write> Repl<'_, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_command_the_line_loop_lists_is_one_it_accepts() {
+        for (usage, _) in HELP.iter().filter(|(usage, _)| usage.starts_with('/')) {
+            for name in usage.split(", ") {
+                let name = name.split_whitespace().next().unwrap();
+                assert!(
+                    !matches!(
+                        input::parse(name),
+                        input::Line::Command(input::Command::Unknown(_))
+                    ),
+                    "/help lists {name}, but the line loop rejects it"
+                );
+            }
+        }
+    }
 
     #[test]
     fn nearby_unnamed_sessions_use_randomness_in_their_short_labels() {

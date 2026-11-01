@@ -49,8 +49,9 @@ use std::{
 use tokio::{runtime::Runtime, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
-/// The keys, for `/help` before the commands the line loop lists.
-const KEYS: [(&str, &str); 14] = [
+/// The keys and TUI-only commands, for `/help` before the commands the line
+/// loop lists. Setup commands prompt interactively, so only the TUI offers them.
+const KEYS: [(&str, &str); 18] = [
     (
         "Mouse drag",
         "select text normally; Ctrl-G enables divider dragging and mouse scrolling",
@@ -83,6 +84,10 @@ const KEYS: [(&str, &str); 14] = [
     ),
     ("Ctrl-C", "cancel, clear input, or quit"),
     ("/sessions", "resume an earlier session"),
+    ("/connect", "configure a connection"),
+    ("/login [NAME]", "store an API key"),
+    ("/logout [NAME]", "remove a stored credential"),
+    ("/model", "choose a connection and model"),
 ];
 
 /// The slash commands, for the list that opens as the input row starts with
