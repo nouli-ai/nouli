@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nouli-core`: `Ledger::decode_settings` decodes a frozen-settings snapshot and distinguishes missing or unsupported format versions from malformed payloads.
 - `nouli-core`: `Criterion::label`, `Criterion::description`, `TurnOutcome::outcome_for`, `outcome::outcome_for`, `Answer::selected_probability`, `Answer::probability_of`, and `outcome::probability_of` read a criterion's text, the outcome for a question, and a choice's probabilities.
 - `nouli-core`: `context::evidence` types saved image and saved-answer records: `DecisionReference`, `ImageSnapshot`, `image_record`, `rebind_decision_record`, `ContextRecord::as_image`, `ContextRecord::as_decision_reference`, and the `IMAGE_KEY_PREFIX`, `DECISION_KEY_PREFIX`, `IMAGE_FIELD`, and `DECISION_REFERENCE_FIELD` constants. `storage::decisions::DecisionSource` is re-exported from there.
 - `nouli-core`: `context::evidence::marker` finds, formats, parses, and strips the inline `[image:UUID]` and `[decision:UUID]` markers that bind text to saved images and saved answers.
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `nouli-core`: `Ledger::decode_payload` consistently reports typed decoding failures as `StorageError::Payload`, including unsupported direct or nested settings snapshots. Use `Ledger::decode_settings` to distinguish unsupported snapshot versions as `StorageError::FrozenSettings`. Built-in frozen request and workflow loaders retain the `unsupported_frozen_settings` report.
 - `nouli-core`: converting `StorageError::Conflict` into `TurnError` now consistently produces `TurnError::Conflict` and the `head_conflict` report code, including outside turn writes.
 - `nouli-core`: `AcceptedRequest::state` now uses `storage::reservations::ReservationState` instead of `String`; exported JSON retains the same `pending`, `completed`, and `interrupted` values.
 - `nouli-core`: `Ledger::decision_reference` reports an invalid snapshot value as `DecisionError::Evidence` instead of `DecisionError::Data`.

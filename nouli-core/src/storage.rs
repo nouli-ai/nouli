@@ -26,7 +26,10 @@ use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
-use crate::codec::{self, InputFormat};
+use crate::{
+    codec::{self, InputFormat},
+    config::resolve::{FROZEN_SETTINGS_VERSION, frozen_settings_version},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
@@ -98,6 +101,15 @@ fn freeze_store(
             source,
         }
     })
+}
+
+/// Validate a value known by its owning loader to hold frozen settings.
+fn validate_frozen_settings_version(value: &serde_json::Value) -> Result<(), StorageError> {
+    let version = frozen_settings_version(value).map_err(|_| StorageError::Payload)?;
+    if version != FROZEN_SETTINGS_VERSION {
+        return Err(StorageError::FrozenSettings);
+    }
+    Ok(())
 }
 
 pub struct Ledger {
@@ -268,18 +280,32 @@ impl Ledger {
     ///
     /// # Errors
     ///
-    /// Returns [`StorageError::FrozenSettings`] if the payload holds unsupported
-    /// frozen settings, or [`StorageError::Payload`] if it is otherwise invalid.
+    /// Returns [`StorageError::Payload`] if the TOON payload cannot be decoded
+    /// into `T`, including when a direct or nested frozen-settings snapshot is
+    /// unsupported. Use [`Ledger::decode_settings`] for typed snapshot decoding
+    /// that distinguishes unsupported versions; built-in frozen request and
+    /// workflow loaders validate their known settings fields separately.
     pub fn decode_payload<T: DeserializeOwned>(payload: &str) -> Result<T, StorageError> {
         let value = codec::decode_value(payload.as_bytes(), InputFormat::Toon)
             .map_err(|_| StorageError::Payload)?;
-        serde_json::from_value(value).map_err(|error| {
-            if error.to_string() == "unsupported frozen settings; use a fresh store" {
-                StorageError::FrozenSettings
-            } else {
-                StorageError::Payload
-            }
-        })
+        serde_json::from_value(value).map_err(|_| StorageError::Payload)
+    }
+
+    /// Decodes a stored frozen-settings snapshot, distinguishing an unsupported
+    /// format version from a malformed payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::FrozenSettings`] if the raw snapshot has a
+    /// missing or unsupported format version, or [`StorageError::Payload`] if
+    /// its syntax, fields, or provider profile cannot be decoded.
+    pub fn decode_settings(
+        payload: &str,
+    ) -> Result<crate::config::resolve::SettingsSnapshot, StorageError> {
+        let value = codec::decode_value(payload.as_bytes(), InputFormat::Toon)
+            .map_err(|_| StorageError::Payload)?;
+        validate_frozen_settings_version(&value)?;
+        serde_json::from_value(value).map_err(|_| StorageError::Payload)
     }
 }
 
@@ -293,26 +319,68 @@ mod tests {
     #[test]
     fn real_legacy_profiles_fail_with_fresh_store_guidance_before_profile_decoding() {
         let legacy = serde_json::json!({"profile_name":"old","profile":{"protocol":"typesafe", "model":"old", "base_url":"https://example.com"}, "execution":crate::config::ExecutionSettings::default(), "output":"auto", "store":"/tmp/old"});
-        for value in [legacy.clone(), serde_json::json!({"settings":[legacy]})] {
-            let payload = Ledger::encode_payload(&value).unwrap();
-            if value.get("settings").is_some() {
-                #[derive(serde::Deserialize)]
-                struct Saved {
-                    #[allow(dead_code)]
-                    settings: Vec<crate::config::resolve::SettingsSnapshot>,
-                }
-                assert!(matches!(
-                    Ledger::decode_payload::<Saved>(&payload),
-                    Err(StorageError::FrozenSettings)
-                ));
-            } else {
-                assert!(matches!(
-                    Ledger::decode_payload::<crate::config::resolve::SettingsSnapshot>(&payload),
-                    Err(StorageError::FrozenSettings)
-                ));
-            }
-        }
+        let payload = Ledger::encode_payload(&legacy).unwrap();
+        assert!(matches!(
+            Ledger::decode_settings(&payload),
+            Err(StorageError::FrozenSettings)
+        ));
+        assert!(matches!(
+            super::workflows::decode_settings(&Ledger::encode_payload(&vec![legacy]).unwrap()),
+            Err(StorageError::FrozenSettings)
+        ));
     }
+
+    #[test]
+    fn unrelated_versions_and_snapshot_shaped_evidence_keep_the_requested_contract() {
+        #[derive(serde::Deserialize)]
+        struct OtherPayload {
+            required: bool,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct CustomWrapper {
+            settings: Vec<crate::config::resolve::SettingsSnapshot>,
+        }
+
+        let snapshot = serde_json::json!({
+            "format_version": 99, "profile_name": "evidence", "profile": {},
+            "execution": crate::config::ExecutionSettings::default(),
+            "output": "auto", "store": "/tmp/evidence"
+        });
+        let root_snapshot = Ledger::encode_payload(&snapshot).unwrap();
+        assert!(matches!(
+            Ledger::decode_payload::<bool>(&root_snapshot),
+            Err(StorageError::Payload)
+        ));
+        assert!(matches!(
+            Ledger::decode_payload::<crate::config::resolve::SettingsSnapshot>(&root_snapshot),
+            Err(StorageError::Payload)
+        ));
+        for value in [
+            snapshot.clone(),
+            serde_json::json!({"format_version":99,"evidence":snapshot}),
+            serde_json::json!({"settings":[snapshot]}),
+        ] {
+            let encoded = Ledger::encode_payload(&value).unwrap();
+            assert_eq!(
+                Ledger::decode_payload::<serde_json::Value>(&encoded).unwrap(),
+                value
+            );
+            let error = match Ledger::decode_payload::<OtherPayload>(&encoded) {
+                Err(error) => error,
+                Ok(payload) => panic!("unexpected success: {}", payload.required),
+            };
+            assert_eq!(error.report().code, "invalid_saved_payload");
+        }
+
+        let wrapper = Ledger::encode_payload(&serde_json::json!({"settings":[snapshot]})).unwrap();
+        let error = match Ledger::decode_payload::<CustomWrapper>(&wrapper) {
+            Err(error) => error,
+            Ok(wrapper) => panic!("unexpected success: {} settings", wrapper.settings.len()),
+        };
+        assert_eq!(error.report().code, "invalid_saved_payload");
+    }
+
     struct Store(PathBuf);
     impl Store {
         fn new() -> Self {
@@ -515,5 +583,9 @@ mod tests {
         let decoded: crate::config::resolve::SettingsSnapshot =
             Ledger::decode_payload(&encoded).unwrap();
         assert_eq!(decoded, settings.snapshot);
+        assert_eq!(
+            Ledger::decode_settings(&encoded).unwrap(),
+            settings.snapshot
+        );
     }
 }

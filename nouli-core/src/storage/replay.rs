@@ -35,6 +35,14 @@ pub struct FrozenRequest {
     pub revision: i64,
 }
 
+/// Decode an owned request, validating its known frozen-settings field first.
+pub(super) fn decode_frozen_request(payload: &str) -> Result<FrozenRequest, StorageError> {
+    let value = codec::decode_value(payload.as_bytes(), codec::InputFormat::Toon)
+        .map_err(|_| StorageError::Payload)?;
+    super::validate_frozen_settings_version(value.get("settings").ok_or(StorageError::Payload)?)?;
+    serde_json::from_value(value).map_err(|_| StorageError::Payload)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryKind {
@@ -193,7 +201,7 @@ fn reservation(connection: &Connection, key: &str) -> Result<Option<Reservation>
              result,
              recovery,
          }| {
-            let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
+            let frozen = decode_frozen_request(&frozen)?;
             let session = Id::try_from(session).map_err(|_| StorageError::Payload)?;
             if frozen.session != session || intent_hash(&frozen.request)? != hash {
                 return Err(StorageError::Payload.into());
@@ -309,7 +317,7 @@ pub(super) fn validate_reserved_input(
     };
     let row = reservations::owner(&ledger.connection, key, guard.session)?;
     let (owner, state, frozen) = row.ok_or(StorageError::Conflict)?;
-    let frozen: FrozenRequest = Ledger::decode_payload(&frozen)?;
+    let frozen = decode_frozen_request(&frozen)?;
     if owner != guard.owner.to_string()
         || state != ReservationState::Pending
         || input.request != frozen.request.turn
@@ -668,6 +676,33 @@ mod tests {
                 row.get(0)
             })
             .unwrap()
+    }
+
+    #[test]
+    fn tampered_frozen_versions_keep_the_unsupported_settings_report() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let owner = accepted(ledger.accept_request(&request(), settings(&store)).unwrap());
+        let mut frozen = serde_json::to_value(owner.frozen()).unwrap();
+        for version in [None, Some(serde_json::json!(0)), Some(serde_json::json!(3))] {
+            let settings = frozen["settings"].as_object_mut().unwrap();
+            if let Some(version) = version {
+                settings.insert("format_version".into(), version);
+            } else {
+                settings.remove("format_version");
+            }
+            let payload = Ledger::encode_payload(&frozen).unwrap();
+            let error = decode_frozen_request(&payload).unwrap_err();
+            assert_eq!(error.report().code, "unsupported_frozen_settings");
+            let snapshot_payload = Ledger::encode_payload(&frozen["settings"]).unwrap();
+            let error = Ledger::decode_payload::<SettingsSnapshot>(&snapshot_payload).unwrap_err();
+            assert_eq!(error.report().code, "invalid_saved_payload");
+            let error = Ledger::decode_settings(&snapshot_payload).unwrap_err();
+            assert_eq!(error.report().code, "unsupported_frozen_settings");
+            let workflow_payload = Ledger::encode_payload(&vec![&frozen["settings"]]).unwrap();
+            let error = super::super::workflows::decode_settings(&workflow_payload).unwrap_err();
+            assert_eq!(error.report().code, "unsupported_frozen_settings");
+        }
     }
 
     #[test]

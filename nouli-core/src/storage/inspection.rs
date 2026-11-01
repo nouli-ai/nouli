@@ -107,7 +107,7 @@ fn requests(
             selected.push(AcceptedRequest {
                 request_id: key,
                 state,
-                frozen: Ledger::decode_payload(&payload)?,
+                frozen: super::replay::decode_frozen_request(&payload)?,
             });
         }
     }
@@ -122,7 +122,7 @@ fn requests(
             selected.push(AcceptedRequest {
                 request_id: key.clone(),
                 state,
-                frozen: Ledger::decode_payload(&payload)?,
+                frozen: super::replay::decode_frozen_request(&payload)?,
             });
         }
     }

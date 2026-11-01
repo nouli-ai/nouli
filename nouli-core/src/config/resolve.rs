@@ -59,6 +59,8 @@ pub struct RuntimeOverrides {
     pub stored_credentials: std::collections::BTreeSet<String>,
 }
 
+pub(crate) const FROZEN_SETTINGS_VERSION: u32 = 2;
+
 /// Frozen, serializable settings contain no credential values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, try_from = "RawSettingsSnapshot")]
@@ -83,10 +85,16 @@ struct RawSettingsSnapshot {
     output: OutputFormat,
     store: PathBuf,
 }
+/// Read the version only after the raw snapshot's fields have decoded, matching
+/// the order in which the snapshot's `TryFrom` checks its version.
+pub(crate) fn frozen_settings_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> {
+    RawSettingsSnapshot::deserialize(value).map(|raw| raw.format_version)
+}
+
 impl TryFrom<RawSettingsSnapshot> for SettingsSnapshot {
     type Error = String;
     fn try_from(raw: RawSettingsSnapshot) -> Result<Self, Self::Error> {
-        if raw.format_version != 2 {
+        if raw.format_version != FROZEN_SETTINGS_VERSION {
             return Err("unsupported frozen settings; use a fresh store".into());
         }
         Ok(Self {
@@ -136,7 +144,7 @@ impl SettingsSnapshot {
         self,
         lookup: impl Fn(&CredentialSource) -> Option<String>,
     ) -> Result<ResolvedSettings, ConfigError> {
-        if self.format_version != 2 {
+        if self.format_version != FROZEN_SETTINGS_VERSION {
             return Err(ConfigError::Invalid(
                 "unsupported frozen settings; use a fresh store",
             ));
@@ -333,7 +341,7 @@ impl Config {
         execution.validate()?;
         let store = self.store_path(home, overrides.store.as_deref())?;
         Ok(SettingsSnapshot {
-            format_version: 2,
+            format_version: FROZEN_SETTINGS_VERSION,
             profile_name: name,
             profile,
             execution,

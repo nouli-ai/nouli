@@ -288,6 +288,21 @@ fn request_run(
     })
     .transpose()
 }
+pub(super) fn decode_settings(payload: &str) -> Result<Vec<SettingsSnapshot>, StorageError> {
+    let value = codec::decode_value(payload.as_bytes(), codec::InputFormat::Toon)
+        .map_err(|_| StorageError::Payload)?;
+    let serde_json::Value::Array(values) = value else {
+        return Err(StorageError::Payload);
+    };
+    values
+        .into_iter()
+        .map(|value| {
+            super::validate_frozen_settings_version(&value)?;
+            serde_json::from_value(value).map_err(|_| StorageError::Payload)
+        })
+        .collect()
+}
+
 pub(super) fn frozen(connection: &Connection, run: Id) -> Result<FrozenWorkflow, WorkflowError> {
     let row: Option<(String, String)> = connection
         .query_row(
@@ -299,7 +314,7 @@ pub(super) fn frozen(connection: &Connection, run: Id) -> Result<FrozenWorkflow,
         .map_err(|error| sql_error("read frozen workflow", &error))?;
     let (definition, settings) = row.ok_or(WorkflowError::UnknownRun)?;
     let definition: WorkflowDefinition = Ledger::decode_payload(&definition)?;
-    let settings: Vec<SettingsSnapshot> = Ledger::decode_payload(&settings)?;
+    let settings = decode_settings(&settings)?;
     let plan = compile::compile(&definition.request.workflow)?;
     if definition.run != run
         || definition.base.id != run
