@@ -362,9 +362,9 @@ impl<'a> App<'a> {
                 .settings
                 .config_path
                 .to_str()
-                .ok_or(crate::connect::SetupError::Invalid)?,
+                .ok_or(crate::connect::SetupError::ConfigPath)?,
         ])
-        .map_err(|_| crate::connect::SetupError::Invalid)?;
+        .map_err(|_| crate::connect::SetupError::ConfigPath)?;
         args.env_file.clone_from(&self.repl.settings.env_file);
         args.store = Some(self.repl.settings.store.clone());
         let (verb, argument) = command.split_once(' ').unwrap_or((command, ""));
@@ -395,7 +395,7 @@ impl<'a> App<'a> {
                         .provider
                         .clone()
                         .or(self.repl.settings.config.default_provider.clone())
-                        .ok_or(crate::connect::SetupError::Invalid)?
+                        .ok_or(crate::connect::SetupError::ConnectionRequired)?
                 } else {
                     argument.into()
                 };
@@ -415,13 +415,12 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            _ => return Err(crate::connect::SetupError::Invalid),
+            _ => return Err(crate::connect::SetupError::UnknownCommand),
         }
-        let mut settings =
-            crate::settings::load(&args).map_err(|_| crate::connect::SetupError::Invalid)?;
+        let mut settings = crate::settings::load(&args)?;
         settings
             .load_environment()
-            .map_err(|_| crate::connect::SetupError::Invalid)?;
+            .map_err(crate::connect::SetupError::Report)?;
         self.repl.settings = std::borrow::Cow::Owned(settings);
         Ok(note)
     }

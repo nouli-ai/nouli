@@ -16,26 +16,101 @@ use std::{
 };
 use thiserror::Error;
 use toml_edit::{DocumentMut, Item, value};
+/// The services `nouli connect` has recipes for, besides `custom`.
+const SERVICES: &str = "openai, typesafe, openrouter, cloudflare, ollama, llama.cpp, custom";
 #[derive(Debug, Error)]
 pub(crate) enum SetupError {
     #[error(transparent)]
     Configuration(#[from] nouli_core::config::ConfigError),
-    #[error("connection setup cancelled")]
+    #[error("connection setup canceled")]
     Cancelled,
     #[error("connection setup needs a terminal or complete noninteractive arguments")]
     Terminal,
-    #[error("invalid connection settings")]
-    Invalid,
+    #[error("Set HOME or pass --config FILE to choose a configuration file")]
+    HomeUnavailable,
+    #[error("The configuration path is not valid UTF-8")]
+    ConfigPath,
+    #[error("Unknown service {0}. Choose one of: {SERVICES}")]
+    UnknownService(String),
+    #[error("A connection name cannot be empty")]
+    InvalidName,
+    #[error("Unknown protocol. Choose system-one or openai-decisions")]
+    InvalidProtocol,
+    #[error("Unknown binding. Choose standard or cloudflare-workers-ai")]
+    InvalidBinding,
+    #[error("A Cloudflare account ID must be letters and digits only")]
+    InvalidAccountId,
+    #[error("Unknown authentication method. Choose one of the listed methods")]
+    InvalidCredentialSource,
+    #[error("That is not a valid environment variable name")]
+    InvalidEnvironmentVariable,
+    #[error("A command source needs a program name and no empty words")]
+    InvalidCommand,
+    #[error("A key cannot be empty or contain control characters")]
+    InvalidKey,
+    #[error("A model ID cannot be empty")]
+    InvalidModel,
+    #[error("Name a connection, or select a model first")]
+    ConnectionRequired,
+    #[error("Unknown setup command")]
+    UnknownCommand,
+    #[error("invalid connection settings: {0}")]
+    InvalidConnection(#[source] nouli_core::config::ConfigError),
     #[error("connection already exists; choose another name or use --replace")]
     Exists,
     #[error("cannot update configuration; any stored credential can be reused by repeating setup")]
     Write,
+    #[error("cannot encode the connection settings")]
+    Encode,
+    #[error(transparent)]
+    Credential(#[from] settings::auth::AuthFileError),
     #[error(transparent)]
     Key(#[from] crate::auth::KeyLineError),
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("{}", .0.message)]
     Report(nouli_core::protocol::ErrorReport),
+}
+impl SetupError {
+    /// The error report for this failure; its category sets the exit code.
+    pub(crate) fn report(self) -> nouli_core::protocol::ErrorReport {
+        use nouli_core::protocol::{ErrorCategory as Category, ErrorReport};
+        let (category, code) = match self {
+            Self::Configuration(error) => {
+                return nouli_core::engine::EngineError::Config(error).report();
+            }
+            Self::Credential(error) => return error.report(),
+            Self::Key(error) => return error.report(),
+            Self::Report(report) => return report,
+            Self::Cancelled => (Category::Interrupted, "setup_canceled"),
+            Self::Terminal => (Category::Input, "terminal_required"),
+            Self::HomeUnavailable => (Category::Configuration, "home_unavailable"),
+            Self::ConfigPath => (Category::Configuration, "invalid_configuration_path"),
+            Self::UnknownService(_) => (Category::Input, "unknown_service"),
+            Self::InvalidName => (Category::Input, "invalid_connection_name"),
+            Self::InvalidProtocol => (Category::Input, "invalid_protocol"),
+            Self::InvalidBinding => (Category::Input, "invalid_binding"),
+            Self::InvalidAccountId => (Category::Input, "invalid_account_id"),
+            Self::InvalidCredentialSource => (Category::Input, "invalid_credential_source"),
+            Self::InvalidEnvironmentVariable => (Category::Input, "invalid_environment_variable"),
+            Self::InvalidCommand => (Category::Input, "invalid_command"),
+            Self::InvalidKey => (Category::Input, "invalid_credential"),
+            Self::InvalidModel => (Category::Input, "invalid_model"),
+            Self::ConnectionRequired => (Category::Input, "connection_required"),
+            Self::UnknownCommand => (Category::Input, "unknown_command"),
+            Self::InvalidConnection(_) => (Category::Input, "invalid_connection"),
+            Self::Exists => (Category::Input, "connection_exists"),
+            Self::Write => (Category::Storage, "configuration_write_failed"),
+            Self::Encode => (Category::Internal, "connection_encode_failed"),
+            Self::Io(_) => (Category::Storage, "setup_io_failed"),
+        };
+        ErrorReport {
+            category,
+            code: code.into(),
+            message: self.to_string(),
+            retryable: false,
+        }
+    }
 }
 #[derive(Debug, Default, Clone, clap::Args)]
 #[expect(
@@ -170,7 +245,7 @@ pub(crate) fn read_key(label: &str) -> Result<nouli_core::config::auth::Secret, 
     if value == "/cancel" {
         return Err(SetupError::Cancelled);
     }
-    nouli_core::config::auth::Secret::new(value).map_err(|_| SetupError::Invalid)
+    nouli_core::config::auth::Secret::new(value).map_err(|_| SetupError::InvalidKey)
 }
 pub(crate) fn prompt(label: &str, default: &str) -> Result<String, SetupError> {
     if !io::stdin().is_terminal() {
@@ -217,16 +292,21 @@ fn path(args: &Args) -> Result<PathBuf, SetupError> {
     args.config
         .clone()
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".nouli/config.toml")))
-        .ok_or(SetupError::Invalid)
+        .ok_or(SetupError::HomeUnavailable)
 }
 fn read(path: &Path) -> Result<DocumentMut, SetupError> {
     match fs::read_to_string(path) {
         Ok(s) => {
-            Config::parse(&s).map_err(|_| SetupError::Invalid)?;
-            s.parse().map_err(|_| SetupError::Invalid)
+            Config::parse(&s)?;
+            s.parse()
+                .map_err(|_| SetupError::Configuration(nouli_core::config::ConfigError::Syntax))
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(DocumentMut::new()),
-        Err(e) => Err(e.into()),
+        Err(source) => Err(nouli_core::config::ConfigError::Read {
+            path: path.to_owned(),
+            source,
+        }
+        .into()),
     }
 }
 /// Replaces the configuration atomically.
@@ -247,13 +327,13 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
     if interactive {
         let _ = writeln!(
             io::stdout(),
-            "Connect a decision service. Enter /cancel to cancel.\nServices: openai, typesafe, openrouter, cloudflare, ollama, llama.cpp, custom"
+            "Connect a decision service. Enter /cancel to cancel.\nServices: {SERVICES}"
         );
     }
     let service = choose(options.service.clone(), "Service", "", interactive)?;
     let recipe = recipes().into_iter().find(|r| r.name == service);
     if recipe.is_none() && service != "custom" {
-        return Err(SetupError::Invalid);
+        return Err(SetupError::UnknownService(service));
     }
     let recipe = recipe.as_ref();
     let name = choose(
@@ -266,7 +346,7 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
         interactive,
     )?;
     if name.trim().is_empty() {
-        return Err(SetupError::Invalid);
+        return Err(SetupError::InvalidName);
     }
     if !options.replace && has_provider(&read(&file)?, &name) {
         return Err(SetupError::Exists);
@@ -326,14 +406,14 @@ fn choose_protocol(
     match chosen.as_str() {
         "system-one" => Ok(Protocol::SystemOne),
         "openai-decisions" => Ok(Protocol::OpenaiDecisions),
-        _ => Err(SetupError::Invalid),
+        _ => Err(SetupError::InvalidProtocol),
     }
 }
 fn parse_binding(binding: &str) -> Result<HttpBinding, SetupError> {
     match binding {
         "standard" => Ok(HttpBinding::Standard),
         "cloudflare-workers-ai" => Ok(HttpBinding::CloudflareWorkersAi),
-        _ => Err(SetupError::Invalid),
+        _ => Err(SetupError::InvalidBinding),
     }
 }
 /// The endpoint from the options or recipe. Interactive Cloudflare setup
@@ -351,7 +431,7 @@ fn choose_endpoint(
     if url.is_empty() && service == "cloudflare" && interactive {
         let account = prompt("Cloudflare account ID", "")?;
         if !account.bytes().all(|b| b.is_ascii_alphanumeric()) || account.is_empty() {
-            return Err(SetupError::Invalid);
+            return Err(SetupError::InvalidAccountId);
         }
         url = format!("https://api.cloudflare.com/client/v4/accounts/{account}/ai");
     }
@@ -374,12 +454,14 @@ fn choose_credential(
         return Ok(None);
     }
     let key = if let Some(env) = &options.env {
-        KeySource::env(env.clone()).map_err(|_| SetupError::Invalid)?
+        KeySource::env(env.clone()).map_err(|_| SetupError::InvalidEnvironmentVariable)?
     } else if !options.command.is_empty() {
-        KeySource::command(options.command.clone()).map_err(|_| SetupError::Invalid)?
+        KeySource::command(options.command.clone()).map_err(|_| SetupError::InvalidCommand)?
     } else if options.stdin {
         let key = crate::auth::key_line(&mut io::stdin().lock())?;
-        KeySource::Key(nouli_core::config::auth::Secret::new(key).map_err(|_| SetupError::Invalid)?)
+        KeySource::Key(
+            nouli_core::config::auth::Secret::new(key).map_err(|_| SetupError::InvalidKey)?,
+        )
     } else if connection.no_auth != Some(true) {
         if !interactive {
             return Err(SetupError::Terminal);
@@ -393,23 +475,24 @@ fn choose_credential(
 }
 fn prompt_credential(connection: &mut ConnectionSettings) -> Result<Option<KeySource>, SetupError> {
     let method = prompt("Authentication (key, env, command, none)", "key")?;
-    match method.as_str() {
-        "key" => Ok(Some(KeySource::Key(read_key("API key: ")?))),
-        "env" => Ok(Some(
-            KeySource::env(prompt("Environment variable", "")?).map_err(|_| SetupError::Invalid)?,
-        )),
-        "command" => Ok(Some(
-            KeySource::command(
-                shlex::split(&prompt("Credential program and arguments", "")?)
-                    .ok_or(SetupError::Invalid)?,
-            )
-            .map_err(|_| SetupError::Invalid)?,
-        )),
-        "none" => {
-            connection.no_auth = Some(true);
-            Ok(None)
-        }
-        _ => Err(SetupError::Invalid),
+    if method == "none" {
+        connection.no_auth = Some(true);
+        return Ok(None);
+    }
+    prompted_source(&method).map(Some)
+}
+/// Prompts for the credential source `method` names.
+fn prompted_source(method: &str) -> Result<KeySource, SetupError> {
+    match method {
+        "key" => Ok(KeySource::Key(read_key("API key: ")?)),
+        "env" => KeySource::env(prompt("Environment variable", "")?)
+            .map_err(|_| SetupError::InvalidEnvironmentVariable),
+        "command" => KeySource::command(
+            shlex::split(&prompt("Credential program and arguments", "")?)
+                .ok_or(SetupError::InvalidCommand)?,
+        )
+        .map_err(|_| SetupError::InvalidCommand),
+        _ => Err(SetupError::InvalidCredentialSource),
     }
 }
 fn choose_model(
@@ -457,7 +540,9 @@ fn provider_definition(
         attempt_timeout_seconds: None,
         models: std::collections::BTreeMap::from([(model.to_owned(), defaults)]),
     };
-    definition.validate().map_err(|_| SetupError::Invalid)?;
+    definition
+        .validate()
+        .map_err(SetupError::InvalidConnection)?;
     Ok(definition)
 }
 fn prompt_default(file: &Path) -> Result<bool, SetupError> {
@@ -470,7 +555,7 @@ fn prompt_default(file: &Path) -> Result<bool, SetupError> {
 }
 /// Opens and locks the configuration's lock file, creating its directory.
 fn lock_config(file: &Path) -> Result<fs::File, SetupError> {
-    Ok(settings::private_file::lock_beside(file)?)
+    settings::private_file::lock_beside(file).map_err(|_| SetupError::Write)
 }
 /// Writes the draft under the configuration lock, storing its credential
 /// before publishing the configuration.
@@ -486,19 +571,18 @@ fn save(
         return Err(SetupError::Exists);
     }
     let provider =
-        toml_edit::ser::to_document(&draft.definition).map_err(|_| SetupError::Invalid)?;
+        toml_edit::ser::to_document(&draft.definition).map_err(|_| SetupError::Encode)?;
     doc["providers"][&draft.name] = Item::Table(provider.as_table().clone());
     if default {
         doc["default_provider"] = value(&draft.name);
         doc["default_model"] = value(&draft.model);
     }
-    Config::parse(&doc.to_string()).map_err(|_| SetupError::Invalid)?;
+    Config::parse(&doc.to_string())?;
     if let Some(key) = draft.key {
         settings::auth::update(&settings::auth::path_for(file), |store| {
             store.insert(draft.name.clone(), AuthEntry::ApiKey(key));
             ((), true)
-        })
-        .map_err(|_| SetupError::Write)?;
+        })?;
     }
     publish(file, &doc)?;
     Ok(ModelSelection {
@@ -507,7 +591,7 @@ fn save(
     })
 }
 pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
-    let output = (|| {
+    let output = (|| -> Result<_, SetupError> {
         let file = path(args)?;
         let config = Config::parse(&read(&file)?.to_string())?;
         let format = crate::render::resolve_report_format(
@@ -539,19 +623,13 @@ pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
                 ExitCode::from(6)
             }
         }
-        Err(SetupError::Report(report)) => {
+        Err(error) => {
+            let mut report = error.report();
+            if let Ok(file) = path(args) {
+                settings::annotate_report(&mut report, &file);
+            }
             crate::render_error(args, nouli_core::config::OutputFormat::Auto, report)
         }
-        Err(error) => crate::render_error(
-            args,
-            nouli_core::config::OutputFormat::Auto,
-            nouli_core::protocol::ErrorReport {
-                category: nouli_core::protocol::ErrorCategory::Configuration,
-                code: "connection_setup_failed".into(),
-                message: error.to_string(),
-                retryable: false,
-            },
-        ),
     }
 }
 
@@ -582,7 +660,7 @@ pub(crate) fn pick_model(
         .config
         .providers
         .get(&provider)
-        .ok_or(SetupError::Invalid)?;
+        .ok_or(nouli_core::config::ConfigError::UnknownProvider)?;
     writeln!(
         io::stdout(),
         "Configured models: {}",
@@ -614,7 +692,7 @@ pub(crate) fn pick_model(
         },
     )?;
     if model.trim().is_empty() {
-        return Err(SetupError::Invalid);
+        return Err(SetupError::InvalidModel);
     }
     if prompt("Save as startup default? (yes/no)", "no")? == "yes" {
         let file = &settings.config_path;
@@ -622,7 +700,7 @@ pub(crate) fn pick_model(
         let mut doc = read(file)?;
         doc["default_provider"] = value(&provider);
         doc["default_model"] = value(&model);
-        Config::parse(&doc.to_string()).map_err(|_| SetupError::Invalid)?;
+        Config::parse(&doc.to_string())?;
         publish(file, &doc)?;
     }
     Ok(ModelSelection {
@@ -655,15 +733,12 @@ pub(crate) fn startup(
         stored_credentials: settings.credentials.stored(),
         ..Default::default()
     };
-    let snapshot = settings
-        .config
-        .resolve_snapshot(
-            &overrides,
-            &ModelSelection::default(),
-            &ModelSelection::default(),
-            &settings.home,
-        )
-        .map_err(|_| SetupError::Invalid)?;
+    let snapshot = settings.config.resolve_snapshot(
+        &overrides,
+        &ModelSelection::default(),
+        &ModelSelection::default(),
+        &settings.home,
+    )?;
     let needs_key = match snapshot
         .clone()
         .with_credentials(|source| settings.credentials.lookup(source))
@@ -696,39 +771,23 @@ pub(crate) fn startup(
             "Authenticate connection {}",
             snapshot.profile_name
         )?;
-        let key = match prompt("Authentication (key, env, command)", "key")?.as_str() {
-            "key" => KeySource::Key(read_key("API key: ")?),
-            "env" => KeySource::env(prompt("Environment variable", "")?)
-                .map_err(|_| SetupError::Invalid)?,
-            "command" => KeySource::command(
-                shlex::split(&prompt("Credential program and arguments", "")?)
-                    .ok_or(SetupError::Invalid)?,
-            )
-            .map_err(|_| SetupError::Invalid)?,
-            _ => return Err(SetupError::Invalid),
-        };
+        let key = prompted_source(&prompt("Authentication (key, env, command)", "key")?)?;
         settings::auth::update(&settings::auth::path_for(&settings.config_path), |store| {
             store.insert(snapshot.profile_name, AuthEntry::ApiKey(key));
             ((), true)
-        })
-        .map_err(|_| SetupError::Write)?;
-        settings
-            .load_environment()
-            .map_err(|_| SetupError::Invalid)?;
+        })?;
+        settings.load_environment().map_err(SetupError::Report)?;
         let overrides = RuntimeOverrides {
             stored_credentials: settings.credentials.stored(),
             ..overrides
         };
-        settings
-            .config
-            .resolve(
-                &overrides,
-                &ModelSelection::default(),
-                &ModelSelection::default(),
-                &settings.home,
-                |source| settings.credentials.lookup(source),
-            )
-            .map_err(|_| SetupError::Invalid)?;
+        settings.config.resolve(
+            &overrides,
+            &ModelSelection::default(),
+            &ModelSelection::default(),
+            &settings.home,
+            |source| settings.credentials.lookup(source),
+        )?;
     }
     Ok(())
 }
@@ -880,6 +939,145 @@ no_auth = true
         let config =
             Config::parse(&fs::read_to_string(dir.0.join("config.toml")).unwrap()).unwrap();
         assert_eq!(config.providers.len(), 2);
+    }
+    #[test]
+    #[expect(clippy::too_many_lines, reason = "one table row per setup error")]
+    fn setup_errors_report_specific_codes_and_categories() {
+        use nouli_core::{
+            config::ConfigError,
+            protocol::{ErrorCategory as Category, ErrorReport},
+        };
+        let carried = ErrorReport {
+            category: Category::Authentication,
+            code: "carried".into(),
+            message: "carried report".into(),
+            retryable: false,
+        };
+        for (error, category, code) in [
+            (
+                SetupError::Configuration(ConfigError::UnknownProvider),
+                Category::Configuration,
+                "unknown_provider",
+            ),
+            (
+                SetupError::Cancelled,
+                Category::Interrupted,
+                "setup_canceled",
+            ),
+            (SetupError::Terminal, Category::Input, "terminal_required"),
+            (
+                SetupError::HomeUnavailable,
+                Category::Configuration,
+                "home_unavailable",
+            ),
+            (
+                SetupError::ConfigPath,
+                Category::Configuration,
+                "invalid_configuration_path",
+            ),
+            (
+                SetupError::UnknownService("nowhere".into()),
+                Category::Input,
+                "unknown_service",
+            ),
+            (
+                SetupError::InvalidName,
+                Category::Input,
+                "invalid_connection_name",
+            ),
+            (
+                SetupError::InvalidProtocol,
+                Category::Input,
+                "invalid_protocol",
+            ),
+            (
+                SetupError::InvalidBinding,
+                Category::Input,
+                "invalid_binding",
+            ),
+            (
+                SetupError::InvalidAccountId,
+                Category::Input,
+                "invalid_account_id",
+            ),
+            (
+                SetupError::InvalidCredentialSource,
+                Category::Input,
+                "invalid_credential_source",
+            ),
+            (
+                SetupError::InvalidEnvironmentVariable,
+                Category::Input,
+                "invalid_environment_variable",
+            ),
+            (
+                SetupError::InvalidCommand,
+                Category::Input,
+                "invalid_command",
+            ),
+            (
+                SetupError::InvalidKey,
+                Category::Input,
+                "invalid_credential",
+            ),
+            (SetupError::InvalidModel, Category::Input, "invalid_model"),
+            (
+                SetupError::ConnectionRequired,
+                Category::Input,
+                "connection_required",
+            ),
+            (
+                SetupError::UnknownCommand,
+                Category::Input,
+                "unknown_command",
+            ),
+            (
+                SetupError::InvalidConnection(ConfigError::Invalid("base_url")),
+                Category::Input,
+                "invalid_connection",
+            ),
+            (SetupError::Exists, Category::Input, "connection_exists"),
+            (
+                SetupError::Write,
+                Category::Storage,
+                "configuration_write_failed",
+            ),
+            (
+                SetupError::Encode,
+                Category::Internal,
+                "connection_encode_failed",
+            ),
+            (
+                SetupError::Credential(settings::auth::AuthFileError::Write {
+                    path: "auth.toml".into(),
+                }),
+                Category::Storage,
+                "auth_store_write_failed",
+            ),
+            (
+                SetupError::Key(crate::auth::KeyLineError::TooLong),
+                Category::Input,
+                "credential_too_long",
+            ),
+            (
+                SetupError::Io(io::Error::other("closed")),
+                Category::Storage,
+                "setup_io_failed",
+            ),
+            (
+                SetupError::Report(carried.clone()),
+                carried.category,
+                "carried",
+            ),
+        ] {
+            let message = error.to_string();
+            let report = error.report();
+            assert_eq!((report.category, report.code.as_str()), (category, code));
+            assert!(!report.retryable);
+            if code != "unknown_provider" {
+                assert_eq!(report.message, message);
+            }
+        }
     }
     #[test]
     fn cloudflare_wire_model_is_an_editable_exact_model_setting() {

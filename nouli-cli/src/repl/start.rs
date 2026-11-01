@@ -188,16 +188,9 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
                 }
             }
             Err(error) => {
-                return render_error(
-                    args,
-                    settings.config.output,
-                    nouli_core::protocol::ErrorReport {
-                        category: nouli_core::protocol::ErrorCategory::Configuration,
-                        code: "connection_setup_failed".into(),
-                        message: error.to_string(),
-                        retryable: false,
-                    },
-                );
+                let mut report = error.report();
+                settings.annotate(&mut report);
+                return render_error(args, settings.config.output, report);
             }
         }
     }
@@ -226,16 +219,9 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
     if can_draw()
         && let Err(error) = crate::connect::startup(&mut settings, &mut model)
     {
-        return render_error(
-            args,
-            settings.config.output,
-            nouli_core::protocol::ErrorReport {
-                category: nouli_core::protocol::ErrorCategory::Configuration,
-                code: "connection_setup_failed".into(),
-                message: error.to_string(),
-                retryable: false,
-            },
-        );
+        let mut report = error.report();
+        settings.annotate(&mut report);
+        return render_error(args, settings.config.output, report);
     }
     let outcome = session_loop(
         &settings,
