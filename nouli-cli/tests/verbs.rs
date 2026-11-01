@@ -35,14 +35,7 @@ fn provider() -> Server {
 }
 
 fn failure(output: &Output, code: &str) -> ErrorReport {
-    assert_eq!(output.status.code(), Some(2), "{code}");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!("expected an error report")
-    };
-    assert_eq!(error.code, code);
-    error
+    harness::error_report(output, 2, Some(code))
 }
 
 fn ids(questions: &[nouli_core::decision::Question]) -> Vec<&str> {

@@ -20,14 +20,7 @@ fn text(output: Output) -> String {
 }
 
 fn command(home: &Home) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nouli"));
-    command
-        .env_clear()
-        .env("HOME", &home.0)
-        .current_dir(&home.0)
-        .arg("--store")
-        .arg(home.store());
-    command
+    home.bare_command(true)
 }
 
 #[test]
@@ -73,7 +66,7 @@ fn view_prints_captured_chains_without_provider_calls_or_store_changes() {
     let config = "output = 'json'\n[providers.local]\nprotocol = 'removed-protocol'\n";
     std::fs::write(home.0.join("config.toml"), config).unwrap();
     std::fs::write(home.0.join(".env"), "UNFINISHED='\n").unwrap();
-    let database = home.store().join("ledger.sqlite3");
+    let database = home.ledger_path();
     let before = std::fs::read(&database).unwrap();
     for selector in ["Combined".to_owned(), combined.session.unwrap().to_string()] {
         for format in [vec![], vec!["--format", "auto"], vec!["--format", "text"]] {
@@ -132,7 +125,7 @@ fn empty_view_and_help_do_not_initialize_config_or_load_env() {
         )
         .unwrap();
     drop(ledger);
-    let database = home.store().join("ledger.sqlite3");
+    let database = home.ledger_path();
     let before = std::fs::read(&database).unwrap();
     let output = text(command(&home).args(["view", "Empty"]).output().unwrap());
     assert!(output.contains("Session: Empty"));

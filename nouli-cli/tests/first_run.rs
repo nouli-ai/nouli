@@ -15,22 +15,10 @@ use std::{
     process::{Command, Output},
 };
 fn command(home: &Home) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nouli"));
-    command
-        .env_clear()
-        .env("HOME", &home.0)
-        .current_dir(&home.0);
-    command
+    home.bare_command(false)
 }
 fn error(output: &Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {
-    assert_eq!(output.status.code(), Some(exit));
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!("expected error report")
-    };
-    assert_eq!(error.code, code);
-    error
+    harness::error_report(output, exit, Some(code))
 }
 #[test]
 fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledger() {
@@ -438,7 +426,6 @@ fn existing_store_credential_errors_name_source_and_completed_replay_reads_no_ke
 }
 #[test]
 fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostics() {
-    use nouli_core::protocol::{EngineEvent, EventKind, validate_events};
     let once = std::sync::atomic::AtomicBool::new(true);
     let server = loopback::Server::with_handler(move |body| {
         if body["state"].as_str().unwrap().contains("NODE:high")
@@ -486,15 +473,9 @@ fn frozen_workflow_credentials_keep_original_source_in_json_and_jsonl_diagnostic
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(!text.contains("PRIVATE_SENTINEL_VALUE") && !text.contains("CHANGED_KEY"));
         let envelope = if jsonl {
-            let mut events = text
-                .lines()
-                .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-                .collect::<Vec<_>>();
-            validate_events(&events).unwrap();
-            let EventKind::Terminal { result } = events.pop().unwrap().event else {
-                panic!("terminal")
-            };
-            *result
+            let events = harness::jsonl_events_from(text.as_bytes());
+
+            harness::terminal(&events).clone()
         } else {
             serde_json::from_str::<ResultEnvelope>(&text).unwrap()
         };

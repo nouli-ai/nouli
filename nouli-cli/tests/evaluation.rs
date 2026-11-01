@@ -18,10 +18,7 @@ use nouli_core::{
     storage::{Ledger, OpenMode},
 };
 use std::fmt::Write as _;
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::process::{Command, Stdio};
 #[test]
 fn persisted_continue_branch_blend_fixed_heads_and_ephemeral_use_the_shared_engine() {
     let server = Server::with_handler(harness::typesafe);
@@ -178,22 +175,13 @@ fn full_file_updates_json_toon_stdin_and_normalized_replay_preserve_complete_inp
             .any(|entry| entry.record == record.id)
     );
     drop(ledger);
-    let mut cmd = home.command();
     // A what-if starts from the saved session, so its update needs a new record.
     file["updates"][0]["record"]["id"] = serde_json::json!(Id::generate());
     file["updates"][0]["record"]["key"] = serde_json::json!("whatif-only");
-    cmd.args(["whatif", "Full", "--input", "-", "--input-format", "json"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = cmd.spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&file).unwrap())
-        .unwrap();
-    let result = report(&child.wait_with_output().unwrap());
+    let result = report(&home.run_with_stdin(
+        ["whatif", "Full", "--input", "-", "--input-format", "json"],
+        &serde_json::to_vec(&file).unwrap(),
+    ));
     assert!(result.turn.is_none());
     assert_eq!(server.count(), 2);
     // A request file that names a session is refused: the verb supplies it.
@@ -260,7 +248,7 @@ fn invalid_selection_modes_names_budget_credentials_and_request_conflicts_do_not
         assert_eq!(server.count(), 1);
     }
     assert!(
-        !std::fs::read(home.store().join("ledger.sqlite3"))
+        !std::fs::read(home.ledger_path())
             .unwrap()
             .windows(b"SECRET_FIXTURE_TOKEN".len())
             .any(|part| part == b"SECRET_FIXTURE_TOKEN")
@@ -358,7 +346,7 @@ fn default_model_budget_works_and_competing_file_modes_fail_before_inference() {
     let output = home.run(["new", "Other", "--input", competing.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(server.count(), 2);
-    assert_eq!(before_count(&home), 2);
+    assert_eq!(harness::session_count(&home), 2);
 }
 
 /// Runs a command with the provider credential in its environment.
@@ -733,17 +721,14 @@ fn assert_show_keeps_frozen_settings_and_skipped_node(home: &Home, run: Id) {
         shown.inspection.run.nodes[2].status,
         nouli_core::workflow::NodeStatus::Skipped
     );
-    assert_eq!(before_count(home), 1);
+    assert_eq!(harness::session_count(home), 1);
 }
 fn assert_resume_of_a_completed_run_replays(home: &Home, run: Id) {
-    use nouli_core::protocol::EventKind;
     let replay = home.run(["workflow", "resume", &run.to_string(), "--jsonl"]);
     assert!(replay.status.success());
     let events = jsonl_events(&replay);
     assert_eq!(events.len(), 2);
-    assert!(
-        matches!(&events.last().unwrap().event,EventKind::Terminal {result} if matches!(&result.result,Report::Run(report) if report.replayed))
-    );
+    assert!(matches!(&harness::terminal(&events).result, Report::Run(report) if report.replayed));
 }
 /// A `--no-session` run from `Travel` reports no run and no node turns.
 fn assert_ephemeral_run_from_a_session_saves_nothing(home: &Home, file: &std::path::Path) {
@@ -770,13 +755,7 @@ fn assert_ephemeral_run_from_a_session_saves_nothing(home: &Home, file: &std::pa
             .all(Option::is_none)
     );
 }
-fn before_count(home: &Home) -> usize {
-    Ledger::open(&home.store(), OpenMode::ReadOnlyExisting)
-        .unwrap()
-        .list_sessions()
-        .unwrap()
-        .len()
-}
+
 /// A provider whose first request for the `high` node fails with a 503.
 fn high_fails_once() -> Server {
     let fail = std::sync::atomic::AtomicBool::new(true);
@@ -840,7 +819,6 @@ fn change_everything_the_run_froze(
 fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_completed_siblings() {
     use nouli_core::{
         context::PinTarget,
-        protocol::EventKind,
         workflow::{NodeStatus, RunStatus},
     };
     let server = high_fails_once();
@@ -894,9 +872,7 @@ fn workflow_cli_partial_resume_freezes_sources_settings_and_graph_and_retains_co
     );
     assert_eq!(String::from_utf8_lossy(&resumed.stderr), "");
     let events = jsonl_events(&resumed);
-    let EventKind::Terminal { result } = &events.last().unwrap().event else {
-        panic!("terminal")
-    };
+    let result = harness::terminal(&events);
     let Report::Run(done) = &result.result else {
         panic!("run")
     };
@@ -1042,10 +1018,7 @@ fn workflow_files_may_mix_compact_and_object_questions_and_name_the_node_on_erro
 }
 #[test]
 fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
-    use nouli_core::{
-        protocol::{EngineEvent, EventKind, validate_events},
-        workflow::WorkflowRequest,
-    };
+    use nouli_core::workflow::WorkflowRequest;
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -1064,9 +1037,8 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
         required_records: vec![],
         request_id: None,
     };
-    let mut command = home.command();
-    command
-        .args([
+    let output = home.run_with_stdin(
+        [
             "workflow",
             "run",
             "-",
@@ -1074,29 +1046,14 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
             "json",
             "--no-session",
             "--jsonl",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = command.spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&request).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
+        ],
+        &serde_json::to_vec(&request).unwrap(),
+    );
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let events = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
-    assert!(
-        matches!(&events.last().unwrap().event,EventKind::Terminal {result} if matches!(&result.result,Report::Run(report) if !report.persisted))
-    );
+    let events = harness::jsonl_events(&output);
+
+    assert!(matches!(&harness::terminal(&events).result, Report::Run(report) if !report.persisted));
     assert!(!home.store().exists());
     assert_eq!(server.count(), 8);
 }
@@ -1108,10 +1065,7 @@ mod process;
 #[cfg(unix)]
 #[test]
 fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards() {
-    use nouli_core::{
-        protocol::{EngineEvent, EventKind, validate_events},
-        workflow::{NodeStatus, RunStatus},
-    };
+    use nouli_core::workflow::{NodeStatus, RunStatus};
     use std::{sync::mpsc, time::Duration};
     let (started, waiting) = mpsc::sync_channel(1);
     let (release, held) = mpsc::sync_channel(1);
@@ -1142,15 +1096,9 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
     release.send(()).unwrap();
     assert_eq!(output.status.code(), Some(130));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let events = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
-    let EventKind::Terminal { result } = &events.last().unwrap().event else {
-        panic!("terminal")
-    };
+    let events = harness::jsonl_events(&output);
+
+    let result = harness::terminal(&events);
     let Report::Run(report) = &result.result else {
         panic!("saved run")
     };
@@ -1251,7 +1199,6 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
 
 #[test]
 fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files() {
-    use nouli_core::protocol::{EngineEvent, validate_events};
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
     home.configure(&server, "typesafe", false);
@@ -1270,12 +1217,8 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
     ]);
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let events = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
+    harness::jsonl_events(&output);
+
     assert_eq!(server.count(), 1);
     let path = home.0.join("redirected.jsonl");
     let output = home
@@ -1292,12 +1235,8 @@ fn large_jsonl_frames_resume_on_writable_readiness_and_redirect_cleanly_to_files
         .unwrap();
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let events = std::fs::read_to_string(path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<EngineEvent>(line).unwrap())
-        .collect::<Vec<_>>();
-    validate_events(&events).unwrap();
+    harness::jsonl_events_from(&std::fs::read(path).unwrap());
+
     assert_eq!(server.count(), 2);
     let output = home
         .command()

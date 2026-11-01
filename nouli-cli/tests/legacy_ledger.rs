@@ -19,7 +19,7 @@ fn historical_frozen_settings_report_fresh_store_guidance_without_inference_or_r
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "../fixtures/contracts/ledger-v{version}/ledger.sqlite3"
         ));
-        let database = home.store().join("ledger.sqlite3");
+        let database = home.ledger_path();
         std::fs::copy(fixture, &database).unwrap();
         let before = std::fs::read(&database).unwrap();
         let listed = home.run(["sessions", "list", "--json"]);

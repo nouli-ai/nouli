@@ -6,33 +6,18 @@ mod harness;
 mod loopback;
 use harness::{Home, QUESTION, report};
 use loopback::Server;
-use nouli_core::protocol::{Report, ResultEnvelope};
+use nouli_core::protocol::Report;
 use std::{
     fs,
-    io::Write,
     os::unix::fs::PermissionsExt,
-    process::{Output, Stdio},
+    process::Output,
     sync::atomic::{AtomicBool, Ordering},
 };
 
 const KEY: &str = "SENTINEL_AUTH_KEY_VALUE";
 
 fn with_stdin(home: &Home, arguments: &[&str], input: &str) -> Output {
-    let mut child = home
-        .command()
-        .args(arguments)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
+    home.run_with_stdin(arguments, input.as_bytes())
 }
 
 fn login(home: &Home, key: &str) -> Output {
@@ -51,15 +36,8 @@ fn mode(path: &std::path::Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-fn error_code(output: &Output) -> String {
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!(
-            "an error report: {}",
-            String::from_utf8_lossy(&output.stdout)
-        )
-    };
-    error.code
+fn error_code(output: &Output, exit: i32) -> String {
+    harness::error_report(output, exit, None).code
 }
 
 fn everything_visible(output: &Output) -> String {
@@ -127,7 +105,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     assert!(listing.status.success());
     let export = home.run(["sessions", "export", "Trip", "--format", "json"]);
     assert!(export.status.success());
-    let ledger = fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    let ledger = fs::read(home.ledger_path()).unwrap();
     assert!(
         !ledger
             .windows(KEY.len())
@@ -162,7 +140,7 @@ fn a_store_others_can_read_is_refused_by_every_command_with_the_fix() {
     ] {
         let output = home.run(&arguments);
         assert_eq!(output.status.code(), Some(2), "{arguments:?}");
-        assert_eq!(error_code(&output), "auth_store_insecure");
+        assert_eq!(error_code(&output, 2), "auth_store_insecure");
         let visible = everything_visible(&output);
         assert!(visible.contains("chmod 600") && visible.contains("auth.toml"));
         assert!(!visible.contains(KEY));
@@ -246,7 +224,7 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
     );
     let missing = home.run(create("A"));
     assert_eq!(missing.status.code(), Some(3));
-    assert_eq!(error_code(&missing), "credential_unavailable");
+    assert_eq!(error_code(&missing, 3), "credential_unavailable");
     assert!(everything_visible(&missing).contains("nouli auth login local"));
     let mut command = home.command();
     command
@@ -285,7 +263,7 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
         assert!(home.run(&arguments).status.success());
         let failed = home.run(create(name));
         assert_eq!(failed.status.code(), Some(3));
-        assert_eq!(error_code(&failed), "credential_unavailable");
+        assert_eq!(error_code(&failed, 3), "credential_unavailable");
         let visible = everything_visible(&failed);
         assert!(!visible.contains("LEAKED"), "{visible}");
     }
@@ -322,12 +300,12 @@ fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
         &format!("{KEY}\n"),
     );
     assert_eq!(unknown.status.code(), Some(2));
-    assert_eq!(error_code(&unknown), "unknown_provider");
+    assert_eq!(error_code(&unknown, 2), "unknown_provider");
     assert!(!everything_visible(&unknown).contains(KEY));
     // Without a terminal, login refuses to prompt.
     let prompt = with_stdin(&home, &["auth", "login", "local"], "");
     assert_eq!(prompt.status.code(), Some(2));
-    assert_eq!(error_code(&prompt), "terminal_required");
+    assert_eq!(error_code(&prompt, 2), "terminal_required");
     // Empty and invalid input are rejected.
     assert_eq!(
         with_stdin(&home, &["auth", "login", "local", "--stdin"], "\n")
@@ -361,7 +339,7 @@ fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
         fs::set_permissions(auth_file(&home), fs::Permissions::from_mode(0o600)).unwrap();
         let output = home.run(["auth", "list"]);
         assert_eq!(output.status.code(), Some(2), "{body}");
-        assert_eq!(error_code(&output), "invalid_auth_store");
+        assert_eq!(error_code(&output, 2), "invalid_auth_store");
         let visible = everything_visible(&output);
         assert!(
             visible.contains("local") && visible.contains(needle),
@@ -387,10 +365,7 @@ fn report_commands_refuse_jsonl_with_one_error_code() {
         let output = home.run([arguments, &["--jsonl"]].concat());
         assert_eq!(output.status.code(), Some(2), "{arguments:?}: {output:?}");
         let events = harness::jsonl_events(&output);
-        let nouli_core::protocol::EventKind::Terminal { result } = &events.last().unwrap().event
-        else {
-            panic!("a terminal event: {output:?}")
-        };
+        let result = harness::terminal(&events);
         let Report::Error(error) = &result.result else {
             panic!("an error report: {output:?}")
         };

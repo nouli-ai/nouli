@@ -30,13 +30,13 @@ use std::{
     time::Duration,
 };
 fn sql(home: &Home, statement: &str) {
-    let connection = rusqlite::Connection::open(home.store().join("ledger.sqlite3")).unwrap();
+    let connection = rusqlite::Connection::open(home.ledger_path()).unwrap();
     connection.busy_timeout(Duration::from_secs(5)).unwrap();
     connection.execute_batch(statement).unwrap();
 }
 fn scalar(home: &Home, query: &str) -> i64 {
     let connection = rusqlite::Connection::open_with_flags(
-        home.store().join("ledger.sqlite3"),
+        home.ledger_path(),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
@@ -67,13 +67,7 @@ fn key_request(
     path
 }
 fn error(output: &std::process::Output, code: i32) -> nouli_core::protocol::ErrorReport {
-    assert_eq!(output.status.code(), Some(code));
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!("error report")
-    };
-    error
+    harness::error_report(output, code, None)
 }
 /// `arguments` followed by the travel question.
 fn asking<'a>(arguments: &[&'a str]) -> Vec<&'a str> {
@@ -392,7 +386,7 @@ fn workflow_fault_after_a_node_answers_rolls_back_and_resume_runs_only_unfinishe
 /// A provider that, on a `Completed` fault, installs a trigger failing the
 /// `high` node's completion as soon as that node's request arrives.
 fn node_fault_provider(home: &Home, fault: NodeFault) -> Server {
-    let database = home.store().join("ledger.sqlite3");
+    let database = home.ledger_path();
     let once = AtomicBool::new(fault == NodeFault::Completed);
     Server::with_handler(move |body| {
         if body["state"].as_str().unwrap().contains("NODE:high")
@@ -527,7 +521,7 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     std::fs::create_dir_all(home.store()).unwrap();
-    let database = home.store().join("ledger.sqlite3");
+    let database = home.ledger_path();
     let connection = rusqlite::Connection::open(&database).unwrap();
     for migration in [
         include_str!("../../nouli-core/src/storage/schema/0001.sql"),

@@ -690,10 +690,7 @@ fn resume_completes_only_unfinished_nodes(
     home: &Home,
     partial: &nouli_core::protocol::RunReport,
 ) -> nouli_core::protocol::RunReport {
-    use nouli_core::{
-        protocol::EventKind,
-        workflow::{NodeStatus, RunStatus},
-    };
+    use nouli_core::workflow::{NodeStatus, RunStatus};
     let output = home.run([
         "workflow",
         "resume",
@@ -702,10 +699,8 @@ fn resume_completes_only_unfinished_nodes(
     ]);
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let mut events = jsonl_events(&output);
-    let EventKind::Terminal { result } = events.pop().unwrap().event else {
-        panic!("terminal")
-    };
+    let events = jsonl_events(&output);
+    let result = harness::terminal(&events).clone();
     let Report::Run(done) = result.result else {
         panic!("run")
     };

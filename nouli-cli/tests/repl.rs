@@ -11,10 +11,7 @@ use nouli_core::{
     storage::{Ledger, OpenMode},
 };
 use serde_json::{Value, json};
-use std::{
-    io::Write,
-    process::{Output, Stdio},
-};
+use std::process::Output;
 
 /// A provider that answers whatever it is asked: the first choice leads, unless
 /// the evidence says CANCELLED, when the last one does.
@@ -69,21 +66,7 @@ fn answer(body: &Value) -> (u16, String) {
 }
 
 fn open(home: &Home, arguments: &[&str], script: &str) -> Output {
-    let mut child = home
-        .command()
-        .args(arguments)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(script.as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
+    home.run_with_stdin(arguments, script.as_bytes())
 }
 
 fn text(output: &Output) -> String {

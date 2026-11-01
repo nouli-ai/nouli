@@ -7,10 +7,7 @@ mod loopback;
 
 use harness::{Home, QUESTION, report, run_report};
 use loopback::Server;
-use nouli_core::{
-    identity::Id,
-    protocol::{EngineEvent, EventKind, Report, ResultEnvelope, validate_events},
-};
+use nouli_core::{identity::Id, protocol::Report};
 use std::{fs, process::Output};
 
 fn configure(home: &Home, server: &Server) {
@@ -23,13 +20,7 @@ fn configure(home: &Home, server: &Server) {
 }
 
 fn failure(output: &Output, code: &str) {
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!("error report")
-    };
-    assert_eq!(error.code, code);
+    harness::error_report(output, 2, Some(code));
 }
 
 /// A fresh session in a store of its own, so `home.store()` can stay absent.
@@ -44,12 +35,7 @@ fn create(name: &str) -> Vec<&str> {
 }
 
 fn missing_credential(output: &Output) {
-    assert_eq!(output.status.code(), Some(3));
-    let envelope: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
-    let Report::Error(error) = envelope.result else {
-        panic!("error report")
-    };
-    assert_eq!(error.code, "credential_unavailable");
+    harness::error_report(output, 3, Some("credential_unavailable"));
 }
 
 #[test]
@@ -84,7 +70,7 @@ fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_
     let replay = report(&home.run(&args));
     assert!(replay.replayed && replay.turn == first.turn);
     assert_eq!(server.count(), 3);
-    let database = fs::read(home.store().join("ledger.sqlite3")).unwrap();
+    let database = fs::read(home.ledger_path()).unwrap();
     assert!(
         !database
             .windows(b"FILE_CREDENTIAL_SENTINEL".len())
@@ -97,10 +83,7 @@ fn automatic_env_credentials_support_stateless_persisted_continued_and_replayed_
     );
     fs::write(&env, "TYPESAFE_TOKEN='BROKEN_PRIVATE_VALUE\n").unwrap();
     failure(&home.run(&args), "invalid_env_file");
-    assert_eq!(
-        database,
-        fs::read(home.store().join("ledger.sqlite3")).unwrap()
-    );
+    assert_eq!(database, fs::read(home.ledger_path()).unwrap());
     assert_eq!(server.count(), 3);
 }
 
@@ -311,14 +294,9 @@ fn workflow_run_and_resume_resolve_file_credentials_from_the_saved_variable_name
     assert!(output.status.success() && output.stderr.is_empty());
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(!text.contains("ORIGINAL_SENTINEL") && !text.contains("ROTATED_SENTINEL"));
-    let events: Vec<EngineEvent> = text
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    validate_events(&events).unwrap();
-    let EventKind::Terminal { result } = &events.last().unwrap().event else {
-        panic!("terminal")
-    };
+    let events = harness::jsonl_events_from(text.as_bytes());
+
+    let result = harness::terminal(&events);
     let Report::Run(done) = &result.result else {
         panic!("run")
     };
