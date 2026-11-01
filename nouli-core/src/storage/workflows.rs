@@ -863,6 +863,10 @@ mod tests {
             "../../../fixtures/contracts/decision-outcome.json"
         ))
         .unwrap();
+        assert!(matches!(
+            ledger.finalize_attempt(&owner.session_guard, attempt.id, outcome.clone()),
+            Err(TurnError::WorkflowAttempt)
+        ));
         ledger.connection.execute_batch("CREATE TRIGGER reject_workflow_publication BEFORE UPDATE OF state ON attempt_states WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
         assert!(
             ledger

@@ -144,6 +144,7 @@ fn turn(error: &TurnError) -> ErrorReport {
         TurnError::Session(error) => session(error),
         TurnError::Projection(error) => projection(error),
         TurnError::Conflict => message(Category::Conflict, "head_conflict"),
+        TurnError::WorkflowAttempt => message(Category::Internal, "workflow_attempt_misrouted"),
         _ => message(Category::Input, "invalid_turn"),
     }
 }

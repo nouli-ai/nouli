@@ -104,6 +104,8 @@ pub enum TurnError {
     AttemptState,
     #[error("session head or attempt changed concurrently")]
     Conflict,
+    #[error("attempt belongs to a workflow; finalize it through the workflow owner")]
+    WorkflowAttempt,
     #[error(transparent)]
     History(#[from] HistoryError),
     #[error(transparent)]
@@ -328,8 +330,9 @@ impl Ledger {
     ///
     /// - Any error from [`Ledger::attempt`] reading the attempt.
     /// - [`TurnError::Conflict`] if the guard does not own the attempt, the
-    ///   attempt belongs to a workflow, the session head moved since
-    ///   preparation, or its request reservation is no longer pending.
+    ///   session head moved since preparation, or its request reservation is
+    ///   no longer pending.
+    /// - [`TurnError::WorkflowAttempt`] if the attempt belongs to a workflow.
     /// - [`TurnError::AttemptState`] if the attempt already finished.
     /// - [`TurnError::Session`], [`TurnError::Projection`], or
     ///   [`TurnError::History`] if the session, its context, or the resulting
@@ -357,7 +360,7 @@ impl Ledger {
         }
         let prepared = snapshot.intent;
         if prepared.workflow.is_some() {
-            return Err(TurnError::Conflict);
+            return Err(TurnError::WorkflowAttempt);
         }
         let current = self.session(&SessionSelector::Id(prepared.session))?;
         if current.revision != prepared.expected_revision
