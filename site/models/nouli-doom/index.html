@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nouli Doom: ViZDoom corridor control · Nouli</title><meta name="description" content="A compact actor policy for ViZDoom Deadly Corridor at skill 5.">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Nouli">
+<meta property="og:title" content="Nouli Doom: ViZDoom corridor control"><meta property="og:description" content="A compact actor policy for ViZDoom Deadly Corridor at skill 5."><meta property="og:url" content="https://nouli.ai/models/nouli-doom/">
+<meta property="og:image" content="https://nouli.ai/models/nouli-doom/comparison.png"><meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0b6e63"><link rel="stylesheet" href="/src/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareSourceCode", "name": "Nouli Doom", "description": "Nouli Doom is a PPO-trained policy for ViZDoom Deadly Corridor at skill 5. The inference export contains the actor network and maps structured game state to move, strafe, turn, and fire decisions.", "url": "https://nouli.ai/models/nouli-doom/", "codeRepository": "https://huggingface.co/nouli-ai/nouli-doom", "version": "1.0.0", "license": "https://www.apache.org/licenses/LICENSE-2.0", "runtimePlatform": "Python 3.12 / PyTorch", "author": {"@type": "Organization", "name": "Nouli AI", "url": "https://nouli.ai/"}}</script>
+</head><body class="model-site"><header class="top"><a class="mark" href="../../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav aria-label="Main navigation"><a href="../../models/" aria-current="page">models</a><a href="../../guide/">guide</a><a href="../../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header><main>
+<header class="release-hero"><p class="eyebrow"><a href="../">Models</a> / Control <span>v1.0.0 · 31 October 2026</span></p>
+<h1>Nouli Doom</h1><p class="release-task">ViZDoom corridor control</p><div class="release-intro"><p>Nouli Doom is a PPO-trained policy for ViZDoom Deadly Corridor at skill 5. The inference export contains the actor network and maps structured game state to move, strafe, turn, and fire decisions.</p>
+</div>
+<div class="release-actions"><a class="button" href="https://huggingface.co/nouli-ai/nouli-doom">Get it on Hugging Face ↗</a><a href="#quickstart">Run locally ↓</a></div></header>
+<div class="model-layout"><article class="prose model-body"><section id="comparison"><h2>Comparison with Jev</h2><p>Recorded comparison with Jev 1.14.0, dated 31 October 2026.</p>
+<p><video controls muted playsinline preload="metadata" poster="comparison.png" aria-label="Nouli Doom and Jev recorded side-by-side simulator episode"><source src="comparison.mp4" type="video/mp4"><a href="comparison.mp4">Open the recording</a></video></p>
+<p><a href="comparison.mp4">Open the side-by-side recording</a>.</p>
+<p>Collect the green armor and finish alive in Deadly Corridor. <strong>Nouli Doom</strong> and the recorded <strong>Jev</strong> setup start from the same game state with the same structured-state and goal interface.</p>
+<p>In this recorded episode, Nouli collects the armor and survives; Jev's run ends before collecting it.</p>
+<p>Playback follows simulator time; a panel holds its last available frame when its recording ends. This example was selected after scoring and illustrates this recorded setup, not a general ranking of the models.</p>
+<p><a href="https://huggingface.co/nouli-ai/nouli-doom/resolve/v1.0.0/eval/results.json">Recorded evaluation</a> · <a href="https://huggingface.co/nouli-ai/nouli-doom/resolve/v1.0.0/eval/protocol.json">Setup and limitations</a>.</p>
+</section><section id="model-at-a-glance"><h2>Model at a glance</h2><table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Parameters</td>
+  <td>23,435</td>
+</tr>
+<tr>
+  <td>Input</td>
+  <td>42-float structured state; 54 legal joint actions</td>
+</tr>
+<tr>
+  <td>Tested runtime</td>
+  <td>macOS and Linux ARM64 / CPU</td>
+</tr>
+<tr>
+  <td>License</td>
+  <td>Apache-2.0; upstream notices apply</td>
+</tr>
+</tbody>
+</table>
+</section><section id="quickstart"><h2>Quickstart with Nouli CLI</h2><p>Requires Python 3.12, the <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.4.2">Nouli CLI 0.4.2</a>. Hugging Face hosts the files; inference runs on your machine. The Python server loads the weights, and Nouli runs the supplied decision workflow. No hosted API key is required.</p>
+<p>In the first terminal:</p>
+<div class="code-example"><div class="code-label"><span>Terminal 1 · prepare and serve</span><button class="copy" type="button" data-copy="hf download nouli-ai/nouli-doom --revision v1.0.0 --local-dir ./nouli-doom
+cd nouli-doom
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --input-json examples/input.json
+python serve.py --device cpu" aria-label="Copy Terminal 1 · prepare and serve">copy</button></div><pre><code>hf download nouli-ai/nouli-doom --revision v1.0.0 --local-dir ./nouli-doom
+cd nouli-doom
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --input-json examples/input.json
+python serve.py --device cpu
+</code></pre></div>
+<p>Once the server reports ready, open a second terminal in <code>nouli-doom</code>:</p>
+<div class="code-example"><div class="code-label"><span>Terminal 2 · run the workflow</span><button class="copy" type="button" data-copy="nouli --config nouli/nouli.toml --store ./.nouli-store \
+  workflow run nouli/example-workflow.json --json" aria-label="Copy Terminal 2 · run the workflow">copy</button></div><pre><code>nouli --config nouli/nouli.toml --store ./.nouli-store \
+  workflow run nouli/example-workflow.json --json
+</code></pre></div>
+<p>This example returns one action for the supplied state. Running an episode also requires the simulator loop to apply actions and provide each next state.</p>
+</section><section id="provenance"><h2>Base models and training data</h2><ul>
+<li>Student: a PPO multilayer perceptron.</li>
+<li>Teacher: <a href="https://huggingface.co/fabiononato/doomfly-rl/tree/2e58329dcdeed64107679f0ff113b024d4d2b167"><code>fabiononato/doomfly-rl</code></a>, checkpoint <code>malecns49k_noconn</code>.</li>
+</ul>
+<p>Training data: Teacher trajectories, DAgger and simulator reinforcement learning.</p>
+<p>Trained through imitation learning from the public Doomfly teacher and simulator reinforcement learning. Doomfly supplied labels; its weights are not the student's direct initialization. <a href="https://huggingface.co/nouli-ai/nouli-doom/resolve/v1.0.0/provenance.json">Source revisions and provenance</a>.</p>
+</section><section id="limitations"><h2>Limitations</h2><ul>
+<li>Validated on Deadly Corridor at skill 5 with the supplied state/action wrapper.</li>
+<li>Inputs include structured state and goal assistance; these results do not establish pixel-only or general Doom performance.</li>
+</ul>
+</section><section id="license-and-citation"><h2>License and citation</h2><p>Apache-2.0, with upstream notices and dataset attribution retained.</p>
+<p><a href="https://nouli.ai">Nouli AI</a>. Nouli Doom. Cite the published model version and commit.</p>
+</section></article>
+<aside class="model-aside"><p class="eyebrow">Open release</p><p class="aside-version">Apache-2.0</p><p>Weights, local serving code, a Nouli CLI workflow, and curated provenance. Upstream notices apply.</p><a class="aside-hf" href="https://huggingface.co/nouli-ai/nouli-doom/tree/v1.0.0">Browse v1.0.0 files ↗</a><nav aria-label="On this page"><a href="#comparison">Comparison with Jev</a><a href="#model-at-a-glance">Model at a glance</a><a href="#quickstart">Quickstart with Nouli CLI</a><a href="#provenance">Base models and training data</a><a href="#limitations">Limitations</a><a href="#license-and-citation">License and citation</a></nav><p class="aside-note">Inference runs on your machine. Hugging Face hosts the files.</p></aside></div>
+<section class="related-models"><p class="eyebrow">More from Nouli</p><div><a href="../nouli-guard/">Nouli Guard →</a><a href="../nouli-route/">Nouli Route →</a><a href="../nouli-clause/">Nouli Clause →</a><a href="../nouli-push/">Nouli Push →</a></div></section></main><footer class="site"><span>Harness MIT · Models Apache-2.0</span><a href="../../models/">models</a><a href="https://huggingface.co/nouli-ai">hugging face ↗</a><a href="https://github.com/nouli-ai/nouli">github ↗</a></footer><script type="module" src="/src/models.js"></script></body></html>

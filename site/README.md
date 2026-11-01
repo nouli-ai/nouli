@@ -1,6 +1,6 @@
 # Nouli website
 
-The site published at [nouli.ai](https://nouli.ai/) through GitHub Pages: a home page, a user guide, and the example walkthroughs. It is plain HTML, CSS, and JavaScript, built with [Vite](https://vite.dev/).
+The site published at [nouli.ai](https://nouli.ai/) through GitHub Pages: a home page, a user guide, example walkthroughs, an open-source model catalog. It is plain HTML, CSS, and JavaScript, built with [Vite](https://vite.dev/).
 
 ## Develop
 
@@ -24,7 +24,7 @@ Building the site requires no release lookup.
 
 ## Layout
 
-- `index.html`, `guide/`, `examples/`: one HTML page per route. Vite picks up every directory under `examples/` as a page.
+- `index.html`, `guide/`, `examples/`, `models/`: one static HTML page per route. Vite discovers the section indexes and each direct child directory under `examples/` and `models/`. All routes are included in canonical URLs and the sitemap.
 - `src/figure.js`: the decision graph and readout used on the home page and in walkthroughs.
 - `src/data/`: graph data generated from real Nouli sessions. Don't edit it by hand.
 
@@ -194,3 +194,21 @@ Each walkthrough page links its steps to graph nodes with `data-node`, the node'
 ## Download installer
 
 `public/install.sh` is published as `/install.sh` under the site base path. It installs existing release archives; it does not build Nouli or call a decision provider. Run `npm test` after changing it. The tests use local archive fixtures and simulated platforms without network calls or changes to your installed executable.
+
+## Model pages
+
+`models/` lists the five published models, with a page for each release.
+Each model page links to its Hugging Face repository. Content is static HTML,
+readable without JavaScript.
+
+Model content follows the published `v1.0.0` cards in
+[the nouli-ai organization](https://huggingface.co/nouli-ai). Comparison media
+is copied from those releases into `public/models/MODEL/`. Keep the recorded
+examples, selected-example caveats, supported schemas and limitations intact.
+Evaluation and provenance links point to the pinned Hugging Face release.
+Private experiment artifacts and full training recipes are outside these pages.
+
+When adding a model, add its model page, catalog entry
+and `llms.txt` reference together. Reuse the shared styles and clipboard buttons.
+Check filters, navigation, code-copy controls and video playback at desktop
+and narrow widths against the built preview.

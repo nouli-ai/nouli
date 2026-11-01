@@ -10,6 +10,11 @@
   - Do not directly edit cargo.toml to add dependencies.
   - Let cargo pick the version unless a certain version is strictly necessary.
 
+## Public copy
+
+Use direct, concrete descriptions in README and website prose. Avoid marketing
+slogans built around "X keeps the Y" or paired model/harness taglines.
+
 ## Architecture Decision Records
 
 - This repository records architectural decisions in [docs/adr/](docs/adr/). Read relevant ADRs before changing architecture or established design choices.

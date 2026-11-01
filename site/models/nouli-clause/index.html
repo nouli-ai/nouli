@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nouli Clause: NDA evidence and entailment · Nouli</title><meta name="description" content="Retrieve NDA evidence and evaluate a fixed checklist of 17 hypotheses.">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Nouli">
+<meta property="og:title" content="Nouli Clause: NDA evidence and entailment"><meta property="og:description" content="Retrieve NDA evidence and evaluate a fixed checklist of 17 hypotheses."><meta property="og:url" content="https://nouli.ai/models/nouli-clause/">
+<meta property="og:image" content="https://nouli.ai/models/nouli-clause/comparison.png"><meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0b6e63"><link rel="stylesheet" href="/src/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareSourceCode", "name": "Nouli Clause", "description": "Nouli Clause evaluates a fixed checklist of 17 NDA hypotheses. An Ettin-150M evidence retriever selects passages for an Ettin-1B decision encoder, which returns entailment, contradiction, or not-mentioned probabilities.", "url": "https://nouli.ai/models/nouli-clause/", "codeRepository": "https://huggingface.co/nouli-ai/nouli-clause", "version": "1.0.0", "license": "https://www.apache.org/licenses/LICENSE-2.0", "runtimePlatform": "Python 3.12 / PyTorch", "author": {"@type": "Organization", "name": "Nouli AI", "url": "https://nouli.ai/"}}</script>
+</head><body class="model-site"><header class="top"><a class="mark" href="../../"><img src="/brand/bee.svg" alt="" width="24" height="27">NOULI</a><nav aria-label="Main navigation"><a href="../../models/" aria-current="page">models</a><a href="../../guide/">guide</a><a href="../../examples/">examples</a><a href="https://github.com/nouli-ai/nouli">github</a></nav></header><main>
+<header class="release-hero"><p class="eyebrow"><a href="../">Models</a> / Text <span>v1.0.0 · 31 October 2026</span></p>
+<h1>Nouli Clause</h1><p class="release-task">NDA evidence and entailment</p><div class="release-intro"><p>Nouli Clause evaluates a fixed checklist of 17 NDA hypotheses. An Ettin-150M evidence retriever selects passages for an Ettin-1B decision encoder, which returns entailment, contradiction, or not-mentioned probabilities.</p>
+</div>
+<div class="release-actions"><a class="button" href="https://huggingface.co/nouli-ai/nouli-clause">Get it on Hugging Face ↗</a><a href="#quickstart">Run locally ↓</a></div></header>
+<div class="model-layout"><article class="prose model-body"><section id="comparison"><h2>Comparison with Jev</h2><p>Recorded comparison with Jev 1.14.0, dated 31 October 2026.</p>
+<a class="comparison-image" href="comparison.png" aria-label="Open the full Nouli Clause comparison image"><img src="comparison.png" alt="Nouli Clause: the published example, reference label, and recorded Jev comparison" width="1620" height="1089" loading="lazy" decoding="async"></a>
+<p>Reference label: <strong>Supported</strong>. <strong>Nouli Clause</strong> selects <strong>Supported</strong>; <strong>Jev full-contract, calibrated</strong> selects <strong>Contradicted</strong>.</p>
+<p>The excerpt is shown for the reader. Jev received the full NDA; Nouli used passages selected by its trained retriever.</p>
+<p>Illustrative example selected after scoring; not a representative sample. <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/eval/results.json">Recorded evaluation</a> · <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/eval/protocol.json">Methodology</a> · <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/eval/illustrative-comparison.json">Example details</a>.</p>
+</section><section id="model-at-a-glance"><h2>Model at a glance</h2><table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Parameters</td>
+  <td>1.178 billion</td>
+</tr>
+<tr>
+  <td>Input</td>
+  <td>512-token evidence windows; 1,280-token decision input</td>
+</tr>
+<tr>
+  <td>Tested runtime</td>
+  <td>macOS ARM64 / CPU; Linux ARM64 / CUDA</td>
+</tr>
+<tr>
+  <td>License</td>
+  <td>Apache-2.0; upstream notices apply</td>
+</tr>
+</tbody>
+</table>
+</section><section id="quickstart"><h2>Quickstart with Nouli CLI</h2><p>Requires Python 3.12, the <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.4.2">Nouli CLI 0.4.2</a>. Hugging Face hosts the files; inference runs on your machine. The Python server loads the weights, and Nouli runs the supplied decision workflow. No hosted API key is required.</p>
+<p>In the first terminal:</p>
+<div class="code-example"><div class="code-label"><span>Terminal 1 · prepare and serve</span><button class="copy" type="button" data-copy="hf download nouli-ai/nouli-clause --revision v1.0.0 --local-dir ./nouli-clause
+cd nouli-clause
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --file examples/nda.txt
+python serve.py --device cpu" aria-label="Copy Terminal 1 · prepare and serve">copy</button></div><pre><code>hf download nouli-ai/nouli-clause --revision v1.0.0 --local-dir ./nouli-clause
+cd nouli-clause
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --file examples/nda.txt
+python serve.py --device cpu
+</code></pre></div>
+<p>Once the server reports ready, open a second terminal in <code>nouli-clause</code>:</p>
+<div class="code-example"><div class="code-label"><span>Terminal 2 · run the workflow</span><button class="copy" type="button" data-copy="nouli --config nouli/nouli.toml --store ./.nouli-store \
+  workflow run nouli/example-workflow.json --json" aria-label="Copy Terminal 2 · run the workflow">copy</button></div><pre><code>nouli --config nouli/nouli.toml --store ./.nouli-store \
+  workflow run nouli/example-workflow.json --json
+</code></pre></div>
+<p>The example uses CPU. On a configured CUDA host, start the server with <code>--device cuda</code>. Rerun <code>prepare.py</code> with your text or file before running another workflow.</p>
+</section><section id="provenance"><h2>Base models and training data</h2><ul>
+<li><a href="https://huggingface.co/jhu-clsp/ettin-encoder-1b/tree/befd76be43d08b89ff9957012f3ff29d0842780b">jhu-clsp/ettin-encoder-1b</a></li>
+<li><a href="https://huggingface.co/jhu-clsp/ettin-encoder-150m/tree/45d08642849e5c5701b162671ac811b7654bfd9f">jhu-clsp/ettin-encoder-150m</a></li>
+</ul>
+<p>Training data: <a href="https://huggingface.co/datasets/reuben256/contract-nli/tree/a238b4be3fa9ae91d3fbe9970383e532ae8e69c6">reuben256/contract-nli</a>; 337 training contracts / 5,729 hypothesis decisions. The official source is <a href="https://github.com/stanfordnlp/contract-nli/tree/eced6528dd3c1d14d73f9a87df8f7bdbc03126f9">Stanford ContractNLI</a>, with <a href="https://github.com/stanfordnlp/contract-nli/blob/eced6528dd3c1d14d73f9a87df8f7bdbc03126f9/LICENSE">CC-BY-4.0 attribution</a>.</p>
+<p>Trained on ContractNLI decision labels and human-annotated evidence spans. <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/provenance.json">Source revisions and provenance</a>.</p>
+</section><section id="limitations"><h2>Limitations</h2><ul>
+<li>Supports the fixed 17-hypothesis NDA checklist, not arbitrary contract questions.</li>
+<li>Retrieval errors can affect decisions. A retrieval miss does not establish that a statement is absent from the contract.</li>
+</ul>
+</section><section id="license-and-citation"><h2>License and citation</h2><p>Apache-2.0, with upstream notices and dataset attribution retained.</p>
+<p><a href="https://nouli.ai">Nouli AI</a>. Nouli Clause. Cite the published model version and commit.</p>
+</section></article>
+<aside class="model-aside"><p class="eyebrow">Open release</p><p class="aside-version">Apache-2.0</p><p>Weights, local serving code, a Nouli CLI workflow, and curated provenance. Upstream notices apply.</p><a class="aside-hf" href="https://huggingface.co/nouli-ai/nouli-clause/tree/v1.0.0">Browse v1.0.0 files ↗</a><nav aria-label="On this page"><a href="#comparison">Comparison with Jev</a><a href="#model-at-a-glance">Model at a glance</a><a href="#quickstart">Quickstart with Nouli CLI</a><a href="#provenance">Base models and training data</a><a href="#limitations">Limitations</a><a href="#license-and-citation">License and citation</a></nav><p class="aside-note">Inference runs on your machine. Hugging Face hosts the files.</p></aside></div>
+<section class="related-models"><p class="eyebrow">More from Nouli</p><div><a href="../nouli-guard/">Nouli Guard →</a><a href="../nouli-route/">Nouli Route →</a><a href="../nouli-push/">Nouli Push →</a><a href="../nouli-doom/">Nouli Doom →</a></div></section></main><footer class="site"><span>Harness MIT · Models Apache-2.0</span><a href="../../models/">models</a><a href="https://huggingface.co/nouli-ai">hugging face ↗</a><a href="https://github.com/nouli-ai/nouli">github ↗</a></footer><script type="module" src="/src/models.js"></script></body></html>
