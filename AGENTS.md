@@ -29,9 +29,11 @@ Before committing Rust changes, format the code, then run Clippy and the workspa
 
 Document additional prerequisites and commands alongside the code that introduces them.
 
-## Coding Style & Naming Conventions
+## Testing
 
-- **Rust unit tests:** Unit tests must be inline in a `#[cfg(test)] mod tests` block in the same source file as the code they test.
+- Write tests for Rust crates in Rust. Keep unit tests inline in a `#[cfg(test)] mod tests` block and integration tests in the owning crate’s `tests/` directory, with shared helpers under `tests/support/`.
+- Run automated Rust product tests through `cargo test --workspace`. Use platform gating where necessary.
+- Reuse the repository’s existing language and tooling for the subsystem being changed. Do not introduce another language, interpreter, or separate test runner merely for implementation convenience. Keep Rust product test logic and harnesses in Rust, executed through Cargo. When a test requires an external tool, document the capability the existing toolchain cannot provide, the added prerequisites, and how the Cargo test invokes it. An interpreter remains a dependency even when preinstalled or used only with its standard library.
 
 ## Review
 
