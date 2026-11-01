@@ -37,7 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `nouli-core`: remove `media::Evidence::assets`; `provider::wire::body` prepares image assets using the connection settings. Existing protocol-specific evaluation and request-body functions remain available.
-
 - `nouli-core`: remove the unused `history::AttemptState`, `history::AttemptRecord`, `HistoryEvent::AttemptRecorded`, and `workflow::FrozenRun` types, and the `ContextPlan::questions` and `ContextPlan::required` fields. The ledger never wrote these types, and the context a model receives is unchanged.
 
 ### Fixed
@@ -45,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the terminal responsive to cancellation while native image turns assemble context and prepare request bodies. Reuse each image derivative across budgeting, context reduction, and dispatch within a plan, while retaining original saved images and wire bytes.
 - A timed-out file import now stops converter descendants as well as their launcher, so imports cannot leave converter processes running or wait indefinitely for inherited pipes.
 - Keep fact text at normal brightness when it contains phrases such as `(from x)` or `(replaced; ...)`; dim source and replacement annotations using their saved metadata.
-
 - In the terminal view, a saved-answer reference recorded without a display label, such as one a `nouli-core` caller wrote, is usable as `@saved answer` instead of being reported unavailable when a draft cites it. A malformed saved-answer reference is reported as an error when the terminal view restores a session, and fails the terminal graph and `nouli view` with a message naming it, instead of being skipped silently.
 - Run only the credential commands of the providers a turn or `workflow run` uses. A `workflow run` that continues a session whose model defaults name a different provider from the configured default no longer runs the default provider's command, and runs the session provider's command once before the run instead of once per node during it. A turn that replays an earlier `--request-id` prepares the credential of the provider saved with that request, not the current default.
 - Save connection setup and startup model choices with a relative `--config` path such as `--config config.toml`, instead of reporting `connection_setup_failed` after the file was already written.
