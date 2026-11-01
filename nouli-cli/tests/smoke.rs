@@ -17,6 +17,33 @@ fn help_and_version_work_without_configuration() {
     }
 }
 
+/// Clap prints doc comments verbatim, so Markdown quoting would show up in `--help`.
+#[test]
+fn help_text_has_no_markdown_backticks() {
+    let mut pending = vec![vec![]];
+    while let Some(path) = pending.pop() {
+        let output = Command::new(env!("CARGO_BIN_EXE_nouli"))
+            .args(&path)
+            .arg("--help")
+            .env_clear()
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "nouli {path:?} --help failed");
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            !help.contains('`'),
+            "nouli {path:?} --help contains a backtick"
+        );
+        let commands = help.lines().skip_while(|line| *line != "Commands:").skip(1);
+        for line in commands.take_while(|line| !line.is_empty()) {
+            let name = line.split_whitespace().next().unwrap();
+            if name != "help" {
+                pending.push([path.as_slice(), &[name.to_owned()]].concat());
+            }
+        }
+    }
+}
+
 #[test]
 fn unknown_arguments_fail_without_protocol_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_nouli"))

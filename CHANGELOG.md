@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
+- Show `--input` help for `new`, `add`, `ask`, and `whatif` without stray Markdown backticks.
 
 ## [0.4.3] - 2026-10-31
 

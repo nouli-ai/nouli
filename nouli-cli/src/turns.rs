@@ -20,7 +20,7 @@ use std::{io::Read, path::PathBuf};
 /// Inputs and model options shared by every turn verb.
 #[derive(Debug, Args)]
 pub(crate) struct Common {
-    /// A complete JSON or TOON request without `session`, or - for stdin.
+    /// A complete JSON or TOON request without session, or - for stdin.
     #[arg(long, value_name = "FILE")]
     pub input: Option<PathBuf>,
     /// Required for stdin or a file without a .json or .toon extension.
@@ -54,7 +54,7 @@ pub(crate) struct New {
     /// Unique, case-sensitive name for the new session.
     #[arg(value_name = "NAME", value_parser = selection::name)]
     pub name: SessionName,
-    /// Branch from SESSION, or `SESSION@TURN_ID` for a fixed point; repeat to blend.
+    /// Branch from SESSION, or SESSION@TURN_ID for a fixed point; repeat to blend.
     #[arg(long, value_name = "SOURCE", value_parser = source)]
     pub from: Vec<SourceSelection>,
     /// Facts to record on the first turn.
