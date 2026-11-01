@@ -75,12 +75,13 @@ fn error(output: &std::process::Output, code: i32) -> nouli_core::protocol::Erro
     };
     error
 }
-#[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
-fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_session() {
+/// `arguments` followed by the travel question.
+fn asking<'a>(arguments: &[&'a str]) -> Vec<&'a str> {
+    [arguments, &QUESTION].concat()
+}
+/// A provider that holds the first `CRASHING` request until released: it
+/// signals `started` once the request arrives, then waits on `release`.
+fn holding_provider() -> (Server, mpsc::Receiver<()>, mpsc::SyncSender<()>) {
     let (started, waiting) = mpsc::sync_channel(1);
     let (release, held) = mpsc::sync_channel(1);
     let once = AtomicBool::new(true);
@@ -96,9 +97,12 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
         }
         harness::typesafe(body)
     });
-    let other = Server::with_handler(harness::typesafe);
-    let home = Home::create();
-    home.configure(&primary, "typesafe", false);
+    (primary, waiting, release)
+}
+/// Configures `primary` as the default provider, with a timeout long enough to
+/// outlast the held request, and `other` as a second provider.
+fn configure_two_providers(home: &Home, primary: &Server, other: &Server) {
+    home.configure(primary, "typesafe", false);
     let config = home.0.join("config.toml");
     let mut text = std::fs::read_to_string(&config).unwrap().replace(
         "attempt_timeout_seconds = 5",
@@ -111,12 +115,16 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     )
     .unwrap();
     std::fs::write(config, text).unwrap();
-    let base = report(&home.run([&["new", "Main", "BASE"][..], &QUESTION].concat()));
-    let arguments = [
-        &["add", "Main", "CRASHING", "--request-id", "crash-request"][..],
-        &QUESTION,
-    ]
-    .concat();
+}
+#[test]
+fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_session() {
+    let (primary, waiting, release) = holding_provider();
+    let other = Server::with_handler(harness::typesafe);
+    let home = Home::create();
+    configure_two_providers(&home, &primary, &other);
+    let base = report(&home.run(asking(&["new", "Main", "BASE"])));
+    let main = base.session.unwrap();
+    let arguments = asking(&["add", "Main", "CRASHING", "--request-id", "crash-request"]);
     let child = OwnedChild::new(
         home.command()
             .args(&arguments)
@@ -126,39 +134,34 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
             .unwrap(),
     );
     waiting.recv_timeout(Duration::from_secs(5)).unwrap();
+    // While the owner holds Main, every other writer to it is turned away.
     error(&home.run(&arguments), 5);
     error(
-        &home.run(
-            [
-                &[
-                    "add",
-                    "Main",
-                    "OTHER_INTENT",
-                    "--request-id",
-                    "different-request",
-                ][..],
-                &QUESTION,
-            ]
-            .concat(),
-        ),
+        &home.run(asking(&[
+            "add",
+            "Main",
+            "OTHER_INTENT",
+            "--request-id",
+            "different-request",
+        ])),
         5,
     );
     error(
-        &home.run(
-            [
-                &["add", "Main", "CHANGED", "--request-id", "crash-request"][..],
-                &QUESTION,
-            ]
-            .concat(),
-        ),
+        &home.run(asking(&[
+            "add",
+            "Main",
+            "CHANGED",
+            "--request-id",
+            "crash-request",
+        ])),
         5,
     );
     assert_eq!(primary.count(), 2);
+    // Another session is independent of the held one.
     let independent = report(
         &home.run(
             [
-                &["new", "Other", "INDEPENDENT"][..],
-                &QUESTION,
+                &asking(&["new", "Other", "INDEPENDENT"])[..],
                 &["--provider", "other"],
             ]
             .concat(),
@@ -166,28 +169,9 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     );
     assert_ne!(independent.session, base.session);
     assert_eq!(other.count(), 1);
-    assert!(
-        Command::new("kill")
-            .args(["-KILL", &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    let output = child.output(Duration::from_secs(5));
-    assert!(!output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    kill_owner(child);
     release.send(()).unwrap();
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap();
-    let main = base.session.unwrap();
-    assert!(ledger.session_guard(main).is_ok());
-    assert_eq!(
-        ledger.session(&SessionSelector::Id(main)).unwrap().frontier,
-        vec![base.turn.unwrap()]
-    );
-    let attempts = ledger.list_attempts(main).unwrap();
-    assert_eq!(attempts.len(), 2);
-    assert_eq!(attempts[1].progress.state, AttemptStatus::Running);
-    drop(ledger);
+    assert_owner_left_a_running_attempt(&home, main, base.turn.unwrap());
     let interrupted = error(&home.run(&arguments), 130);
     assert_eq!(
         interrupted.category,
@@ -217,6 +201,32 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     );
     assert_eq!(attempts[2].progress.state, AttemptStatus::Completed);
     assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 3);
+}
+/// Kills the owning process; it exits unsuccessfully and prints no result.
+fn kill_owner(child: OwnedChild) {
+    assert!(
+        Command::new("kill")
+            .args(["-KILL", &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let output = child.output(Duration::from_secs(5));
+    assert!(!output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+}
+/// After the owner dies, its session is free again, still at `head`, with the
+/// killed attempt left running.
+fn assert_owner_left_a_running_attempt(home: &Home, main: Id, head: Id) {
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap();
+    assert!(ledger.session_guard(main).is_ok());
+    assert_eq!(
+        ledger.session(&SessionSelector::Id(main)).unwrap().frontier,
+        vec![head]
+    );
+    let attempts = ledger.list_attempts(main).unwrap();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[1].progress.state, AttemptStatus::Running);
 }
 #[test]
 fn before_dispatch_and_transactional_finalization_faults_never_publish_false_success() {
@@ -364,76 +374,129 @@ fn record(value: i64) -> ContextRecord {
         kind: ContextKind::Commitment,
     }
 }
+/// Where a workflow node's publication fails: as it starts `running`, or as it
+/// is marked `completed` after its provider call.
+#[derive(Clone, Copy, PartialEq)]
+enum NodeFault {
+    Running,
+    Completed,
+}
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
-fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_nodes() {
-    use nouli_core::storage::workflows::recovery::{Disposition, WorkflowInspection};
-    for mode in ["running", "completed"] {
-        let home = Home::create();
-        drop(Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap());
-        let database = home.store().join("ledger.sqlite3");
-        let once = AtomicBool::new(mode == "completed");
-        let server = Server::with_handler(move |body| {
-            if body["state"].as_str().unwrap().contains("NODE:high")
-                && once.swap(false, Ordering::SeqCst)
-            {
-                let connection = rusqlite::Connection::open(&database).unwrap();
-                connection.busy_timeout(Duration::from_secs(5)).unwrap();
-                connection.execute_batch("CREATE TRIGGER inject_fault BEFORE UPDATE OF state ON workflow_nodes WHEN NEW.node_id='high' AND NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
-            }
-            harness::typesafe(body)
-        });
-        home.configure(&server, "typesafe", false);
-        if mode == "running" {
-            sql(
-                &home,
-                "CREATE TRIGGER inject_fault BEFORE UPDATE OF state ON workflow_nodes WHEN NEW.node_id='high' AND NEW.state='running' BEGIN SELECT RAISE(ABORT,'fault'); END;",
-            );
+fn workflow_fault_before_a_node_runs_rolls_back_and_resume_runs_only_unfinished_nodes() {
+    workflow_state_fault_rolls_back_node_publication_and_resumes(NodeFault::Running);
+}
+#[test]
+fn workflow_fault_after_a_node_answers_rolls_back_and_resume_runs_only_unfinished_nodes() {
+    workflow_state_fault_rolls_back_node_publication_and_resumes(NodeFault::Completed);
+}
+/// A provider that, on a `Completed` fault, installs a trigger failing the
+/// `high` node's completion as soon as that node's request arrives.
+fn node_fault_provider(home: &Home, fault: NodeFault) -> Server {
+    let database = home.store().join("ledger.sqlite3");
+    let once = AtomicBool::new(fault == NodeFault::Completed);
+    Server::with_handler(move |body| {
+        if body["state"].as_str().unwrap().contains("NODE:high")
+            && once.swap(false, Ordering::SeqCst)
+        {
+            let connection = rusqlite::Connection::open(&database).unwrap();
+            connection.busy_timeout(Duration::from_secs(5)).unwrap();
+            connection.execute_batch("CREATE TRIGGER inject_fault BEFORE UPDATE OF state ON workflow_nodes WHEN NEW.node_id='high' AND NEW.state='completed' BEGIN SELECT RAISE(ABORT,'fault'); END;").unwrap();
         }
-        let mut high = record(12);
-        high.key = "high-fact".into();
-        let mut low = record(16);
-        low.key = "low-fact".into();
-        let mut graph = workflow();
-        graph.nodes[1].when = None;
-        graph.nodes[2].when = None;
-        graph.nodes[1].updates = vec![ContextUpdate::Append {
-            record: high.clone(),
-        }];
-        graph.nodes[2].updates = vec![ContextUpdate::Append {
-            record: low.clone(),
-        }];
-        let file = home.0.join("workflow.json");
-        std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
-        let output = home.run(["workflow", "run", file.to_str().unwrap(), "--parallel", "1"]);
-        let (run, preserved) = if mode == "running" {
+        harness::typesafe(body)
+    })
+}
+/// Writes the fixture workflow with both branches active, each appending its
+/// own fact, and returns its path and the `high` node's fact.
+fn fact_appending_workflow(home: &Home) -> (std::path::PathBuf, ContextRecord) {
+    let mut high = record(12);
+    high.key = "high-fact".into();
+    let mut low = record(16);
+    low.key = "low-fact".into();
+    let mut graph = workflow();
+    graph.nodes[1].when = None;
+    graph.nodes[2].when = None;
+    graph.nodes[1].updates = vec![ContextUpdate::Append {
+        record: high.clone(),
+    }];
+    graph.nodes[2].updates = vec![ContextUpdate::Append { record: low }];
+    let file = home.0.join("workflow.json");
+    std::fs::write(&file, serde_json::to_vec(&graph).unwrap()).unwrap();
+    (file, high)
+}
+fn workflow_state_fault_rolls_back_node_publication_and_resumes(fault: NodeFault) {
+    let home = Home::create();
+    drop(Ledger::open(&home.store(), OpenMode::ReadWriteCreate).unwrap());
+    let server = node_fault_provider(&home, fault);
+    home.configure(&server, "typesafe", false);
+    if fault == NodeFault::Running {
+        sql(
+            &home,
+            "CREATE TRIGGER inject_fault BEFORE UPDATE OF state ON workflow_nodes WHEN NEW.node_id='high' AND NEW.state='running' BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        );
+    }
+    let (file, high) = fact_appending_workflow(&home);
+    let output = home.run(["workflow", "run", file.to_str().unwrap(), "--parallel", "1"]);
+    let (run, preserved) = match fault {
+        NodeFault::Running => {
             assert_eq!(output.status.code(), Some(6));
             let failure: ResultEnvelope = serde_json::from_slice(&output.stdout).unwrap();
             assert!(matches!(failure.result, Report::Error(_)));
             (failure.recovery.unwrap().run.unwrap(), None)
-        } else {
+        }
+        NodeFault::Completed => {
             let partial = run_report(&output, 4);
             assert_eq!(partial.status, RunStatus::Partial);
             (partial.run.unwrap(), partial.nodes[2].turn)
-        };
-        assert_eq!(
-            scalar(
-                &home,
-                &format!(
-                    "SELECT count(*) FROM context_records WHERE id='{}'",
-                    high.id
-                )
-            ),
-            0
-        );
-        let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-        let before = ledger.inspect_workflow_full(run).unwrap();
-        assert!(!before.inspection.live_owner);
-        assert!(before.inspection.session_head_compatible);
-        if mode == "completed" {
+        }
+    };
+    assert_eq!(
+        scalar(
+            &home,
+            &format!(
+                "SELECT count(*) FROM context_records WHERE id='{}'",
+                high.id
+            )
+        ),
+        0
+    );
+    let initial = inspect_interrupted_run(&home, run, fault);
+    sql(&home, "DROP TRIGGER inject_fault;");
+    let calls = server.count();
+    let done = run_report(&home.run(["workflow", "resume", &run.to_string()]), 0);
+    assert_eq!(done.status, RunStatus::Completed);
+    assert_eq!(done.nodes[0].turn, initial);
+    if let Some(preserved) = preserved {
+        assert_eq!(done.nodes[2].turn, Some(preserved));
+    }
+    assert_eq!(
+        server.count() - calls,
+        match fault {
+            NodeFault::Running => 4,
+            NodeFault::Completed => 3,
+        }
+    );
+    assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 5);
+    assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 2);
+    let shown = home.run(["workflow", "show", &run.to_string()]);
+    assert!(shown.status.success());
+    let inspection: nouli_core::storage::workflows::recovery::WorkflowInspection =
+        serde_json::from_slice(&shown.stdout).unwrap();
+    assert_eq!(inspection.rounds.len(), 2);
+    assert_eq!(
+        inspection.inspection.nodes[1].uncertain_prior_calls,
+        usize::from(fault == NodeFault::Completed)
+    );
+}
+/// Checks what the interrupted run records before it is resumed, and returns
+/// the initial node's turn.
+fn inspect_interrupted_run(home: &Home, run: Id, fault: NodeFault) -> Option<Id> {
+    use nouli_core::storage::workflows::recovery::Disposition;
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    let before = ledger.inspect_workflow_full(run).unwrap();
+    assert!(!before.inspection.live_owner);
+    assert!(before.inspection.session_head_compatible);
+    match fault {
+        NodeFault::Completed => {
             assert_eq!(
                 before.inspection.nodes[1].disposition,
                 Disposition::ProviderOutcomeUnknown
@@ -443,42 +506,20 @@ fn workflow_state_faults_rollback_node_publication_and_resume_only_unfinished_no
                 before.inspection.nodes[2].disposition,
                 Disposition::Completed
             );
-            assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 1);
-        } else {
+            assert_eq!(scalar(home, "SELECT count(*) FROM context_records"), 1);
+        }
+        NodeFault::Running => {
             assert_eq!(
                 before.inspection.nodes[1].attempts,
                 [] as [nouli_core::storage::turns::AttemptSnapshot; 0]
             );
         }
-        let initial = before.inspection.run.nodes[0]
-            .output
-            .as_ref()
-            .and_then(|output| output.source.as_ref())
-            .map(|source| source.frontier[0]);
-        drop(ledger);
-        sql(&home, "DROP TRIGGER inject_fault;");
-        let calls = server.count();
-        let done = run_report(&home.run(["workflow", "resume", &run.to_string()]), 0);
-        assert_eq!(done.status, RunStatus::Completed);
-        assert_eq!(done.nodes[0].turn, initial);
-        if let Some(preserved) = preserved {
-            assert_eq!(done.nodes[2].turn, Some(preserved));
-        }
-        assert_eq!(
-            server.count() - calls,
-            if mode == "running" { 4 } else { 3 }
-        );
-        assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 5);
-        assert_eq!(scalar(&home, "SELECT count(*) FROM context_records"), 2);
-        let shown = home.run(["workflow", "show", &run.to_string()]);
-        assert!(shown.status.success());
-        let inspection: WorkflowInspection = serde_json::from_slice(&shown.stdout).unwrap();
-        assert_eq!(inspection.rounds.len(), 2);
-        assert_eq!(
-            inspection.inspection.nodes[1].uncertain_prior_calls,
-            usize::from(mode == "completed")
-        );
     }
+    before.inspection.run.nodes[0]
+        .output
+        .as_ref()
+        .and_then(|output| output.source.as_ref())
+        .map(|source| source.frontier[0])
 }
 #[test]
 fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
@@ -517,11 +558,53 @@ fn failed_migration_and_readonly_old_schema_preserve_original_bytes() {
     );
     assert!(!home.store().join("ledger.sqlite3-journal").exists());
 }
+/// Branches `Left` and `Right` from `base`, each superseding `original` with
+/// its own replacement.
+fn conflicting_branches(
+    home: &Home,
+    base: Id,
+    original: &ContextRecord,
+    left: &ContextRecord,
+    right: &ContextRecord,
+) -> Vec<nouli_core::protocol::TurnReport> {
+    [("Left", left), ("Right", right)]
+        .into_iter()
+        .map(|(name, replacement)| {
+            let path = home.request(
+                &format!("{name}.json"),
+                name,
+                vec![ContextUpdate::Supersede {
+                    targets: vec![original.id],
+                    replacement: replacement.clone(),
+                    pinned: None,
+                }],
+            );
+            report(&home.run([
+                "new",
+                name,
+                "--from",
+                &base.to_string(),
+                "--input",
+                path.to_str().unwrap(),
+            ]))
+        })
+        .collect()
+}
+fn export_sessions(
+    home: &Home,
+    sessions: &[nouli_core::protocol::TurnReport],
+) -> Vec<nouli_core::storage::inspection::SessionExport> {
+    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
+    sessions
+        .iter()
+        .map(|source| {
+            ledger
+                .export_session(&SessionSelector::Id(source.session.unwrap()))
+                .unwrap()
+        })
+        .collect()
+}
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();
@@ -539,51 +622,22 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
     let base = report(&home.run(["new", "Base", "--input", seed.to_str().unwrap()]));
     let left = record(12);
     let right = record(16);
-    let mut sources = vec![];
-    for (name, replacement) in [("Left", &left), ("Right", &right)] {
-        let path = home.request(
-            &format!("{name}.json"),
-            name,
-            vec![ContextUpdate::Supersede {
-                targets: vec![original.id],
-                replacement: replacement.clone(),
-                pinned: None,
-            }],
-        );
-        sources.push(report(&home.run([
-            "new",
-            name,
-            "--from",
-            &base.session.unwrap().to_string(),
-            "--input",
-            path.to_str().unwrap(),
-        ])));
-    }
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    let before = sources
-        .iter()
-        .map(|source| {
-            ledger
-                .export_session(&SessionSelector::Id(source.session.unwrap()))
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-    drop(ledger);
-    let from: Vec<String> = sources
-        .iter()
-        .flat_map(|source| ["--from".to_owned(), source.session.unwrap().to_string()])
-        .collect();
+    let sources = conflicting_branches(&home, base.session.unwrap(), &original, &left, &right);
+    let before = export_sessions(&home, &sources);
+    let blend = |name: &str, path: &std::path::Path| {
+        let mut arguments = vec![
+            "new".to_owned(),
+            name.to_owned(),
+            "--input".to_owned(),
+            path.to_str().unwrap().to_owned(),
+        ];
+        for source in &sources {
+            arguments.extend(["--from".to_owned(), source.session.unwrap().to_string()]);
+        }
+        home.run(arguments)
+    };
     let path = home.request("conflict.json", "CONFLICT", vec![]);
-    error(
-        &home.run(
-            [
-                &["new", "Conflict", "--input", path.to_str().unwrap()][..],
-                &from.iter().map(String::as_str).collect::<Vec<_>>(),
-            ]
-            .concat(),
-        ),
-        5,
-    );
+    error(&blend("Conflict", &path), 5);
     assert_eq!(server.count(), 3);
     let resolved = record(11);
     let path = home.request(
@@ -595,28 +649,10 @@ fn conflicting_blend_requires_explicit_resolution_and_never_mutates_sources() {
             pinned: None,
         }],
     );
-    let blend = report(
-        &home.run(
-            [
-                &["new", "Resolved", "--input", path.to_str().unwrap()][..],
-                &from.iter().map(String::as_str).collect::<Vec<_>>(),
-            ]
-            .concat(),
-        ),
-    );
+    let blend = report(&blend("Resolved", &path));
     assert_eq!(server.count(), 4);
-    let ledger = Ledger::open(&home.store(), OpenMode::ReadOnlyExisting).unwrap();
-    for (source, expected) in sources.iter().zip(before) {
-        assert_eq!(
-            ledger
-                .export_session(&SessionSelector::Id(source.session.unwrap()))
-                .unwrap(),
-            expected
-        );
-    }
-    let export = ledger
-        .export_session(&SessionSelector::Id(blend.session.unwrap()))
-        .unwrap();
+    assert_eq!(export_sessions(&home, &sources), before);
+    let export = export_sessions(&home, std::slice::from_ref(&blend)).remove(0);
     assert_eq!(export.turns.len(), 4);
     let ContextView::Resolved { records } = export.context else {
         panic!("explicitly resolved context")
