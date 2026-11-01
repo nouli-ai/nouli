@@ -141,10 +141,6 @@ fn office_text(xml: &str, name: &str) -> Result<String, Error> {
     Ok(out)
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending refactor into smaller functions"
-)]
 pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
     if matches!(extension, "doc" | "ppt") {
         return legacy(bytes, extension, name);
@@ -154,71 +150,106 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
         archive(&bytes, name)?;
     }
     if matches!(extension, "xls" | "xlsx" | "xlsm" | "xlsb" | "ods") {
-        let mut book = calamine::open_workbook_auto_from_rs(Cursor::new(bytes))
-            .map_err(|_| unsupported(name))?;
-        let mut out = String::new();
-        for sheet in book.sheet_names().clone() {
-            let range = book
-                .worksheet_range(&sheet)
-                .map_err(|_| unsupported(name))?;
-            let formulas = book
-                .worksheet_formula(&sheet)
-                .map_err(|_| unsupported(name))?;
-            let starts = [range.start(), formulas.start()]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            let ends = [range.end(), formulas.end()]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            writeln!(out, "Sheet: {sheet}").expect("string write");
-            if starts.is_empty() {
-                continue;
-            }
-            let (first_row, first_col) = (
-                starts.iter().map(|p| p.0).min().unwrap(),
-                starts.iter().map(|p| p.1).min().unwrap(),
-            );
-            let (last_row, last_col) = (
-                ends.iter().map(|p| p.0).max().unwrap(),
-                ends.iter().map(|p| p.1).max().unwrap(),
-            );
-            if u64::from(last_row - first_row + 1) * u64::from(last_col - first_col + 1) > 1_000_000
-            {
-                return Err(Error::Large(name.into()));
-            }
-            for row in first_row..=last_row {
-                let mut cells = Vec::new();
-                for col in first_col..=last_col {
-                    let value = match range.get_value((row, col)) {
-                        Some(cell) if !matches!(cell, calamine::Data::Empty) => cell_value(cell),
-                        _ => formulas
-                            .get_value((row, col))
-                            .filter(|s| !s.is_empty())
-                            .map(|formula| format!("={formula} (no cached result)"))
-                            .unwrap_or_default(),
-                    };
-                    cells.push(value);
-                }
-                out.push_str(&serde_json::to_string(&cells).expect("cell strings serialize"));
-                out.push('\n');
-                if out.len() as u64 > MAX_BYTES {
-                    return Err(Error::Large(name.into()));
-                }
-            }
-        }
-        return Ok(out);
+        return spreadsheet(bytes, name);
     }
     let mut archive = archive(&bytes, name)?;
     if extension == "docx" {
         return office_text(&xml(&mut archive, "word/document.xml", name)?, name);
     }
-    let presentation = xml(&mut archive, "ppt/presentation.xml", name)?;
-    let relationships = xml(&mut archive, "ppt/_rels/presentation.xml.rels", name)?;
-    let doc = roxmltree::Document::parse(&presentation).map_err(|_| unsupported(name))?;
-    let rels = roxmltree::Document::parse(&relationships).map_err(|_| unsupported(name))?;
-    let targets = rels
+    presentation(&mut archive, name)
+}
+
+/// Every sheet as a `Sheet: <name>` header followed by one JSON row per line.
+fn spreadsheet(bytes: Vec<u8>, name: &str) -> Result<String, Error> {
+    let mut book =
+        calamine::open_workbook_auto_from_rs(Cursor::new(bytes)).map_err(|_| unsupported(name))?;
+    let mut out = String::new();
+    for sheet in book.sheet_names().clone() {
+        let range = book
+            .worksheet_range(&sheet)
+            .map_err(|_| unsupported(name))?;
+        let formulas = book
+            .worksheet_formula(&sheet)
+            .map_err(|_| unsupported(name))?;
+        writeln!(out, "Sheet: {sheet}").expect("string write");
+        sheet_rows(&range, &formulas, &mut out, name)?;
+    }
+    Ok(out)
+}
+
+/// Inclusive `((first_row, first_col), (last_row, last_col))` covering both
+/// cached values and formulas, or `None` for an empty sheet.
+fn sheet_bounds(
+    range: &calamine::Range<calamine::Data>,
+    formulas: &calamine::Range<String>,
+) -> Option<((u32, u32), (u32, u32))> {
+    let starts = [range.start(), formulas.start()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let ends = [range.end(), formulas.end()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if starts.is_empty() {
+        return None;
+    }
+    let first = (
+        starts.iter().map(|p| p.0).min().unwrap(),
+        starts.iter().map(|p| p.1).min().unwrap(),
+    );
+    let last = (
+        ends.iter().map(|p| p.0).max().unwrap(),
+        ends.iter().map(|p| p.1).max().unwrap(),
+    );
+    Some((first, last))
+}
+
+/// A cell's cached value, else its formula marked as uncomputed, else empty.
+fn sheet_cell(
+    range: &calamine::Range<calamine::Data>,
+    formulas: &calamine::Range<String>,
+    position: (u32, u32),
+) -> String {
+    match range.get_value(position) {
+        Some(cell) if !matches!(cell, calamine::Data::Empty) => cell_value(cell),
+        _ => formulas
+            .get_value(position)
+            .filter(|s| !s.is_empty())
+            .map(|formula| format!("={formula} (no cached result)"))
+            .unwrap_or_default(),
+    }
+}
+
+/// Appends one JSON array per row of the sheet's used area.
+fn sheet_rows(
+    range: &calamine::Range<calamine::Data>,
+    formulas: &calamine::Range<String>,
+    out: &mut String,
+    name: &str,
+) -> Result<(), Error> {
+    let Some(((first_row, first_col), (last_row, last_col))) = sheet_bounds(range, formulas) else {
+        return Ok(());
+    };
+    if u64::from(last_row - first_row + 1) * u64::from(last_col - first_col + 1) > 1_000_000 {
+        return Err(Error::Large(name.into()));
+    }
+    for row in first_row..=last_row {
+        let cells = (first_col..=last_col)
+            .map(|col| sheet_cell(range, formulas, (row, col)))
+            .collect::<Vec<_>>();
+        out.push_str(&serde_json::to_string(&cells).expect("cell strings serialize"));
+        out.push('\n');
+        if out.len() as u64 > MAX_BYTES {
+            return Err(Error::Large(name.into()));
+        }
+    }
+    Ok(())
+}
+
+/// Internal relationship targets of `ppt/presentation.xml`, keyed by id.
+fn slide_targets<'a>(relationships: &'a roxmltree::Document<'a>) -> HashMap<&'a str, &'a str> {
+    relationships
         .descendants()
         .filter_map(|node| {
             if node.attribute("TargetMode") == Some("External") {
@@ -226,7 +257,16 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
             }
             Some((node.attribute("Id")?, node.attribute("Target")?))
         })
-        .collect::<HashMap<_, _>>();
+        .collect()
+}
+
+/// Each slide's text, in presentation order, under a `Slide <n>` header.
+fn presentation(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<String, Error> {
+    let presentation = xml(archive, "ppt/presentation.xml", name)?;
+    let relationships = xml(archive, "ppt/_rels/presentation.xml.rels", name)?;
+    let doc = roxmltree::Document::parse(&presentation).map_err(|_| unsupported(name))?;
+    let rels = roxmltree::Document::parse(&relationships).map_err(|_| unsupported(name))?;
+    let targets = slide_targets(&rels);
     let mut out = String::new();
     for (index, slide) in doc
         .descendants()
@@ -245,7 +285,7 @@ pub(super) fn text(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String
             format!("ppt/{target}")
         };
         writeln!(out, "Slide {}", index + 1).expect("string write");
-        out.push_str(&office_text(&xml(&mut archive, &entry, name)?, name)?);
+        out.push_str(&office_text(&xml(archive, &entry, name)?, name)?);
         if out.len() as u64 > MAX_BYTES {
             return Err(Error::Large(name.into()));
         }
