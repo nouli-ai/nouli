@@ -555,21 +555,14 @@ mod tests {
         assert!(writer.event(&events[0]).is_err());
         assert!(writer.event(events.last().unwrap()).is_err());
     }
-    #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending refactor into smaller functions"
-    )]
-    fn compiled_caller_defaults_render_as_data_consistently_without_native_answer_labels() {
+    /// The contract workflow with outputs on a skipped node, so every output
+    /// falls back to its caller-supplied default.
+    fn workflow_with_defaulted_outputs() -> nouli_core::workflow::WorkflowSpec {
         use nouli_core::{
             data::Data,
-            engine::workflow::WorkflowResult,
-            protocol::projection,
             workflow::{
-                NodeStatus, OutputBinding, WorkflowSpec, compile,
+                OutputBinding, WorkflowSpec, compile,
                 reference::{MissingPolicy, ResultField, ResultReference},
-                resolve,
-                schedule::{NodeOutput, NodeProgress, ResolvedBinding, ScheduleResult},
             },
         };
         let mut definition: WorkflowSpec =
@@ -609,6 +602,19 @@ mod tests {
         })
         .collect();
         compile::compile(&definition).unwrap();
+        definition
+    }
+    /// A completed run of `definition` whose third node was skipped and whose
+    /// outputs all resolved to their defaults.
+    fn defaulted_run(definition: &nouli_core::workflow::WorkflowSpec) -> ResultEnvelope {
+        use nouli_core::{
+            engine::workflow::WorkflowResult,
+            protocol::projection,
+            workflow::{
+                NodeStatus, resolve,
+                schedule::{NodeOutput, NodeProgress, ResolvedBinding, ScheduleResult},
+            },
+        };
         let Report::Turn(turn) = turn().result else {
             panic!("turn")
         };
@@ -644,7 +650,7 @@ mod tests {
             })
             .collect();
         let report = projection::workflow(
-            &definition,
+            definition,
             &WorkflowResult {
                 request_id: None,
                 run: None,
@@ -664,7 +670,11 @@ mod tests {
             None,
         )
         .unwrap();
-        let report = ResultEnvelope::new(Report::Run(report));
+        ResultEnvelope::new(Report::Run(report))
+    }
+    #[test]
+    fn compiled_caller_defaults_render_as_data_consistently_without_native_answer_labels() {
+        let report = defaulted_run(&workflow_with_defaulted_outputs());
         for format in [Format::Text, Format::Json, Format::Jsonl] {
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
