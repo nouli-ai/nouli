@@ -1,55 +1,51 @@
 //! Command discovery and the terminal help text.
-use super::{App, Row, ansi};
-use crate::{render::turn::DIM, repl::HELP};
+use super::{App, Row};
+use crate::repl::HELP;
 /// Commands handled by [`App::setup_command`], outside the turn loop.
-pub(super) const SETUP_COMMANDS: [&str; 4] = ["/connect", "/login", "/logout", "/model"];
+pub(super) const SETUP_COMMANDS: [&str; 3] = ["/connect", "/login", "/logout"];
 
-/// The keys and TUI-only commands, for `/help` before the commands the line
-/// loop lists. Setup commands prompt interactively, so only the TUI offers them.
-pub(super) const KEYS: [(&str, &str); 18] = [
-    (
-        "Mouse drag",
-        "select text normally; Ctrl-G enables divider dragging and mouse scrolling",
-    ),
-    (
-        "F6 / hold view",
-        "hold the view for native drag-selection and terminal Copy; Esc or F6 resumes",
-    ),
-    ("Tab", "next field or option"),
-    (
-        "Shift-Tab",
-        "next answer type: Yes / No → Choose one → Score",
-    ),
-    ("Up, Down", "the row above or below"),
-    ("@", "find a saved answer or file in the launch folder"),
-    ("Ctrl-O", "inspect the nearby saved reference"),
-    (
-        "Enter",
-        "send; in Options/Levels, add an item then Enter again to send",
-    ),
-    ("Ctrl-S / F5", "send the question from any field"),
-    (
-        "Drop / paste files",
-        "insert text, PDF contents, or an image into the focused field",
-    ),
-    ("PgUp, PgDn", "scroll the transcript"),
-    (
-        "Ctrl-G",
-        "focus decisions for scrolling and divider dragging; Esc returns to text selection",
-    ),
-    ("Ctrl-C", "cancel, clear input, or quit"),
+/// The commands only this view has. Setup commands prompt interactively, so
+/// the line loop does not offer them.
+pub(super) const COMMANDS: [(&str, &str); 6] = [
     ("/sessions", "resume an earlier session"),
+    ("/statusline", "choose the status line's fields"),
     ("/connect", "configure a connection"),
     ("/login [NAME]", "store an API key"),
     ("/logout [NAME]", "remove a stored credential"),
     ("/model", "choose a connection and model"),
 ];
 
+/// The keys, for the `/help` dialog. `/` lists the commands themselves.
+pub(super) const SHORTCUTS: [(&str, &str); 21] = [
+    ("Tab", "Move to the next box"),
+    ("↑↓", "Move between rows and boxes"),
+    ("Shift-Tab", "Cycle answer type"),
+    ("Enter", "Add a row in Context; send in Question"),
+    ("Enter ×2", "Send from options / levels"),
+    ("Backspace", "Reopen the row above an empty row"),
+    ("Ctrl-S", "Send from any field"),
+    ("Ctrl-P", "Hold / resume view for copying"),
+    ("Esc", "Resume view / close overlay"),
+    ("Ctrl-L", "Choose a model"),
+    ("Ctrl-G", "Focus decisions; resize or scroll them"),
+    ("Ctrl-C", "Cancel request / clear / quit"),
+    ("Ctrl-D", "Delete forward / quit"),
+    ("@", "Insert a reference"),
+    ("Ctrl-O", "Inspect the nearby reference"),
+    ("PgUp / PgDn", "Scroll the transcript"),
+    ("Drop files", "Insert into the focused field"),
+    ("Mouse drag", "Select text"),
+    ("/", "List commands"),
+    ("/help", "Show shortcuts"),
+    ("/statusline", "Choose status fields"),
+];
+
 /// The slash commands, for the list that opens as the input row starts with
 /// `/`: each one's usage and meaning, as `/help` lists them.
 pub(super) fn commands() -> impl Iterator<Item = (&'static str, &'static str)> {
-    [("/help", "the keys and commands")].into_iter().chain(
-        KEYS.into_iter()
+    [("/help", "the keys and shortcuts")].into_iter().chain(
+        COMMANDS
+            .into_iter()
             .chain(HELP)
             .filter(|(usage, _)| usage.starts_with('/')),
     )
@@ -81,20 +77,6 @@ impl App<'_> {
         }
         matching(&self.form.input)
     }
-
-    pub(super) fn help(&mut self) {
-        for (name, meaning) in KEYS
-            .into_iter()
-            .chain(HELP.into_iter().filter(|(name, _)| name.starts_with('/')))
-        {
-            let line = self
-                .repl
-                .paint
-                .apply(DIM, &format!("  {name:<22}{meaning}"));
-            self.transcript.push(ansi::line(&line));
-        }
-        self.scroll = 0;
-    }
 }
 
 #[cfg(test)]
@@ -104,10 +86,10 @@ mod tests {
 
     #[test]
     fn help_lists_exactly_the_setup_commands_the_tui_dispatches() {
-        let listed: Vec<&str> = KEYS
+        let listed: Vec<&str> = COMMANDS
             .iter()
             .filter_map(|(usage, _)| usage.split_whitespace().next())
-            .filter(|name| name.starts_with('/') && *name != "/sessions")
+            .filter(|name| !matches!(*name, "/sessions" | "/statusline" | "/model"))
             .collect();
         assert_eq!(listed, SETUP_COMMANDS);
     }
@@ -129,14 +111,14 @@ mod tests {
         assert_eq!(app.form.input, "/use ");
         assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
         // Esc hides the list until the row changes.
-        app.form.clear_row(&mut app.repl.queue.facts);
+        app.form.clear_row();
         typed(&mut app, "/v");
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
         typed(&mut app, "i");
         assert_eq!(app.commands_shown().len(), 1);
         // With no other session, /sessions says so.
-        app.form.clear_row(&mut app.repl.queue.facts);
+        app.form.clear_row();
         typed(&mut app, "/sessions");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(app.sessions.is_none());

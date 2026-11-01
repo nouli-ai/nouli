@@ -3,6 +3,7 @@ use super::{App, ansi};
 use crate::{inspect::InspectError, render, view::Placement};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::{
+    history::FinalizedTurn,
     identity::{Id, SessionSelector},
     storage::{Ledger, OpenMode},
 };
@@ -16,6 +17,8 @@ pub(super) const GRAPH_MAX: u16 = 80;
 pub(super) struct Graph {
     /// Sessions visited in this view. Their histories stay independent.
     pub(super) sessions: Vec<Id>,
+    /// The questions the current session answered itself, without inherited ones.
+    pub(super) decisions: usize,
     /// The most recently selected session with finalized decisions.
     pub(super) selected: Option<Id>,
     pub(super) lines: Vec<Line<'static>>,
@@ -47,20 +50,41 @@ impl Graph {
     }
 }
 
-/// The session's decision graph as the text `nouli view` draws, without its
-/// header, and the latest card's first row and columns.
-pub(super) fn graph_text(
+/// What the pane shows for the visited sessions.
+struct Drawn {
+    /// The text `nouli view` draws, without its header.
+    text: String,
+    /// The latest card's first row and columns.
+    latest: Option<Placement>,
+    selected: Option<Id>,
+    /// The questions the current session answered itself.
+    decisions: usize,
+}
+
+/// The questions `session` answered itself, leaving out inherited turns.
+fn own_decisions(turns: &[FinalizedTurn], session: Id) -> usize {
+    crate::repl::own_history(turns, session)
+        .map(|turn| turn.request.questions.len())
+        .sum()
+}
+
+fn graph_text(
     store: &Path,
     sessions: &[Id],
     selected: Option<Id>,
     current: Id,
     color: bool,
-) -> Result<(String, Option<Placement>, Option<Id>), InspectError> {
+) -> Result<Drawn, InspectError> {
     let ledger = Ledger::open(store, OpenMode::ReadOnlyExisting)?;
     let exports = sessions
         .iter()
         .map(|id| ledger.export_session(&SessionSelector::Id(*id)))
         .collect::<Result<Vec<_>, _>>()?;
+    let decisions = exports
+        .iter()
+        .filter(|export| export.session.id == current)
+        .map(|export| own_decisions(&export.turns, current))
+        .sum();
     let exports = crate::view::include_references(&ledger, exports)?;
     let selected = if exports
         .iter()
@@ -72,11 +96,12 @@ pub(super) fn graph_text(
     };
     let mut text = Vec::new();
     let latest = crate::view::cards_many(&exports, selected, &mut text, color)?;
-    Ok((
-        String::from_utf8_lossy(&text).into_owned(),
+    Ok(Drawn {
+        text: String::from_utf8_lossy(&text).into_owned(),
         latest,
         selected,
-    ))
+        decisions,
+    })
 }
 impl App<'_> {
     /// Keys that move the decisions pane while it has them; Esc and Tab give
@@ -118,14 +143,37 @@ impl App<'_> {
             current,
             self.repl.paint.0,
         ) {
-            Ok((text, latest, selected)) => {
-                self.graph.selected = selected;
-                self.graph.show(&text, latest);
+            Ok(drawn) => {
+                self.graph.selected = drawn.selected;
+                self.graph.decisions = drawn.decisions;
+                self.graph.show(&drawn.text, drawn.latest);
             }
             Err(error) => {
                 self.graph.lines.clear();
+                self.graph.decisions = 0;
                 self.graph.problem = Some(render::clean(&error.report().message));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_session_counts_only_the_decisions_it_made_itself() {
+        let data: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/contracts/history.json"))
+                .unwrap();
+        let turn: FinalizedTurn = serde_json::from_value(data["turns"][0].clone()).unwrap();
+        let asked = turn.request.questions.len();
+        let turns = [turn.clone(), turn.clone()];
+        assert_eq!(own_decisions(&turns, turn.session), asked * 2);
+        assert_eq!(
+            own_decisions(&turns, Id::generate()),
+            0,
+            "a blend starts at 0"
+        );
     }
 }

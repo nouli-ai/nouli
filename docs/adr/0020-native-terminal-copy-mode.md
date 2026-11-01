@@ -5,6 +5,9 @@ date: 2026-10-31
 
 # Return mouse selection and copying to the terminal on demand
 
+The F6 binding is superseded by
+[ADR 0022](0022-quiet-terminal-chrome-and-configurable-status-line.md).
+
 Default mouse capture and the normal-mode header control are superseded by
 [ADR 0021](0021-default-native-text-selection.md). The F6 hold-view behavior remains.
 

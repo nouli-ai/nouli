@@ -5,6 +5,9 @@ date: 2026-10-30
 
 # Reference exact saved answers across the local store
 
+The F5 binding is superseded by
+[ADR 0022](0022-quiet-terminal-chrome-and-configurable-status-line.md).
+
 ## Context
 
 The user selected inline suggestions with a larger history browser from the

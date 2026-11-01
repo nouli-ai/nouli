@@ -5,6 +5,12 @@ date: 2026-10-30
 
 # Separate mode selection, field navigation, and finishing a list
 
+Enter from Context, Tab between list items, and the row-by-row arrows are
+superseded by [ADR 0023](0023-context-rows-and-box-navigation.md).
+
+The F5 binding is superseded by
+[ADR 0022](0022-quiet-terminal-chrome-and-configurable-status-line.md).
+
 ## Context
 
 Tab changed answer types in Question but navigated other fields. Shift-Tab

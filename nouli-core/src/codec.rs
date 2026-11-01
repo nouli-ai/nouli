@@ -182,7 +182,7 @@ fn canonical_value(value: Value) -> Value {
     reason = "the range checks admit only integral values that fit the target type; \
               the bounds are powers of two, exact in f64"
 )]
-fn canonical_number(n: serde_json::Number) -> Value {
+pub(crate) fn canonical_number(n: serde_json::Number) -> Value {
     let f = n.as_f64().expect("f64 number");
     if f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64 {
         Value::from(f as i64)

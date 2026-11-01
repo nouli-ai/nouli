@@ -17,7 +17,15 @@ use std::time::Duration;
 const COLUMNS: u16 = 160;
 const MOUSE_ON: &[u8] = b"\x1b[?1006h";
 const MOUSE_OFF: &[u8] = b"\x1b[?1006l";
-const F6: &[u8] = b"\x1b[17~";
+const CTRL_P: &[u8] = b"\x10";
+const FUNCTION_KEYS: [&[u8]; 2] = [b"\x1b[15~", b"\x1b[17~"];
+const READY: &[u8] = b"Tab to add a question";
+/// Part of the held view's hint, past the status row's `local/offline`. Drawing
+/// skips cells that already match, so text over the model may not reach the PTY.
+const HELD: &[u8] = b"drag to select";
+/// A column of the select text control, which ends the left pane's first row.
+/// The decisions pane takes 64 of the 160 columns.
+const SELECT_TEXT_COLUMN: u16 = 96 - 7;
 
 fn contains(output: &[u8], bytes: &[u8]) -> bool {
     output.windows(bytes.len()).any(|window| window == bytes)
@@ -51,7 +59,7 @@ fn launch(home: &Home) -> Terminal {
         .env("COLORTERM", "truecolor")
         .args(["open", "copy-check"]);
     let mut terminal = Terminal::spawn(command, COLUMNS, 32).expect("launch CLI in a PTY");
-    terminal.wait_for(b"Ready", 0, "TUI readiness").unwrap();
+    terminal.wait_for(READY, 0, "TUI readiness").unwrap();
     terminal
         .wait_for(MOUSE_OFF, 0, "native selection at startup")
         .unwrap();
@@ -87,7 +95,7 @@ fn enter_selection(terminal: &mut Terminal, entry: &[u8]) -> usize {
         .wait_for(MOUSE_OFF, start, "selection mouse release")
         .unwrap();
     terminal
-        .wait_for(b"Esc/F6 resume", start, "selection instructions")
+        .wait_for(HELD, start, "selection instructions")
         .unwrap();
     terminal.pump(Duration::from_millis(100)).unwrap();
     terminal.mark()
@@ -119,9 +127,9 @@ fn leave_selection_for_native_dragging(terminal: &mut Terminal, held: usize) {
 
 fn assert_resize_keeps_draft_and_native_selection(terminal: &mut Terminal) {
     let start = terminal.mark();
-    terminal.send(F6).unwrap();
+    terminal.send(CTRL_P).unwrap();
     terminal
-        .wait_for(b"Esc/F6 resume", start, "held view before resize")
+        .wait_for(HELD, start, "held view before resize")
         .unwrap();
     let start = terminal.mark();
     terminal.resize(100, 24).unwrap();
@@ -169,13 +177,29 @@ fn assert_exit_restores_terminal(terminal: &mut Terminal) {
 }
 
 #[test]
-fn f6_selection_preserves_draft_and_restores_terminal() {
-    check_selection(F6);
+fn ctrl_p_selection_preserves_draft_and_restores_terminal() {
+    check_selection(CTRL_P);
+}
+
+#[test]
+fn function_keys_no_longer_hold_the_view_or_send() {
+    let home = Home::create();
+    let mut terminal = launch(&home);
+    paste_draft(&mut terminal);
+    let start = terminal.mark();
+    for key in FUNCTION_KEYS {
+        terminal.send(key).unwrap();
+    }
+    terminal.pump(Duration::from_millis(250)).unwrap();
+    assert!(
+        !contains(terminal.output_since(start), HELD),
+        "function keys must not hold the view"
+    );
+    assert_exit_restores_terminal(&mut terminal);
 }
 
 #[test]
 fn header_selection_preserves_draft_and_restores_terminal() {
-    // The selection control occupies the right edge of the first row. Click
-    // inside it relative to the PTY width (SGR mouse coordinates are one-based).
-    check_selection(format!("\x1b[<0;{};1M", COLUMNS - 7).as_bytes());
+    // SGR mouse coordinates are one-based.
+    check_selection(format!("\x1b[<0;{SELECT_TEXT_COLUMN};1M").as_bytes());
 }

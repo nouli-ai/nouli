@@ -254,26 +254,29 @@ mod tests {
             thread,
             time::{Duration, Instant},
         };
+        const CONVERTER: &str = "#!/bin/sh\n\
+            IFS= read -r header\n\
+            /bin/sleep 30 &\n\
+            printf '%s %s\\n' \"$$\" \"$!\" > \"$PID_FILE\"\n\
+            printf k\n";
         let dir = std::env::temp_dir().join(format!("nouli-pdf-timeout-{}", Id::generate()));
         std::fs::create_dir_all(&dir).unwrap();
         let program = dir.join("pdftotext");
         let pids = dir.join("pids");
         // Consume the input, then exit while a descendant keeps stdout open.
-        std::fs::write(&program, "#!/bin/sh\n/bin/cat >/dev/null\n/bin/sleep 30 &\nprintf '%s %s\\n' \"$$\" \"$!\" > \"$PID_FILE\"\nprintf k\n").unwrap();
+        std::fs::write(&program, CONVERTER).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut command = Command::new("pdftotext");
-        command.env("PATH", &dir).env("PID_FILE", &pids);
+        let mut command = Command::new(&program);
+        command.env("PID_FILE", &pids);
+        // The deadline includes process startup. Allow the converter to start
+        // under the full suite's parallel process load before testing cleanup.
+        let timeout = Duration::from_secs(2);
         let start = Instant::now();
         assert!(matches!(
-            pdf_text_with(
-                command,
-                b"%PDF-1.4\n",
-                "fake.pdf",
-                Duration::from_millis(500)
-            ),
+            pdf_text_with(command, b"%PDF-1.4\n", "fake.pdf", timeout),
             Err(Error::Unsupported(_))
         ));
-        assert!(start.elapsed() >= Duration::from_millis(400));
+        assert!(start.elapsed() >= timeout);
         assert!(start.elapsed() < Duration::from_secs(5));
         let ids: Vec<i32> = std::fs::read_to_string(&pids)
             .unwrap()

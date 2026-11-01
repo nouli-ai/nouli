@@ -3,7 +3,7 @@ use super::{App, chrome::Theme};
 use crate::repl::tui::Graph;
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
@@ -14,25 +14,33 @@ pub(super) fn draw_graph(frame: &mut Frame, area: Rect, app: &mut App, theme: &T
     } else {
         Style::new()
     };
+    let heading = Line::from(vec![
+        Span::styled("decisions", title),
+        Span::styled(
+            if app.graph.divider.is_some() && app.graph_focused {
+                " · drag divider · Ctrl-G"
+            } else if app.graph.divider.is_some() {
+                " · Ctrl-G to resize"
+            } else {
+                " · Ctrl-G"
+            },
+            theme.dim,
+        ),
+    ]);
     let block = Block::new()
         .borders(Borders::LEFT)
         .border_style(theme.dim)
-        .padding(Padding::left(1))
-        .title(Line::from(vec![
-            Span::styled(" decisions", title),
-            Span::styled(
-                if app.graph.divider.is_some() && app.graph_focused {
-                    " · drag divider · Ctrl-G"
-                } else if app.graph.divider.is_some() {
-                    " · Ctrl-G to resize"
-                } else {
-                    " · Ctrl-G"
-                },
-                theme.dim,
-            ),
-        ]));
-    let inner = block.inner(area);
+        .padding(Padding::left(1));
+    let pane = block.inner(area);
     frame.render_widget(block, area);
+    // The heading sits one row down, on the first row under the header.
+    let [_, heading_area, inner] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(0),
+    ])
+    .areas(pane);
+    frame.render_widget(Paragraph::new(heading), heading_area);
     let graph = &mut app.graph;
     graph.page = usize::from(inner.height).max(1);
     let note = if let Some(problem) = &graph.problem {

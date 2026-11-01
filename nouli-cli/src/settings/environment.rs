@@ -15,7 +15,7 @@ pub(crate) enum Origin {
 }
 
 // Credential values deliberately have no Debug or serialization implementation.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Environment {
     values: BTreeMap<String, String>,
 }

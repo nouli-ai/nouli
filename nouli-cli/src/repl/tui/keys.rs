@@ -2,11 +2,16 @@
 use super::{
     App, Flow, Running, Status, Step, attachments,
     commands::{SETUP_COMMANDS, takes_argument},
-    form::{Row, Section},
+    form::Row,
 };
 use crate::repl::Queue;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::{io, time::Instant};
+
+/// Ctrl-P, which holds the view and resumes it.
+fn holds_view(key: &KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p')
+}
 
 impl<'a> App<'a> {
     pub(super) fn event(
@@ -14,7 +19,12 @@ impl<'a> App<'a> {
         event: Event,
         running: &mut Option<Running<'a>>,
     ) -> io::Result<Flow> {
-        if self.selection.active && !matches!(event, Event::Key(_) | Event::Resize(_, _)) {
+        if let Event::Paste(text) = &event {
+            self.picker_paste(text);
+        }
+        if (self.selection.active || self.overlay.is_some())
+            && !matches!(event, Event::Key(_) | Event::Resize(_, _))
+        {
             return Ok(Flow::Continue);
         }
         match event {
@@ -65,7 +75,11 @@ impl<'a> App<'a> {
         if self.selection.active {
             return Ok(self.selection_key(&key, running.as_ref()));
         }
-        if key.code == KeyCode::F(6) {
+        if self.overlay.is_some() {
+            self.overlay_key(&key);
+            return Ok(Flow::Continue);
+        }
+        if holds_view(&key) {
             self.select_text(true);
             return Ok(Flow::Continue);
         }
@@ -89,12 +103,12 @@ impl<'a> App<'a> {
         self.form_key(&key, running)
     }
 
-    /// Keys while the view is held for native selection: only Esc, F6, and
-    /// Ctrl-C resume it, and Ctrl-C also cancels a running turn.
+    /// Keys while the view is held for native selection: only Esc, Ctrl-P,
+    /// and Ctrl-C resume it, and Ctrl-C also cancels a running turn.
     pub(super) fn selection_key(&mut self, key: &KeyEvent, running: Option<&Running>) -> Flow {
         let control_c =
             key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
-        if matches!(key.code, KeyCode::Esc | KeyCode::F(6)) || control_c {
+        if key.code == KeyCode::Esc || holds_view(key) || control_c {
             self.select_text(false);
             if control_c && running.is_some() {
                 return self.interrupt(running);
@@ -137,6 +151,13 @@ impl<'a> App<'a> {
             }
             KeyCode::Char('c') if control => return Some(self.interrupt(running)),
             KeyCode::Char('d') if control => return Some(self.end_of_input(running.is_some())),
+            KeyCode::Char('l') if control && running.is_none() => {
+                self.references.close();
+                self.sessions = None;
+                self.graph_focused = false;
+                self.open_model_picker("");
+                return Some(Flow::Continue);
+            }
             KeyCode::Char('g') if control => {
                 self.references.close();
                 self.sessions = None;
@@ -153,7 +174,8 @@ impl<'a> App<'a> {
             self.sessions = None;
             self.hidden = true;
             self.graph_focused = false;
-            self.form.next_kind(&mut self.repl.queue.facts);
+            self.form.next_kind();
+            self.forget_retry();
             return Some(Flow::Continue);
         }
         None
@@ -174,7 +196,6 @@ impl<'a> App<'a> {
                 self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
             }
             KeyCode::Char('s') if control => *running = self.send_form(false)?,
-            KeyCode::F(5) => *running = self.send_form(false)?,
             KeyCode::Enter => {
                 if !self.prepare_input() {
                     return Ok(Flow::Continue);
@@ -182,11 +203,17 @@ impl<'a> App<'a> {
                 return self.enter(running);
             }
             KeyCode::Esc => self.status = None,
-            KeyCode::Tab => self.form.tab(&mut self.repl.queue.facts),
-            KeyCode::Up => self.form.up(&mut self.repl.queue.facts),
-            KeyCode::Down => self.form.down(&mut self.repl.queue.facts),
+            KeyCode::Tab => {
+                self.settle_context();
+                self.form.tab();
+            }
+            KeyCode::Up => self.up(),
+            KeyCode::Down => self.down(),
+            KeyCode::Backspace if self.form.row == Row::Input && self.form.input.is_empty() => {
+                self.reopen_fact();
+            }
             KeyCode::Backspace if self.form.cursor == 0 => {
-                self.form.remove_empty(&mut self.repl.queue.facts);
+                self.form.remove_empty();
             }
             _ => self.type_key(key),
         }
@@ -273,6 +300,92 @@ impl<'a> App<'a> {
         Ok(Some(Flow::Continue))
     }
 
+    /// Backspace on an empty input row: the row above comes back to edit.
+    fn reopen_fact(&mut self) {
+        if let Some(above) = self.input_index().checked_sub(1) {
+            self.open_row(above);
+        }
+    }
+
+    fn input_index(&self) -> usize {
+        self.form.input_index(self.repl.queue.facts.len())
+    }
+
+    /// Whether the arrows can leave the input row for another Context row. A
+    /// command being typed is not a row yet.
+    fn walks_rows(&self) -> bool {
+        self.form.row == Row::Input
+            && (self.literal_input || !self.form.input.trim_start().starts_with('/'))
+    }
+
+    /// Queues the input row's text where the row stands; false if it is blank.
+    fn queue_input(&mut self) -> bool {
+        if self.form.input.trim().is_empty() {
+            self.form.input.clear();
+            return false;
+        }
+        let line = std::mem::take(&mut self.form.input);
+        let index = self.input_index();
+        self.repl.queue.facts.insert(index, line);
+        true
+    }
+
+    /// Takes the queued fact at `index` into the input row to edit it.
+    fn open_row(&mut self, index: usize) {
+        let fact = self.repl.queue.facts.remove(index);
+        self.form.rows_below = self.repl.queue.facts.len() - index;
+        self.form.cursor = fact.len();
+        self.form.input = fact;
+        // A queued fact stays literal: never a command, a file path being
+        // typed, or a search for a reference.
+        self.literal_input = true;
+        self.drop_start = None;
+        self.sync_references();
+        self.references.close();
+    }
+
+    /// Up: the Context row above, or the box above from the first row.
+    fn up(&mut self) {
+        match self.input_index().checked_sub(1) {
+            Some(above) if self.walks_rows() => {
+                self.queue_input();
+                self.open_row(above);
+            }
+            _ => {
+                self.settle_context();
+                self.form.up();
+            }
+        }
+    }
+
+    /// Down: the Context row below, or the next box from the last one.
+    fn down(&mut self) {
+        if self.form.rows_below > 0 && self.walks_rows() {
+            let index = self.input_index();
+            let below = index + usize::from(self.queue_input());
+            self.open_row(below);
+        } else {
+            self.settle_context();
+            self.form.down();
+        }
+    }
+
+    /// Puts an edited Context row back, leaving the input row at the end.
+    /// Text being typed for the first time stays a draft in the input row.
+    pub(super) fn settle_context(&mut self) {
+        if self.form.rows_below > 0 || self.literal_input {
+            self.queue_input();
+            self.form.rows_below = 0;
+            self.form.cursor = self.form.input.len();
+            self.literal_input = false;
+        }
+    }
+
+    /// The form changed, so sending it no longer repeats what failed.
+    fn forget_retry(&mut self) {
+        self.status.take_if(|status| status.retry);
+    }
+
     /// Ctrl-C: cancels the running turn. Otherwise, as at the line prompt,
     /// it clears the row, then everything queued or typed, and then quits.
     pub(super) fn interrupt(&mut self, running: Option<&Running>) -> Flow {
@@ -283,12 +396,12 @@ impl<'a> App<'a> {
         if self.sessions.take().is_some() {
             return Flow::Continue;
         }
-        let facts = &mut self.repl.queue.facts;
-        if !self.form.text(facts).is_empty() {
-            self.form.clear_row(facts);
+        if !self.form.text().is_empty() {
+            self.form.clear_row();
             if self.form.row == Row::Input {
                 self.literal_input = false;
             }
+            self.forget_retry();
             return Flow::Continue;
         }
         if self.repl.queue.is_empty() && self.form.is_empty() {
@@ -311,10 +424,14 @@ impl<'a> App<'a> {
             self.status = Some(Status::info("a turn is running · Ctrl-C cancels it"));
             return Flow::Continue;
         }
-        if !self.form.text(&self.repl.queue.facts).is_empty() {
+        if !self.form.text().is_empty() {
             let delete = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
             self.edit_form(&delete);
+            if self.form.row == Row::Input && self.form.input.is_empty() {
+                self.literal_input = false;
+            }
             self.sync_references();
+            self.forget_retry();
             return Flow::Continue;
         }
         if !(self.warned || (self.repl.queue.is_empty() && self.form.is_empty())) {
@@ -337,33 +454,26 @@ impl<'a> App<'a> {
             }
             return Ok(Flow::Continue);
         }
+        // Context only takes rows and commands; sending is from Question.
         if self.form.row == Row::Input {
-            let command = self.form.input.trim_start().starts_with('/') && !self.literal_input;
-            // Before the first question, Enter moves context into the queue.
-            if command || (self.form.question.trim().is_empty() && self.prior_for_kind().is_none())
-            {
-                return self.submit(running);
-            }
+            return self.submit(running);
         }
         *running = self.send_form(false)?;
         Ok(Flow::Continue)
     }
 
-    /// Enter on the input row: the line goes to the loop as a fact, a `?`
-    /// question, or a command, as it would at the line prompt. An empty line
-    /// moves on to the question, unless a failed turn left its question to
-    /// send again.
+    /// Enter on the input row: the line is queued as a fact, or runs as a
+    /// command. An empty line does nothing.
     pub(super) fn submit(&mut self, running: &mut Option<Running<'a>>) -> io::Result<Flow> {
         let line = self.form.input.trim().to_owned();
-        if line.is_empty() && self.repl.queue.question.is_none() {
-            self.form
-                .focus(Section::Question, &mut self.repl.queue.facts);
+        if line.is_empty() {
             return Ok(Flow::Continue);
         }
         self.form.input.clear();
         self.form.cursor = 0;
-        if std::mem::take(&mut self.literal_input) && !line.is_empty() {
-            self.repl.queue.facts.push(line);
+        if std::mem::take(&mut self.literal_input) {
+            let index = self.input_index();
+            self.repl.queue.facts.insert(index, line);
             return Ok(Flow::Continue);
         }
         if SETUP_COMMANDS.contains(&line.split_whitespace().next().unwrap_or("")) {
@@ -374,10 +484,18 @@ impl<'a> App<'a> {
             }
             return Ok(Flow::Continue);
         }
-        match line.as_str() {
+        match line.split_whitespace().next().unwrap_or("") {
             "/help" => {
-                self.echo(&line);
-                self.help();
+                self.open_help();
+                return Ok(Flow::Continue);
+            }
+            "/statusline" => {
+                self.open_status_line();
+                return Ok(Flow::Continue);
+            }
+            "/model" => {
+                let query = line.strip_prefix("/model").unwrap_or("").trim().to_owned();
+                self.open_model_picker(&query);
                 return Ok(Flow::Continue);
             }
             "/sessions" => {
@@ -387,9 +505,9 @@ impl<'a> App<'a> {
             }
             _ => {}
         }
-        let fact = !line.is_empty() && !line.starts_with('/');
-        if fact {
-            self.repl.queue.facts.push(line);
+        if !line.starts_with('/') {
+            let index = self.input_index();
+            self.repl.queue.facts.insert(index, line);
             return Ok(Flow::Continue);
         }
         let session = self.repl.session.id;
@@ -400,8 +518,6 @@ impl<'a> App<'a> {
                 question,
                 ephemeral,
             } => self.echo_turn(question, *ephemeral),
-            // A queued fact shows in State until a turn sends it.
-            _ if fact => {}
             _ => self.echo(&line),
         }
         if line == "/clear" {
@@ -436,7 +552,7 @@ mod tests {
 
     #[test]
     fn setup_commands_suspend_submission_without_losing_the_question_draft() {
-        for command in ["/connect", "/model", "/login", "/logout"] {
+        for command in ["/connect", "/login", "/logout"] {
             let settings = settings();
             let mut app = app(&settings);
             app.form.question = "Keep this unsent question".into();
@@ -491,6 +607,240 @@ mod tests {
             assert_eq!(draft.request.turn.questions, [expected]);
             assert!(!app.option_enter);
         }
+    }
+
+    #[test]
+    fn enter_in_context_adds_a_row_and_never_sends() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.form.question = "Will it rain?".into();
+        app.form.kind = Kind::Noul;
+        typed(&mut app, "One");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        typed(&mut app, "Two");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["One", "Two"]);
+        assert_eq!(app.form.row, Row::Input);
+        assert_eq!(app.form.input, "");
+    }
+
+    #[test]
+    fn backspace_on_an_empty_context_row_reopens_the_one_above() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["One".into(), "Two".into()];
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["One"]);
+        assert_eq!((app.form.input.as_str(), app.form.cursor), ("Two", 3));
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert_eq!(app.form.input, "Tw", "then it edits as usual");
+        assert_eq!(app.repl.queue.facts, ["One"]);
+    }
+
+    #[test]
+    fn arrows_walk_context_rows_and_leave_after_the_last() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["One".into(), "Two".into()];
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.form.input, "Two");
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!((app.form.input.as_str(), app.form.cursor), ("One", 3));
+        assert_eq!(app.repl.queue.facts, ["Two"], "the rest stays queued");
+        // Editing keeps the row where it was.
+        typed(&mut app, "!");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.form.input, "Two");
+        assert_eq!(app.repl.queue.facts, ["One!"]);
+        // Down after the last row is the next box, with every row back.
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Question);
+        assert_eq!(app.repl.queue.facts, ["One!", "Two"]);
+        assert_eq!(app.form.input, "");
+        // Coming back lands on the empty row at the end.
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!((app.form.row, app.form.rows_below), (Row::Input, 0));
+    }
+
+    #[test]
+    fn up_from_the_first_row_changes_box_and_keeps_the_order() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["One".into(), "Two".into()];
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Question);
+        assert_eq!(app.repl.queue.facts, ["One", "Two"]);
+    }
+
+    #[test]
+    fn a_row_emptied_while_walking_is_dropped() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["One".into(), "Two".into(), "Three".into()];
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        app.form.clear_row();
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.form.input, "Three");
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["One", "Three"]);
+    }
+
+    #[test]
+    fn enter_on_a_middle_row_opens_a_new_row_after_it() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["One".into(), "Three".into()];
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        typed(&mut app, "Two");
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["One", "Two", "Three"]);
+    }
+
+    #[test]
+    fn a_walked_row_stays_literal_and_a_typed_command_does_not_walk() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["/quit".into(), "Two".into()];
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.form.input, "/quit");
+        assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
+        assert!(matches!(
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE),
+            Flow::Continue
+        ));
+        assert_eq!(app.repl.queue.facts, ["/quit", "Two"]);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        app.hidden = true;
+        typed(&mut app, "/mo");
+        app.hidden = true;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.form.input, "/mo", "half a command is not queued");
+    }
+
+    #[test]
+    fn sending_with_a_row_open_keeps_it_in_place() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["One".into(), "Two".into()];
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        app.settle_context();
+        assert_eq!(app.repl.queue.facts, ["One", "Two"]);
+        assert_eq!((app.form.input.as_str(), app.form.rows_below), ("", 0));
+    }
+
+    #[test]
+    fn a_reopened_fact_is_literal_text_and_never_a_command() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["// header".into()];
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["// header"], "the evidence stays");
+        assert_eq!(transcript(&app), "");
+        // Imported text cannot run as a command either.
+        app.repl.queue.facts = vec!["keep me".into(), "/cl".into()];
+        app.form.question = "A draft".into();
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert_eq!(app.commands_shown(), [] as [(&str, &str); 0]);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["keep me", "/cl"]);
+        assert_eq!(app.form.question, "A draft");
+    }
+
+    #[test]
+    fn a_reopened_fact_with_an_at_sign_opens_no_search_and_can_be_requeued() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["ping @bob".into()];
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert!(app.references.picker.is_none());
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.repl.queue.facts, ["ping @bob"]);
+    }
+
+    #[test]
+    fn a_reopened_path_is_not_taken_for_a_file_drop() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let path = std::env::temp_dir().join(format!("nouli-reopen-{}", Id::generate()));
+        std::fs::write(&path, "FILE CONTENTS").unwrap();
+        app.repl.queue.facts = vec![path.display().to_string()];
+        typed(&mut app, "f");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        app.consume_drop();
+        assert_eq!(app.form.input, path.display().to_string());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn deleting_a_whole_literal_row_with_ctrl_d_restores_commands() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.repl.queue.facts = vec!["x".into()];
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Home, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert!(!app.literal_input);
+    }
+
+    #[test]
+    fn help_opens_the_dialog_whatever_follows_the_command() {
+        let settings = settings();
+        let mut app = app(&settings);
+        typed(&mut app, "/help me");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.overlay.is_some());
+        assert_eq!(transcript(&app), "");
+    }
+
+    #[test]
+    fn changing_the_form_after_a_failure_takes_back_the_retry() {
+        let keys = [
+            (KeyCode::Char('c'), KeyModifiers::CONTROL),
+            (KeyCode::Char('d'), KeyModifiers::CONTROL),
+            (KeyCode::BackTab, KeyModifiers::NONE),
+        ];
+        for (code, modifiers) in keys {
+            let settings = settings();
+            let mut app = app(&settings);
+            app.form.input = "A retry".into();
+            app.status = Some(Status::failed("The provider did not answer"));
+            press(&mut app, code, modifiers);
+            assert!(app.status.is_none(), "{code:?}");
+            app.form.input = "Other text".into();
+            app.status = Some(Status::error("Cannot read that file"));
+            press(&mut app, code, modifiers);
+            assert!(app.status.is_some(), "a plain error stays: {code:?}");
+        }
+    }
+
+    #[test]
+    fn function_keys_do_nothing_and_ctrl_s_still_sends() {
+        let settings = settings();
+        let mut app = app(&settings);
+        app.form.question = "Will it rain?".into();
+        for number in 1..=12 {
+            press(&mut app, KeyCode::F(number), KeyModifiers::NONE);
+        }
+        assert!(!app.selection.active);
+        assert_eq!(app.form.question, "Will it rain?");
+        assert!(app.status.is_none());
+        let mut running = None;
+        app.key(
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            &mut running,
+        )
+        .unwrap();
+        assert!(running.is_some());
     }
 
     #[test]
@@ -563,15 +913,11 @@ mod tests {
         assert!(shown.contains("queued: replace fact 1"), "{shown}");
         assert!(app.repl.queue.facts.contains(&"?broken".to_owned()));
         assert_eq!(app.repl.queue.replaces.len(), 1);
-        typed(&mut app, "/help");
+        // An empty line does nothing.
+        let queued = app.repl.queue.facts.len();
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        let shown = transcript(&app);
-        assert!(shown.contains("Shift-Tab"), "{shown}");
-        assert!(shown.contains("/blend A B as NAME"), "{shown}");
-        // An empty line moves on to the question.
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(app.form.row, Row::Question);
-        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.form.row, Row::Input);
+        assert_eq!(app.repl.queue.facts.len(), queued);
         typed(&mut app, "/quit");
         let flow = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(matches!(flow, Flow::Quit));
@@ -586,7 +932,7 @@ mod tests {
         let status = app.status.as_ref().unwrap();
         assert!(status.error && status.text.contains("Write a question"));
         assert_eq!(app.form.row, Row::Question);
-        // An incomplete list focuses its editor; Tab adds another item.
+        // An incomplete list focuses its editor.
         app.form.question = "rain: Will it rain?".into();
         press(&mut app, KeyCode::BackTab, KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -633,7 +979,7 @@ mod tests {
         press(&mut app, KeyCode::Home, KeyModifiers::NONE);
         press(&mut app, KeyCode::Char('d'), control);
         assert_eq!(app.form.input, "b");
-        app.form.clear_row(&mut app.repl.queue.facts);
+        app.form.clear_row();
         app.repl.queue.facts.push("queued".into());
         assert!(matches!(
             press(&mut app, KeyCode::Char('d'), control),

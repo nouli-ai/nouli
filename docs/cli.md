@@ -87,39 +87,41 @@ A turn that fails prints its error and keeps the queue.
 
 In a terminal, the form asks for ordinary text:
 
-- **Context** holds the facts for the next question. Enter sends when a question is ready, including a reused question. Before a question is ready, Enter queues the context.
+- **Context** holds the facts for the next question, one row each. Enter adds a row and never sends. Up and Down move between rows, and Backspace on an empty row reopens the row above.
 
 When saved history is available, Context shows **latest question included** and previews that question. The next TUI request requires its saved question and answer, its used image inputs, and your new/replacement evidence. This also applies to a fresh Yes/No follow-up. Including prior history does not reuse a Yes/No prompt. New independent sessions have no preceding question; branches can show inherited history. If required context cannot fit, the request fails explicitly and keeps your draft.
 - **Question** holds the question exactly as you write it. There is no ID, colon, bracket, quoting, or option-label syntax to remember.
 - Choose **Yes / No**, **Choose one**, or **Score** with Shift-Tab from any field. Choices show Options; scores show Levels, lowest first. Type one per row or paste a list to fill several at once. Each choice needs at least two options; each score needs at least two levels.
 
-Press **Enter** to send from Question or Context when a question is ready. In Options/Levels, Enter adds the next row; press Enter again on the empty row to send. Typing or pasting another item continues the list. Navigating away cancels the pending second Enter. **Ctrl-S / F5** still sends directly from any field. Tab moves between fields and list items without changing the answer type. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
+Press **Enter** in Question to send. In Options/Levels, Enter adds the next row; press Enter again on the empty row to send. Typing or pasting another item continues the list. Navigating away cancels the pending second Enter. **Ctrl-S** sends from any field. Tab moves between Context, Question and Options without changing the answer type. Up and Down walk the rows of Context and Options/Levels and move to the next box past the last row. A saved turn clears the editable fields and keeps the selected answer type. Failure or cancellation preserves input for correction or retry. IDs are generated from the question and answer space, so punctuation and labels such as `Rail!`, `rail`, or non-Latin names do not collide.
 
-After a choice or score, leave Options or Levels empty to reuse the latest matching question's exact answer list and criteria. The Options/Levels heading says **using previous N**. Entering any new list replaces the old one; a partial list must still meet the minimum of two items. Leave Question empty too to reuse the preceding prompt, add new context, and press Enter to get an updated judgment. Reusing a list keeps the question ID so results can show how the answer changed; each Send saves a new turn and preserves earlier answers. Yes/No has no fallback. Reuse is scoped to the current session's latest single question, and an empty new session or branch starts without a prior list. The question grammar for CLI verbs and piped input is unchanged.
+After a choice or score, leave Options or Levels empty to reuse the latest matching question's exact answer list and criteria. The Options/Levels heading says **using previous N**. Entering any new list replaces the old one; a partial list must still meet the minimum of two items. Leave Question empty too to reuse the preceding prompt, add new context, and press Tab then Enter (or Ctrl-S) to get an updated judgment. Reusing a list keeps the question ID so results can show how the answer changed; each Send saves a new turn and preserves earlier answers. Yes/No has no fallback. Reuse is scoped to the current session's latest single question, and an empty new session or branch starts without a prior list. The question grammar for CLI verbs and piped input is unchanged.
 
 The Citrus palette gives Yes/No a lime accent, Choose one cyan, and Score rose. Results and graph cards keep their own question type's color. Labels, brackets, and emphasis still identify types with `NO_COLOR` set.
 
-A persistent status line shows the provider and model selected for the next request, plus Ready, Draft, Asking, or Cancelling. It is visible before the first answer and refreshes when you switch sessions. While a request runs, it shows the model resolved for that request. After a response, it shows the actual served model version in place of its alias. The bottom key hints follow the focused field; errors remain visible while your input stays available for correction or retry.
+The status row shows the provider and model selected for the next request by default. It is visible before the first answer and refreshes when you switch sessions. While a request runs, it shows the model resolved for that request. After a response, it shows the actual served model version in place of its alias. `/statusline` chooses what it shows: the Model, Profile, Session, Decisions, Context items, and Last latency fields, or the Minimal, Session, Request, and Hidden presets. The choice is saved in `tui.toml` beside `config.toml`, and no custom scripts run. A separate row appears above it only when needed, for request progress, messages, and list hints; errors stay visible even with every field hidden, while your input stays available for correction or retry. `/help` opens the shortcuts.
 
-The top line shows `nouli`, its version, and the session. Drag normally to select text and use your terminal’s Copy command; no modifier or mode is required. **Ctrl-G** enables graph divider dragging and mouse scrolling; **Esc** returns to native text selection. To hold the view steady while a request runs, press **F6** (or click **select text** while the graph is focused), then drag and copy. The visible screen stays still while requests continue in the background. **Esc** or **F6** resumes the previous draft and focus; resizing also resumes. While F6 holds the view, typing and paste are ignored, and Ctrl-C leaves that mode without clearing an idle draft or cancels an active request. The terminal’s selection modifier (Option-drag in iTerm2; Shift or Alt in other terminals) can also select text while graph mouse controls are active. Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The selector shows a short `Shift-Tab →` hint. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No). In Options/Levels, Tab moves to the next item, creating an item after the last filled one; Tab on an empty trailing item returns to Context. Use Tab or arrows to move from the question to its options. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. With Ctrl-G graph focus active, drag the divider to resize both panes. Ctrl-G focuses the graph for keyboard navigation, and Esc returns to the form. The width stays through session changes and adapts to terminal size. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
+The top line shows `nouli`, its version, and the session. Drag normally to select text and use your terminal’s Copy command; no modifier or mode is required. **Ctrl-G** enables graph divider dragging and mouse scrolling; **Esc** returns to native text selection. To hold the view steady while a request runs, press **Ctrl-P** (or click **select text** while the graph is focused), then drag and copy. The visible screen stays still while requests continue in the background. **Esc** or **Ctrl-P** resumes the previous draft and focus; resizing also resumes. While the view is held, typing and paste are ignored, and Ctrl-C leaves that mode without clearing an idle draft or cancels an active request. The terminal’s selection modifier (Option-drag in iTerm2; Shift or Alt in other terminals) can also select text while graph mouse controls are active. Use the keyboard to move between fields. Shift-Tab is the only answer-type shortcut and cycles left to right: Yes/No → Choose one → Score → Yes/No. The status row shows a `Shift-Tab question type` reminder. It works from any field, including while the graph or a command/session list has focus; it returns focus to the form. Tab moves from Context to Question, then to Options/Levels (or back to Context for Yes/No), then back to Context. The empty box Tab goes to says so, such as `Tab to add a question`. Only the active box shows every answer type, and away from Context three or more rows fold into a count. The decisions appear to the right at 116 columns or wider; Ctrl-G opens them on narrower terminals. With Ctrl-G graph focus active, drag the divider to resize both panes. Ctrl-G focuses the graph for keyboard navigation, and Esc returns to the form. The width stays through session changes and adapts to terminal size. The graph keeps sessions opened in the current TUI run, including after `/new`; independent sessions appear as independent roots and shared ancestors appear once.
 
 References connect the exact saved source question to the question using it, including across sessions and after reopening. Referenced source history loads automatically, up to the selected saved turn; later source answers are excluded. Multi-question turns separate into question cards at reference endpoints. `nouli view SESSION` includes the same dependencies; `--mermaid` draws reference edges dashed. These graph links do not change session ancestry, active facts or structured exports.
 
 | Key or action | What it does |
 | --- | --- |
 | Mouse drag | Selects text normally; resizes the divider while Ctrl-G graph focus is active. |
-| F6 / hold view | Holds the view steady for copying during a request; Select text is clickable in graph focus. Esc or F6 resumes; the draft, focus, and graph width stay intact. |
+| Ctrl-P | Holds the view steady for copying during a request; Select text is clickable in graph focus. Esc or Ctrl-P resumes; the draft, focus, and graph width stay intact. |
 | Shift-Tab | Cycles answer types left to right from any field. |
-| Tab in Question | Moves to Options/Levels, or Context for Yes/No. |
-| Tab in Context | Moves to Question. |
-| Tab in Options/Levels | Moves to the next item, adds one after the last filled item, or leaves an empty trailing item without sending. |
-| Up, Down | Moves between rows. |
-| Ctrl-S / F5 | Sends the question and queued context. |
-| Enter | Sends from Question/Context when ready; queues initial context or runs a slash command. |
+| Tab | Moves to the next box: Context, Question, then Options/Levels. |
+| Up, Down | Move between rows in Context and Options/Levels, and between boxes past either end. |
+| Ctrl-S | Sends the question and queued context. |
+| Enter in Question | Sends. |
+| Enter in Context | Adds a row or runs a slash command; it never sends. |
 | Enter in Options/Levels | Adds a row; a second consecutive Enter sends. Typing, pasting, or navigation cancels the second-Enter state. |
 | Drop files | Inserts their contents into the focused field without sending. |
 | `/` in Context | Lists optional session commands; pasted/imported files are literal evidence. |
 | `/sessions` | Lists sessions to resume. |
+| `/help` | Opens the shortcuts. |
+| `/statusline` | Chooses the status row's fields. |
+| `/model`, Ctrl-L | Opens the model picker. |
 | PgUp, PgDn | Scrolls the transcript. |
 | Ctrl-G | Focuses decisions for divider dragging and keyboard/mouse scrolling; Esc returns to native text selection. |
 | Ctrl-C | Cancels a turn, or clears the row, then the form, then quits. |
@@ -158,7 +160,7 @@ previously saved history still follows the usual context policy.
 
 Tab closes suggestions and moves to the next field. Shift-Tab closes them and
 changes the answer type left to right. Esc closes them and leaves ordinary
-editable text. Email addresses stay literal. Ctrl-S/F5 waits for you to select
+editable text. Email addresses stay literal. Ctrl-S waits for you to select
 or dismiss the open search before sending.
 
 A reference retains its exact question, saved answer, provider, saved input
@@ -251,11 +253,19 @@ For credential programs, put `--command PROGRAM ARGS...` last. `--no-auth`
 disables primary authentication. `--name`, `--protocol`, `--binding`,
 `--base-url`, `--model` and `--default` make selections explicit.
 
-Inside the full-screen session, `/connect [SERVICE]`, `/login [CONNECTION]`,
-`/logout [CONNECTION]` and `/model [CONNECTION]` run while idle and retain the
-unsent question/options. Setup uses the terminal outside the alternate screen,
-then reloads settings. API keys never enter transcript/history fields. `/model`
-accepts any exact model ID; saving a startup default is an explicit choice.
+Inside the full-screen session, `/model [SEARCH]` or Ctrl-L opens the model
+picker without leaving the view. It lists the models in your configuration and
+those each connection reports at `v1/models`, and typing filters by model or
+provider. Providers do not say which models can answer decisions, so a listed
+model may fail when asked; speech, image, moderation, and embedding models are
+left out. Any exact model ID can be typed. The model you pick stays selected in
+later views. A connection without its key asks for it in place, and **Add
+connection** sets up common services there too.
+
+`/connect [SERVICE]`, `/login [CONNECTION]` and `/logout [CONNECTION]` run while
+idle and retain the unsent question/options. They use the terminal outside the
+alternate screen, then reload settings. API keys never enter transcript/history
+fields.
 See [configuration](configuration.md) for manual TOML and all compatibility fields.
 
 ## Verify terminal selection before release
@@ -264,4 +274,4 @@ On macOS or Linux, run from the workspace root:
 
     cargo test --package nouli-cli --test tui_selection --locked
 
-This Rust integration test also runs as part of `cargo test --workspace` and requires no Python interpreter. Release builds run it with `--release` on each supported platform. It uses a POSIX PTY without credentials or provider calls to verify default native dragging, graph mouse reporting, screen stability, input preservation, resizing, and cleanup. Native clipboard behavior is owned by the host terminal; also check ordinary drag-selection, graph resizing, F6, Copy, and resume in the terminals supported for the release.
+This Rust integration test also runs as part of `cargo test --workspace` and requires no Python interpreter. Release builds run it with `--release` on each supported platform. It uses a POSIX PTY without credentials or provider calls to verify default native dragging, graph mouse reporting, screen stability, input preservation, resizing, and cleanup. Native clipboard behavior is owned by the host terminal; also check ordinary drag-selection, graph resizing, Ctrl-P, Copy, and resume in the terminals supported for the release.

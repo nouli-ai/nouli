@@ -1,6 +1,6 @@
-//! The question form: the facts for the next question, the question, and its
-//! options or levels, edited one row at a time. The facts are the loop's own
-//! queue, so the form only holds where they are being edited.
+//! The question form: the input row for the next fact, the question, and its
+//! options or levels, edited one row at a time. Queued facts live in the
+//! loop's own queue.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nouli_core::decision::{AnswerSpace, ChoiceOption, ContractError, Criterion, Question};
 use unicode_segmentation::UnicodeSegmentation;
@@ -19,9 +19,7 @@ pub(super) enum Section {
 /// The row being edited.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Row {
-    /// A queued fact, by its place in the queue.
-    Fact(usize),
-    /// Where a new fact, a `?` question, or a `/` command is typed.
+    /// Where a new fact or a `/` command is typed.
     Input,
     Question,
     /// An option or level, by its place in the list.
@@ -31,7 +29,7 @@ pub(super) enum Row {
 impl Row {
     pub(super) fn section(self) -> Section {
         match self {
-            Row::Fact(_) | Row::Input => Section::State,
+            Row::Input => Section::State,
             Row::Question => Section::Question,
             Row::Option(_) => Section::Options,
         }
@@ -45,11 +43,14 @@ pub(super) struct Problem {
     pub section: Section,
 }
 
-/// Only the focused fact or option can be empty: leaving one drops it.
+/// Only the focused option can be empty: leaving one drops it.
 #[derive(Debug)]
 pub(super) struct Form {
     pub kind: Kind,
     pub input: String,
+    /// Queued facts below the input row, which moves through them. A fact
+    /// being edited is held in `input` until the row is left.
+    pub rows_below: usize,
     /// Literal question text. Identifiers are generated when sending.
     pub question: String,
     pub options: Vec<String>,
@@ -63,6 +64,7 @@ impl Default for Form {
         Self {
             kind: Kind::Noul,
             input: String::new(),
+            rows_below: 0,
             question: String::new(),
             options: Vec::new(),
             row: Row::Input,
@@ -73,22 +75,20 @@ impl Default for Form {
 
 impl Form {
     /// The focused row's text.
-    pub(super) fn text<'s>(&'s self, facts: &'s [String]) -> &'s str {
-        self.row_text(self.row, facts)
+    pub(super) fn text(&self) -> &str {
+        self.row_text(self.row)
     }
 
-    pub(super) fn row_text<'s>(&'s self, row: Row, facts: &'s [String]) -> &'s str {
+    pub(super) fn row_text(&self, row: Row) -> &str {
         match row {
-            Row::Fact(index) => facts.get(index).map_or("", String::as_str),
             Row::Input => &self.input,
             Row::Question => &self.question,
             Row::Option(index) => self.options.get(index).map_or("", String::as_str),
         }
     }
 
-    fn text_mut<'s>(&'s mut self, facts: &'s mut [String]) -> Option<&'s mut String> {
+    fn text_mut(&mut self) -> Option<&mut String> {
         match self.row {
-            Row::Fact(index) => facts.get_mut(index),
             Row::Input => Some(&mut self.input),
             Row::Question => Some(&mut self.question),
             Row::Option(index) => self.options.get_mut(index),
@@ -96,17 +96,17 @@ impl Form {
     }
 
     /// Applies an editing key to the focused row; false for any other key.
-    pub(super) fn edit(&mut self, key: &KeyEvent, facts: &mut [String]) -> bool {
+    pub(super) fn edit(&mut self, key: &KeyEvent) -> bool {
         let mut cursor = self.cursor;
         let edited = self
-            .text_mut(facts)
+            .text_mut()
             .is_some_and(|text| edit(text, &mut cursor, key));
         self.cursor = cursor;
         edited
     }
 
     /// Insert literal pasted text, preserving paragraphs and code indentation.
-    pub(super) fn paste(&mut self, pasted: &str, facts: &mut [String]) {
+    pub(super) fn paste(&mut self, pasted: &str) {
         let normalized = pasted
             .replace("\r\n", "\n")
             .replace('\r', "\n")
@@ -120,32 +120,37 @@ impl Form {
             })
             .collect();
         let mut cursor = self.cursor;
-        if let Some(text) = self.text_mut(facts) {
+        if let Some(text) = self.text_mut() {
             text.insert_str(cursor, &pasted);
             cursor += pasted.len();
         }
         self.cursor = cursor;
     }
 
-    pub(super) fn remove_range(&mut self, range: std::ops::Range<usize>, facts: &mut [String]) {
+    pub(super) fn remove_range(&mut self, range: std::ops::Range<usize>) {
         let start = range.start;
-        if let Some(text) = self.text_mut(facts) {
+        if let Some(text) = self.text_mut() {
             text.replace_range(range, "");
             self.cursor = start;
         }
     }
 
-    pub(super) fn add_option(&mut self, facts: &mut Vec<String>) {
+    pub(super) fn add_option(&mut self) {
         self.options.push(String::new());
-        self.go(Row::Option(self.options.len() - 1), facts);
+        self.go(Row::Option(self.options.len() - 1));
     }
 
     /// Empties the focused row.
-    pub(super) fn clear_row(&mut self, facts: &mut [String]) {
-        if let Some(text) = self.text_mut(facts) {
+    pub(super) fn clear_row(&mut self) {
+        if let Some(text) = self.text_mut() {
             text.clear();
         }
         self.cursor = 0;
+    }
+
+    /// Where the input row sits among `facts` queued facts.
+    pub(super) fn input_index(&self, facts: usize) -> usize {
+        facts.saturating_sub(self.rows_below)
     }
 
     /// Nothing typed: no new fact, question, or option.
@@ -169,146 +174,111 @@ impl Form {
         if from_form {
             self.question.clear();
             self.options.clear();
-        }
-        if from_form || matches!(self.row, Row::Fact(_)) {
+            self.rows_below = 0;
             self.row = Row::Input;
             self.cursor = self.input.len();
         }
     }
 
     /// Moves to `target` with the cursor at its end, dropping the row it
-    /// leaves when that is an empty fact or option.
-    pub(super) fn go(&mut self, mut target: Row, facts: &mut Vec<String>) {
-        if target != self.row {
-            match self.row {
-                Row::Fact(index) if facts.get(index).is_some_and(|fact| fact.trim().is_empty()) => {
-                    facts.remove(index);
-                    if let Row::Fact(after) = target
-                        && after > index
-                    {
-                        target = Row::Fact(after - 1);
-                    }
-                }
-                Row::Option(index)
-                    if self
-                        .options
-                        .get(index)
-                        .is_some_and(|option| option.trim().is_empty()) =>
-                {
-                    self.options.remove(index);
-                    if let Row::Option(after) = target
-                        && after > index
-                    {
-                        target = Row::Option(after - 1);
-                    }
-                }
-                _ => {}
+    /// leaves when that is an empty option.
+    pub(super) fn go(&mut self, mut target: Row) {
+        if target != self.row
+            && let Row::Option(index) = self.row
+            && self
+                .options
+                .get(index)
+                .is_some_and(|option| option.trim().is_empty())
+        {
+            self.options.remove(index);
+            if let Row::Option(after) = target
+                && after > index
+            {
+                target = Row::Option(after - 1);
             }
         }
         self.row = target;
-        self.cursor = self.text(facts).len();
+        self.cursor = self.text().len();
     }
 
     /// Moves into a section: State's input row, the question, or the last
     /// option, adding an empty one when there are none.
-    pub(super) fn focus(&mut self, section: Section, facts: &mut Vec<String>) {
+    pub(super) fn focus(&mut self, section: Section) {
         match section {
-            Section::State => self.go(Row::Input, facts),
-            Section::Question => self.go(Row::Question, facts),
-            Section::Options if self.kind == Kind::Noul => self.go(Row::Question, facts),
+            Section::State => self.go(Row::Input),
+            Section::Question => self.go(Row::Question),
+            Section::Options if self.kind == Kind::Noul => self.go(Row::Question),
             Section::Options => {
                 if self.options.is_empty() {
-                    self.go(Row::Question, facts);
+                    self.go(Row::Question);
                     self.options.push(String::new());
                 }
-                self.go(Row::Option(self.options.len() - 1), facts);
+                self.go(Row::Option(self.options.len() - 1));
             }
         }
     }
 
-    /// Tab: State, then the question, then its options or levels, then State.
-    pub(super) fn next_section(&mut self, facts: &mut Vec<String>) {
-        let next = match self.row.section() {
+    /// Where Tab goes from the focused row: State, then the question, then
+    /// its options or levels, then State.
+    pub(super) fn next_section(&self) -> Section {
+        match self.row.section() {
             Section::State => Section::Question,
             Section::Question if self.kind != Kind::Noul => Section::Options,
             Section::Question | Section::Options => Section::State,
-        };
-        self.focus(next, facts);
+        }
     }
 
-    /// Tab advances existing items, adds one after the last filled item, and
-    /// leaves an empty trailing item without submitting.
-    pub(super) fn tab(&mut self, facts: &mut Vec<String>) {
-        match self.row {
-            Row::Question if self.kind != Kind::Noul && !self.options.is_empty() => {
-                self.go(Row::Option(0), facts);
-            }
-            Row::Option(index) if index + 1 < self.options.len() => {
-                self.go(Row::Option(index + 1), facts);
-            }
-            Row::Option(index) if self.options[index].trim().is_empty() => {
-                self.focus(Section::State, facts);
-            }
-            Row::Option(_) => self.add_option(facts),
-            _ => self.next_section(facts),
+    /// Tab: the next section, starting at the first option.
+    pub(super) fn tab(&mut self) {
+        if self.row == Row::Question && self.kind != Kind::Noul && !self.options.is_empty() {
+            self.go(Row::Option(0));
+        } else {
+            self.focus(self.next_section());
         }
     }
 
     /// Shift-Tab: the next answer type. A yes/no question has no options, so
     /// the cursor leaves them; they come back with a choice or a score.
-    pub(super) fn next_kind(&mut self, facts: &mut Vec<String>) {
+    pub(super) fn next_kind(&mut self) {
         self.kind = self.kind.next();
         if self.kind == Kind::Noul && matches!(self.row, Row::Option(_)) {
-            self.go(Row::Question, facts);
+            self.go(Row::Question);
         }
     }
 
-    pub(super) fn up(&mut self, facts: &mut Vec<String>) {
-        let target = match self.row {
-            Row::Fact(0) => return,
-            Row::Fact(index) => Row::Fact(index - 1),
-            Row::Input if facts.is_empty() => return,
-            Row::Input => Row::Fact(facts.len() - 1),
-            Row::Question => Row::Input,
-            Row::Option(0) => Row::Question,
-            Row::Option(index) => Row::Option(index - 1),
-        };
-        self.go(target, facts);
-    }
-
-    pub(super) fn down(&mut self, facts: &mut Vec<String>) {
-        let target = match self.row {
-            Row::Fact(index) if index + 1 < facts.len() => Row::Fact(index + 1),
-            Row::Fact(_) => Row::Input,
-            Row::Input => Row::Question,
-            Row::Question if self.kind == Kind::Noul => return,
-            Row::Question if self.options.is_empty() => return self.focus(Section::Options, facts),
-            Row::Question => Row::Option(0),
-            Row::Option(index) if index + 1 < self.options.len() => Row::Option(index + 1),
-            Row::Option(_) => return,
-        };
-        self.go(target, facts);
-    }
-
-    /// Backspace at the start of an empty fact or option removes it and
-    /// moves up; false when the row is not one to remove.
-    pub(super) fn remove_empty(&mut self, facts: &mut Vec<String>) -> bool {
+    /// Up: the section above, wrapping, and row by row within a list.
+    pub(super) fn up(&mut self) {
         match self.row {
-            Row::Fact(0) if facts.first().is_some_and(String::is_empty) => {
-                let next = if facts.len() > 1 {
-                    Row::Fact(1)
-                } else {
-                    Row::Input
-                };
-                self.go(next, facts);
-            }
-            Row::Fact(index) if facts.get(index).is_some_and(String::is_empty) => self.up(facts),
-            Row::Option(index) if self.options.get(index).is_some_and(String::is_empty) => {
-                self.up(facts);
-            }
-            _ => return false,
+            Row::Input if self.kind == Kind::Noul => self.go(Row::Question),
+            Row::Input => self.focus(Section::Options),
+            Row::Question => self.go(Row::Input),
+            Row::Option(0) => self.go(Row::Question),
+            Row::Option(index) => self.go(Row::Option(index - 1)),
         }
-        true
+    }
+
+    /// Down: the section below, wrapping, and row by row within a list.
+    pub(super) fn down(&mut self) {
+        match self.row {
+            Row::Input => self.go(Row::Question),
+            Row::Question => self.tab(),
+            Row::Option(index) if index + 1 < self.options.len() => {
+                self.go(Row::Option(index + 1));
+            }
+            Row::Option(_) => self.go(Row::Input),
+        }
+    }
+
+    /// Backspace at the start of an empty option removes it and moves up;
+    /// false when the row is not one to remove.
+    pub(super) fn remove_empty(&mut self) -> bool {
+        match self.row {
+            Row::Option(index) if self.options.get(index).is_some_and(String::is_empty) => {
+                self.up();
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Enter on an option: a new option after it, or `true` on an empty one,
@@ -483,68 +453,63 @@ mod tests {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
 
-    fn typed(form: &mut Form, facts: &mut [String], text: &str) {
+    fn typed(form: &mut Form, text: &str) {
         for c in text.chars() {
-            assert!(form.edit(&key(KeyCode::Char(c)), facts));
+            assert!(form.edit(&key(KeyCode::Char(c))));
         }
     }
 
     #[test]
     fn editing_keys_move_and_delete_by_grapheme_and_by_word() {
-        let mut facts = vec![];
         let mut form = Form::default();
-        typed(&mut form, &mut facts, "the cafe\u{301} is open");
-        assert!(form.edit(&control('w'), &mut facts));
+        typed(&mut form, "the cafe\u{301} is open");
+        assert!(form.edit(&control('w')));
         assert_eq!(form.input, "the cafe\u{301} is ");
         for _ in 0..5 {
-            form.edit(&key(KeyCode::Left), &mut facts);
+            form.edit(&key(KeyCode::Left));
         }
         // One step crossed the letter and its accent together.
         assert_eq!(&form.input[form.cursor..], "e\u{301} is ");
-        form.edit(&key(KeyCode::Delete), &mut facts);
+        form.edit(&key(KeyCode::Delete));
         assert_eq!(form.input, "the caf is ");
-        form.edit(&key(KeyCode::Backspace), &mut facts);
+        form.edit(&key(KeyCode::Backspace));
         assert_eq!(form.input, "the ca is ");
-        form.edit(&control('u'), &mut facts);
+        form.edit(&control('u'));
         assert_eq!((form.input.as_str(), form.cursor), (" is ", 0));
-        form.edit(
-            &KeyEvent::new(KeyCode::Right, KeyModifiers::ALT),
-            &mut facts,
-        );
+        form.edit(&KeyEvent::new(KeyCode::Right, KeyModifiers::ALT));
         assert_eq!(form.cursor, 3);
-        form.edit(&control('k'), &mut facts);
+        form.edit(&control('k'));
         assert_eq!(form.input, " is");
-        form.edit(&control('a'), &mut facts);
+        form.edit(&control('a'));
         assert_eq!(form.cursor, 0);
-        assert!(!form.edit(&key(KeyCode::Enter), &mut facts));
-        assert!(!form.edit(&control('g'), &mut facts));
-        form.paste("two\nlines\t!\u{7}", &mut facts);
+        assert!(!form.edit(&key(KeyCode::Enter)));
+        assert!(!form.edit(&control('g')));
+        form.paste("two\nlines\t!\u{7}");
         assert_eq!(form.input, "two\nlines    ! is");
     }
 
     #[test]
     fn tab_visits_the_sections_and_options_only_for_choices_and_scores() {
-        let mut facts = vec![];
         let mut form = Form::default();
-        form.tab(&mut facts);
+        form.tab();
         assert_eq!(form.row, Row::Question);
         // A yes/no question has no options, so Tab goes back to State.
-        form.tab(&mut facts);
+        form.tab();
         assert_eq!(form.row, Row::Input);
-        form.next_kind(&mut facts);
+        form.next_kind();
         assert_eq!(form.kind, Kind::Choice);
-        form.tab(&mut facts);
-        form.tab(&mut facts);
+        form.tab();
+        form.tab();
         assert_eq!((form.row, form.options.len()), (Row::Option(0), 1));
-        typed(&mut form, &mut facts, "Rail");
-        form.next_kind(&mut facts);
+        typed(&mut form, "Rail");
+        form.next_kind();
         assert_eq!((form.kind, form.row), (Kind::Score, Row::Option(0)));
         // Back to yes/no: the cursor leaves the options, which stay for later.
-        form.next_kind(&mut facts);
+        form.next_kind();
         assert_eq!((form.kind, form.row), (Kind::Noul, Row::Question));
         assert_eq!(form.options, ["Rail"]);
-        form.next_kind(&mut facts);
-        form.tab(&mut facts);
+        form.next_kind();
+        form.tab();
         assert_eq!(
             (form.row, form.cursor, form.options.len()),
             (Row::Option(0), 4, 1)
@@ -552,42 +517,53 @@ mod tests {
         // An empty option left behind is dropped.
         assert!(!form.enter_option(0));
         assert_eq!(form.row, Row::Option(1));
-        form.tab(&mut facts);
+        form.tab();
         assert_eq!((form.row, form.options.len()), (Row::Input, 1));
     }
 
     #[test]
-    fn up_and_down_cross_sections_and_drop_rows_emptied_on_the_way() {
-        let mut facts = vec!["one".to_owned(), "two".to_owned()];
+    fn tab_leaves_a_list_and_starts_at_its_first_row() {
+        let mut form = Form {
+            kind: Kind::Choice,
+            options: vec!["One".into(), "Two".into()],
+            row: Row::Option(0),
+            ..Form::default()
+        };
+        form.tab();
+        assert_eq!(form.row, Row::Input, "Tab does not walk the list");
+        form.tab();
+        form.tab();
+        assert_eq!(form.row, Row::Option(0));
+    }
+
+    #[test]
+    fn up_and_down_change_boxes_and_walk_only_within_a_list() {
         let mut form = Form::default();
-        form.up(&mut facts);
-        assert_eq!((form.row, form.cursor), (Row::Fact(1), 3));
-        form.up(&mut facts);
-        form.up(&mut facts);
-        assert_eq!(form.row, Row::Fact(0));
-        form.clear_row(&mut facts);
-        form.down(&mut facts);
-        assert_eq!(
-            (form.row, facts.as_slice()),
-            (Row::Fact(0), &["two".to_owned()][..])
-        );
-        form.down(&mut facts);
-        form.down(&mut facts);
+        form.down();
         assert_eq!(form.row, Row::Question);
-        form.down(&mut facts);
-        assert_eq!(form.row, Row::Question, "a yes/no question has no options");
-        form.next_kind(&mut facts);
-        form.down(&mut facts);
+        form.down();
+        assert_eq!(form.row, Row::Input, "yes/no wraps past the question");
+        form.up();
+        assert_eq!(form.row, Row::Question);
+        form.next_kind();
+        form.down();
         assert_eq!((form.row, form.options.len()), (Row::Option(0), 1));
         // Backspace on the empty option removes it and goes back up.
-        assert!(form.remove_empty(&mut facts));
+        assert!(form.remove_empty());
         assert_eq!((form.row, form.options.len()), (Row::Question, 0));
-        assert!(!form.remove_empty(&mut facts));
-        form.up(&mut facts);
-        form.up(&mut facts);
-        form.clear_row(&mut facts);
-        assert!(form.remove_empty(&mut facts));
-        assert_eq!((form.row, facts.len()), (Row::Input, 0));
+        assert!(!form.remove_empty());
+        form.options = vec!["One".into(), "Two".into()];
+        form.down();
+        assert_eq!(form.row, Row::Option(0));
+        form.down();
+        assert_eq!(form.row, Row::Option(1));
+        form.down();
+        assert_eq!(form.row, Row::Input);
+        form.up();
+        assert_eq!(form.row, Row::Option(1), "Up wraps to the list's last row");
+        form.up();
+        form.up();
+        assert_eq!(form.row, Row::Question);
     }
 
     #[test]

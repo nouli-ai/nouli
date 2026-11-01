@@ -196,6 +196,12 @@ impl Credentials {
         }
     }
 
+    /// An independent command cache for background work. Dropping it releases
+    /// fetched keys without changing the credentials of an active turn.
+    pub(crate) fn isolated(&self) -> Self {
+        Self::new(self.environment.clone(), self.store.clone())
+    }
+
     /// Runs the provider's command source, when it has one that a lookup would
     /// reach, off the async runtime and until `cancel`. The result answers the
     /// next lookups until [`Credentials::forget`].

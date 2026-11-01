@@ -12,15 +12,15 @@ impl App<'_> {
         if let Row::Option(mut index) = self.form.row {
             let mut lines = text.lines().filter(|line| !line.trim().is_empty());
             if let Some(first) = lines.next() {
-                self.form.paste(first, &mut self.repl.queue.facts);
+                self.form.paste(first);
                 for line in lines {
                     self.form.enter_option(index);
                     index += 1;
-                    self.form.paste(line, &mut self.repl.queue.facts);
+                    self.form.paste(line);
                 }
             }
         } else {
-            self.form.paste(text, &mut self.repl.queue.facts);
+            self.form.paste(text);
         }
         self.status = None;
     }
@@ -63,7 +63,7 @@ impl App<'_> {
 
     /// Imported files and saved references are edited as complete attachments.
     pub(super) fn edit_form(&mut self, key: &KeyEvent) -> bool {
-        let text = self.form.text(&self.repl.queue.facts);
+        let text = self.form.text();
         let ranges = self.attachment_ranges(text);
         let cursor = self.form.cursor;
         let control = key.modifiers.contains(KeyModifiers::CONTROL)
@@ -86,16 +86,14 @@ impl App<'_> {
                     .iter()
                     .fold(start, |start, range| start.min(range.start));
                 let end = touched.iter().fold(cursor, |end, range| end.max(range.end));
-                self.form
-                    .remove_range(start..end, &mut self.repl.queue.facts);
+                self.form.remove_range(start..end);
                 return true;
             }
         }
         if let Some(range) = ranges.iter().find(|range| {
             backwards && cursor == range.end || key.code == KeyCode::Delete && cursor == range.start
         }) {
-            self.form
-                .remove_range(range.clone(), &mut self.repl.queue.facts);
+            self.form.remove_range(range.clone());
             return true;
         }
         if key.code == KeyCode::Left
@@ -114,7 +112,7 @@ impl App<'_> {
             self.form.cursor = range.end;
             return true;
         }
-        let edited = self.form.edit(key, &mut self.repl.queue.facts);
+        let edited = self.form.edit(key);
         if matches!(key.code, KeyCode::Left | KeyCode::Right)
             && let Some(range) = ranges
                 .iter()
@@ -148,13 +146,13 @@ impl App<'_> {
         for (index, file) in loaded.into_iter().enumerate() {
             if index > 0 {
                 if matches!(self.form.row, Row::Option(_)) {
-                    self.form.add_option(&mut self.repl.queue.facts);
+                    self.form.add_option();
                 } else {
-                    self.form.paste(" ", &mut self.repl.queue.facts);
+                    self.form.paste(" ");
                 }
             }
             self.option_enter = false;
-            self.form.paste(&file.text, &mut self.repl.queue.facts);
+            self.form.paste(&file.text);
             if let Some(image) = file.image {
                 self.images.push(image);
             }
@@ -169,7 +167,7 @@ impl App<'_> {
             return false;
         }
         if let Some((row, text)) = &self.failed_drop {
-            if self.form.row_text(*row, &self.repl.queue.facts) == text
+            if self.form.row_text(*row) == text
                 && !(matches!(row, Row::Option(_)) && self.form.kind == Kind::Noul)
             {
                 self.status = Some(Status::error(
@@ -190,7 +188,7 @@ impl App<'_> {
             return true;
         }
         let end = self.form.cursor;
-        let text = self.form.text(&self.repl.queue.facts);
+        let text = self.form.text();
         let Some(candidate) = text.get(start..end) else {
             return true;
         };
@@ -203,16 +201,12 @@ impl App<'_> {
             .collect::<Result<Vec<_>, _>>()
         {
             Ok(loaded) => {
-                self.form
-                    .remove_range(start..end, &mut self.repl.queue.facts);
+                self.form.remove_range(start..end);
                 self.insert_files(loaded);
             }
             Err(error) => {
                 self.status = Some(Status::error(error.to_string()));
-                self.failed_drop = Some((
-                    self.form.row,
-                    self.form.text(&self.repl.queue.facts).to_owned(),
-                ));
+                self.failed_drop = Some((self.form.row, self.form.text().to_owned()));
                 return false;
             }
         }
@@ -337,7 +331,7 @@ mod tests {
         let settings = settings();
         let mut app = app(&settings);
         app.form.kind = Kind::Choice;
-        app.form.focus(Section::Options, &mut app.repl.queue.facts);
+        app.form.focus(Section::Options);
         app.event(
             Event::Paste("Palm Springs\nDenver\nLos Angeles\nSan Diego\nSan Francisco".into()),
             &mut None,
@@ -354,14 +348,10 @@ mod tests {
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Option(0));
         assert_eq!(app.form.kind, Kind::Choice);
-        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Option(1));
-        for _ in 0..4 {
-            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        }
-        assert_eq!(app.form.row, Row::Option(5));
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        assert_eq!(app.form.row, Row::Input);
+        assert_eq!(app.form.row, Row::Input, "Tab leaves the list");
     }
 
     #[test]
@@ -376,7 +366,7 @@ mod tests {
         assert_eq!(app.repl.queue.facts, [] as [std::string::String; 0]);
         app.form.question = "Is this relevant?".into();
         assert!(app.send_form(false).unwrap().is_none());
-        app.form.clear_row(&mut app.repl.queue.facts);
+        app.form.clear_row();
         assert!(app.send_form(false).unwrap().is_some());
         std::fs::remove_file(path).unwrap();
     }
@@ -414,7 +404,7 @@ mod tests {
         typed(&mut app, path.to_str().unwrap());
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
         assert_eq!(app.form.row, Row::Question);
-        assert_eq!(app.form.input, "Imported context.");
+        assert_eq!(app.repl.queue.facts, ["Imported context."]);
         std::fs::remove_file(path).unwrap();
     }
 }

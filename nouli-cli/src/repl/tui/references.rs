@@ -209,14 +209,11 @@ pub(super) fn describe_answer(
 
 impl App<'_> {
     pub(super) fn sync_references(&mut self) {
-        if self.graph_focused
-            || self.sessions.is_some()
-            || self.form.text(&self.repl.queue.facts).starts_with('/')
-        {
+        if self.graph_focused || self.sessions.is_some() || self.form.text().starts_with('/') {
             self.references.close();
             return;
         }
-        let text = self.form.text(&self.repl.queue.facts);
+        let text = self.form.text();
         let Some((range, query)) = query(text, self.form.cursor) else {
             self.references.picker = None;
             self.references.dismissed = None;
@@ -344,7 +341,7 @@ impl App<'_> {
         let control = key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT);
         if control && key.code == KeyCode::Char('o') {
-            let text = self.form.text(&self.repl.queue.facts);
+            let text = self.form.text();
             let cursor = self.form.cursor;
             self.references.inspected = self
                 .references
@@ -421,9 +418,6 @@ impl App<'_> {
             KeyCode::Char('s') if control => {
                 self.status = Some(Status::info("Choose a result, or Esc to keep the text."));
             }
-            KeyCode::F(5) => {
-                self.status = Some(Status::info("Choose a result, or Esc to keep the text."));
-            }
             _ => return false,
         }
         self.refresh_reference_preview();
@@ -441,14 +435,13 @@ impl App<'_> {
                         file.text = format!("File: {label}\n{}", file.text);
                     }
                     let picker = self.references.picker.take().expect("selected file picker");
-                    self.form
-                        .remove_range(picker.range, &mut self.repl.queue.facts);
+                    self.form.remove_range(picker.range);
                     if self.form.row == Row::Input {
                         self.literal_input = true;
                     }
                     // An imported document occupies one option, even if its
                     // extracted text has many lines. Ordinary list paste still splits.
-                    self.form.paste(&file.text, &mut self.repl.queue.facts);
+                    self.form.paste(&file.text);
                     if let Some(image) = file.image {
                         self.images.push(image);
                     }
@@ -499,9 +492,8 @@ impl App<'_> {
         };
         let bound = &self.references.bindings[binding];
         let inserted = format!("{} {}", bound.label, bound.reference());
-        self.form
-            .remove_range(picker.range, &mut self.repl.queue.facts);
-        self.form.paste(&inserted, &mut self.repl.queue.facts);
+        self.form.remove_range(picker.range);
+        self.form.paste(&inserted);
         self.references.dismissed = None;
         self.option_enter = false;
         self.status = Some(Status::info(
@@ -890,7 +882,7 @@ mod tests {
         assert_eq!(app.form.cursor, "Reconsider ".len());
         press(&mut app, KeyCode::Right, KeyModifiers::NONE);
         assert_eq!(app.form.cursor, range.end);
-        app.form.paste(" ", &mut app.repl.queue.facts);
+        app.form.paste(" ");
         press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
         assert_eq!(app.form.question, "Reconsider ");
         assert_eq!(
