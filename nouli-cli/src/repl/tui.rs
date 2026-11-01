@@ -1025,7 +1025,7 @@ impl<'a> App<'a> {
                 .references
                 .bindings
                 .iter()
-                .find(|b| b.reference == text[tag.clone()])
+                .find(|b| b.reference() == &text[tag.clone()])
                 .and_then(|b| {
                     text[..tag.start]
                         .strip_suffix(' ')
@@ -1798,14 +1798,9 @@ mod tests {
         let draft = draft_from(running.unwrap());
         assert_eq!(draft.request.turn.questions[0].prompt, app.form.question);
         let record = draft.request.updates.last().unwrap().new_record().unwrap();
-        assert!(record.key.starts_with("image:"));
         assert_eq!(draft.request.required_records, [record.id]);
-        assert!(
-            record.value.value()["nouli_image"]["name"]
-                .as_str()
-                .unwrap()
-                .contains("\"test\"")
-        );
+        let image = record.as_image().unwrap().unwrap();
+        assert!(image.name.contains("\"test\""));
         assert!(app.form.options[0].contains(MarkerKind::Image.prefix()));
         std::fs::remove_dir_all(dir).unwrap();
     }

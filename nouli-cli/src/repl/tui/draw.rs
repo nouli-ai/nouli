@@ -563,29 +563,25 @@ fn draw_references(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) 
 
 /// What a bound reference in the form points at, as Ctrl-O shows it.
 fn inspected_reference(binding: &super::references::Binding) -> Vec<Line<'static>> {
-    let value = &binding.record.value.value()["nouli_decision_reference"];
-    let source = &value["source"];
+    let snapshot = &binding.snapshot;
+    let source = &snapshot.source;
     let mut lines = vec![
         Line::from(render::clean(&binding.label)),
-        Line::from(format!(
-            "Question: {}",
-            render::clean(source["question"].as_str().unwrap_or(""))
-        )),
-        Line::from(format!("Turn: {}", source["turn"].as_str().unwrap_or(""))),
-        Line::from(format!(
-            "Session: {}",
-            source["session"].as_str().unwrap_or("")
-        )),
+        Line::from(format!("Question: {}", render::clean(&source.question))),
+        Line::from(format!("Turn: {}", source.turn)),
+        Line::from(format!("Session: {}", source.session)),
         Line::from(format!(
             "Model: {}",
-            render::clean(value["provider"]["model"].as_str().unwrap_or(""))
+            render::clean(
+                snapshot
+                    .provider
+                    .as_ref()
+                    .map_or("", |provider| provider.model.as_str())
+            )
         )),
         Line::from("Backspace in the form removes the reference."),
     ];
-    if let (Ok(question), Ok(outcome)) = (
-        serde_json::from_value::<nouli_core::decision::Question>(value["question"].clone()),
-        serde_json::from_value::<nouli_core::outcome::QuestionOutcome>(value["outcome"].clone()),
-    ) {
+    if let (Some(question), Some(outcome)) = (&snapshot.question, &snapshot.outcome) {
         lines.insert(
             1,
             Line::from(render::clean(&render::image_labels(&question.prompt))),
@@ -593,19 +589,19 @@ fn inspected_reference(binding: &super::references::Binding) -> Vec<Line<'static
         lines.insert(
             2,
             Line::from(render::clean(&render::image_labels(
-                &super::references::describe_answer(&question, &outcome),
+                &super::references::describe_answer(question, outcome),
             ))),
         );
     }
-    if let Some(images) = value["images"].as_array() {
-        let names = images
-            .iter()
-            .filter_map(|image| image["record"]["value"]["nouli_image"]["name"].as_str())
-            .map(render::clean)
-            .collect::<Vec<_>>();
-        if !names.is_empty() {
-            lines.push(Line::from(format!("Images: {}", names.join(", "))));
-        }
+    let names = snapshot
+        .images
+        .iter()
+        .flatten()
+        .filter_map(|image| image.record.as_image().ok().flatten())
+        .map(|image| render::clean(&image.name))
+        .collect::<Vec<_>>();
+    if !names.is_empty() {
+        lines.push(Line::from(format!("Images: {}", names.join(", "))));
     }
     lines
 }

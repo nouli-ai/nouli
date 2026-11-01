@@ -481,10 +481,11 @@ mod tests {
 
     fn referenced_questions() -> SessionExport {
         use nouli_core::{
-            context::{ContextKind, ContextRecord, ContextUpdate},
-            data::Data,
+            context::{
+                ContextUpdate,
+                evidence::{DecisionReference, DecisionSource, marker},
+            },
             history::{RecordProjection, Representation},
-            storage::decisions::DecisionSource,
         };
         let mut export = fixture();
         let mut source = export.turns[0].clone();
@@ -495,23 +496,23 @@ mod tests {
         target.session = export.session.id;
         target.parents.clear();
         let id = Id::generate();
-        let reference = format!("[decision:{id}]");
+        let reference = marker::decision_marker(id);
         target.request.questions[1].prompt = format!("Reconsider {reference}");
-        target.updates = vec![ContextUpdate::Append {
-            record: ContextRecord {
-                id,
-                key: format!("decision:{id}"),
-                kind: ContextKind::Evidence,
-                value: Data::new(serde_json::json!({"nouli_decision_reference": {
-                    "reference": reference,
-                    "source": DecisionSource {
-                        session: source.session,
-                        turn: source.id,
-                        question: source.request.questions[1].id.clone(),
-                    }
-                }}))
-                .unwrap(),
+        let snapshot = DecisionReference::snapshot(
+            id,
+            DecisionSource {
+                session: source.session,
+                turn: source.id,
+                question: source.request.questions[1].id.clone(),
             },
+            source.request.questions[1].clone(),
+            source.outcome.outcomes[1].clone(),
+            source.outcome.provider.clone(),
+            Vec::new(),
+            serde_json::json!({}),
+        );
+        target.updates = vec![ContextUpdate::Append {
+            record: snapshot.record(id).unwrap(),
         }];
         target.manifest.records = vec![RecordProjection {
             record: id,

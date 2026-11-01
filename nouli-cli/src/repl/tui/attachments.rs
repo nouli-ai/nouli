@@ -13,8 +13,10 @@ pub(crate) use worker::maybe_worker;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use nouli_core::{
-    context::{ContextKind, ContextRecord, ContextUpdate, evidence::marker},
-    data::Data,
+    context::{
+        ContextUpdate,
+        evidence::{self, marker},
+    },
     identity::Id,
     media::Image,
 };
@@ -223,15 +225,8 @@ fn pdf_text(bytes: Vec<u8>, name: &str) -> Result<String, Error> {
 }
 
 pub(super) fn update(image: &Image) -> ContextUpdate {
-    let id = Id::generate();
     ContextUpdate::Append {
-        record: ContextRecord {
-            id,
-            key: format!("image:{id}"),
-            kind: ContextKind::Evidence,
-            value: Data::new(serde_json::json!({"nouli_image":image}))
-                .expect("image strings are portable"),
-        },
+        record: evidence::image_record(Id::generate(), image),
     }
 }
 
@@ -264,10 +259,8 @@ mod tests {
             std::fs::read(&png).unwrap()
         );
         assert_eq!(image.name, "photo.png");
-        assert!(
-            update(&image).new_record().unwrap().value.value()["nouli_image"]["data_base64"]
-                .is_string()
-        );
+        let saved = update(&image).new_record().unwrap().as_image().unwrap();
+        assert_eq!(saved.unwrap().data_base64, image.data_base64);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -1,7 +1,10 @@
 //! Reference dependencies are a read-only graph projection, never ledger parents.
 use crate::{inspect::InspectError, render::RenderError};
 use nouli_core::{
-    context::evidence::marker::{self, MarkerKind},
+    context::evidence::{
+        self,
+        marker::{self, MarkerKind},
+    },
     history::{FinalizedTurn, Representation, SourcePoint},
     identity::{Id, SessionSelector},
     storage::{
@@ -32,24 +35,23 @@ pub(super) fn links(turns: &[&FinalizedTurn]) -> Result<Vec<Link>, RenderError> 
         .map(|record| (record.id, record))
         .collect::<HashMap<_, _>>();
     let mut bindings = HashMap::new();
-    for record in records
-        .values()
-        .filter(|record| record.key.starts_with("decision:"))
-    {
-        let value = &record.value.value()["nouli_decision_reference"];
-        let Some(reference) = value["reference"].as_str() else {
+    for record in records.values() {
+        // A record keyed and wrapped as a saved-answer reference must be a
+        // complete binding; a malformed one fails the projection rather than
+        // silently dropping its dependency edge.
+        let Some(reference) = record
+            .as_decision_reference()
+            .map_err(|_| RenderError::Protocol)?
+        else {
             continue;
         };
         if !matches!(
-            marker::parse_marker(reference),
+            marker::parse_marker(&reference.reference),
             Some((MarkerKind::Decision, _))
         ) {
-            continue;
+            return Err(RenderError::Protocol);
         }
-        let Ok(source) = serde_json::from_value::<DecisionSource>(value["source"].clone()) else {
-            continue;
-        };
-        bindings.insert(record.id, (reference, source));
+        bindings.insert(record.id, (reference.reference, reference.source));
     }
     let mut links = Vec::new();
     let mut seen = HashSet::new();
@@ -72,8 +74,8 @@ pub(super) fn links(turns: &[&FinalizedTurn]) -> Result<Vec<Link>, RenderError> 
                     .iter()
                     .filter_map(|id| records.get(id))
                     .any(|record| {
-                        !record.key.starts_with("decision:")
-                            && !record.key.starts_with("image:")
+                        !record.key.starts_with(evidence::DECISION_KEY_PREFIX)
+                            && !record.key.starts_with(evidence::IMAGE_KEY_PREFIX)
                             && record.value.value().to_string().contains(reference)
                     });
             let explicit = turn
