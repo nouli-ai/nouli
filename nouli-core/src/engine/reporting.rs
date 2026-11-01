@@ -259,6 +259,7 @@ impl EngineError {
                 ReplayError::Conflict | ReplayError::IntentConflict => {
                     message(Category::Conflict, "request_conflict")
                 }
+                ReplayError::UnknownRequest => message(Category::Input, "unknown_request"),
                 _ => message(Category::Input, "invalid_request"),
             },
             Self::InProgress { .. } => message(Category::Conflict, "request_in_progress"),

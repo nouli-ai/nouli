@@ -108,6 +108,8 @@ impl RequestOwner {
 pub enum ReplayError {
     #[error("request ID is missing or empty")]
     MissingId,
+    #[error("no interrupted request has this request ID")]
+    UnknownRequest,
     #[error("request ID already identifies different intent")]
     IntentConflict,
     #[error("saved session head or request ownership changed")]
@@ -420,8 +422,8 @@ impl Ledger {
     ///
     /// # Errors
     ///
-    /// - [`ReplayError::MissingId`] if the request ID is missing or blank, or
-    ///   no reservation exists for it.
+    /// - [`ReplayError::MissingId`] if the request ID is missing or blank.
+    /// - [`ReplayError::UnknownRequest`] if no reservation exists for it.
     /// - [`ReplayError::History`] or [`ReplayError::Fingerprint`] if the
     ///   request is invalid or cannot be hashed.
     /// - [`ReplayError::IntentConflict`] if the ID identifies different intent.
@@ -512,7 +514,7 @@ impl Ledger {
             })));
         }
         if retry {
-            return Err(ReplayError::MissingId);
+            return Err(ReplayError::UnknownRequest);
         }
         let mut settings = settings.ok_or(StorageError::Payload)?;
         settings
@@ -648,6 +650,16 @@ mod tests {
                 row.get(0)
             })
             .unwrap()
+    }
+
+    #[test]
+    fn retrying_an_unknown_request_id_is_not_reported_as_missing() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        assert!(matches!(
+            ledger.retry_interrupted_request(&request()),
+            Err(ReplayError::UnknownRequest)
+        ));
     }
 
     #[test]
