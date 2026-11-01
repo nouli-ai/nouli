@@ -1,6 +1,5 @@
 //! Versioned public reports and logical event envelopes, separate from tracing.
 
-pub mod projection;
 pub mod stream;
 
 use serde::{Deserialize, Serialize};

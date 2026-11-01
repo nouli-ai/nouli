@@ -1,5 +1,7 @@
 //! Compact final workflow reports with self-describing selected values.
-use super::{InspectionReference, NodeReport, ProjectedOutput, RunReport, SelectedChoice};
+use crate::protocol::{
+    InspectionReference, NodeReport, ProjectedOutput, RunReport, SelectedChoice,
+};
 use crate::{
     engine::workflow::WorkflowResult,
     identity::Id,
@@ -262,7 +264,10 @@ mod tests {
         },
     };
     fn definition() -> WorkflowSpec {
-        serde_json::from_str(include_str!("../../../fixtures/contracts/workflow.json")).unwrap()
+        serde_json::from_str(include_str!(
+            "../../../../../fixtures/contracts/workflow.json"
+        ))
+        .unwrap()
     }
     fn result(definition: &WorkflowSpec, statuses: &[NodeStatus]) -> WorkflowResult {
         let session = Id::generate();
@@ -272,7 +277,7 @@ mod tests {
                 status: *status,
                 output: (*status == NodeStatus::Completed).then(|| NodeOutput {
                     outcome: serde_json::from_str::<TurnOutcome>(include_str!(
-                        "../../../fixtures/contracts/decision-outcome.json"
+                        "../../../../../fixtures/contracts/decision-outcome.json"
                     ))
                     .unwrap(),
                     source: Some(crate::history::SourcePoint {

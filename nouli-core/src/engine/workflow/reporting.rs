@@ -1,15 +1,17 @@
 //! Public compact reports and one ordered terminal event per invocation.
+mod projection;
 use super::{
     Arc, CancellationToken, CredentialLookup, DecisionProvider, Engine, ErrorCategory, Id,
     LedgerWorker, RetryClock, TokenCounter, WorkflowEngineError, WorkflowInput, WorkflowResult,
 };
 use crate::{
     protocol::{
-        InspectionReference, Report, ResultEnvelope, projection,
+        InspectionReference, Report, ResultEnvelope,
         stream::{EventSink, EventStream, StreamError},
     },
     workflow::WorkflowSpec,
 };
+pub use projection::{ProjectionError, workflow};
 
 impl<
     P: DecisionProvider + Send + 'static,

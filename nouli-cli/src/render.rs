@@ -703,7 +703,7 @@ mod tests {
     fn defaulted_run(definition: &nouli_core::workflow::WorkflowSpec) -> ResultEnvelope {
         use nouli_core::{
             engine::workflow::WorkflowResult,
-            protocol::projection,
+            engine::workflow::reporting as projection,
             workflow::{
                 NodeStatus, resolve,
                 schedule::{NodeOutput, NodeProgress, ResolvedBinding, ScheduleResult},

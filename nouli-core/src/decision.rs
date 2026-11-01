@@ -1,6 +1,7 @@
 //! Version-1 requests shared by every provider.
 
 pub mod grammar;
+pub mod input;
 
 use std::collections::HashSet;
 
