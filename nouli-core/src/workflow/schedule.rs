@@ -102,6 +102,10 @@ pub trait ScheduleObserver: Send + Sync + 'static {
 #[derive(Default)]
 pub struct NoopObserver;
 impl ScheduleObserver for NoopObserver {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait returns a future; this observer has nothing to await"
+    )]
     async fn changed(&self, _node: usize, _progress: NodeProgress) -> Result<(), ErrorReport> {
         Ok(())
     }
@@ -612,6 +616,10 @@ pub(crate) async fn schedule_resumed<E: NodeExecutor, O: ScheduleObserver>(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "test fakes implement async traits without needing to await"
+)]
 mod tests {
     use super::*;
     use crate::{

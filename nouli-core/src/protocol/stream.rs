@@ -27,6 +27,10 @@ impl CollectEvents {
     }
 }
 impl EventSink for CollectEvents {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait returns a future; collecting in memory has nothing to await"
+    )]
     async fn send(&self, event: EngineEvent) -> Result<(), ErrorReport> {
         self.0.lock().map_err(|_| state_report())?.push(event);
         Ok(())
@@ -188,6 +192,10 @@ impl<S: EventSink> ScheduleObserver for EventStream<S> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "test fakes implement async traits without needing to await"
+)]
 mod tests {
     use super::*;
     use crate::{protocol::validate_events, workflow::NodeStatus};

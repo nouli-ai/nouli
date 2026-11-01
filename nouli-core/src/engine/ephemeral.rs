@@ -110,6 +110,10 @@ impl<P: DecisionProvider, C: TokenCounter + Sync, T: RetryClock> Engine<P, C, T>
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "test fakes implement async traits without needing to await"
+)]
 mod tests {
     use super::*;
     use crate::config::ConnectionSettings;

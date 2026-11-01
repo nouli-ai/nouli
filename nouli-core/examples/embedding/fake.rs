@@ -16,6 +16,10 @@ pub struct FakeProvider {
     pub fail_high_once: AtomicBool,
 }
 impl DecisionProvider for FakeProvider {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the fake answers without I/O"
+    )]
     async fn attempt<C: TokenCounter + Sync>(
         &self,
         settings: &ResolvedSettings,
