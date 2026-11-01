@@ -357,25 +357,12 @@ impl<'a> App<'a> {
 
     /// Runs a setup command; returns the status line to show on success.
     fn setup_command(&mut self, command: &str) -> Result<&'static str, crate::connect::SetupError> {
-        use clap::Parser;
-        let config = self
-            .repl
-            .settings
-            .config_path
-            .to_str()
-            .ok_or(crate::connect::SetupError::ConfigPath)?;
-        // `--config=PATH` keeps a path that starts with `-` from parsing as a flag.
-        let mut args =
-            crate::Args::try_parse_from(["nouli".to_owned(), format!("--config={config}")])
-                .map_err(|_| crate::connect::SetupError::ConfigPath)?;
-        args.env_file.clone_from(&self.repl.settings.env_file);
-        args.store = Some(self.repl.settings.store.clone());
         let (verb, argument) = command.split_once(' ').unwrap_or((command, ""));
         let mut note = "connection settings updated";
         match verb {
             "/connect" => {
                 let selection = crate::connect::configure(
-                    &args,
+                    &self.repl.settings.config_path,
                     &crate::connect::Connect {
                         service: if argument.is_empty() {
                             None
@@ -426,7 +413,7 @@ impl<'a> App<'a> {
             }
             _ => return Err(crate::connect::SetupError::UnknownCommand),
         }
-        let mut settings = crate::settings::load(&args)?;
+        let mut settings = self.repl.settings.reload()?;
         settings
             .load_environment()
             .map_err(crate::connect::SetupError::Report)?;

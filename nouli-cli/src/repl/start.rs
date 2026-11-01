@@ -150,7 +150,8 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
         return render_error(args, settings.config.output, error);
     }
     if can_draw() && settings.config.providers.is_empty() {
-        match crate::connect::configure(args, &crate::connect::Connect::default()) {
+        match crate::connect::configure(&settings.config_path, &crate::connect::Connect::default())
+        {
             Ok(_) => {
                 settings = match settings::load(args) {
                     Ok(s) => s,

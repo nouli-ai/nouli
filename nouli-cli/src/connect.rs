@@ -28,8 +28,6 @@ pub(crate) enum SetupError {
     Terminal,
     #[error("Set HOME or pass --config FILE to choose a configuration file")]
     HomeUnavailable,
-    #[error("The configuration path is not valid UTF-8")]
-    ConfigPath,
     #[error("Unknown service {0}. Choose one of: {SERVICES}")]
     UnknownService(String),
     #[error("A connection name cannot be empty")]
@@ -85,7 +83,6 @@ impl SetupError {
             Self::Cancelled => (Category::Interrupted, "setup_canceled"),
             Self::Terminal => (Category::Input, "terminal_required"),
             Self::HomeUnavailable => (Category::Configuration, "home_unavailable"),
-            Self::ConfigPath => (Category::Configuration, "invalid_configuration_path"),
             Self::UnknownService(_) => (Category::Input, "unknown_service"),
             Self::InvalidName => (Category::Input, "invalid_connection_name"),
             Self::InvalidProtocol => (Category::Input, "invalid_protocol"),
@@ -320,10 +317,9 @@ struct Draft {
     definition: ProviderDefinition,
     key: Option<KeySource>,
 }
-pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection, SetupError> {
+pub(crate) fn configure(file: &Path, options: &Connect) -> Result<ModelSelection, SetupError> {
     let interactive =
         !options.non_interactive && io::stdin().is_terminal() && io::stdout().is_terminal();
-    let file = path(args)?;
     if interactive {
         let _ = writeln!(
             io::stdout(),
@@ -348,7 +344,7 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
     if name.trim().is_empty() {
         return Err(SetupError::InvalidName);
     }
-    if !options.replace && has_provider(&read(&file)?, &name) {
+    if !options.replace && has_provider(&read(file)?, &name) {
         return Err(SetupError::Exists);
     }
     let protocol = choose_protocol(options, recipe, interactive)?;
@@ -363,9 +359,9 @@ pub(crate) fn configure(args: &Args, options: &Connect) -> Result<ModelSelection
         connection.wire_model = Some(model.rsplit('/').next().unwrap_or(&model).into());
     }
     let definition = provider_definition(connection, protocol, base_url, &model)?;
-    let default = options.default || (interactive && prompt_default(&file)?);
+    let default = options.default || (interactive && prompt_default(file)?);
     save(
-        &file,
+        file,
         Draft {
             name,
             model,
@@ -600,7 +596,7 @@ pub(crate) fn run(args: &Args, options: &Connect) -> ExitCode {
             io::stdout().is_terminal(),
         )
         .map_err(SetupError::Report)?;
-        let selection = configure(args, options)?;
+        let selection = configure(&file, options)?;
         Ok((selection, format))
     })();
     match output {
@@ -824,7 +820,7 @@ mod tests {
     #[test]
     fn missing_header_credentials_do_not_trigger_primary_key_setup_or_writes() {
         let dir = Directory::new();
-        configure(&dir.args(), &custom("gateway")).unwrap();
+        configure(&dir.0.join("config.toml"), &custom("gateway")).unwrap();
         let mut settings = settings::Settings::for_test(dir.0.clone());
         settings.config_path = dir.0.join("config.toml");
         settings.config =
@@ -851,7 +847,7 @@ mod tests {
             "# Keep my comment\noutput = 'json'\n[execution]\nmax_parallel = 7 # keep this too\n",
         )
         .unwrap();
-        configure(&dir.args(), &custom("my gateway")).unwrap();
+        configure(&dir.0.join("config.toml"), &custom("my gateway")).unwrap();
         let text = fs::read_to_string(dir.0.join("config.toml")).unwrap();
         assert!(text.contains("# Keep my comment"));
         assert!(text.contains("# keep this too"));
@@ -875,7 +871,7 @@ no_auth = true
         assert_eq!(generated, hand);
         let before = text;
         assert!(matches!(
-            configure(&dir.args(), &custom("my gateway")),
+            configure(&dir.0.join("config.toml"), &custom("my gateway")),
             Err(SetupError::Exists)
         ));
         assert_eq!(
@@ -900,7 +896,7 @@ no_auth = true
         let dir = Directory::new();
         let mut draft = custom("broken");
         draft.base_url = Some("https://user:secret@example.com".into());
-        assert!(configure(&dir.args(), &draft).is_err());
+        assert!(configure(&dir.0.join("config.toml"), &draft).is_err());
         assert!(!dir.0.exists());
         let parsed = Args::try_parse_from([
             "nouli",
@@ -924,7 +920,7 @@ no_auth = true
         std::thread::scope(|scope| {
             for name in ["one", "two"] {
                 let args = dir.args();
-                scope.spawn(move || configure(&args, &custom(name)).unwrap());
+                scope.spawn(move || configure(&path(&args).unwrap(), &custom(name)).unwrap());
             }
         });
         let config =
@@ -960,11 +956,6 @@ no_auth = true
                 SetupError::HomeUnavailable,
                 Category::Configuration,
                 "home_unavailable",
-            ),
-            (
-                SetupError::ConfigPath,
-                Category::Configuration,
-                "invalid_configuration_path",
             ),
             (
                 SetupError::UnknownService("nowhere".into()),
@@ -1082,7 +1073,7 @@ no_auth = true
             non_interactive: true,
             ..Default::default()
         };
-        configure(&dir.args(), &draft).unwrap();
+        configure(&dir.0.join("config.toml"), &draft).unwrap();
         let config =
             Config::parse(&fs::read_to_string(dir.0.join("config.toml")).unwrap()).unwrap();
         let definition = &config.providers["edge"];

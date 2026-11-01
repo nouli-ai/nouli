@@ -7,7 +7,10 @@ pub(crate) mod preflight;
 pub(crate) mod private_file;
 
 use std::fmt::Write as _;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use nouli_core::config::{Config, ConfigError};
 
@@ -38,33 +41,55 @@ fn discover(
     args: &super::Args,
     loader: impl FnOnce(&std::path::Path, bool) -> Result<Config, ConfigError>,
 ) -> Result<Settings, ConfigError> {
+    discover_paths(
+        args.config.as_deref(),
+        args.env_file.as_deref(),
+        args.store.as_deref(),
+        loader,
+    )
+}
+
+fn discover_paths(
+    config_path: Option<&Path>,
+    env_file: Option<&Path>,
+    store_override: Option<&Path>,
+    loader: impl FnOnce(&Path, bool) -> Result<Config, ConfigError>,
+) -> Result<Settings, ConfigError> {
     let home = std::env::var_os("HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
-    let path = args
-        .config
-        .clone()
+    let path = config_path
+        .map(Path::to_owned)
         .or_else(|| home.as_ref().map(|home| home.join(".nouli/config.toml")))
         .ok_or(ConfigError::Invalid("HOME or explicit --config"))?;
-    let config = loader(&path, args.config.is_none())?;
-    if home.is_none() && args.store.is_none() && config.store.is_none() {
+    let config = loader(&path, config_path.is_none())?;
+    if home.is_none() && store_override.is_none() && config.store.is_none() {
         return Err(ConfigError::Invalid("HOME or explicit store"));
     }
     let home = home.unwrap_or_default();
-    let store = config.store_path(&home, args.store.as_deref())?;
+    let store = config.store_path(&home, store_override)?;
     Ok(Settings {
         config,
         home,
         store,
         config_path: path,
         credentials: Arc::default(),
-        env_file: args.env_file.clone(),
-        initialize_default: args.config.is_none(),
-        store_override: args.store.clone(),
+        env_file: env_file.map(Path::to_owned),
+        initialize_default: config_path.is_none(),
+        store_override: store_override.map(Path::to_owned),
     })
 }
 
 impl Settings {
+    pub(crate) fn reload(&self) -> Result<Self, ConfigError> {
+        discover_paths(
+            Some(&self.config_path),
+            self.env_file.as_deref(),
+            Some(&self.store),
+            Config::load,
+        )
+    }
+
     pub(crate) fn load_environment(&mut self) -> Result<(), nouli_core::protocol::ErrorReport> {
         let environment = environment::Environment::load(self.env_file.as_deref())
             .map_err(|error| error.report())?;
