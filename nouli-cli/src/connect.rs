@@ -228,9 +228,19 @@ fn read(path: &Path) -> Result<DocumentMut, SetupError> {
         Err(e) => Err(e.into()),
     }
 }
+/// The directory holding `path`; a bare file name is in the current directory.
+fn directory_of(path: &Path) -> &Path {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
+/// Replaces the configuration atomically. Once the rename succeeds the new
+/// configuration is in place, so a failed directory sync is only reported.
 fn publish(path: &Path, doc: &DocumentMut) -> Result<(), SetupError> {
     use std::os::unix::fs::OpenOptionsExt;
-    let temporary = path.with_file_name(format!(".config-{}.tmp", Id::generate()));
+    let directory = directory_of(path);
+    let temporary = directory.join(format!(".config-{}.tmp", Id::generate()));
     let result = (|| {
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -239,13 +249,19 @@ fn publish(path: &Path, doc: &DocumentMut) -> Result<(), SetupError> {
             .open(&temporary)?;
         file.write_all(doc.to_string().as_bytes())?;
         file.sync_all()?;
-        fs::rename(&temporary, path)?;
-        fs::File::open(path.parent().unwrap())?.sync_all()
+        fs::rename(&temporary, path)
     })();
     if result.is_err() {
         let _ = fs::remove_file(temporary);
+        return Err(SetupError::Write);
     }
-    result.map_err(|_| SetupError::Write)
+    if fs::File::open(directory)
+        .and_then(|d| d.sync_all())
+        .is_err()
+    {
+        tracing::warn!("configuration directory sync failed after publishing");
+    }
+    Ok(())
 }
 /// A validated connection, ready to be written to the configuration.
 struct Draft {
@@ -492,7 +508,7 @@ fn lock_config(file: &Path) -> Result<fs::File, SetupError> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(file.parent().ok_or(SetupError::Invalid)?)?;
+        .create(directory_of(file))?;
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -917,6 +933,13 @@ no_auth = true
         let config =
             Config::parse(&fs::read_to_string(dir.0.join("config.toml")).unwrap()).unwrap();
         assert_eq!(config.providers.len(), 2);
+    }
+    #[test]
+    fn bare_file_names_live_in_the_current_directory() {
+        assert_eq!(directory_of(Path::new("config.toml")), Path::new("."));
+        assert_eq!(directory_of(Path::new("")), Path::new("."));
+        assert_eq!(directory_of(Path::new("a/config.toml")), Path::new("a"));
+        assert_eq!(directory_of(Path::new("/config.toml")), Path::new("/"));
     }
     #[test]
     fn cloudflare_wire_model_is_an_editable_exact_model_setting() {

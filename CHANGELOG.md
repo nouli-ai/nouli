@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Run only the credential commands of the providers a turn or `workflow run` uses. A `workflow run` that continues a session whose model defaults name a different provider from the configured default no longer runs the default provider's command, and runs the session provider's command once before the run instead of once per node during it. A turn that replays an earlier `--request-id` prepares the credential of the provider saved with that request, not the current default.
+- Save connection setup and startup model choices with a relative `--config` path such as `--config config.toml`, instead of reporting `connection_setup_failed` after the file was already written.
 - Drag to select TUI text normally without a modifier or selection mode. Ctrl-G enables graph divider dragging and mouse scrolling; Esc returns to native text selection. F6 still holds the view steady for copying during a request.
 - Show `--input` help for `new`, `add`, `ask`, and `whatif` without stray Markdown backticks.
 - List `/connect`, `/login`, `/logout`, and `/model` in `/help` only in the TUI, which supports them; the plain line loop no longer advertises commands it rejects.

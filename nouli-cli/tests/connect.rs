@@ -129,3 +129,43 @@ no_auth = true
     let value: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
     assert_eq!(value["providers"][0]["source"], "disabled");
 }
+
+#[test]
+fn relative_config_path_is_written_in_the_current_directory() {
+    let home = Home::create();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_nouli"))
+        .env_clear()
+        .current_dir(&home.0)
+        .env("HOME", &home.0)
+        .args([
+            "--config",
+            "config.toml",
+            "--json",
+            "connect",
+            "custom",
+            "--name",
+            "gateway",
+            "--protocol",
+            "system-one",
+            "--base-url",
+            "https://arbitrary.example/api",
+            "--model",
+            "any-model",
+            "--env",
+            "UNSET_PROVIDER_KEY",
+            "--default",
+            "--non-interactive",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let config = std::fs::read_to_string(home.0.join("config.toml")).unwrap();
+    assert!(config.contains("gateway"));
+    assert!(home.0.join("auth.toml").exists());
+    let leftovers = std::fs::read_dir(&home.0)
+        .unwrap()
+        .filter_map(|entry| entry.unwrap().file_name().into_string().ok())
+        .filter(|name| name.starts_with(".config-"))
+        .count();
+    assert_eq!(leftovers, 0);
+}
