@@ -9,7 +9,7 @@ use super::{
     guards::{self, FileGuard, GuardError, SessionGuard},
     sessions::{Session, SessionError, insert_session, read_session},
     sql_error,
-    turns::{AttemptInput, AttemptProgress, AttemptStatus, PreparedAttempt, TurnError},
+    turns::{self, AttemptInput, AttemptProgress, AttemptStatus, PreparedAttempt, TurnError},
 };
 use crate::{
     codec,
@@ -20,7 +20,7 @@ use crate::{
         SourcePoint, StandingChanges,
     },
     identity::{Id, SessionSelector},
-    protocol::{ErrorCategory, ErrorReport, NOT_DISPATCHED, OUTCOME_UNKNOWN},
+    protocol::{NOT_DISPATCHED, OUTCOME_UNKNOWN},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -292,29 +292,12 @@ fn interrupt(
         if recovery_priority(observed) > recovery_priority(kind) {
             kind = observed;
         }
-        if matches!(state.as_str(), "pending" | "running") {
-            let code = if state == "running" {
-                OUTCOME_UNKNOWN
-            } else {
-                NOT_DISPATCHED
-            };
-            let progress = AttemptProgress {
-                state: AttemptStatus::Interrupted,
-                error: Some(ErrorReport {
-                    category: ErrorCategory::Interrupted,
-                    code: code.into(),
-                    message: "Request owner exited before finalization".into(),
-                    retryable: false,
-                }),
-            };
-            transaction
-                .execute(
-                    "UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1",
-                    [&id],
-                )
-                .map_err(|error| sql_error("mark orphan attempt", &error))?;
-            transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![id,Ledger::encode_payload(&progress)?]).map_err(|error|sql_error("record orphan attempt",&error))?;
-        }
+        turns::interrupt_attempt(
+            transaction,
+            Id::try_from(id).map_err(|_| StorageError::Payload)?,
+            AttemptStatus::parse(&state)?,
+            "Request owner exited before finalization",
+        )?;
     }
     transaction.execute("UPDATE request_reservations SET state='interrupted',recovery_kind=?2 WHERE request_id=?1 AND state='pending'",params![key,Ledger::encode_payload(&kind)?]).map_err(|error|sql_error("record interrupted request",&error))?;
     Ok(kind)
@@ -660,6 +643,7 @@ mod tests {
     use crate::config::ModelSettings;
     use crate::config::{ExecutionSettings, OutputFormat, Protocol, ProviderProfile};
     use crate::history::SourceSelection;
+    use crate::protocol::{ErrorCategory, ErrorReport};
     use crate::storage::OpenMode;
 
     struct Store(std::path::PathBuf);

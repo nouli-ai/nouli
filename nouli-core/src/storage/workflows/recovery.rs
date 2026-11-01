@@ -45,13 +45,13 @@ use super::{
 use crate::{
     codec,
     identity::SessionSelector,
-    protocol::{ErrorCategory, ErrorReport, NOT_DISPATCHED, OUTCOME_UNKNOWN, OWNER_EXITED},
+    protocol::{ErrorCategory, ErrorReport, OUTCOME_UNKNOWN, OWNER_EXITED},
     storage::{
         Ledger,
         guards::{self, GuardError},
         sessions::Session,
         sql_error,
-        turns::{AttemptProgress, AttemptStatus, progress_event},
+        turns::{AttemptStatus, interrupt_attempt},
     },
     workflow::{
         NodeStatus, RunStatus,
@@ -539,22 +539,14 @@ impl RetryRound<'_> {
                 .workflow
                 .as_ref()
                 .ok_or(WorkflowError::Snapshot)?;
-            let code = if attempt.progress.state == AttemptStatus::Running {
-                OUTCOME_UNKNOWN
-            } else {
-                NOT_DISPATCHED
-            };
-            let progress = AttemptProgress {
-                state: AttemptStatus::Interrupted,
-                error: Some(ErrorReport {
-                    category: ErrorCategory::Interrupted,
-                    code: code.into(),
-                    message: "Previous workflow owner exited".into(),
-                    retryable: false,
-                }),
-            };
-            tx.execute("UPDATE attempt_states SET state='interrupted' WHERE attempt_id=?1 AND state IN ('pending','running')",[attempt.intent.id.to_string()]).map_err(|error|sql_error("recover orphan attempt",&error))?;
-            progress_event(tx, attempt.intent.id, &progress)?;
+            if !interrupt_attempt(
+                tx,
+                attempt.intent.id,
+                attempt.progress.state,
+                "Previous workflow owner exited",
+            )? {
+                continue;
+            }
             event(
                 tx,
                 self.run,

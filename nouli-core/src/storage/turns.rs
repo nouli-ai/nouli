@@ -16,7 +16,7 @@ use crate::{
     },
     identity::{Id, SessionSelector},
     outcome::TurnOutcome,
-    protocol::ErrorReport,
+    protocol::{ErrorCategory, ErrorReport, NOT_DISPATCHED, OUTCOME_UNKNOWN},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ impl AttemptStatus {
             Self::Interrupted => "interrupted",
         }
     }
-    fn parse(value: &str) -> Result<Self, StorageError> {
+    pub(super) fn parse(value: &str) -> Result<Self, StorageError> {
         match value {
             "pending" => Ok(Self::Pending),
             "running" => Ok(Self::Running),
@@ -129,6 +129,55 @@ pub(super) fn progress_event(
     let payload = Ledger::encode_payload(progress)?;
     transaction.execute("INSERT INTO attempt_events(attempt_id,sequence,payload_toon) SELECT ?1,COALESCE(MAX(sequence),-1)+1,?2 FROM attempt_events WHERE attempt_id=?1",params![attempt.to_string(),payload]).map_err(|error|sql_error("append attempt event",&error))?;
     Ok(())
+}
+
+/// Marks an attempt that an exited or abandoned owner left in `previous` as
+/// interrupted, recording whether its provider outcome is unknown (it was
+/// running) or it was never dispatched (it was pending).
+///
+/// Returns `false` without writing anything when `previous` is not pending or
+/// running, or the attempt is no longer in `previous`, so an attempt settled
+/// concurrently keeps its own state and error.
+pub(super) fn interrupt_attempt(
+    transaction: &Transaction<'_>,
+    attempt: Id,
+    previous: AttemptStatus,
+    message: &str,
+) -> Result<bool, StorageError> {
+    let code = match previous {
+        AttemptStatus::Running => OUTCOME_UNKNOWN,
+        AttemptStatus::Pending => NOT_DISPATCHED,
+        AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Interrupted => {
+            return Ok(false);
+        }
+    };
+    let changed = transaction
+        .execute(
+            "UPDATE attempt_states SET state=?2 WHERE attempt_id=?1 AND state=?3",
+            params![
+                attempt.to_string(),
+                AttemptStatus::Interrupted.name(),
+                previous.name()
+            ],
+        )
+        .map_err(|error| sql_error("interrupt attempt", &error))?;
+    if changed == 0 {
+        return Ok(false);
+    }
+    progress_event(
+        transaction,
+        attempt,
+        &AttemptProgress {
+            state: AttemptStatus::Interrupted,
+            error: Some(ErrorReport {
+                category: ErrorCategory::Interrupted,
+                code: code.into(),
+                message: message.into(),
+                retryable: false,
+            }),
+        },
+    )?;
+    Ok(true)
 }
 
 impl Ledger {
@@ -693,6 +742,92 @@ mod tests {
             AttemptStatus::Interrupted
         );
         assert_eq!(ledger.list_attempts(session.id).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn interrupting_an_attempt_settled_since_it_was_read_leaves_it_unchanged() {
+        let store = Store::new();
+        let mut ledger = store.open();
+        let session = ledger
+            .create_session(None, ModelSelection::default())
+            .unwrap();
+        let guard = ledger.session_guard(session.id).unwrap();
+        let running = AttemptProgress {
+            state: AttemptStatus::Running,
+            error: None,
+        };
+        let failed = AttemptProgress {
+            state: AttemptStatus::Failed,
+            error: Some(ErrorReport {
+                category: ErrorCategory::Transport,
+                code: "provider_transport_failed".into(),
+                message: "provider transport failed".into(),
+                retryable: false,
+            }),
+        };
+        let settled = ledger.prepare_attempt(&guard, input()).unwrap();
+        ledger
+            .record_attempt_progress(&guard, settled.id, &running)
+            .unwrap();
+        ledger
+            .record_attempt_progress(&guard, settled.id, &failed)
+            .unwrap();
+        let pending = ledger.prepare_attempt(&guard, input()).unwrap();
+        let orphan = ledger.prepare_attempt(&guard, input()).unwrap();
+        ledger
+            .record_attempt_progress(&guard, orphan.id, &running)
+            .unwrap();
+        let events = |ledger: &Ledger, id: Id| -> i64 {
+            ledger
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM attempt_events WHERE attempt_id=?1",
+                    [id.to_string()],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        let before = events(&ledger, settled.id);
+        let changed = ledger
+            .transaction::<_, StorageError>("interrupt attempts", |tx| {
+                Ok([
+                    // The owner read this attempt as running before it settled.
+                    interrupt_attempt(tx, settled.id, AttemptStatus::Running, "exited")?,
+                    // Only pending and running attempts can be interrupted.
+                    interrupt_attempt(tx, settled.id, AttemptStatus::Failed, "exited")?,
+                    // A pending attempt read as running has moved on as well.
+                    interrupt_attempt(tx, pending.id, AttemptStatus::Running, "exited")?,
+                    interrupt_attempt(tx, orphan.id, AttemptStatus::Running, "exited")?,
+                ])
+            })
+            .unwrap();
+        assert_eq!(changed, [false, false, false, true]);
+        assert_eq!(ledger.attempt(settled.id).unwrap().progress, failed);
+        assert_eq!(events(&ledger, settled.id), before);
+        assert_eq!(
+            ledger.attempt(pending.id).unwrap().progress.state,
+            AttemptStatus::Pending
+        );
+        let interrupted = ledger.attempt(orphan.id).unwrap().progress;
+        assert_eq!(interrupted.state, AttemptStatus::Interrupted);
+        assert_eq!(interrupted.error.unwrap().code, OUTCOME_UNKNOWN);
+        assert!(
+            ledger
+                .transaction::<_, StorageError>("interrupt pending attempt", |tx| {
+                    interrupt_attempt(tx, pending.id, AttemptStatus::Pending, "exited")
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            ledger
+                .attempt(pending.id)
+                .unwrap()
+                .progress
+                .error
+                .unwrap()
+                .code,
+            NOT_DISPATCHED
+        );
     }
 
     #[test]
