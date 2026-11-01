@@ -1,12 +1,13 @@
 //! Staged deterministic reduction, preserving typed decision meaning.
 use super::builder::{BuildError, ContextAction, ContextEntry, ContextPolicy, EntryKind};
+use super::decision_entry::DecisionEntry;
 use crate::{
     codec,
     data::Data,
-    decision::{AnswerSpace, TurnRequest},
+    decision::AnswerSpace,
     history::Representation,
     identity::Id,
-    outcome::{Answer, Confidence, ProviderIdentity, QuestionOutcome, TurnOutcome},
+    outcome::{Answer, Confidence, ProviderIdentity, QuestionOutcome},
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,15 +33,6 @@ impl ContextPolicy for Staged {
             .find(|entry| !entry.protected && entry.representation != Representation::Omitted)
             .map(|entry| ContextAction::Omit { record: entry.id }))
     }
-}
-#[derive(Deserialize)]
-struct Decision {
-    session: Option<Id>,
-    turn: Option<Id>,
-    #[serde(default)]
-    workflow_node: Option<String>,
-    request: TurnRequest,
-    outcome: TurnOutcome,
 }
 #[derive(Serialize)]
 struct CompactDecision<'a> {
@@ -89,7 +81,7 @@ struct Scale<'a> {
 }
 
 fn compact(value: &Data) -> Result<Data, BuildError> {
-    let decision = Decision::deserialize(value.value()).map_err(|_| BuildError::Policy)?;
+    let decision = DecisionEntry::deserialize(value.value()).map_err(|_| BuildError::Policy)?;
     decision
         .outcome
         .validate(&decision.request)

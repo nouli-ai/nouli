@@ -116,9 +116,7 @@ impl WorkflowRequest {
         {
             return Err(HistoryError::InvalidSelection.into());
         }
-        for update in &self.updates {
-            update.validate().map_err(HistoryError::from)?;
-        }
+        crate::context::validate_updates(&self.updates).map_err(HistoryError::from)?;
         Ok(())
     }
 }
@@ -247,9 +245,7 @@ impl WorkflowSpec {
             {
                 return Err(WorkflowError::Shape("dependencies"));
             }
-            for update in &node.updates {
-                update.validate()?;
-            }
+            crate::context::validate_updates(&node.updates)?;
             for value in [&node.model.provider, &node.model.model] {
                 if value.as_ref().is_some_and(|s| s.trim().is_empty()) {
                     return Err(WorkflowError::Shape("node model"));

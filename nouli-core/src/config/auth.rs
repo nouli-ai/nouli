@@ -4,6 +4,7 @@
 //! checking its permissions, and running commands belong to the caller. No
 //! error, `Debug`, or `Display` output here contains a credential value.
 
+use super::env_name;
 use std::{collections::BTreeMap, fmt};
 
 use thiserror::Error;
@@ -154,14 +155,6 @@ pub enum AuthError {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthStore {
     entries: BTreeMap<String, AuthEntry>,
-}
-
-fn env_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
-        && bytes.all(|c| c.is_ascii_alphanumeric() || c == b'_')
 }
 
 fn entry(provider: &str, table: &toml::Table) -> Result<AuthEntry, AuthError> {

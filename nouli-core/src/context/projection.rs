@@ -20,6 +20,35 @@ pub enum RevisionOrigin {
     Pending { session: Option<Id>, token: Id },
 }
 
+impl RevisionOrigin {
+    /// Describe a finalized turn without assigning durable identity to runtime-only history.
+    #[must_use]
+    pub fn of_turn(turn: &FinalizedTurn) -> Self {
+        if turn.runtime_only {
+            Self::Ephemeral {
+                node: turn.workflow_node.clone(),
+            }
+        } else {
+            Self::Turn {
+                session: turn.session,
+                turn: turn.id,
+            }
+        }
+    }
+    /// Describe a workflow base without assigning durable identity to an ephemeral run.
+    #[must_use]
+    pub fn of_base(base: &ContextBase) -> Self {
+        if base.runtime_only {
+            Self::Ephemeral { node: None }
+        } else {
+            Self::Run {
+                session: base.session,
+                run: base.id,
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActiveRecord {
     pub record: ContextRecord,
@@ -268,14 +297,7 @@ fn apply_base(
             .flat_map(|source| source.frontier.iter())
             .flat_map(|head| states.get(head).into_iter().flatten().copied()),
     );
-    let origin = if base.runtime_only {
-        RevisionOrigin::Ephemeral { node: None }
-    } else {
-        RevisionOrigin::Run {
-            session: base.session,
-            run: base.id,
-        }
-    };
+    let origin = RevisionOrigin::of_base(base);
     projector.apply(&mut heads, &base.updates, &origin)?;
     cache.insert(base.id, (base.clone(), heads.clone()));
     Ok(heads)
@@ -321,16 +343,7 @@ pub fn project_with_base(
             )?;
             heads = projector.merge(heads.into_iter().chain(shared));
         }
-        let origin = if turn.runtime_only {
-            RevisionOrigin::Ephemeral {
-                node: turn.workflow_node.clone(),
-            }
-        } else {
-            RevisionOrigin::Turn {
-                session: turn.session,
-                turn: turn.id,
-            }
-        };
+        let origin = RevisionOrigin::of_turn(turn);
         projector.apply(&mut heads, &turn.updates, &origin)?;
         projector.ensure_resolved(&heads)?;
         states.insert(turn.id, heads);

@@ -124,12 +124,7 @@ pub enum ScheduleError {
     Resolve(#[from] ResolveError),
 }
 fn error(category: ErrorCategory, code: &str) -> ErrorReport {
-    ErrorReport {
-        category,
-        code: code.into(),
-        message: code.replace('_', " "),
-        retryable: false,
-    }
+    ErrorReport::new(category, code, code.replace('_', " "))
 }
 fn source(
     selector: &CompiledReference,

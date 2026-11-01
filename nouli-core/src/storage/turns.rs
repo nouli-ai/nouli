@@ -211,20 +211,7 @@ impl Ledger {
         guard.validate(self, session)?;
         input.request.validate().map_err(HistoryError::from)?;
         input.manifest.validate()?;
-        for update in &input.updates {
-            update.validate().map_err(HistoryError::from)?;
-        }
-        let mut record_ids = HashSet::new();
-        if input
-            .updates
-            .iter()
-            .filter_map(ContextUpdate::new_record)
-            .any(|record| !record_ids.insert(record.id))
-        {
-            return Err(
-                HistoryError::Context(crate::context::ContextError::DuplicateRecord).into(),
-            );
-        }
+        crate::context::validate_updates(&input.updates).map_err(HistoryError::from)?;
         if input
             .request_id
             .as_ref()

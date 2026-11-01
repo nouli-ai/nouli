@@ -51,6 +51,25 @@ pub struct ErrorReport {
     pub retryable: bool,
 }
 
+impl ErrorReport {
+    /// Build a safe diagnostic report; callers set `retryable` when an attempt
+    /// policy permits another try. The message must not contain user evidence
+    /// or credentials.
+    #[must_use]
+    pub fn new(
+        category: ErrorCategory,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            category,
+            code: code.into(),
+            message: message.into(),
+            retryable: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TurnReport {

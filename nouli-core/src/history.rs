@@ -334,17 +334,7 @@ impl FinalizedTurn {
             return Err(HistoryError::InvalidManifest);
         }
         self.outcome.validate(&self.request)?;
-        for update in &self.updates {
-            update.validate()?;
-        }
-        let mut ids = std::collections::HashSet::new();
-        for update in &self.updates {
-            if let Some(record) = update.new_record()
-                && !ids.insert(record.id)
-            {
-                return Err(ContextError::DuplicateRecord.into());
-            }
-        }
+        crate::context::validate_updates(&self.updates)?;
         self.manifest.validate()?;
         if self.manifest.provider != self.outcome.provider {
             return Err(HistoryError::InvalidManifest);

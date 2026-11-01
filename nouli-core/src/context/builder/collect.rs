@@ -3,15 +3,17 @@ use super::{BuildError, ContextEntry, EntryKind, data};
 use crate::{
     context::{
         ContextRecord, ContextUpdate,
+        decision_entry::DecisionEntry,
         projection::{ActiveRecord, RevisionOrigin},
     },
-    decision::TurnRequest,
     history::{FinalizedTurn, Representation, base::ContextBase},
     identity::Id,
-    outcome::TurnOutcome,
 };
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
 /// Returns `value` only for evidence that is persisted beyond the current run.
 pub(super) fn unless_runtime_only<T>(runtime_only: bool, value: T) -> Option<T> {
@@ -91,54 +93,20 @@ fn context_entry(
     })
 }
 
-#[derive(Serialize)]
-struct Decision<'a> {
-    session: Option<Id>,
-    turn: Option<Id>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    workflow_node: Option<&'a str>,
-    request: &'a TurnRequest,
-    outcome: &'a TurnOutcome,
-}
-
 fn decision_entry(turn: &FinalizedTurn) -> Result<ContextEntry, BuildError> {
     Ok(ContextEntry {
         id: turn.id,
         kind: EntryKind::Decision,
-        value: data(&Decision {
+        value: data(&DecisionEntry {
             session: unless_runtime_only(turn.runtime_only, turn.session),
             turn: unless_runtime_only(turn.runtime_only, turn.id),
-            workflow_node: turn.workflow_node.as_deref(),
-            request: &turn.request,
-            outcome: &turn.outcome,
+            workflow_node: turn.workflow_node.as_deref().map(Cow::Borrowed),
+            request: Cow::Borrowed(&turn.request),
+            outcome: Cow::Borrowed(&turn.outcome),
         })?,
         protected: false,
         representation: Representation::Full,
     })
-}
-
-fn turn_origin(turn: &FinalizedTurn) -> RevisionOrigin {
-    if turn.runtime_only {
-        RevisionOrigin::Ephemeral {
-            node: turn.workflow_node.clone(),
-        }
-    } else {
-        RevisionOrigin::Turn {
-            session: turn.session,
-            turn: turn.id,
-        }
-    }
-}
-
-fn base_origin(base: &ContextBase) -> RevisionOrigin {
-    if base.runtime_only {
-        RevisionOrigin::Ephemeral { node: None }
-    } else {
-        RevisionOrigin::Run {
-            session: base.session,
-            run: base.id,
-        }
-    }
 }
 
 /// Accumulates entries in evidence order while tracking which context records
@@ -221,7 +189,7 @@ impl<'a> EntryCollector<'a> {
                 }))?,
             });
         }
-        let origin = base_origin(base);
+        let origin = RevisionOrigin::of_base(base);
         for update in &base.updates {
             self.push_new_record(update, &origin)?;
         }
@@ -234,7 +202,7 @@ impl<'a> EntryCollector<'a> {
     /// already seen: a repeated record is left for the duplicate check.
     pub(super) fn push_turn(&mut self, turn: &FinalizedTurn) -> Result<(), BuildError> {
         self.entries.push(decision_entry(turn)?);
-        let origin = turn_origin(turn);
+        let origin = RevisionOrigin::of_turn(turn);
         for update in &turn.updates {
             if let Some(record) = update.new_record() {
                 self.records.insert(record.id);

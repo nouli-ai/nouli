@@ -12,12 +12,7 @@ use crate::{
     transport::TransportError,
 };
 pub(crate) fn message(category: Category, code: &str) -> ErrorReport {
-    ErrorReport {
-        category,
-        code: code.into(),
-        message: code.replace('_', " "),
-        retryable: false,
-    }
+    ErrorReport::new(category, code, code.replace('_', " "))
 }
 fn storage(error: &StorageError) -> ErrorReport {
     match error {
