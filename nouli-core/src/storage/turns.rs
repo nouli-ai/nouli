@@ -111,13 +111,15 @@ pub enum TurnError {
     #[error(transparent)]
     Session(#[from] SessionError),
     #[error(transparent)]
-    Storage(#[from] StorageError),
+    Storage(StorageError),
 }
 
-fn write_error(error: StorageError) -> TurnError {
-    match error {
-        StorageError::Conflict => TurnError::Conflict,
-        error => TurnError::Storage(error),
+impl From<StorageError> for TurnError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::Conflict => Self::Conflict,
+            error => Self::Storage(error),
+        }
     }
 }
 
@@ -202,7 +204,7 @@ impl Ledger {
         input: AttemptInput,
     ) -> Result<PreparedAttempt, TurnError> {
         let session = guard.session();
-        guard.validate(self, session).map_err(write_error)?;
+        guard.validate(self, session)?;
         input.request.validate().map_err(HistoryError::from)?;
         input.manifest.validate()?;
         for update in &input.updates {
@@ -227,7 +229,7 @@ impl Ledger {
             return Err(HistoryError::InvalidSelection.into());
         }
         let session = self.session(&SessionSelector::Id(session))?;
-        super::replay::validate_reserved_input(self, guard, &input).map_err(write_error)?;
+        super::replay::validate_reserved_input(self, guard, &input)?;
         let prepared = PreparedAttempt {
             workflow: None,
             id: Id::generate(),
@@ -338,9 +340,7 @@ impl Ledger {
         progress: &AttemptProgress,
     ) -> Result<(), TurnError> {
         let snapshot = self.attempt(id)?;
-        guard
-            .validate(self, snapshot.intent.session)
-            .map_err(write_error)?;
+        guard.validate(self, snapshot.intent.session)?;
         if snapshot.intent.owner != Some(guard.owner) {
             return Err(TurnError::Conflict);
         }
@@ -369,7 +369,7 @@ impl Ledger {
             }
             progress_event(transaction, id, progress)
         })
-        .map_err(write_error)
+        .map_err(TurnError::from)
     }
 
     /// Publishes an attempt's outcome as an immutable turn and advances the
@@ -395,9 +395,7 @@ impl Ledger {
         outcome: TurnOutcome,
     ) -> Result<FinalizedTurn, TurnError> {
         let snapshot = self.attempt(id)?;
-        guard
-            .validate(self, snapshot.intent.session)
-            .map_err(write_error)?;
+        guard.validate(self, snapshot.intent.session)?;
         if snapshot.intent.owner != Some(guard.owner) {
             return Err(TurnError::Conflict);
         }
@@ -464,7 +462,7 @@ impl Ledger {
             }
             super::sessions::append_event(transaction, turn.session, &event, "record finalized head")?;
             Ok(())
-        }).map_err(write_error)?;
+        })?;
         Ok(turn)
     }
 
@@ -556,6 +554,20 @@ impl Ledger {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn storage_conflicts_map_to_the_same_turn_variant_and_report() {
+        let conflict = TurnError::from(StorageError::Conflict);
+        assert!(matches!(conflict, TurnError::Conflict));
+        assert_eq!(
+            crate::engine::EngineError::Turn(conflict).report().code,
+            "head_conflict"
+        );
+        assert!(matches!(
+            TurnError::from(StorageError::Payload),
+            TurnError::Storage(StorageError::Payload)
+        ));
+    }
+
     use super::*;
     use crate::{
         context::{ContextKind, ContextRecord},
