@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="440" viewBox="0 0 600 440" role="img" aria-labelledby="title desc">
+<title id="title">From initial claim notice to an intake queue</title><desc id="desc">The classifier reads the initial narrative and returns one of 22 loss-event categories with probabilities. A separate deterministic rule selects a queue or review. Nouli records the two-step workflow.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="none" stroke="#166858" stroke-width="1.5"/></marker></defs>
+<rect width="600" height="440" rx="16" fill="#faf8f1"/>
+<g font-family="Arial,sans-serif" text-anchor="middle" fill="#173f38">
+<text x="300" y="35" font-size="17" letter-spacing="1.3">NOULI INSURANCE LOSS EVENT</text>
+<rect x="28" y="55" width="544" height="48" rx="9" fill="#e9eee7"/>
+<text x="300" y="86" font-size="22">Initial claim narrative</text>
+<path d="M300 104V124" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="28" y="130" width="544" height="56" rx="9" fill="#166858"/>
+<text x="300" y="165" font-size="23" fill="white">Loss-event classifier</text>
+<path d="M300 187V207" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="300" y="236" font-size="22">Category + probabilities</text>
+<path d="M300 249V269" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="28" y="275" width="544" height="50" rx="9" fill="#e9eee7"/>
+<text x="300" y="307" font-size="22">Deterministic routing rule</text>
+<path d="M300 326V346" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="300" y="377" font-size="24" font-weight="bold">Intake queue or review</text>
+<text x="300" y="414" font-size="18">Nouli records the workflow</text>
+</g></svg>

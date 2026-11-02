@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="492" viewBox="0 0 600 492" role="img" aria-labelledby="title desc">
+<title id="title">Two cybersecurity workflows</title><desc id="desc">Vulnerability descriptions flow through CVSS metrics to a score and triage route. Threat reports flow through optional original-sentence selection to ATT and CK technique suggestions.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="none" stroke="#166858" stroke-width="1.5"/></marker></defs>
+<rect width="600" height="492" rx="16" fill="#faf8f1"/>
+<g font-family="Arial,sans-serif" text-anchor="middle" fill="#173f38">
+<text x="300" y="34" font-size="17" letter-spacing="1.5">NOULI CYBER SPECIALISTS</text>
+<rect x="28" y="53" width="544" height="45" rx="9" fill="#e9eee7"/>
+<text x="300" y="82" font-size="21">Vulnerability description</text>
+<path d="M300 99V119" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="28" y="124" width="544" height="50" rx="9" fill="#166858"/>
+<text x="300" y="156" font-size="22" fill="white">CVSS specialist → eight metrics</text>
+<path d="M300 175V195" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="300" y="224" font-size="21">Score + severity + triage rule</text>
+<path d="M28 246H572" stroke="#d1dacf"/>
+<rect x="28" y="265" width="544" height="45" rx="9" fill="#e9eee7"/>
+<text x="300" y="294" font-size="21">Threat report sentences</text>
+<path d="M300 311V331" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="28" y="336" width="544" height="46" rx="9" fill="none" stroke="#7b9f90" stroke-dasharray="5 4"/>
+<text x="300" y="365" font-size="20">Optional: select original sentences</text>
+<path d="M300 383V403" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="28" y="408" width="544" height="50" rx="9" fill="#166858"/>
+<text x="300" y="440" font-size="21" fill="white">ATT&amp;CK specialist → technique IDs</text>
+</g></svg>

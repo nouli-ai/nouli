@@ -222,16 +222,28 @@ Each walkthrough page links its steps to graph nodes with `data-node`, the node'
 
 ## Model pages
 
-`models/` lists the five published models, with a page for each release.
+`models/` lists the nine published models, with a page for each release.
 Each model page links to its Hugging Face repository. Content is static HTML,
 readable without JavaScript.
 
-Model content follows the published `v1.0.0` cards in
-[the nouli-ai organization](https://huggingface.co/nouli-ai). Comparison media
-is copied from those releases into `public/models/MODEL/`. Keep the recorded
-examples, selected-example caveats, supported schemas and limitations intact.
-Evaluation and provenance links point to the pinned Hugging Face release.
-Private experiment artifacts and full training recipes are outside these pages.
+Model content follows the published cards in
+[the nouli-ai organization](https://huggingface.co/nouli-ai), including Insurance
+Loss Event v1.0.1 and Underwrite Evidence v1.0.0. Links to artifacts use immutable published revisions; Policy
+Pair uses the documented revision containing its recorded positive example.
+Published diagrams and comparison media live in `public/models/MODEL/`.
+Keep recorded examples, selected-example caveats, supported schemas and
+limitations intact. Private experiment artifacts and full training recipes are
+outside these pages. Do not add inconclusive comparison claims.
+
+Keep the model order consistent in the root README, catalog, related links,
+JSON-LD and `public/llms.txt`: Underwrite Evidence, Cyber Specialists, Policy Pair,
+Clause, Insurance Loss Event, Route, Push, Doom, Guard. Guard remains last. The insurance page
+groups its 22 recorded FNOL examples by intake queue in native expandable
+sections. Those examples illustrate classification, not coverage or settlement.
+The underwriting page shows four recorded evidence themes and six constructed
+workflow situations. Its current facts and rules are supplied examples; people
+make the final decisions. Preserve its Apache-2.0 and MIT component notices and
+avoid blanket license claims across the catalog.
 
 When adding a model, add its model page, catalog entry
 and `llms.txt` reference together. Reuse the shared styles and clipboard buttons.

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="590" viewBox="0 0 600 590" role="img" aria-labelledby="title desc">
+<title id="title">Historical evidence to a structured human review</title>
+<desc id="desc">A supplied narrative and human-selected excerpt are reviewed by three local models. Their combined answer provides a review theme and probabilities. Separate rules check current supplied facts and authority, and select an information request, referral or human review. Missing or conflicting required information bypasses classification.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="none" stroke="#166858" stroke-width="1.5"/></marker></defs>
+<rect width="600" height="590" rx="16" fill="#faf8f1"/>
+<g font-family="Arial,sans-serif" text-anchor="middle" fill="#173f38">
+<text x="300" y="35" font-size="17" letter-spacing="1.2">NOULI UNDERWRITE EVIDENCE</text>
+<rect x="26" y="55" width="548" height="62" rx="9" fill="#e9eee7"/>
+<text x="300" y="82" font-size="22">Historical narrative</text>
+<text x="300" y="105" font-size="20">+ human-selected excerpt</text>
+<path d="M300 118V140M114 149V140H486V149" fill="none" stroke="#166858" stroke-width="2"/>
+<g fill="#166858">
+<rect x="26" y="152" width="176" height="57" rx="9"/>
+<rect x="212" y="152" width="176" height="57" rx="9"/>
+<rect x="398" y="152" width="176" height="57" rx="9"/>
+</g>
+<g fill="white" font-size="19"><text x="114" y="187">RoBERTa</text><text x="300" y="187">TS-Ettin</text><text x="486" y="187">Ettin 1B</text></g>
+<path d="M114 210V230H486V210M300 210V246" fill="none" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="300" y="276" font-size="23" font-weight="bold">One combined review theme</text>
+<text x="300" y="302" font-size="20">+ probabilities</text>
+<path d="M300 313V336" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="26" y="344" width="548" height="70" rx="9" fill="#e9eee7"/>
+<text x="300" y="373" font-size="22">Separate rules + current supplied facts</text>
+<text x="300" y="399" font-size="18">Completeness · conflicts · authority</text>
+<path d="M300 415V439" stroke="#166858" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="300" y="471" font-size="22" font-weight="bold">Request information · Refer · Review</text>
+<text x="300" y="507" font-size="20">Nouli records the connected workflow</text>
+<text x="300" y="539" font-size="18">Missing or conflicting facts skip classification</text>
+<text x="300" y="569" font-size="19" font-weight="bold">A person makes the final decision</text>
+</g></svg>
