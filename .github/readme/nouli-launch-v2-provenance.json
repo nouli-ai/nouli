@@ -1,0 +1,53 @@
+{
+  "application": "nouli 0.5.1",
+  "capture": "Edited launch film from recorded terminal sessions",
+  "live_provider_calls": 0,
+  "selected_cut": "User-approved TUI-first opening",
+  "opening": {
+    "duration_seconds": 1.5,
+    "crossfade_seconds": 0.25,
+    "source_frame": ".github/readme/tui-poster.png",
+    "source_frame_sha256": "86c7437f9b8720598441f99456faa1706acad69e774c8ee5bb0a68fe51cebbf9",
+    "full_terminal_visible": true
+  },
+  "source_video": {
+    "file": "nouli-launch-v2/nouli-launch-v2.mp4",
+    "sha256": "42df762597b8ff83936fa2584f0c863857c92acc605b05b0bbf34b42ca488c5b",
+    "original_preserved": true
+  },
+  "published_video": {
+    "file": "nouli-launch-v2.mp4",
+    "dimensions": [
+      1920,
+      1080
+    ],
+    "frames_per_second": 60,
+    "duration_seconds": 38.666667,
+    "audio": false
+  },
+  "readme_preview": {
+    "file": "nouli-launch-v2.gif",
+    "dimensions": [
+      960,
+      540
+    ],
+    "frames_per_second": 10,
+    "palette_colors": 96,
+    "dither": "bayer",
+    "full_selected_timeline": true
+  },
+  "files": {
+    "nouli-launch-v2.mp4": {
+      "bytes": 8071541,
+      "sha256": "6bda6f68798adf36aecabc8a66ef4fd7ff203c3777e0b8c23782dce96f3fd8d5"
+    },
+    "nouli-launch-v2.gif": {
+      "bytes": 8218340,
+      "sha256": "1418326446688c8bdba639b0331b09a13ab477f4f80700404bb8e5c2521a5673"
+    },
+    "nouli-launch-v2-poster.png": {
+      "bytes": 614924,
+      "sha256": "b9fed22a30e064b321b22a55238ce1a5a202460ea46c7239fea2a47ef64e9792"
+    }
+  }
+}

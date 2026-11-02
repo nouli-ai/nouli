@@ -10,9 +10,9 @@ Keep the facts behind a decision, add what changes, and ask the next question wi
 
 ## See Nouli in action
 
-[![Nouli TUI replay: saved decisions, branches, and blends.](.github/readme/tui-replay.gif)](https://nouli.ai/#cli-replay)
+[![Watch Nouli: ask a question, reuse an earlier answer with @, and follow the decision graph.](.github/readme/nouli-launch-v2.gif)](.github/readme/nouli-launch-v2.mp4)
 
-*Current terminal app, replaying saved workshop answers at 3× speed. [Watch the video](https://nouli.ai/media/tui-workshop.webm) or [inspect the recording](.github/readme/tui-replay-provenance.json).*
+*39-second walkthrough: see the full TUI, ask a question, reuse an earlier answer with `@`, and follow the decision graph. Edited from recorded Nouli 0.5.1 sessions. [Full-quality MP4](.github/readme/nouli-launch-v2.mp4).*
 
 ## Quickstart
 
@@ -31,7 +31,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Then choose a starting path:
 
-- **Run a Nouli model locally:** choose a [task-specific model](#models-from-nouli) and follow its model card to set up the environment, load weights, start the local service, and run the supplied CLI workflow.
+- **Run a Nouli model locally:** choose a [task-specific model](#models-from-nouli) and follow its model card for the environment, input format and local workflow.
 - **Ask broader decision questions:** connect an appropriate general-purpose decision service, choose a model, then open the terminal app:
 
 ```sh
@@ -54,23 +54,26 @@ Prebuilt CLI binaries support Apple silicon macOS and ARM64/x86_64 GNU/Linux wit
 
 ## Models from Nouli
 
-We also publish five task-specific decision models in the [nouli-ai Hugging Face organization](https://huggingface.co/nouli-ai). Each includes weights, a local serving recipe, and a Nouli CLI workflow.
+We publish eight task-specific models in the [nouli-ai Hugging Face organization](https://huggingface.co/nouli-ai), including models for security, policy, NDA review and property-claim intake. Each model card documents its local setup and supported workflow.
 
 | Model | What it does |
 | --- | --- |
-| [Nouli Route](https://huggingface.co/nouli-ai/nouli-route) | English banking intent classification across 77 BANKING77 labels. |
+| [Nouli Cyber Specialists](https://huggingface.co/nouli-ai/nouli-cyber-specialists) | CVSS vulnerability triage and ATT&CK technique mapping from security text. |
+| [Nouli Policy Pair](https://huggingface.co/nouli-ai/nouli-policy-pair) | Policy extraction and case-evidence checks → TRUE, FALSE or UNKNOWN. |
 | [Nouli Clause](https://huggingface.co/nouli-ai/nouli-clause) | NDA evidence retrieval and a fixed 17-hypothesis checklist. |
+| [Nouli Insurance Loss Event](https://huggingface.co/nouli-ai/nouli-insurance-loss-event) | Property-claim classification across 22 loss events and illustrative intake routing. |
+| [Nouli Route](https://huggingface.co/nouli-ai/nouli-route) | English banking intent classification across 77 BANKING77 labels. |
 | [Nouli Push](https://huggingface.co/nouli-ai/nouli-push) | XY actions from keypoints and history in the PushT simulator. |
 | [Nouli Doom](https://huggingface.co/nouli-ai/nouli-doom) | Structured-state actions for ViZDoom Deadly Corridor. |
 | [Nouli Guard](https://huggingface.co/nouli-ai/nouli-guard) | English hate-speech classification: no, unclear, or yes. |
 
-To try one, follow its model card’s **Quickstart with Nouli CLI**: prepare the documented input, start its local server, and run its supplied workflow. The recipes use Python 3.12 and the Hugging Face CLI and do not need a hosted inference API key. Installing Nouli alone does not download or load these models.
+To try one, follow its model card’s quickstart. Runtime requirements vary: Cyber Specialists and Insurance Loss Event support direct CPU inference; the full Policy Pair requires its documented CUDA setup and separate public base downloads. No hosted inference API key is required. Installing Nouli alone does not download or load these models.
 
-These models use task-specific inputs and answer schemas. Their cards include evaluation details, supported runtimes, and limits. Model distributions are **Apache-2.0** with upstream notices; the CLI and Rust library are **MIT**.
+Policy Pair and Insurance Loss Event are research previews. See the [model cards](https://huggingface.co/nouli-ai) for visual overviews and recorded examples, including [22 FNOL examples for claims handlers](https://huggingface.co/nouli-ai/nouli-insurance-loss-event#examples-for-claims-handlers-and-loss-adjusters). Each model card describes its validation scope and limitations. Model distributions are **Apache-2.0** with upstream notices; the CLI and Rust library are **MIT**.
 
 ## Add one fact. Make the next decision.
 
-After [setup](#quickstart), use an appropriate general-purpose decision service and a fresh session name. The five specialized local models use their own supplied workflows. Try this from your shell:
+After [setup](#quickstart), use an appropriate general-purpose decision service and a fresh session name. The specialized local models use their own supplied workflows. Try this from your shell:
 
 ```sh
 nouli new trip \
@@ -145,7 +148,7 @@ nouli context trip --json
 ```
 
 Any coding agent that can run shell commands can use the CLI. Start it with the [agent reference](https://nouli.ai/llms.txt). Use [request files](docs/cli.md#request-files) for structured input and [workflows](docs/cli-workflows.md) for dependent decisions, or embed the [Rust library](docs/embedding.md) in your application.
-The Hugging Face releases also include task-specific workflow files and local System One server adapters. Use each model’s documented input schema when running those workflows.
+The Hugging Face releases document task-specific local runtimes and Nouli workflows. Use each model’s documented input schema when running those workflows.
 
 ## Examples with recorded answers
 
@@ -162,9 +165,9 @@ The walkthroughs preserve recorded model answers, including mistakes where they 
 
 A decision model answers against a defined answer space. **Yes / No** returns the probability of yes. **Choose one** returns an option and its distribution. **Score** returns an expected index on an ordered rubric, plus level probabilities. These are model judgments. [Question contracts](docs/contracts/decisions.md).
 
-### How do the five Nouli models fit in?
+### How do the Nouli models fit in?
 
-Each release includes a local System One adapter and a workflow for its supported task. Follow the model card for input preparation, dependencies, hardware, and serving. For general examples such as the trip and workshop, use a decision service that supports those broader questions.
+Each release documents the inputs, dependencies, hardware and local workflow for its supported task. Some helpers run inference directly; others start a local provider or require a prepared CUDA environment. For general examples such as the trip and workshop, use a decision service that supports those broader questions.
 
 ### Which other providers work?
 
