@@ -307,7 +307,7 @@ footer.site { flex-wrap: wrap; line-height: 1.6; }
 .model-toolbar button[aria-pressed="true"] { color: var(--paper); background: var(--teal); border-color: var(--teal); }
 .model-toolbar button:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
 .model-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--rule); border-left: 1px solid var(--rule); }
-.model-card { grid-column: span 2; display: flex; flex-direction: column; min-width: 0; padding: 25px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.model-card { grid-column: span 3; display: flex; flex-direction: column; min-width: 0; padding: 25px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
 .model-card[data-model-category="control"] { grid-column: span 3; }
 .model-card[hidden] { display: none; }
 .card-meta, .card-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; font: 400 10px/1.5 var(--mono); color: var(--soft); }
@@ -344,6 +344,17 @@ footer.site { flex-wrap: wrap; line-height: 1.6; }
 .comparison-image { display: block; }
 .model-body a { overflow-wrap: anywhere; }
 .model-body table { font-size: 12px; }
+.release-intro .release-scope { margin-top: 14px; font-size: 15px; line-height: 1.6; }
+.model-example-group { margin-top: 18px; border: 1px solid var(--rule); }
+.model-example-group summary { padding: 16px; cursor: pointer; font: 600 18px/1.4 var(--cond); color: var(--ink); }
+.model-example-group summary > span { float: right; margin-left: 16px; font: 400 11px/2 var(--mono); color: var(--teal); }
+.model-example-group summary:focus-visible { outline: 2px solid var(--teal); outline-offset: -3px; }
+.model-example-group > div { padding: 0 16px 16px; }
+.model-example-group > div > * + * { margin-top: 16px; }
+.model-body .example-table { font: 400 15px/1.55 var(--cond); }
+.model-body .example-table th:first-child { width: 70%; }
+.model-body .underwrite-workflow-table { font: 400 15px/1.55 var(--cond); }
+.model-body .underwrite-workflow-table th:first-child { width: 40%; }
 .model-aside { position: sticky; top: 24px; border-top: 2px solid var(--teal); padding-top: 16px; font-size: 15px; line-height: 1.6; color: var(--soft); }
 .aside-version { margin: 14px 0; color: var(--ink); font: 700 28px/1 var(--cond); font-stretch: 70%; }
 .aside-hf { display: block; color: var(--teal); margin-top: 18px; font: 500 11px/1.7 var(--mono); text-underline-offset: 4px; }
@@ -386,6 +397,12 @@ footer.site { flex-wrap: wrap; line-height: 1.6; }
   .model-body { width: 100%; }
   .model-body table { table-layout: fixed; font-size: 10px; overflow-wrap: anywhere; }
   .model-body table th:first-child { width: 30%; }
+  .model-body .example-table { font-size: 14px; }
+  .model-body .example-table th:first-child { width: 65%; }
+  .model-body .underwrite-workflow-table { font-size: 14px; }
+  .model-body .underwrite-workflow-table th:first-child { width: 40%; }
+  .model-example-group summary { font-size: 17px; }
+  .model-example-group summary > span { float: none; display: block; margin-left: 0; }
 }
 
 /* Recorded terminal media uses the same quiet frame as the walkthroughs. */

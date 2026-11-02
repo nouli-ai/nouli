@@ -38,12 +38,16 @@ editing and native selection. There are no F5/F6 bindings.
 
 ## Published models
 
-Nouli AI publishes five task-specific open-source models on Hugging Face,
-under Apache-2.0 with upstream notices. Each includes weights, a local Python
-serving recipe and a Nouli CLI workflow. Inference runs on the user's machine.
+Nouli AI publishes nine task-specific open-source models on Hugging Face,
+with model-specific licenses and upstream notices. Each card documents its inputs,
+local runtime and Nouli workflow. Inference runs on the user's machine.
 
-- [Nouli Route](https://nouli.ai/models/nouli-route/): the 77 BANKING77 banking intents.
+- [Nouli Underwrite Evidence](https://nouli.ai/models/nouli-underwrite-evidence/): three local models classify supplied historical construction-incident evidence into four themes; separate illustrative rules request information or route to human review. CPU or CUDA with the supplied helper; Apache-2.0 and MIT component licenses; research preview.
+- [Nouli Cyber Specialists](https://nouli.ai/models/nouli-cyber-specialists/): CVSS triage and 49-label ATT&CK mapping; CPU specialists, with an optional CUDA source selector.
+- [Nouli Policy Pair](https://nouli.ai/models/nouli-policy-pair/): policy extraction and case-evidence checks returning TRUE, FALSE or UNKNOWN; research preview with a documented CUDA setup.
 - [Nouli Clause](https://nouli.ai/models/nouli-clause/): evidence and entailment for 17 fixed NDA hypotheses.
+- [Nouli Insurance Loss Event](https://nouli.ai/models/nouli-insurance-loss-event/): 22-category property-claim classification and illustrative intake routing; synthetic-data research preview, with 22 recorded FNOL examples.
+- [Nouli Route](https://nouli.ai/models/nouli-route/): the 77 BANKING77 banking intents.
 - [Nouli Push](https://nouli.ai/models/nouli-push/): PushT keypoint control.
 - [Nouli Doom](https://nouli.ai/models/nouli-doom/): structured-state ViZDoom Deadly Corridor control.
 - [Nouli Guard](https://nouli.ai/models/nouli-guard/): English hate-speech classification.

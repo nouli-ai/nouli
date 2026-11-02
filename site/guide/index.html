@@ -49,7 +49,7 @@ brew upgrade nouli-ai/tap/nouli</code></pre>
 <p>See the <a href="https://github.com/nouli-ai/nouli/blob/main/docs/release.md">installation guide</a> for selecting a version, changing the installation directory, inspecting the script, and building from source.</p>
 
 <h2 id="provider"><span class="num">02</span>Connect a model</h2>
-<p>To run one of Nouli’s five open-source models, choose it from the <a href="../models/">model catalog</a> and follow its local serving recipe and supplied workflow. Hugging Face hosts the weights; inference runs on your machine. The instructions below connect a compatible service for broader decision questions.</p>
+<p>To run one of Nouli’s nine open-source models, choose it from the <a href="../models/">model catalog</a> and follow its input format and local setup. Some support direct CPU inference; Underwrite Evidence runs three local models through its supplied ensemble helper. The full Policy Pair requires its documented CUDA environment and public base downloads. Hugging Face hosts the files; inference runs on your machine. The instructions below connect a compatible service for broader decision questions.</p>
 <p>Run <code>nouli connect</code>, choose a service, authenticate, and select a model. Shortcuts are available for OpenAI, TypeSafe, OpenRouter, Cloudflare Workers AI, Ollama and llama.cpp. Choose <code>custom</code> for another compatible server. You can type any model ID your server supports.</p>
 <pre><code>nouli connect
 nouli connect typesafe

@@ -54,10 +54,11 @@ Prebuilt CLI binaries support Apple silicon macOS and ARM64/x86_64 GNU/Linux wit
 
 ## Models from Nouli
 
-We publish eight task-specific models in the [nouli-ai Hugging Face organization](https://huggingface.co/nouli-ai), including models for security, policy, NDA review and property-claim intake. Each model card documents its local setup and supported workflow.
+We publish nine task-specific models in the [nouli-ai Hugging Face organization](https://huggingface.co/nouli-ai), including models for underwriting evidence, security, policy, NDA review and property-claim intake. Each model card documents its local setup and supported workflow.
 
 | Model | What it does |
 | --- | --- |
+| [Nouli Underwrite Evidence](https://huggingface.co/nouli-ai/nouli-underwrite-evidence) | Historical incident evidence across four review themes, with separate rules for information requests and human review. |
 | [Nouli Cyber Specialists](https://huggingface.co/nouli-ai/nouli-cyber-specialists) | CVSS vulnerability triage and ATT&CK technique mapping from security text. |
 | [Nouli Policy Pair](https://huggingface.co/nouli-ai/nouli-policy-pair) | Policy extraction and case-evidence checks → TRUE, FALSE or UNKNOWN. |
 | [Nouli Clause](https://huggingface.co/nouli-ai/nouli-clause) | NDA evidence retrieval and a fixed 17-hypothesis checklist. |
@@ -67,9 +68,9 @@ We publish eight task-specific models in the [nouli-ai Hugging Face organization
 | [Nouli Doom](https://huggingface.co/nouli-ai/nouli-doom) | Structured-state actions for ViZDoom Deadly Corridor. |
 | [Nouli Guard](https://huggingface.co/nouli-ai/nouli-guard) | English hate-speech classification: no, unclear, or yes. |
 
-To try one, follow its model card’s quickstart. Runtime requirements vary: Cyber Specialists and Insurance Loss Event support direct CPU inference; the full Policy Pair requires its documented CUDA setup and separate public base downloads. No hosted inference API key is required. Installing Nouli alone does not download or load these models.
+To try one, follow its model card’s quickstart. Runtime requirements vary: Cyber Specialists, Insurance Loss Event and Underwrite Evidence support CPU inference; the full Policy Pair requires its documented CUDA setup and separate public base downloads. Underwrite Evidence runs a complete three-model ensemble through its supplied helper. No hosted inference API key is required. Installing Nouli alone does not download or load these models.
 
-Policy Pair and Insurance Loss Event are research previews. See the [model cards](https://huggingface.co/nouli-ai) for visual overviews and recorded examples, including [22 FNOL examples for claims handlers](https://huggingface.co/nouli-ai/nouli-insurance-loss-event#examples-for-claims-handlers-and-loss-adjusters). Each model card describes its validation scope and limitations. Model distributions are **Apache-2.0** with upstream notices; the CLI and Rust library are **MIT**.
+Underwrite Evidence, Policy Pair and Insurance Loss Event are research previews. See the [model catalog](https://nouli.ai/models/) for visual overviews and recorded examples, including [evidence examples for underwriters and risk engineers](https://nouli.ai/models/nouli-underwrite-evidence/#examples-for-underwriting-and-risk-engineering-teams) and [22 FNOL examples for claims handlers](https://nouli.ai/models/nouli-insurance-loss-event/#examples-for-claims-handlers-and-loss-adjusters). Each model card describes its validation scope, licenses and upstream notices. The CLI and Rust library are **MIT**.
 
 ## Add one fact. Make the next decision.
 
@@ -183,7 +184,7 @@ Saved answers stay as recorded. New evidence and questions create new turns, eve
 
 ### What does it cost, and what are the licenses?
 
-The Nouli CLI and Rust library are [MIT-licensed](LICENSE). The model distributions use Apache-2.0 with the upstream notices in their repositories. Local recipes need your own compute; remote providers may charge for inference. No model weights or API credit are bundled with the CLI.
+The Nouli CLI and Rust library are [MIT-licensed](LICENSE). Model licenses vary; each repository includes its applicable terms and upstream notices. Underwrite Evidence includes Apache-2.0 and MIT components. Local recipes need your own compute; remote providers may charge for inference. No model weights or API credit are bundled with the CLI.
 
 ## Documentation and contributing
 
