@@ -61,4 +61,4 @@ flowchart TD
   class t6 latest
 ```
 
-The [recall walkthrough](https://nouli.ai/examples/recall/) goes through every step, and more [examples](https://nouli.ai/examples/) cover robotic picking, seed investing, lending, credit limits, vulnerability response, and energy planning. Each one shows its steps at the prompt or as commands.
+More [examples](https://nouli.ai/examples/) run decision networks on real public data: vulnerability triage, injury claim intake, device incident reports, aviation safety reports, and contract review.
