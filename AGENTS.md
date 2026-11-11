@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-The rules below cover the Rust workspace and the whole repository. Website work under `site/` also follows [site/AGENTS.md](site/AGENTS.md), which replaces the Rust-specific build, test, and review rules there.
+The rules below cover the Rust workspace and the whole repository. The website at https://nouli.ai/ lives in [nouli-ai/nouli.ai](https://github.com/nouli-ai/nouli.ai), which has its own rules. This repository holds the installer it publishes, [`scripts/install.sh`](scripts/install.sh).
 
 ## Project Structure & Module Organization
 
@@ -44,7 +44,7 @@ Document additional prerequisites and commands alongside the code that introduce
 
 ## Review
 
-After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claude Code, `rust_reviewer` in Codex) review the change, and address its findings before committing. After changing website files, use the frontend reviewer (`frontend-reviewer` in Claude Code, `frontend_reviewer` in Codex) the same way.
+After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claude Code, `rust_reviewer` in Codex) review the change, and address its findings before committing.
 
 ## Commit & Pull Request Guidelines
 

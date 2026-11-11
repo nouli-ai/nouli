@@ -5,6 +5,8 @@ date: 2026-11-09
 
 # Build the website with Astro and a small, verified toolchain
 
+Superseded by [ADR 0027](0027-move-website-to-own-repository.md): the website moved to [nouli-ai/nouli.ai](https://github.com/nouli-ai/nouli.ai), where this decision continues as its ADR 0001.
+
 ## Context
 
 The website under `site/` is 21 hand-written HTML pages, one global stylesheet,

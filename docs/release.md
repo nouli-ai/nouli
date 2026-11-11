@@ -71,6 +71,8 @@ less install.sh
 sh install.sh
 ```
 
+The script's source is [`scripts/install.sh`](../scripts/install.sh). When a stable version is released, nouli.ai publishes the copy from that release, so changes to the script go live with the next release.
+
 If another installation comes first on your PATH, remove it or adjust your PATH to select the new executable. Configuration and saved histories are separate from the executable.
 
 ## Install a release archive

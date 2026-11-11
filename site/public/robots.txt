@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://nouli.ai/sitemap.xml
