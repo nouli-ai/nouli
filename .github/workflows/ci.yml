@@ -26,6 +26,7 @@ jobs:
       rust: ${{ inputs.run_all || steps.filter.outputs.rust == 'true' }}
       ci: ${{ inputs.run_all || steps.filter.outputs.ci == 'true' }}
       site: ${{ inputs.run_all || steps.filter.outputs.site == 'true' }}
+      installer: ${{ inputs.run_all || steps.filter.outputs.installer == 'true' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,6 +51,9 @@ jobs:
             site:
               - *pipeline
               - 'site/**'
+            installer:
+              - *pipeline
+              - 'scripts/install.sh'
   lint-ci:
     name: Lint workflows
     needs: select
@@ -62,6 +66,18 @@ jobs:
           persist-credentials: false
       - name: Run Actionlint
         run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
+  lint-installer:
+    name: Lint installer
+    needs: select
+    if: needs.select.outputs.installer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run ShellCheck
+        run: shellcheck scripts/install.sh
   lint-rust:
     name: Lint Rust
     needs: select
@@ -136,7 +152,7 @@ jobs:
         run: npm run check
   required:
     name: Required checks
-    needs: [select, lint-ci, lint-rust, test, docs, site]
+    needs: [select, lint-ci, lint-installer, lint-rust, test, docs, site]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
