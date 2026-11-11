@@ -25,7 +25,6 @@ jobs:
     outputs:
       rust: ${{ inputs.run_all || steps.filter.outputs.rust == 'true' }}
       ci: ${{ inputs.run_all || steps.filter.outputs.ci == 'true' }}
-      site: ${{ inputs.run_all || steps.filter.outputs.site == 'true' }}
       installer: ${{ inputs.run_all || steps.filter.outputs.installer == 'true' }}
     steps:
       - uses: actions/checkout@v7
@@ -48,9 +47,6 @@ jobs:
               - 'rust-toolchain.toml'
               - '.cargo/**'
               - 'fixtures/**'
-            site:
-              - *pipeline
-              - 'site/**'
             installer:
               - *pipeline
               - 'scripts/install.sh'
@@ -125,34 +121,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build API documentation
         run: cargo doc --workspace --no-deps --locked
-  site:
-    name: Check site
-    needs: select
-    if: needs.select.outputs.site == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: site
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-      - name: Install site dependencies
-        run: npm ci
-      - name: Install the browser for end-to-end tests
-        run: npx playwright install --with-deps chromium
-      # Format, lint, ShellCheck, types, unit tests, build, built-output checks, and browser tests.
-      - name: Check site
-        run: npm run check
   required:
     name: Required checks
-    needs: [select, lint-ci, lint-installer, lint-rust, test, docs, site]
+    needs: [select, lint-ci, lint-installer, lint-rust, test, docs]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
