@@ -1,0 +1,157 @@
+---
+import { getEntry } from "astro:content";
+import TerminalScreen from "./TerminalScreen.astro";
+
+interface Props {
+  /** The capture file in src/data/captures, without its extension. */
+  name: string;
+  /** The walkthrough step the frame was captured for. */
+  step: number;
+}
+
+const { name, step } = Astro.props;
+const capture = await getEntry("captures", name);
+const frame = capture?.data.frames.find((candidate) => candidate.step === step);
+if (frame === undefined) throw new Error(`No capture "${name}" for step ${step}`);
+const views = [
+  { view: "form", label: "Form" },
+  { view: "answer", label: "Answer" },
+  { view: "decisions", label: "Decisions" },
+];
+---
+
+<!-- Every view and width is rendered here; a container query picks the width and capture-views the view. -->
+<capture-views class="tui-snapshot" data-view="answer">
+  <div class="tui-controls">
+    {views.map(({ view, label }) => (
+      <button
+        type="button"
+        data-capture-view={view}
+        aria-pressed={view === "answer" ? "true" : "false"}
+      >
+        {label}
+      </button>
+    ))}
+    <span>current TUI · recorded answers</span>
+  </div>
+  <pre
+    class="tui-screen"
+    tabindex="0"
+    aria-label={`Captured Nouli terminal: ${frame.title}`}
+  ><TerminalScreen
+      screen={frame.draft}
+      variant="form-wide"
+    /><TerminalScreen screen={frame.draftNarrow} variant="form-narrow" /><TerminalScreen
+      screen={frame.answer}
+      variant="answer-wide"
+    /><TerminalScreen screen={frame.narrow} variant="answer-narrow" /><TerminalScreen
+      screen={frame.graph}
+      variant="decisions"
+    /></pre>
+  <p class="tui-caption">{frame.title}</p>
+</capture-views>
+
+<script>
+  import "../../client/capture-views";
+</script>
+
+<style>
+  .tui-snapshot {
+    display: block;
+    container-type: inline-size;
+    min-width: 0;
+    margin: 22px 0;
+    background: var(--term-bg);
+    color: var(--term-fg);
+    border: 1px solid var(--term-rule);
+  }
+  .tui-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    font: 11px var(--mono);
+    border-bottom: 1px solid var(--term-rule);
+  }
+  .tui-controls button {
+    font: inherit;
+    color: inherit;
+    border: 1px solid var(--term-control);
+    padding: 4px 9px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .tui-controls button[aria-pressed="true"] {
+    color: var(--term-bg);
+    background: var(--term-fg);
+    border-color: var(--term-fg);
+  }
+  .tui-controls > span {
+    margin-left: auto;
+    color: var(--term-dim);
+    font-size: 10px;
+  }
+  .tui-controls button:focus-visible {
+    outline: 2px solid var(--term-focus);
+    outline-offset: 3px;
+  }
+  .tui-screen {
+    display: block;
+    margin: 0;
+    padding: 14px;
+    overflow: auto;
+    max-width: 100%;
+    background: var(--term-bg);
+    color: var(--term-fg);
+    border: 0;
+    font: 12px/1.45 var(--term);
+    font-stretch: 100%;
+    white-space: pre;
+  }
+  .tui-screen:focus-visible {
+    outline: 2px solid var(--term-focus);
+    outline-offset: -2px;
+  }
+  .tui-caption {
+    padding: 10px 14px;
+    border-top: 1px solid var(--term-rule);
+    color: var(--term-dim);
+    font: 11px/1.6 var(--mono);
+    margin: 0;
+  }
+
+  .tui-screen :global(.tui-row) {
+    display: block;
+    height: 1.45em;
+  }
+  .tui-screen :global(.tui-grid) {
+    width: max-content;
+  }
+
+  /* One variant at a time: the chosen view, wide unless the capture is under 1000px across. */
+  .tui-screen :global(.tui-grid) {
+    display: none;
+  }
+  [data-view="form"] :global([data-variant="form-wide"]),
+  [data-view="answer"] :global([data-variant="answer-wide"]),
+  [data-view="decisions"] :global([data-variant="decisions"]) {
+    display: block;
+  }
+  @container (width < 1000px) {
+    [data-view="form"] :global([data-variant="form-wide"]),
+    [data-view="answer"] :global([data-variant="answer-wide"]) {
+      display: none;
+    }
+    [data-view="form"] :global([data-variant="form-narrow"]),
+    [data-view="answer"] :global([data-variant="answer-narrow"]) {
+      display: block;
+    }
+  }
+  @media (max-width: 600px) {
+    .tui-controls > span {
+      flex-basis: 100%;
+      margin: 4px 0 0;
+    }
+  }
+</style>

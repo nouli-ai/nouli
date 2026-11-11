@@ -1,0 +1,678 @@
+---
+import Capture from "../../components/terminal/Capture.astro";
+import HivePage from "../../components/hive/HivePage.astro";
+import PageHead from "../../components/hive/PageHead.astro";
+---
+
+<HivePage
+  title="Guide · Nouli"
+  description="Install Nouli, configure a decision model, and use its terminal app or CLI to ask questions, add facts, branch sessions, and blend their histories."
+>
+  <PageHead current="guide" kicker="Guide">
+    <h1>Install Nouli and make your first decisions</h1>
+    <p>
+      Configure a provider, ask questions from the terminal app or the CLI, and branch and blend
+      decision histories.
+    </p>
+  </PageHead>
+  <div class="guide">
+    <ol class="toc">
+      <li>
+        <a href="#install">Install</a>
+      </li>
+      <li>
+        <a href="#provider">Configure a provider</a>
+      </li>
+      <li>
+        <a href="#interactive">Interactive mode</a>
+      </li>
+      <li>
+        <a href="#first">Make a decision</a>
+      </li>
+      <li>
+        <a href="#turns">Add a turn</a>
+      </li>
+      <li>
+        <a href="#branch">Branch and blend</a>
+      </li>
+      <li>
+        <a href="#view">See the graph</a>
+      </li>
+      <li>
+        <a href="#workflows">Run a workflow</a>
+      </li>
+      <li>
+        <a href="#output">Output and exit codes</a>
+      </li>
+      <li>
+        <a href="#help">Troubleshooting</a>
+      </li>
+    </ol>
+    <article class="prose">
+      <p>
+        Nouli builds decision networks: it records AI decisions and connects them to the facts and
+        earlier answers they use. You send facts and a question with a fixed set of answers; the
+        model returns a probability for each answer. Nouli records the turn in a session, and the
+        next turn only needs the new facts.
+      </p>
+
+      <h2 id="install">
+        <span class="num">01</span>Install
+      </h2>
+      <p>
+        On <strong>macOS (Apple silicon)</strong>, use Homebrew:
+      </p>
+      <pre tabindex="0"><code>brew install nouli-ai/tap/nouli</code></pre>
+      <p>
+        On <strong>Linux</strong>, use the download installer:
+      </p>
+      <pre tabindex="0"><code>curl -fsSL https://nouli.ai/install.sh | sh</code></pre>
+      <p>
+        The script installs the latest published binary into <code>~/.local/bin</code> after
+        verifying its checksum. It also works on Apple silicon macOS. Linux needs glibc 2.38 or
+        newer.
+      </p>
+      <p>If your shell cannot find Nouli, add the installation directory to your PATH:</p>
+      <pre tabindex="0"><code>export PATH="$HOME/.local/bin:$PATH"
+nouli --version</code></pre>
+      <p>
+        If you previously installed with Cargo, run <code>cargo uninstall nouli-cli</code> before
+        switching so the old executable does not take precedence.
+      </p>
+      <p>To update a Homebrew installation:</p>
+      <pre tabindex="0"><code>brew update
+brew upgrade nouli-ai/tap/nouli</code></pre>
+      <p>
+        For a script installation, run the download installer again. Uninstall with{" "}
+        <code>brew uninstall nouli-ai/tap/nouli</code> for Homebrew, or remove{" "}
+        <code>~/.local/bin/nouli</code> for the script. Your configuration and saved sessions are
+        preserved.
+      </p>
+      <p>
+        See the{" "}
+        <a href="https://github.com/nouli-ai/nouli/blob/main/docs/release.md">installation guide</a>{" "}
+        for selecting a version, changing the installation directory, inspecting the script, and
+        building from source.
+      </p>
+
+      <h2 id="provider">
+        <span class="num">02</span>Connect a model
+      </h2>
+      <p>
+        To run one of Nouli’s nine open-source models, choose it from the{" "}
+        <a href="/models/">model catalog</a> and follow its input format and local setup. Some
+        support direct CPU inference; Underwrite Evidence runs three local models through its
+        supplied ensemble helper. The full Policy Pair requires its documented CUDA environment and
+        public base downloads. Hugging Face hosts the files; inference runs on your machine. The
+        instructions below connect a compatible service for broader decision questions.
+      </p>
+      <p>
+        Run <code>nouli connect</code>, choose a service, authenticate, and select a model.
+        Shortcuts are available for OpenAI, TypeSafe, OpenRouter, Cloudflare Workers AI, Ollama and
+        llama.cpp. Choose <code>custom</code> for another compatible server. You can type any model
+        ID your server supports.
+      </p>
+      <pre tabindex="0"><code>nouli connect
+nouli connect typesafe
+nouli connect cloudflare
+nouli connect ollama --model clef --default --non-interactive</code></pre>
+      <p>
+        Paste an API key into the masked prompt, name an environment variable, or use a credential
+        program. Keys are stored privately beside your config. Setup makes no model calls. A bare{" "}
+        <code>nouli</code> also opens setup when no connection exists.
+      </p>
+      <p>
+        Shortcuts write ordinary settings. You can edit <code>~/.nouli/config.toml</code> yourself
+        and get the same behavior:
+      </p>
+      <pre tabindex="0"><code>default_provider = "gateway"
+default_model = "my-model"
+
+[providers.gateway]
+protocol = "system-one"
+base_url = "https://gateway.example/api"
+api_key_env = "GATEWAY_TOKEN"</code></pre>
+      <p>
+        The protocols are <code>system-one</code> and <code>openai-decisions</code>. Endpoints and
+        model IDs are yours to configure. An omitted context budget uses 8,192 estimated tokens; set
+        limits for your server when needed. No provider catalog restricts your configuration.
+      </p>
+      <p>
+        Inside a session, use <code>/connect</code>, <code>/login</code>, <code>/logout</code> and{" "}
+        <code>/model</code> while idle. Setup preserves your draft. Pick a connection or model for
+        one command with <code>--provider NAME</code> and <code>--model MODEL</code>. Each inference
+        uses your provider account and may cost money.
+      </p>
+
+      <h2 id="interactive">
+        <span class="num">03</span>Interactive mode
+      </h2>
+      <p>
+        <code>nouli open travel</code> opens a session full screen. A bare <code>nouli</code> starts
+        a new session with a random name. Add facts in Context, press Tab for a plain-text question,
+        and use Shift-Tab to choose the answer type. There are no question IDs or bracket syntax to
+        type in the form.
+      </p>
+      <Capture name="meeting" step={0} />
+      <figure class="ui-video" id="controls-video">
+        <video
+          controls
+          playsinline
+          preload="metadata"
+          poster="/media/tui-workshop.png"
+          aria-label="Current Nouli terminal controls: model picker, status line, help, resizing and copy mode"
+        >
+          <source src="/media/tui-controls.webm" type="video/webm" />
+          Your browser cannot play this recording.{" "}
+          <a href="/media/tui-controls.webm">Download it</a>.
+        </video>
+        <figcaption>
+          Current terminal controls at normal speed: model picker, status preferences, help, Ctrl-G
+          resizing, and Ctrl-P copy mode. Recorded locally with saved answers.
+        </figcaption>
+      </figure>
+      <p>
+        These captures replay saved model answers in the current TUI. Use Form to see the inputs
+        before sending, Answer for the result, and Decisions for the graph. Start with{" "}
+        <a href="/examples/meeting/">one session and three travel questions</a>, then try a{" "}
+        <a href="/examples/recall/">multi-session recall response</a>.
+      </p>
+      <table tabindex="0">
+        <thead>
+          <tr>
+            <th>Key or action</th>
+            <th>What happens</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Tab</td>
+            <td>
+              Move between Context, Question, and Options/Levels. Up and Down move between items
+              within a section.
+            </td>
+          </tr>
+          <tr>
+            <td>Shift-Tab</td>
+            <td>Cycle Yes / No → Choose one → Score from any field.</td>
+          </tr>
+          <tr>
+            <td>Enter</td>
+            <td>
+              Add a nonempty Context or Options/Levels row. On a blank row, move to the next section
+              without sending. Send from a nonempty Question; Ctrl-S sends from any section.
+            </td>
+          </tr>
+          <tr>
+            <td>@</td>
+            <td>
+              Find saved answers across local sessions and files under the launch folder. Enter
+              inserts a selection without sending.
+            </td>
+          </tr>
+          <tr>
+            <td>Drag the divider</td>
+            <td>
+              Press Ctrl-G, then drag the divider to resize the graph and conversation panels. Esc
+              returns to the form and native selection.
+            </td>
+          </tr>
+          <tr>
+            <td>Ctrl-G / Esc</td>
+            <td>
+              Enable graph keyboard navigation, divider dragging, and mouse scrolling; Esc returns
+              to the form.
+            </td>
+          </tr>
+          <tr>
+            <td>Ctrl-P</td>
+            <td>
+              Hold the view for copying while requests continue. Esc or Ctrl-P resumes with your
+              draft and focus intact.
+            </td>
+          </tr>
+          <tr>
+            <td>Ctrl-L / /model</td>
+            <td>
+              Search connected models, add a connection, or enter a missing API key without losing
+              the draft.
+            </td>
+          </tr>
+          <tr>
+            <td>/statusline</td>
+            <td>Choose saved status fields or a Minimal, Session, Request, or Hidden preset.</td>
+          </tr>
+          <tr>
+            <td>Normal drag</td>
+            <td>
+              Select text with the terminal, then use its Copy command. A terminal selection
+              modifier also works while graph mouse controls are active.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        After a choice or score, leave Options/Levels empty to reuse the prior list; the form says
+        when it will do so. Add new context and a follow-up question to reconsider the answer.
+        Yes/No questions stay fresh. Context previews the latest included question, while earlier
+        answers remain in the saved history.
+      </p>
+      <p>
+        Use <code>@budget.xlsx</code> or a relative filename to add a local file. DOCX/PPTX
+        contribute text and tables; CSV/TSV and XLS/XLSX/XLSM/XLSB/ODS contribute rows from their
+        sheets. PDFs need Poppler for text extraction. Raster images and SVGs use native image input
+        when the model supports it; legacy DOC/PPT needs LibreOffice. Select a file to snapshot it,
+        review the contents, then send. Documents do not render pages or run OCR.
+      </p>
+      <p>
+        Use <code>@</code> with words you remember from a saved conversation to reference an exact
+        earlier answer. Browse history shows its saved state. References appear as graph edges,
+        including across sessions. Use <code>/rename NAME</code> to rename the current session,{" "}
+        <code>/sessions</code> or <code>/use NAME</code> to resume one, and{" "}
+        <code>/branch NAME</code> or <code>/blend A B as NAME</code> to combine histories.{" "}
+        <code>/help</code> opens a shortcuts dialog; type <code>/</code> in Context to list
+        commands. Ctrl-C cancels a turn, then clears input, and quits when the draft is empty.
+      </p>
+
+      <p>
+        <b>Copy text:</b> drag normally and use your terminal’s Copy command. To keep the screen
+        still while a request continues, press <b>Ctrl-P</b> first. <b>Esc</b> or <b>Ctrl-P</b>{" "}
+        resumes the previous draft and focus. <b>Resize panels:</b> press <b>Ctrl-G</b>, drag the
+        divider, then press <b>Esc</b>. Mouse controls apply while the graph is focused; normal form
+        editing keeps native text selection.
+      </p>
+      <p>
+        <b>Choose a model:</b> press <b>Ctrl-L</b> or use <code>/model</code>. Search models listed
+        by your connections, enter a model ID when needed, or add a connection and its API key
+        inside the view. <b>Customize the footer:</b> use <code>/statusline</code> to choose visible
+        fields or a preset. The selected model and status preferences are saved. Function-key
+        submission and copy bindings have been removed; use <b>Ctrl-S</b> and <b>Ctrl-P</b>.
+      </p>
+
+      <h2 id="first">
+        <span class="num">04</span>Make a decision
+      </h2>
+      <p>
+        Use shell commands for scripts and agents. <code>nouli new</code> starts a saved session.
+        Give it the facts, then the question with <code>-q</code>. A question is one line: an ID, a
+        prompt, and the options in brackets:
+      </p>
+      <pre tabindex="0"><code>nouli new travel \
+  'The train costs 40 USD and arrives 30 minutes before the meeting.
+A taxi costs 70 USD and also arrives in time. Prefer the cheaper option
+that arrives on time.' \
+  -q 'transport: How should I travel to the meeting? [Take the train, Take a taxi]'</code></pre>
+      <pre class="out" tabindex="0"><code>  turn 1 · 1 fact · 1 question
+  transport   ▶ Take the train                   ████████████████████ 1.00
+                Take a taxi                                           0.00
+  typesafe/jev-1.14.0 · session 01a188cf-5a98-7734-9645-715ee6bd9e7d · turn 01a188cf-5b18-75dc-8b15-90393e62bd69</code></pre>
+      <p>
+        Every option gets a probability, and <code>▶</code> marks the answer. Each question has one
+        of three answer types:
+      </p>
+      <table tabindex="0">
+        <thead>
+          <tr>
+            <th>type</th>
+            <th>answer</th>
+            <th>how to write it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <code>choice</code>
+            </td>
+            <td>One option, with a probability for every option</td>
+            <td>
+              <code>id: prompt [option, option]</code>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>noul</code>
+            </td>
+            <td>The probability that the answer is yes</td>
+            <td>
+              <code>id: prompt</code>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>score</code>
+            </td>
+            <td>The expected position on an ordered rubric, which can be fractional</td>
+            <td>
+              <code>id: prompt &lt;poor, fair, good&gt;</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Put an option in double quotes if it contains a comma or a bracket. A question can sit in a
+        file too: pass <code>--input request.json</code> (JSON or TOON) for the full form with
+        rubrics and structured evidence. Answers are model judgments, not actions: Nouli never
+        books, sends, or changes anything.
+      </p>
+
+      <h2 id="turns">
+        <span class="num">05</span>Add a turn
+      </h2>
+      <p>
+        A session records the facts you gave it and every answer. <code>nouli add</code> sends only
+        what changed, with the next question, and the earlier facts and answers come along as
+        history. Nothing is asked again, so <code>transport</code> still has its recorded answer.{" "}
+        <code>nouli ask travel -q …</code> asks without new facts:
+      </p>
+      <pre tabindex="0"><code>nouli add travel \
+  'The train has been cancelled. The taxi is still available at 70 USD.' \
+  -q 'rebook: How should I travel to the meeting now? [Take the train, Take a taxi]'</code></pre>
+      <pre class="out" tabindex="0"><code>  turn 2 · 1 fact · 1 question
+  rebook        Take the train                   ▎                    0.01
+              ▶ Take a taxi                      ███████████████████▊ 0.99
+  typesafe/jev-1.14.0 · session 01a188cf-5a98-7734-9645-715ee6bd9e7d · turn 01a188cf-5caa-7258-85eb-d6c2ae37dfc0</code></pre>
+      <p>
+        Every turn asks one question, in its own call. Facts are numbered, and{" "}
+        <code>--replace 1 'new text'</code> corrects fact 1 in the turn that asks the next question:
+        the model sees only the new text, and the old one stays in the history.{" "}
+        <code>
+          nouli whatif travel 'The taxi fare has doubled to 140 USD.' -q 'fare: Is the taxi still
+          worth it?'
+        </code>{" "}
+        asks a question of a hypothetical fact and saves nothing.
+      </p>
+      <p>
+        Sessions are saved under <code>~/.nouli</code> and work from any directory.{" "}
+        <code>--store DIR</code> uses a different store.
+      </p>
+      <p>
+        Long histories are trimmed to fit the model's context budget: older decisions shrink to
+        their question and answer first, then the oldest optional records drop out. The full record
+        stays in the store either way. <code>nouli context SESSION</code> shows exactly what reached
+        the model for a turn.
+      </p>
+
+      <h2 id="branch">
+        <span class="num">06</span>Branch and blend
+      </h2>
+      <p>
+        <code>--from</code> starts a new session from saved history. One <code>--from</code>{" "}
+        branches, and the branch includes the source's questions; several blend, and a blend starts
+        with none:
+      </p>
+      <pre tabindex="0"><code>nouli new travel-late --from travel '…' -q '…'
+nouli new plan --from travel --from budget '…' -q '…'</code></pre>
+      <p>
+        A new session captures its sources when you create it. Later turns in <code>travel</code>{" "}
+        don't change <code>plan</code>; make a new blend to reconsider with the updated history. To
+        start from an older point, name the turn: <code>--from travel@TURN_ID</code>.
+      </p>
+
+      <h2 id="view">
+        <span class="num">07</span>See the graph
+      </h2>
+      <pre tabindex="0"><code>nouli view plan
+nouli view plan --mermaid &gt; plan.mmd
+nouli facts plan
+nouli questions plan
+nouli sessions list
+nouli sessions show plan
+nouli sessions export plan --format json &gt; plan.json</code></pre>
+      <p>
+        <code>nouli view</code> draws the session and every turn it captured as boxes in your
+        terminal, with <code>▶</code> marking each selected answer. <code>--mermaid</code> prints
+        the same graph as Mermaid source; paste it into a <code>```mermaid</code> block and GitHub
+        draws it. <code>nouli facts</code> lists the numbered facts, marking those inherited from
+        another session, and <code>nouli questions</code> prints the session's questions in the
+        one-line form. None of these commands call a model or change the store.
+      </p>
+
+      <h2 id="workflows">
+        <span class="num">08</span>Run a workflow
+      </h2>
+      <p>
+        When later questions depend on earlier answers, describe the turns as a graph and let Nouli
+        run it. Nodes with no dependency between them run in parallel:
+      </p>
+      <pre tabindex="0"><code>{"{"}
+  "state": [],
+  "nodes": [
+    {"{"}"id": "choose", "turn": {"{"}
+      "state": [{"{"}"type": "text", "text": "The train takes 4 hours; the flight takes 2 hours."{"}"}],
+      "questions": [{"{"}"id": "route", "prompt": "Which route should I take?",
+        "answer_space": {"{"}"type": "choice", "options": [
+          {"{"}"id": "train", "description": "Take the train"{"}"},
+          {"{"}"id": "flight", "description": "Take the flight"{"}"}]{"}"}{"}"}]{"}"}{"}"},
+    {"{"}"id": "book", "dependencies": ["choose"], "turn": {"{"}
+      "state": [],
+      "questions": [{"{"}"id": "book_now", "prompt": "Given the preferred route, should I book it now?",
+        "answer_space": {"{"}"type": "noul"{"}"}{"}"}]{"}"}{"}"}
+  ]
+{"}"}</code></pre>
+      <pre tabindex="0"><code>nouli workflow run workflow.json --name review --parallel 2
+nouli workflow show RUN_ID
+nouli workflow resume RUN_ID</code></pre>
+      <p>
+        A run saves its graph and settings before it starts. If it's interrupted,{" "}
+        <code>resume</code> reuses finished nodes and runs the rest. <code>--jsonl</code> streams
+        progress events.
+      </p>
+
+      <h2 id="output">
+        <span class="num">09</span>Output and exit codes
+      </h2>
+      <p>
+        Output is text in a terminal and JSON when piped. Choose explicitly with{" "}
+        <code>--format text|json|jsonl|toon</code>, <code>--json</code>, or <code>--jsonl</code>.
+      </p>
+      <table tabindex="0">
+        <thead>
+          <tr>
+            <th>exit</th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0</td>
+            <td>Completed, including replays and per-question refusals</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Invalid input or configuration</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Provider, authentication, capability, contract, or capacity failure</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Partial or failed workflow</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Request, writer, context, or advanced-head conflict</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Storage, internal, or output failure</td>
+          </tr>
+          <tr>
+            <td>130</td>
+            <td>Interrupted; recovery needed</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="help">
+        <span class="num">10</span>Troubleshooting
+      </h2>
+      <table tabindex="0">
+        <thead>
+          <tr>
+            <th>message</th>
+            <th>what to do</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <code>providers_required</code>
+            </td>
+            <td>
+              Open the configuration file named in the error and add a <code>[providers.NAME]</code>{" "}
+              section.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>provider_required</code>
+            </td>
+            <td>
+              Set <code>default_provider</code> or pass <code>--provider NAME</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>model_required</code>
+            </td>
+            <td>
+              Set <code>default_model</code> or pass <code>--model MODEL</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>unknown_provider</code>
+            </td>
+            <td>Use a provider name defined in your configuration.</td>
+          </tr>
+          <tr>
+            <td>
+              <code>credential_unavailable</code>
+            </td>
+            <td>
+              Run <code>nouli auth login PROVIDER</code>, or set the environment variable named in
+              the error, in your shell or the env file.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>auth_store_insecure</code>
+            </td>
+            <td>
+              Others can read <code>~/.nouli/auth.toml</code>. Run <code>chmod 600</code> on it.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>questions_required</code>
+            </td>
+            <td>
+              The turn has no question. Add one with <code>-q</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>invalid_standing_question</code>
+            </td>
+            <td>
+              A request file sets <code>standing</code>, which Nouli no longer supports. List the
+              questions in <code>turn.questions</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>env_file_not_found</code>
+            </td>
+            <td>
+              Check the path passed to <code>--env-file</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>invalid_env_file</code>
+            </td>
+            <td>Check assignments, quotes, and UTF-8 encoding in the env file.</td>
+          </tr>
+          <tr>
+            <td>
+              <code>invalid_model_budget</code>
+            </td>
+            <td>
+              Add <code>context_budget_tokens</code> under{" "}
+              <code>[providers.NAME.models."MODEL"]</code> or pass{" "}
+              <code>--context-budget TOKENS</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>invalid_configuration_syntax</code>
+            </td>
+            <td>Check the TOML. Top-level settings go before provider sections.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        A provider can refuse a single question; that's recorded as a refusal, not an error. Run{" "}
+        <code>nouli --help</code> for every option. The{" "}
+        <a href="https://github.com/nouli-ai/nouli/tree/main/docs">reference docs</a> cover each
+        subsystem in detail.
+      </p>
+    </article>
+  </div>
+</HivePage>
+
+<style>
+  .guide {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 760px);
+    gap: 64px;
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 64px 0 120px;
+  }
+  .guide > * {
+    min-width: 0;
+  }
+  .toc {
+    position: sticky;
+    top: 96px;
+    align-self: start;
+    font: 400 12px/2 var(--mono);
+    font-stretch: 87%;
+    list-style: none;
+  }
+  .toc a {
+    text-decoration: none;
+  }
+  .toc a:hover {
+    color: var(--teal);
+  }
+  .ui-video {
+    margin: 24px 0;
+  }
+  .ui-video video {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: var(--term-bg);
+  }
+  .ui-video figcaption {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  @media (max-width: 960px) {
+    .guide {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .toc {
+      position: static;
+    }
+    .guide table {
+      display: block;
+      overflow-x: auto;
+    }
+  }
+</style>

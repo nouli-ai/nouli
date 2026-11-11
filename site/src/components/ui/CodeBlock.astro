@@ -1,0 +1,45 @@
+---
+import CopyButton from "./CopyButton.astro";
+
+interface Props {
+  label: string;
+  code: string;
+}
+
+const { label, code } = Astro.props;
+---
+
+<copy-text class="code-example">
+  <div class="code-label">
+    <span>{label}</span>
+    <CopyButton label={`Copy ${label}`} flat />
+  </div>
+  <!-- Focusable so keyboard users can scroll long lines. -->
+  <pre tabindex="0"><code data-copy-source>{code}</code></pre>
+</copy-text>
+
+<style>
+  .code-example {
+    display: block;
+    margin: 20px 0;
+    border: 1px solid var(--rule);
+  }
+  .code-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--rule);
+    font: 400 10px/1.6 var(--mono);
+    color: var(--ink);
+  }
+  pre {
+    border: 0;
+    margin: 0;
+  }
+  pre:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: -2px;
+  }
+</style>

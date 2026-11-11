@@ -1,0 +1,11 @@
+{
+  "astro": true,
+  "ignorePatterns": [
+    "dist/**",
+    ".astro/**",
+    "public/**",
+    "src/data/**",
+    "tools/**",
+    "tests/dist/published-urls.txt"
+  ]
+}

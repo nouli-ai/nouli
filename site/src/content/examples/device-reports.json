@@ -1,0 +1,115 @@
+{
+  "order": 3,
+  "industry": "Healthcare",
+  "source": {
+    "name": "FDA MAUDE medical device reports, via openFDA",
+    "short": "FDA",
+    "url": "https://open.fda.gov/apis/device/event/",
+    "license": "CC0 (openFDA)"
+  },
+  "title": "Device incident reports",
+  "job": "Sort what happened, what failed and who reviews it.",
+  "heading": "Sort every device report and send it to the right review",
+  "lede": "Two judgments on what happened and what failed, then the review team and the report deadline, computed.",
+  "context": "Device makers sort every incident report by what happened to the patient and what failed, then send it to the right review before the reporting deadline.",
+  "sample": {
+    "count": 300,
+    "unit": "real reports"
+  },
+  "stats": {
+    "decisions": 2.6,
+    "medianSeconds": 0.55,
+    "costPer1000": 0.11
+  },
+  "routes": {
+    "label": "Review team",
+    "counts": [
+      ["Engineering review", 128],
+      ["Safety review board", 98],
+      ["Clinical review", 74]
+    ]
+  },
+  "case": {
+    "label": "MDR report 18951701",
+    "url": "https://api.fda.gov/device/event.json?search=mdr_report_key%3A18951701"
+  },
+  "model": "TypeSafe Jev 1.14.0",
+  "notes": [
+    "Report quoted from FDA MAUDE through openFDA. One of 300 reports received in 2024 that the network ran on, using TypeSafe Jev 1.14.0. The harm question is asked only when someone was hurt. The review team and 30-day deadline are an example policy run as code, dated from when FDA received the report."
+  ],
+  "steps": [
+    {
+      "kind": "fact",
+      "id": "report",
+      "source": "Device report",
+      "text": "“IT WAS REPORTED THAT, DURING AN ARTHROSCOPY, THE SUTURE KNOT OF THE ULTRA FAST-FIX COULDN'T BE TIGHTENED. SURGERY WAS COMPLETED WITH A BACK-UP DEVICE INSTEAD. IT IS UNKNOWN IF THERE WAS ANY SURGICAL DELAY, AND NO FURTHER COMPLICATIONS WERE REPORTED.”"
+    },
+    {
+      "kind": "fact",
+      "id": "device",
+      "source": "Device",
+      "text": "Suture, nonabsorbable, synthetic, polyethylene"
+    },
+    {
+      "kind": "choice",
+      "id": "outcome",
+      "prompt": "What happened to the patient?",
+      "options": [
+        ["Died", 0.0],
+        ["Injured", 0.0],
+        ["Malfunction only", 1.0]
+      ],
+      "from": ["report"]
+    },
+    {
+      "kind": "choice",
+      "id": "problem",
+      "prompt": "What failed?",
+      "options": [
+        ["Mechanical problem", 0.89],
+        ["Other", 0.05],
+        ["No term fits", 0.03],
+        ["Too little detail", 0.03],
+        ["Event without device problem", 0.0],
+        ["Wireless problem", 0.0],
+        ["Failed to osseointegrate", 0.0],
+        ["Inaccurate readings", 0.0],
+        ["Degraded", 0.0],
+        ["Break", 0.0],
+        ["Detachment", 0.0],
+        ["Lost osseointegration", 0.0],
+        ["Power problem", 0.0],
+        ["Flow obstruction", 0.0],
+        ["Failed to bond", 0.0],
+        ["Unintended movement", 0.0],
+        ["Twisted or bent", 0.0],
+        ["Battery problem", 0.0],
+        ["Charging problem", 0.0],
+        ["Early end-of-life", 0.0],
+        ["Leak", 0.0]
+      ],
+      "from": ["report", "device"]
+    },
+    {
+      "kind": "computed",
+      "id": "harm",
+      "name": "Harm question",
+      "value": "Not asked: no one was hurt",
+      "from": ["outcome"]
+    },
+    {
+      "kind": "computed",
+      "id": "review",
+      "name": "Review team",
+      "value": "Engineering review",
+      "from": ["outcome"]
+    },
+    {
+      "kind": "computed",
+      "id": "deadline",
+      "name": "Report due",
+      "value": "20 April 2024, 30 days after receipt",
+      "from": ["report"]
+    }
+  ]
+}

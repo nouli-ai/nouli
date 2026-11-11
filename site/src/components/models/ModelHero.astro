@@ -1,0 +1,72 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { modelRepository, releaseDate } from "../../lib/models";
+import PageHead from "../hive/PageHead.astro";
+
+interface Props {
+  model: CollectionEntry<"models">;
+}
+
+const { id, data } = Astro.props.model;
+---
+
+<PageHead current="models">
+  <p class="crumb" slot="above">
+    <a href="/models/">Models</a> / {data.area} · v{data.version} · {releaseDate(data.released)}
+  </p>
+  <h1>{data.fullName}</h1>
+  <p class="task">{data.task}</p>
+  <div class="intro">
+    <slot />
+  </div>
+  <div class="actions">
+    <a class="button" href={modelRepository(id)}>
+      Get it on Hugging Face ↗
+    </a>
+    <a href="#quickstart">Run locally ↓</a>
+  </div>
+</PageHead>
+
+<style>
+  .crumb {
+    font: 400 13px var(--mono);
+    font-stretch: 87%;
+  }
+  .task {
+    font-size: 24px;
+    color: var(--amber-soft);
+  }
+  .intro {
+    max-width: 36em;
+    margin-top: 18px;
+    font-size: 19px;
+    color: var(--on-sky-soft);
+  }
+  .intro :global(code) {
+    font-size: 0.8em;
+  }
+  .intro :global(.release-scope) {
+    font-size: 15px;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 24px;
+    margin-top: 28px;
+    font-size: 15px;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 22px;
+    border-radius: 999px;
+    background: var(--amber);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .actions .button {
+    color: var(--on-amber);
+  }
+</style>

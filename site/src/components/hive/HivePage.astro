@@ -1,0 +1,30 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import type { Props as HeadProps } from "../site/BaseHead.astro";
+import HiveFooter from "./HiveFooter.astro";
+
+type Props = HeadProps;
+---
+
+<!-- Pages in the sky design draw their own header inside the sky. -->
+<BaseLayout {...Astro.props} skipTarget="page-content" bodyClass="hive">
+  <reveal-sections>
+    <slot />
+  </reveal-sections>
+  <HiveFooter slot="footer" />
+</BaseLayout>
+
+<style>
+  reveal-sections {
+    display: block;
+  }
+  /* Anchored sections land below the fixed navigation. */
+  :global(html:has(body.hive)) {
+    scroll-padding-top: 96px;
+  }
+  :global(body.hive) {
+    background: var(--hive-page);
+    color: var(--hive-ink);
+    font: 400 17px/1.55 var(--cond);
+  }
+</style>

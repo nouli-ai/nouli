@@ -1,0 +1,12 @@
+---
+import { serializeJsonLd } from "../../lib/seo/json-ld";
+
+interface Props {
+  data: unknown;
+}
+
+const json = serializeJsonLd(Astro.props.data);
+---
+
+<!-- The one raw-HTML use in the site: JSON-LD must not be entity-escaped, and `<` is escaped instead. -->
+<script type="application/ld+json" is:inline set:html={json} />

@@ -1,0 +1,165 @@
+{
+  "order": 2,
+  "industry": "Insurance",
+  "source": {
+    "name": "OSHA Severe Injury Reports",
+    "short": "OSHA",
+    "url": "https://www.osha.gov/severe-injury-reports",
+    "license": "Public domain (US government work)"
+  },
+  "title": "Injury claim intake",
+  "job": "Code each report the way OSHA does, then route the claim.",
+  "heading": "Code every injury report and route the claim",
+  "lede": "Five judgments code the report the way OSHA does and two rules check for amputation and hospital admission. The claim record and queue are computed.",
+  "context": "Claims teams code every injury report the way OSHA does before routing the claim. The network makes the five coding calls, and rules and lookups build the claim record and pick the queue.",
+  "sample": {
+    "count": 300,
+    "unit": "real reports"
+  },
+  "stats": {
+    "decisions": 5,
+    "medianSeconds": 1.08,
+    "costPer1000": 0.21
+  },
+  "routes": {
+    "label": "Claim queue",
+    "counts": [
+      ["Medical case management", 255],
+      ["Severe injury desk", 45]
+    ]
+  },
+  "case": {
+    "label": "OSHA report 2023054309",
+    "url": "https://www.osha.gov/severe-injury-reports"
+  },
+  "model": "TypeSafe Jev 1.14.0",
+  "notes": [
+    "Report quoted from OSHA Severe Injury Reports, coded with OIICS 2.01. One of 300 reports from 2023 that the network ran on, using TypeSafe Jev 1.14.0. The two keyword rules and the claim lookups run as code; the queue is an example policy."
+  ],
+  "steps": [
+    {
+      "kind": "fact",
+      "id": "report",
+      "source": "Employer report",
+      "text": "“An employee was helping prepare a product in the deli department of a supermarket. The employee walked near a sink while carrying a tray in her hands, slipped on a wet spot on the floor and fell. The employee suffered a fractured right femur.”"
+    },
+    {
+      "kind": "choice",
+      "id": "event",
+      "prompt": "What kind of event caused the injury?",
+      "options": [
+        ["Violence and other injuries by persons or animals", 0],
+        ["Transportation incidents", 0],
+        ["Fires and explosions", 0],
+        ["Falls, slips, trips", 1],
+        ["Exposure to harmful substances or environments", 0],
+        ["Contact with objects and equipment", 0],
+        ["Overexertion and bodily reaction", 0],
+        ["Nonclassifiable", 0]
+      ],
+      "from": ["report"]
+    },
+    {
+      "kind": "choice",
+      "id": "nature",
+      "prompt": "What was the injury?",
+      "options": [
+        ["Fractures", 0.99],
+        ["Amputations", 0],
+        ["Soreness, pain, hurt-nonspecified injury", 0],
+        ["Cuts, lacerations", 0],
+        ["Heat (thermal) burns, unspecified", 0],
+        ["Internal injuries to organs and blood vessels of the trunk", 0],
+        ["Crushing injuries", 0],
+        ["Intracranial injuries, unspecified", 0],
+        ["Fractures and other injuries, n.e.c.", 0],
+        ["Electrical burns, unspecified", 0],
+        ["Puncture wounds, except gunshot wounds", 0],
+        ["Fractures and dislocations", 0.01],
+        ["Concussions", 0],
+        ["Second degree heat (thermal) burns", 0],
+        ["Bruises, contusions", 0],
+        ["Other", 0]
+      ],
+      "from": ["report"]
+    },
+    {
+      "kind": "rule",
+      "id": "amputation",
+      "name": "Amputation",
+      "value": "No",
+      "from": ["report"]
+    },
+    {
+      "kind": "rule",
+      "id": "admission",
+      "name": "Hospital admission",
+      "value": "Yes",
+      "from": ["report"]
+    },
+    {
+      "kind": "choice",
+      "id": "detail",
+      "prompt": "Which of these best describes it?",
+      "options": [
+        ["Fall, slip, trip, unspecified", 0.13],
+        ["Slip or trip without fall", 0.01],
+        ["Falls on same level", 0.86],
+        ["Falls to lower level", 0],
+        ["Jumps to lower level", 0],
+        ["Fall or jump curtailed by personal fall arrest system", 0],
+        ["Fall, slip, trip, n.e.c.", 0]
+      ],
+      "from": ["event"]
+    },
+    {
+      "kind": "choice",
+      "id": "body",
+      "prompt": "Which part of the body was injured?",
+      "options": [
+        ["Head", 0],
+        ["Neck, Including Throat", 0],
+        ["Trunk", 0],
+        ["Upper Extremities", 0],
+        ["Lower Extremities", 1],
+        ["Body Systems", 0],
+        ["Multiple Body Parts", 0],
+        ["Other Body Parts", 0],
+        ["Nonclassifiable", 0]
+      ],
+      "from": ["nature"]
+    },
+    {
+      "kind": "computed",
+      "id": "queue",
+      "name": "Claim queue",
+      "value": "Medical case management",
+      "from": ["amputation", "admission"]
+    },
+    {
+      "kind": "choice",
+      "id": "cause",
+      "prompt": "What object, substance or person directly caused the injury?",
+      "options": [
+        ["Chemicals and Chemical Products", 0],
+        ["Containers, Furniture, and Fixtures", 0.04],
+        ["Machinery", 0],
+        ["Parts and Materials", 0.01],
+        ["Persons, Plants, Animals, and Minerals", 0.01],
+        ["Structures and Surfaces", 0.91],
+        ["Tools, Instruments, and Equipment", 0],
+        ["Vehicles", 0],
+        ["Other Sources", 0.01],
+        ["Nonclassifiable", 0.02]
+      ],
+      "from": ["detail", "nature"]
+    },
+    {
+      "kind": "computed",
+      "id": "record",
+      "name": "Claim record",
+      "value": "4 · Falls, slips, trips; 42 · Falls on same level; 6 · Structures and Surfaces; 5 · Lower Extremities; 111 · Fractures",
+      "from": ["detail", "cause", "body", "nature"]
+    }
+  ]
+}

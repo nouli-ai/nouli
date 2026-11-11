@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+The rules below cover the Rust workspace and the whole repository. Website work under `site/` also follows [site/AGENTS.md](site/AGENTS.md), which replaces the Rust-specific build, test, and review rules there.
+
 ## Project Structure & Module Organization
 
 - Put any new Rust crates at the workspace root when they need a separate package.
@@ -42,7 +44,7 @@ Document additional prerequisites and commands alongside the code that introduce
 
 ## Review
 
-After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claude Code, `rust_reviewer` in Codex) review the change, and address its findings before committing.
+After changing Rust code, have the Rust reviewer agent (`rust-reviewer` in Claude Code, `rust_reviewer` in Codex) review the change, and address its findings before committing. After changing website files, use the frontend reviewer (`frontend-reviewer` in Claude Code, `frontend_reviewer` in Codex) the same way.
 
 ## Commit & Pull Request Guidelines
 

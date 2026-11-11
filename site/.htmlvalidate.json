@@ -1,0 +1,21 @@
+{
+  "extends": ["html-validate:recommended"],
+  "rules": {
+    "heading-level": "error",
+    "long-title": "off",
+    "doctype-style": "off",
+    "no-inline-style": [
+      "error",
+      {
+        "allowedProperties": [
+          "display",
+          "color",
+          "background-color",
+          "font-weight",
+          "min-width",
+          "flex-basis"
+        ]
+      }
+    ]
+  }
+}

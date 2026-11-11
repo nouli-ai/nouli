@@ -1,0 +1,225 @@
+---
+import CodeBlock from "../../components/ui/CodeBlock.astro";
+import ModelSection from "../../components/models/ModelSection.astro";
+import ModelLayout from "../../layouts/ModelLayout.astro";
+import { sectionLookup } from "../../lib/models";
+
+const sections = [
+  {
+    id: "how-they-work-together",
+    title: "How they work together",
+  },
+  {
+    id: "model-at-a-glance",
+    title: "Model at a glance",
+  },
+  {
+    id: "example-input-and-output",
+    title: "Example input and output",
+  },
+  {
+    id: "quickstart",
+    title: "Quickstart with Nouli CLI",
+  },
+  {
+    id: "provenance",
+    title: "Base models",
+  },
+  {
+    id: "limitations",
+    title: "Limitations",
+  },
+  {
+    id: "license-and-citation",
+    title: "License and citation",
+  },
+];
+const section = sectionLookup(sections);
+---
+
+<ModelLayout slug="nouli-policy-pair" sections={sections}>
+  <Fragment slot="intro">
+    <p>
+      Evaluate a written policy against the facts of a case. A policy extractor and evidence model
+      work with Nouli to return TRUE, FALSE or UNKNOWN.
+    </p>
+    <p class="release-scope">
+      Research preview, evaluated on bounded synthetic policies and narratives. The full pair
+      requires the documented CUDA setup.
+    </p>
+  </Fragment>
+  <ModelSection {...section("how-they-work-together")}>
+    <p>
+      <img
+        src="/models/nouli-policy-pair/how-it-works.svg"
+        alt="Policy flows through the extractor; information flows through the evidence model; Nouli applies the rules and returns TRUE, FALSE or UNKNOWN."
+      />
+    </p>
+    <p>
+      The extractor turns the policy into executable rules. The evidence model checks which required
+      facts the supplied information supports. Nouli applies the rules, including calculations and
+      comparisons, to reach the decision.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("model-at-a-glance")}>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Input</td>
+          <td>Policy text, case narrative and a query</td>
+        </tr>
+        <tr>
+          <td>Output</td>
+          <td>TRUE, FALSE or UNKNOWN</td>
+        </tr>
+        <tr>
+          <td>Components</td>
+          <td>Policy extractor and evidence model</td>
+        </tr>
+        <tr>
+          <td>Tested full-pair runtime</td>
+          <td>DGX Spark / Linux ARM64 / CUDA</td>
+        </tr>
+        <tr>
+          <td>Inference</td>
+          <td>Local; no hosted API key required</td>
+        </tr>
+        <tr>
+          <td>License</td>
+          <td>Apache-2.0; upstream notices apply</td>
+        </tr>
+      </tbody>
+    </table>
+  </ModelSection>
+  <ModelSection {...section("example-input-and-output")}>
+    <p>
+      <strong>Input</strong>
+    </p>
+    <p>
+      <strong>Policy:</strong> The taxpayer qualifies if the taxpayer is at least 65 years old on
+      December 31 of the tax year.
+    </p>
+    <p>
+      <strong>Story:</strong> Mira was born on April 14, 1950.
+    </p>
+    <p>
+      <strong>Query:</strong> taxpayer <code>Mira</code>, other person <code>Tomas</code>, tax year{" "}
+      <code>2025</code>.
+    </p>
+    <p>
+      <strong>Recorded output</strong> (using the bundled policy program; trace fields omitted):
+    </p>
+    <CodeBlock
+      label="Recorded output"
+      code={`{
+  "status": "completed",
+  "decision": "true"
+}
+`}
+    />
+    <p>
+      Mira is 75 at the end of 2025, so she meets the policy's age requirement.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-policy-pair/resolve/7de8e7f56085068f9cc380be829455b197300ebe/inference/examples/age-eligibility-story.txt">
+        Example story
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-policy-pair/resolve/7de8e7f56085068f9cc380be829455b197300ebe/inference/examples/age-eligibility-query.json">
+        Query
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-policy-pair/resolve/7de8e7f56085068f9cc380be829455b197300ebe/inference/examples/age-eligibility-output.json">
+        Output excerpt
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("quickstart")}>
+    <p>
+      Requires Python 3.10 or newer, the{" "}
+      <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and the
+      documented CUDA environment. The supplied bootstrap pins Nouli CLI 0.5.1. Public base weights
+      are downloaded separately during setup.
+    </p>
+    <p>Download the complete repository:</p>
+    <CodeBlock
+      label="Terminal"
+      code={`hf download nouli-ai/nouli-policy-pair --revision 7de8e7f56085068f9cc380be829455b197300ebe --local-dir ./nouli-policy-pair
+cd nouli-policy-pair
+`}
+    />
+    <p>
+      Complete the{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-policy-pair/resolve/7de8e7f56085068f9cc380be829455b197300ebe/GETTING_STARTED.html">
+        runtime setup
+      </a>
+      : build the native tools, open the pinned CUDA container, install dependencies, fetch the
+      bases and generate <code>inference/local/config.json</code>.
+    </p>
+    <p>Then run the bundled example from the prepared runtime:</p>
+    <CodeBlock
+      label="Terminal"
+      code={`.live-venv/bin/python inference/live_pair.py \\
+  --config inference/local/config.json --device cuda \\
+  --policy inference/examples/policy.txt \\
+  --story inference/examples/age-eligibility-story.txt \\
+  --taxpayer 'Mira' --other 'Tomas' --tax-year 2025 \\
+  --output outputs/live.json
+`}
+    />
+    <p>
+      Read <code>outputs/live.json</code> for the decision. To evaluate your own case, replace the
+      policy, story and query values. The setup guide also covers B-only execution with a saved
+      program and offline reuse.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("provenance")}>
+    <ul>
+      <li>
+        <a href="https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507">Qwen/Qwen3-4B-Instruct-2507</a>
+      </li>
+      <li>
+        <a href="https://huggingface.co/convaiinnovations/laya">convaiinnovations/laya</a>
+      </li>
+    </ul>
+    <p>
+      This repository includes the selected extractor adapter and evidence-model delta with their
+      custom runtime. Keep the complete download together and follow the supplied loader
+      instructions.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("limitations")}>
+    <ul>
+      <li>
+        Evaluated on bounded synthetic policies and narratives. Real-world tax eligibility is
+        unvalidated.
+      </li>
+      <li>
+        Policy interpretation and evidence checks can make errors. Missing or unsupported facts can
+        produce UNKNOWN.
+      </li>
+      <li>
+        Full-pair use requires the documented CUDA setup. A clean installation on unrelated hardware
+        remains unverified.
+      </li>
+    </ul>
+  </ModelSection>
+  <ModelSection {...section("license-and-citation")}>
+    <p>
+      Apache-2.0, with upstream notices retained in{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-policy-pair/resolve/7de8e7f56085068f9cc380be829455b197300ebe/NOTICE">
+        NOTICE
+      </a>{" "}
+      and <code>inference/licenses/</code>.
+    </p>
+    <p>
+      <a href="https://nouli.ai">Nouli AI</a>. Nouli Policy Pair. Cite the published model version
+      and commit.
+    </p>
+  </ModelSection>
+</ModelLayout>

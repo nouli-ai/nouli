@@ -1,0 +1,190 @@
+---
+import { getCollection } from "astro:content";
+import ModelCard from "../../components/models/ModelCard.astro";
+import HivePage from "../../components/hive/HivePage.astro";
+import PageHead from "../../components/hive/PageHead.astro";
+import { countWord } from "../../lib/models";
+import { modelCatalog } from "../../lib/seo/structured-data";
+import { huggingFace } from "../../lib/site";
+
+const models = (await getCollection("models")).toSorted((a, b) => a.data.order - b.data.order);
+// The blocking bootstrap must run before paint. tests/dist/security.test.ts checks its hash.
+Astro.csp?.insertScriptHash("sha256-vGiv35KR1AkpLQhZxw/A//ajh33A3BsBC3ykiBdE2WA=");
+const count = countWord(models.length);
+const filters = [
+  { category: "all", label: "All models" },
+  { category: "text", label: "Text" },
+  { category: "control", label: "Control" },
+];
+---
+
+<HivePage
+  title="Open-source decision models · Nouli"
+  description={`${count} open-weight Nouli models for underwriting evidence, security, policy, NDA review, insurance intake, banking support and simulator control. Run locally with Nouli.`}
+  openGraph={{ title: "Open-source decision models", card: "summary" }}
+  structuredData={modelCatalog(models)}
+>
+  <PageHead current="models" kicker="Models · Open weights · Local inference">
+    <h1>Specific tasks. Open weights.</h1>
+    <p>
+      {count} task-specific models on <a href={huggingFace}>Hugging Face ↗</a>. Start with
+      underwriting evidence, security, policy, contracts or claims intake, then follow the model’s
+      local setup.
+    </p>
+    <p>
+      Open model files, visual overviews and recorded examples. Underwrite Evidence, Policy Pair and
+      Insurance Loss Event are research previews; each model card describes its validation scope.
+    </p>
+  </PageHead>
+  <div class="catalog">
+    <model-filter>
+      <div class="model-toolbar">
+        <div role="group" aria-label="Filter models">
+          {filters.map(({ category, label }) => (
+            <button
+              type="button"
+              data-model-filter={category}
+              aria-pressed={category === "all" ? "true" : "false"}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span data-model-count role="status" aria-live="polite">
+          {models.length} models
+        </span>
+      </div>
+      <div class="model-grid">
+        {models.map((model) => (
+          <ModelCard model={model} />
+        ))}
+      </div>
+    </model-filter>
+    <!--
+    Applies a shared ?category= link while the page parses, before the cards paint, so the grid
+    does not jump when model-filter.ts loads. model-filter.ts owns the filter from then on.
+  -->
+    <script is:inline>
+      (() => {
+        document.currentScript.previousElementSibling.dataset.category =
+          new URLSearchParams(location.search).get("category") || "all";
+      })();
+    </script>
+    <section class="catalog-bottom">
+      <div>
+        <p class="eyebrow">The Nouli harness</p>
+        <h2>
+          Run model workflows
+          <br />
+          with Nouli.
+        </h2>
+      </div>
+      <div class="prose">
+        <p>
+          Nouli's terminal app, CLI and Rust library record decisions and the facts and earlier
+          answers they use. Each model release documents the inputs, dependencies and workflow for
+          its own task.
+        </p>
+        <p>
+          Hugging Face hosts the files. Inference runs on your machine; a hosted inference key is
+          not required. The CLI and library are MIT-licensed. See each model card for its license
+          and upstream notices.
+        </p>
+        <a href="/guide/">Read the guide →</a>
+      </div>
+    </section>
+  </div>
+</HivePage>
+
+<script>
+  import "../../client/model-filter";
+</script>
+
+<style>
+  .catalog {
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 48px 0 100px;
+  }
+  model-filter {
+    display: contents;
+  }
+  model-filter[data-category="text"] :global([data-model-category="control"]),
+  model-filter[data-category="control"] :global([data-model-category="text"]) {
+    display: none;
+  }
+  .model-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0 18px;
+    font: 400 11px var(--mono);
+    color: var(--soft);
+  }
+  .model-toolbar > div {
+    display: flex;
+    gap: 6px;
+  }
+  .model-toolbar button {
+    cursor: pointer;
+    font: inherit;
+    padding: 8px 16px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    color: var(--ink);
+    background: var(--hive-card);
+  }
+  .model-toolbar button[aria-pressed="true"] {
+    color: var(--on-amber);
+    background: var(--amber);
+    border-color: var(--amber);
+  }
+  .model-toolbar button:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 3px;
+  }
+  .model-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .catalog-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 70px;
+    padding-top: 80px;
+  }
+  .catalog-bottom h2 {
+    font: 400 clamp(32px, 3.4vw, 48px) / 1.05 var(--cond);
+    letter-spacing: -0.03em;
+    margin-top: 16px;
+  }
+  .catalog-bottom .prose {
+    font-size: 17px;
+  }
+  @media (max-width: 1000px) {
+    .model-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .catalog-bottom {
+      gap: 36px;
+    }
+  }
+  @media (max-width: 760px) {
+    .catalog-bottom {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+  }
+  @media (max-width: 560px) {
+    .model-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .model-toolbar button {
+      padding: 8px 10px;
+    }
+    .model-toolbar {
+      font-size: 10px;
+    }
+  }
+</style>

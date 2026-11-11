@@ -1,0 +1,82 @@
+---
+import type { Section } from "../../lib/site";
+import HomeNav from "./HomeNav.astro";
+import SkyPanel from "./SkyPanel.astro";
+
+interface Props {
+  /** The nav section to mark as current. */
+  current?: Section | undefined;
+  /** The small label above the heading. */
+  kicker?: string | undefined;
+}
+const { current, kicker } = Astro.props;
+---
+
+<SkyPanel class="page-head" comb top>
+  <div class="head-wrap">
+    <HomeNav current={current} />
+    <div class="intro" id="page-content">
+      <slot name="above" />
+      {kicker && (
+        <p class="kicker">
+          <span class="hex" aria-hidden="true" />
+          {kicker}
+        </p>
+      )}
+      <slot />
+    </div>
+  </div>
+</SkyPanel>
+
+<style>
+  :global(.sky.page-head) {
+    margin: 12px;
+    border-radius: 28px;
+  }
+  .head-wrap {
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+  }
+  .intro {
+    max-width: 860px;
+    padding: 64px 0 80px;
+  }
+  .intro .kicker {
+    font: 500 12px var(--mono);
+    font-stretch: 87%;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-sky-soft);
+  }
+  .hex {
+    display: inline-block;
+    width: 10px;
+    height: 11px;
+    margin-right: 8px;
+    vertical-align: -1px;
+    background: var(--amber);
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  }
+  .intro :global(h1) {
+    margin: 16px 0 18px;
+    font-weight: 400;
+    font-size: clamp(44px, 6vw, 80px);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+  .intro > :global(p:not([class])) {
+    max-width: 36em;
+    font-size: 19px;
+    color: var(--on-sky-soft);
+  }
+  .intro > :global(p:not([class]) + p:not([class])) {
+    margin-top: 12px;
+  }
+  .intro :global(a) {
+    color: var(--on-sky);
+  }
+  .intro :global(a:focus-visible) {
+    outline: 2px solid var(--on-sky);
+    outline-offset: 3px;
+  }
+</style>

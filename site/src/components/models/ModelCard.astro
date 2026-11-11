@@ -1,0 +1,131 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { catalogNumber, modelPath } from "../../lib/models";
+
+interface Props {
+  model: CollectionEntry<"models">;
+}
+
+const { id, data } = Astro.props.model;
+const href = modelPath(id);
+---
+
+<article class="model-card" data-model-category={data.category}>
+  <div class="card-meta">
+    <span>
+      {catalogNumber(data.order)} / {data.cardArea}
+    </span>
+    <span>v{data.version}</span>
+  </div>
+  <h2>
+    <a href={href}>
+      {data.name}
+      <span aria-hidden="true">↗</span>
+    </a>
+  </h2>
+  <p>{data.summary}</p>
+  <div class="model-flow">
+    <span>{data.flow.input}</span>
+    <span aria-hidden="true">→</span>
+    <span>{data.flow.output}</span>
+  </div>
+  <div class="card-bottom">
+    <span>{data.cardNote}</span>
+    <a href={href}>Model details →</a>
+  </div>
+</article>
+
+<style>
+  .model-card {
+    grid-column: span 3;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 24px;
+    border: 1px solid var(--hive-line);
+    border-radius: 20px;
+    background: var(--hive-card);
+  }
+  .model-card[hidden] {
+    display: none;
+  }
+  .card-meta,
+  .card-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    font: 400 10px/1.5 var(--mono);
+    color: var(--soft);
+  }
+  .card-meta {
+    text-transform: uppercase;
+  }
+  h2 {
+    margin: 28px 0 14px;
+    font: 400 clamp(32px, 3.4vw, 44px) / 1.05 var(--cond);
+    letter-spacing: -0.03em;
+  }
+  h2 a {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 16px;
+    text-decoration: none;
+  }
+  h2 span {
+    font-size: 0.45em;
+    color: var(--teal);
+    transition: transform 0.2s;
+  }
+  .model-card:hover {
+    border-color: var(--amber);
+  }
+  .model-card:hover h2 a {
+    color: var(--teal);
+  }
+  .model-card:hover h2 span {
+    transform: translate(3px, -3px);
+  }
+  .model-card > p {
+    color: var(--soft);
+    font-size: 17px;
+    line-height: 1.5;
+    min-height: 5em;
+    max-width: 40ch;
+  }
+  .model-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 22px 0 28px;
+    padding: 13px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    font: 400 10px/1.7 var(--mono);
+  }
+  .model-flow span:nth-child(2) {
+    color: var(--teal);
+  }
+  .card-bottom {
+    margin-top: auto;
+  }
+  .card-bottom a {
+    color: var(--teal);
+    text-underline-offset: 4px;
+  }
+  @media (max-width: 1000px) {
+    .model-card {
+      grid-column: auto;
+    }
+  }
+  @media (max-width: 560px) {
+    .model-card {
+      padding: 22px;
+    }
+    .model-card > p {
+      min-height: 0;
+    }
+  }
+</style>

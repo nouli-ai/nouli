@@ -1,0 +1,122 @@
+{
+  "order": 4,
+  "industry": "Aviation",
+  "source": {
+    "name": "NASA Aviation Safety Reporting System",
+    "short": "NASA",
+    "url": "https://asrs.arc.nasa.gov/",
+    "license": "NASA public data, via an Apache-2.0 copy on Hugging Face"
+  },
+  "title": "Safety report analysis",
+  "job": "Find what went wrong, who noticed and what contributed.",
+  "heading": "Analyze every safety report and route the fix",
+  "lede": "Twenty-one checks on the pilot's report and one judgment on the primary problem, then the team that owns the fix, computed.",
+  "context": "Safety teams read each pilot report to find what went wrong and who should fix it. The network checks the report for 21 known problems and factors, picks the primary one, and routes it to the team that owns the fix.",
+  "sample": {
+    "count": 300,
+    "unit": "real reports"
+  },
+  "stats": {
+    "decisions": 22,
+    "medianSeconds": 1.5,
+    "costPer1000": 0.92
+  },
+  "routes": {
+    "label": "Owning team",
+    "counts": [
+      ["Training", 111],
+      ["Maintenance", 58],
+      ["Flight standards", 48],
+      ["Ground operations", 28],
+      ["Flight operations / Dispatch", 22],
+      ["Airport operations", 20],
+      ["Safety management", 10],
+      ["Safety analysis", 3]
+    ]
+  },
+  "case": {
+    "label": "ASRS report 1847776",
+    "url": "https://asrs.arc.nasa.gov/search/database.html"
+  },
+  "model": "TypeSafe Jev 1.14.0",
+  "notes": [
+    "Report quoted, shortened, from ASRS through the elihoole/asrs-aviation-reports copy on Hugging Face (Apache-2.0). One of 300 reports from January 2020 to March 2022 that the network ran on, using TypeSafe Jev 1.14.0. A check counts as yes at 0.5 or more. The team routing is an example table run as code."
+  ],
+  "steps": [
+    {
+      "kind": "fact",
+      "id": "report",
+      "source": "Pilot report",
+      "text": "“In IMC at 10;000 feet; pilot noted… onset of low-level hum/noise and slight vibration… After 30 to 45 seconds; left engine quit abruptly… Pilot immediately asked for priority… landing without injury; damage or incident at vectored airport.”"
+    },
+    {
+      "kind": "checks",
+      "id": "wrong",
+      "prompt": "What went wrong?",
+      "rows": [
+        ["Equipment problem", 0.78],
+        ["Track or heading", 0.45],
+        ["Inflight event", 0.22],
+        ["Procedural deviation", 0.18],
+        ["Altitude deviation", 0.16],
+        ["Onboard event", 0.12],
+        ["ATC issue", 0.07],
+        ["Conflict", 0.06],
+        ["Ground event", 0.05]
+      ],
+      "from": ["report"]
+    },
+    {
+      "kind": "checks",
+      "id": "noticed",
+      "prompt": "Who noticed?",
+      "rows": [
+        ["Flight crew", 0.98],
+        ["Controller", 0.29],
+        ["Flight attendant", 0.06]
+      ],
+      "from": ["report"]
+    },
+    {
+      "kind": "checks",
+      "id": "contributed",
+      "prompt": "What contributed?",
+      "rows": [
+        ["Aircraft", 0.46],
+        ["Procedure", 0.22],
+        ["Human factors", 0.17],
+        ["Environment", 0.11],
+        ["Weather", 0.11],
+        ["Company policy", 0.09],
+        ["Charts", 0.07],
+        ["Airspace", 0.06],
+        ["Airport", 0.04]
+      ],
+      "from": ["report"]
+    },
+    {
+      "kind": "choice",
+      "id": "primary",
+      "prompt": "What was the primary problem?",
+      "options": [
+        ["Aircraft", 1.0],
+        ["Human factors", 0.0],
+        ["Procedure", 0.0],
+        ["Environment", 0.0],
+        ["Ambiguous", 0.0],
+        ["Weather", 0.0],
+        ["Company policy", 0.0],
+        ["Airport", 0.0],
+        ["Other", 0.0]
+      ],
+      "from": ["report", "wrong", "noticed", "contributed"]
+    },
+    {
+      "kind": "computed",
+      "id": "team",
+      "name": "Team",
+      "value": "Maintenance",
+      "from": ["primary", "wrong"]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+/* Long-form text from Markdown and page copy: the guide, walkthroughs, and model pages. */
+@layer prose {
+  .prose {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--soft);
+  }
+  .prose > * + * {
+    margin-top: 16px;
+  }
+  .prose h2 {
+    font: 400 34px/1.1 var(--cond);
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    margin-top: 72px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    gap: 14px;
+    align-items: baseline;
+  }
+  .prose h2 .num {
+    font: 400 13px var(--mono);
+    font-stretch: 87%;
+    color: var(--teal);
+  }
+  .prose h3 {
+    font: 500 22px/1.2 var(--cond);
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    margin-top: 32px;
+  }
+  .prose strong {
+    color: var(--ink);
+  }
+  .prose a {
+    color: var(--teal);
+    text-underline-offset: 3px;
+  }
+  .prose code {
+    font-size: 0.82em;
+    background: var(--code-tint);
+    padding: 1px 5px;
+    border-radius: 5px;
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 22px;
+  }
+  .prose li + li {
+    margin-top: 6px;
+  }
+  .prose pre {
+    font-size: 12.5px;
+    line-height: 1.55;
+    padding: 16px 18px;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background: var(--hive-card);
+    color: var(--ink);
+  }
+  .prose pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .prose pre.out {
+    background: var(--hive-ink);
+    color: var(--term-fg);
+    border-color: var(--hive-ink);
+  }
+  .prose pre.out code {
+    font-family: var(--term);
+    font-stretch: 100%;
+  }
+  .prose .caption {
+    font: 400 11px var(--mono);
+    font-stretch: 87%;
+    color: var(--soft);
+    margin-top: 20px;
+  }
+  .prose .caption + pre {
+    margin-top: 6px;
+  }
+  .prose .finding {
+    border-left: 3px solid var(--teal);
+    padding-left: 14px;
+    color: var(--ink);
+  }
+  .prose .note {
+    font: 400 13px var(--mono);
+    font-stretch: 87%;
+  }
+  .prose table {
+    border-collapse: collapse;
+    font: 400 13px/1.45 var(--mono);
+    font-stretch: 87%;
+    width: 100%;
+  }
+  .prose th,
+  .prose td {
+    text-align: left;
+    padding: 8px 10px 8px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  .prose th {
+    color: var(--ink);
+    font-weight: 500;
+    border-bottom: 1px solid var(--ink);
+  }
+}

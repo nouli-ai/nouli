@@ -1,0 +1,339 @@
+---
+import { getCollection } from "astro:content";
+import DecisionNet from "../../components/hive/DecisionNet.astro";
+import HivePage from "../../components/hive/HivePage.astro";
+import PageHead from "../../components/hive/PageHead.astro";
+import SkyPanel from "../../components/hive/SkyPanel.astro";
+import { examplePath, inOrder, networkOf } from "../../lib/examples";
+import type { ExampleEntry } from "../../lib/examples";
+
+export async function getStaticPaths(): Promise<
+  { params: { slug: string }; props: { entry: ExampleEntry; others: ExampleEntry[] } }[]
+> {
+  const all = inOrder(await getCollection("examples"));
+  return all.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry, others: all.filter((other) => other.id !== entry.id) },
+  }));
+}
+
+interface Props {
+  entry: ExampleEntry;
+  others: ExampleEntry[];
+}
+const { entry, others } = Astro.props;
+const { data } = entry;
+const modelSteps = data.steps.flatMap((step) => {
+  if (step.kind === "checks") return [`${step.prompt} (${step.rows.length} yes/no checks)`];
+  if (step.kind === "choice" || step.kind === "yes/no") return [step.prompt];
+  return [];
+});
+const codeSteps = data.steps.flatMap((step) =>
+  step.kind === "rule" || step.kind === "computed" ? [step.name] : [],
+);
+const most = Math.max(...data.routes.counts.map(([, n]) => n));
+const number = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const stats = [
+  [String(data.sample.count), data.sample.unit, "run through the network"],
+  [number(data.stats.decisions), "model decisions", "per case, on average"],
+  [`${data.stats.medianSeconds.toFixed(2)} s`, "per case", "median, end to end"],
+  [`$${data.stats.costPer1000.toFixed(2)}*`, "per 1,000 cases", `on ${data.model}`],
+] as const;
+---
+
+<HivePage title={`${data.title} · Nouli examples`} description={`${data.heading}. ${data.lede}`}>
+  <PageHead current="examples">
+    <p class="crumb" slot="above">
+      <a href="/examples/">Examples</a> / {data.industry}
+    </p>
+    <p class="chip">Real data · {data.source.name}</p>
+    <h1>{data.heading}</h1>
+    <p>{data.lede}</p>
+  </PageHead>
+
+  <section class="wrap work">
+    <div>
+      <h2>The work</h2>
+      <p>{data.context}</p>
+    </div>
+    <ul class="stats">
+      {stats.map(([value, unit, note]) => (
+        <li>
+          <b>{value}</b>
+          <span>{unit}</span>
+          <small>{note}</small>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section class="wrap case">
+    <h2>One case, step by step</h2>
+    <SkyPanel class="panel">
+      <div class="bar">
+        <a href={data.case.url}>{data.case.label}</a>
+        <span>{entry.id}</span>
+      </div>
+      <DecisionNet
+        network={networkOf(entry)}
+        label={`${data.title} network on ${data.case.label}`}
+        height={480}
+        pad={0.12}
+        fit
+      />
+    </SkyPanel>
+  </section>
+
+  <section class="wrap facts">
+    <div class="card">
+      <h2>
+        Where the {data.sample.count} {data.sample.unit} went
+      </h2>
+      <p class="label">{data.routes.label}</p>
+      <ul class="routes">
+        {data.routes.counts.map(([label, count]) => (
+          <li style={`--share:${((count / most) * 100).toFixed(1)}%`}>
+            <span>{label}</span>
+            <b>{count}</b>
+          </li>
+        ))}
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Who decides what</h2>
+      <p class="label">A model decides</p>
+      <ul class="steps">
+        {modelSteps.map((text) => (
+          <li>{text}</li>
+        ))}
+      </ul>
+      <p class="label">Code runs</p>
+      <ul class="steps code">
+        {codeSteps.map((text) => (
+          <li>{text}</li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <p class="fine">
+      {data.notes.join(" ")} Data: <a href={data.source.url}>{data.source.name}</a>,{" "}
+      {data.source.license}. Times are measured wall-clock seconds per case, including the provider
+      call. * Cost at TypeSafe Jev's list price of $42 per million decisions, November 2026.
+    </p>
+  </section>
+
+  <nav class="wrap more" aria-label="More examples">
+    <h2>More examples</h2>
+    <ul>
+      {others.map(({ id, data: other }) => (
+        <li>
+          <a href={examplePath(id)}>
+            <span>{other.industry}</span>
+            {other.title}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+</HivePage>
+
+<style>
+  .wrap {
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+  }
+  .crumb {
+    font: 400 13px var(--mono);
+    font-stretch: 87%;
+    color: var(--on-sky-soft);
+  }
+  .chip {
+    display: inline-block;
+    margin-top: 22px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--sky-tint);
+    color: var(--on-sky);
+    font: 500 11px var(--mono);
+    font-stretch: 87%;
+    letter-spacing: 0.02em;
+  }
+  section {
+    padding-top: 72px;
+  }
+  .work {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .work p {
+    margin-top: 14px;
+    max-width: 30em;
+    font-size: 18px;
+    color: var(--hive-soft);
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    list-style: none;
+  }
+  .stats li,
+  .card {
+    padding: 20px 22px;
+    border: 1px solid var(--hive-line);
+    border-radius: 18px;
+    background: var(--hive-card);
+  }
+  .stats li {
+    display: grid;
+    gap: 2px;
+  }
+  .stats b {
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+  }
+  .stats span {
+    font-weight: 500;
+  }
+  .stats small,
+  .label {
+    font: 400 11px var(--mono);
+    font-stretch: 87%;
+    color: var(--hive-soft);
+  }
+  .case h2 {
+    margin-bottom: 24px;
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .card h2 {
+    font-size: 24px;
+  }
+  .label {
+    margin-top: 18px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--amber-ink);
+  }
+  .routes,
+  .steps {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    list-style: none;
+  }
+  .routes li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--amber-track) var(--share), transparent var(--share));
+    font-size: 15px;
+  }
+  .routes b {
+    font: 500 13px var(--mono);
+    font-stretch: 87%;
+  }
+  .steps {
+    gap: 4px;
+    font-size: 15px;
+  }
+  .steps li::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 9px;
+    margin-right: 8px;
+    background: var(--amber);
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  }
+  .steps.code li::before {
+    background: none;
+    outline: 1px dashed var(--hive-soft);
+    clip-path: none;
+    width: 7px;
+    height: 7px;
+  }
+  @media (max-width: 860px) {
+    .work,
+    .facts {
+      grid-template-columns: 1fr;
+    }
+  }
+  h2 {
+    font-weight: 400;
+    font-size: clamp(26px, 3vw, 36px);
+    letter-spacing: -0.025em;
+  }
+  .bar a {
+    color: var(--on-sky);
+  }
+  :global(.sky.panel) {
+    margin-top: 0;
+    border-radius: 24px;
+    border: 1px solid var(--sky-line);
+    box-shadow: 0 30px 70px var(--glass-shadow);
+  }
+  .bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--sky-line);
+    font: 11px var(--mono);
+    font-stretch: 87%;
+    color: var(--on-sky-soft);
+  }
+  .fine {
+    max-width: 62em;
+    margin-top: 0;
+    margin-top: 24px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--hive-soft);
+  }
+  .fine a,
+  .more a {
+    color: inherit;
+  }
+  .more {
+    padding: 72px 0 40px;
+  }
+  .more ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+    list-style: none;
+  }
+  .more a {
+    display: grid;
+    gap: 2px;
+    padding: 16px 18px;
+    border: 1px solid var(--hive-line);
+    border-radius: 14px;
+    background: var(--hive-card);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .more a span {
+    font: 400 11px var(--mono);
+    font-stretch: 87%;
+    color: var(--amber-ink);
+  }
+  a:focus-visible {
+    outline: 2px solid var(--amber-ink);
+    outline-offset: 3px;
+  }
+</style>

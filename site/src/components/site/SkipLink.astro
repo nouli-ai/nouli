@@ -1,0 +1,28 @@
+---
+interface Props {
+  target: string;
+}
+
+const { target } = Astro.props;
+---
+
+<!-- Off-screen until focused from the keyboard. -->
+<a class="skip" href={`#${target}`}>
+  Skip to content
+</a>
+
+<style>
+  .skip {
+    position: absolute;
+    left: 12px;
+    top: -100px;
+    z-index: 100;
+    padding: 8px 12px;
+    background: var(--ink);
+    color: var(--paper);
+    font: 400 12px var(--mono);
+  }
+  .skip:focus-visible {
+    top: 12px;
+  }
+</style>

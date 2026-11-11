@@ -1,0 +1,28 @@
+{
+  "order": 9,
+  "name": "Guard",
+  "task": "Hate-speech classification",
+  "category": "text",
+  "area": "Text",
+  "cardArea": "Text classification",
+  "version": "1.0.0",
+  "released": "2026-10-31",
+  "description": "Three-way hate-speech probabilities from a calibrated encoder ensemble.",
+  "openGraph": {
+    "title": "title",
+    "image": "/models/nouli-guard/comparison.png",
+    "card": "summary_large_image"
+  },
+  "flow": {
+    "input": "English text",
+    "output": "No / unclear / yes"
+  },
+  "cardNote": "1.424B parameters",
+  "license": "Apache-2.0",
+  "release": "versioned",
+  "structuredData": {
+    "description": "Nouli Guard is an English hate-speech classifier that returns probabilities for no, unclear, and yes. It combines fine-tuned Ettin-1B and ModernBERT-large encoders with a frozen ensemble and calibration.",
+    "runtimePlatform": "Python 3.12 / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

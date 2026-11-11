@@ -1,2 +1,5 @@
 node_modules/
-dist/
+/dist/
+/.astro/
+/test-results/
+/playwright-report/

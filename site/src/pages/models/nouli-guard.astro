@@ -1,0 +1,195 @@
+---
+import CodeBlock from "../../components/ui/CodeBlock.astro";
+import ModelSection from "../../components/models/ModelSection.astro";
+import ModelLayout from "../../layouts/ModelLayout.astro";
+import { sectionLookup } from "../../lib/models";
+
+const sections = [
+  {
+    id: "comparison",
+    title: "Comparison with Jev",
+  },
+  {
+    id: "model-at-a-glance",
+    title: "Model at a glance",
+  },
+  {
+    id: "quickstart",
+    title: "Quickstart with Nouli CLI",
+  },
+  {
+    id: "provenance",
+    title: "Base models and training data",
+  },
+  {
+    id: "limitations",
+    title: "Limitations",
+  },
+  {
+    id: "license-and-citation",
+    title: "License and citation",
+  },
+];
+const section = sectionLookup(sections);
+---
+
+<ModelLayout slug="nouli-guard" sections={sections}>
+  <Fragment slot="intro">
+    <p>
+      Nouli Guard is an English hate-speech classifier that returns probabilities for{" "}
+      <code>no</code>, <code>unclear</code>, and <code>yes</code>. It combines fine-tuned Ettin-1B
+      and ModernBERT-large encoders with a frozen ensemble and calibration.
+    </p>
+  </Fragment>
+  <ModelSection {...section("comparison")}>
+    <p>Recorded comparison with Jev 1.14.0, dated 31 October 2026.</p>
+    <a
+      class="comparison-image"
+      href="/models/nouli-guard/comparison.png"
+      aria-label="Open the full Nouli Guard comparison image"
+    >
+      <img
+        src="/models/nouli-guard/comparison.png"
+        alt="Nouli Guard: the published example, reference label, and recorded Jev comparison"
+        width="1620"
+        height="926"
+        loading="lazy"
+        decoding="async"
+      />
+    </a>
+    <p>
+      Reference label: <strong>Hate speech</strong>. <strong>Nouli Guard</strong> selects{" "}
+      <strong>Hate speech</strong>; <strong>Jev flat, calibrated</strong> selects{" "}
+      <strong>No hate speech</strong>.
+    </p>
+    <p>
+      Both recorded human annotators selected the reference label. The example uses the flat Jev
+      baseline; the full evaluation also includes a graph baseline.
+    </p>
+    <p>
+      Illustrative example selected after scoring; not a representative sample.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-guard/resolve/v1.0.0/eval/results.json">
+        Recorded evaluation
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-guard/resolve/v1.0.0/eval/protocol.json">
+        Methodology
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-guard/resolve/v1.0.0/eval/illustrative-comparison.json">
+        Example details
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("model-at-a-glance")}>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Parameters</td>
+          <td>1.424 billion</td>
+        </tr>
+        <tr>
+          <td>Input</td>
+          <td>256 tokens per encoder</td>
+        </tr>
+        <tr>
+          <td>Tested runtime</td>
+          <td>macOS ARM64 / CPU; Linux ARM64 / CUDA</td>
+        </tr>
+        <tr>
+          <td>License</td>
+          <td>Apache-2.0; upstream notices apply</td>
+        </tr>
+      </tbody>
+    </table>
+  </ModelSection>
+  <ModelSection {...section("quickstart")}>
+    <p>
+      Requires Python 3.12, the{" "}
+      <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and{" "}
+      <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.4.2">Nouli CLI 0.4.2</a>. Hugging
+      Face hosts the files; inference runs on your machine. The Python server loads the weights, and
+      Nouli runs the supplied decision workflow. No hosted API key is required.
+    </p>
+    <p>In the first terminal:</p>
+    <CodeBlock
+      label="Terminal 1 · prepare and serve"
+      code={`hf download nouli-ai/nouli-guard --revision v1.0.0 --local-dir ./nouli-guard
+cd nouli-guard
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --text "I disagree with your argument, but I appreciate you explaining it."
+python serve.py --device cpu
+`}
+    />
+    <p>
+      Once the server reports ready, open a second terminal in <code>nouli-guard</code>:
+    </p>
+    <CodeBlock
+      label="Terminal 2 · run the workflow"
+      code={`nouli --config nouli/nouli.toml --store ./.nouli-store \\
+  workflow run nouli/example-workflow.json --json
+`}
+    />
+    <p>
+      The example uses CPU. On a configured CUDA host, start the server with{" "}
+      <code>--device cuda</code>. Rerun <code>prepare.py</code> with your text or file before
+      running another workflow.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("provenance")}>
+    <ul>
+      <li>
+        <a href="https://huggingface.co/jhu-clsp/ettin-encoder-1b/tree/befd76be43d08b89ff9957012f3ff29d0842780b">
+          jhu-clsp/ettin-encoder-1b
+        </a>
+      </li>
+      <li>
+        <a href="https://huggingface.co/answerdotai/ModernBERT-large/tree/45bb4654a4d5aaff24dd11d4781fa46d39bf8c13">
+          answerdotai/ModernBERT-large
+        </a>
+      </li>
+    </ul>
+    <p>
+      Training data:{" "}
+      <a href="https://huggingface.co/datasets/ucberkeley-dlab/measuring-hate-speech/tree/5468f6e118396646b02a2f691e771f6b6d9502ea">
+        ucberkeley-dlab/measuring-hate-speech
+      </a>
+      ; 19,944 training comments.
+    </p>
+    <p>
+      Trained on human annotation distributions for hate-speech classification.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-guard/resolve/v1.0.0/provenance.json">
+        Source revisions and provenance
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("limitations")}>
+    <ul>
+      <li>
+        Evaluated on one historical English corpus. Human study-panel labels do not define every
+        moderation policy.
+      </li>
+      <li>
+        Supports the fixed no/unclear/yes output; general safety and policy-compliance coverage is
+        not established.
+      </li>
+    </ul>
+  </ModelSection>
+  <ModelSection {...section("license-and-citation")}>
+    <p>Apache-2.0, with upstream notices and dataset attribution retained.</p>
+    <p>
+      <a href="https://nouli.ai">Nouli AI</a>. Nouli Guard. Cite the published model version and
+      commit.
+    </p>
+  </ModelSection>
+</ModelLayout>

@@ -1,0 +1,97 @@
+{
+  "order": 5,
+  "industry": "Legal",
+  "source": {
+    "name": "CUAD, the Contract Understanding Atticus Dataset",
+    "short": "CUAD",
+    "url": "https://www.atticusprojectai.org/cuad",
+    "license": "CC BY 4.0",
+    "attribution": "CUAD v1, The Atticus Project; Hendrycks, Burns, Chen and Ball (2021)."
+  },
+  "title": "Contract review",
+  "job": "Check each clause, then sign, redline or escalate.",
+  "heading": "Review every contract against your playbook",
+  "lede": "Code finds the passages for each clause, eleven checks read them, and your playbook decides: sign, redline or escalate.",
+  "context": "Before signing, someone checks each contract for the clauses your playbook cares about. Code finds the passages, the network checks each clause, and the playbook decides whether to sign, redline or send it to counsel. The least certain 10% go to a person.",
+  "sample": {
+    "count": 100,
+    "unit": "real contracts"
+  },
+  "stats": {
+    "decisions": 11,
+    "medianSeconds": 1.94,
+    "costPer1000": 0.46
+  },
+  "routes": {
+    "label": "Contract outcome",
+    "counts": [
+      ["Escalate to counsel", 63],
+      ["Redline", 21],
+      ["Human review", 10],
+      ["Sign as-is", 6]
+    ]
+  },
+  "case": {
+    "label": "Content License Agreement, Leju Holdings (2014)",
+    "url": "https://www.atticusprojectai.org/cuad"
+  },
+  "model": "TypeSafe Jev 1.14.0",
+  "notes": [
+    "Contract from CUAD v1 by The Atticus Project (Hendrycks, Burns, Chen and Ball, 2021); its contracts are public SEC filings. One of 100 contracts the network ran on, using TypeSafe Jev 1.14.0. Passage search, the rule, the playbook and the checklist run as code. The playbook is an example, not legal advice."
+  ],
+  "steps": [
+    {
+      "kind": "fact",
+      "id": "contract",
+      "source": "Contract",
+      "text": "Content License Agreement, Leju Holdings, filed with the SEC in 2014"
+    },
+    {
+      "kind": "computed",
+      "id": "passages",
+      "name": "Passages",
+      "value": "Top 10 paragraphs for each clause type",
+      "from": ["contract"]
+    },
+    {
+      "kind": "rule",
+      "id": "assignment",
+      "name": "Anti-assignment",
+      "value": "Absent",
+      "from": ["contract"]
+    },
+    {
+      "kind": "checks",
+      "id": "clauses",
+      "prompt": "Which clauses are present?",
+      "rows": [
+        ["Uncapped liability", 0.07],
+        ["Termination for convenience", 0.05],
+        ["Change of control", 0.04],
+        ["Liquidated damages", 0.03],
+        ["IP assignment", 0.03],
+        ["Non-compete", 0.02],
+        ["Exclusivity", 0.02],
+        ["Minimum commitment", 0.02],
+        ["Right of first refusal", 0.02],
+        ["Cap on liability", 0.02],
+        ["Audit rights", 0.02]
+      ],
+      "from": ["passages"]
+    },
+    {
+      "kind": "computed",
+      "id": "playbook",
+      "name": "Playbook",
+      "value": "Redline: no cap on liability",
+      "from": ["clauses"]
+    },
+    {
+      "kind": "computed",
+      "id": "checklist",
+      "name": "Reviewer checklist",
+      "value": "Anti-assignment, audit rights and termination for convenience all absent",
+      "from": ["clauses", "assignment"]
+    }
+  ]
+}

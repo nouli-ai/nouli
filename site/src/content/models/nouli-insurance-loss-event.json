@@ -1,0 +1,30 @@
+{
+  "order": 5,
+  "name": "Insurance Loss Event",
+  "task": "Property-claim intake",
+  "category": "text",
+  "area": "Insurance",
+  "cardArea": "Insurance",
+  "version": "1.0.1",
+  "released": "2026-11-02",
+  "description": "Classify an initial property-claim notice across 22 loss-event categories, then suggest an intake queue. Explore recorded FNOL examples for claims handlers, intake teams and loss adjusters.",
+  "openGraph": {
+    "title": "fullName",
+    "image": "/models/nouli-insurance-loss-event/how-it-works.svg",
+    "card": "summary"
+  },
+  "summary": "Classify property-claim notices across 22 loss events and suggest an intake queue.",
+  "flow": {
+    "input": "Initial loss notice",
+    "output": "Event + intake queue"
+  },
+  "cardNote": "CPU · research preview",
+  "license": "Apache-2.0",
+  "release": "published",
+  "revision": "57e6cf45e097d6280a224ba18cd11f6120eeb28e",
+  "structuredData": {
+    "description": "Classify an initial property-claim notice across 22 loss-event categories, then suggest an intake queue. Explore recorded FNOL examples for claims handlers, intake teams and loss adjusters.",
+    "runtimePlatform": "Python / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

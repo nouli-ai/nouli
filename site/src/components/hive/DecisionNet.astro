@@ -1,0 +1,454 @@
+---
+import { edgePath, layoutNetwork } from "../../lib/home/layout";
+import type { Placed } from "../../lib/home/layout";
+import {
+  answerOf,
+  isCode,
+  isQuestion,
+  shownOptions,
+  sourcesOf,
+  summaryOf,
+} from "../../lib/home/networks";
+import type { Network } from "../../lib/home/networks";
+
+interface Props {
+  network: Network;
+  /** The accessible name of the network. */
+  label: string;
+  /** Wide-layout height in pixels; narrow screens stack the steps instead. */
+  height: number;
+  /** Space kept clear at the panel's sides, as a fraction of its width. */
+  pad?: number;
+  /** Lay out the what-if steps too, for the branch demonstration. */
+  withBranch?: boolean;
+  /** Size the panel to the cards instead of using `height`, for recorded cases. */
+  fit?: boolean;
+  /** Atmosphere only: steps are invisible and the network is hidden from assistive technology. */
+  decorative?: boolean;
+  inspectable?: boolean;
+  hidden?: boolean;
+  team?: string;
+  class?: string;
+}
+
+const {
+  network,
+  label,
+  height,
+  pad = 0.11,
+  withBranch = false,
+  fit = false,
+  decorative = false,
+  inspectable = false,
+  hidden = false,
+  team,
+  class: className,
+} = Astro.props;
+const base = layoutNetwork(network, { pad, fit });
+const branched = withBranch ? layoutNetwork(network, { pad, withBranch: true }) : base;
+const fitted = base.height;
+const branchAt = new Map(branched.placed.map((placed) => [placed.step.id, placed]));
+const all: readonly Placed[] = withBranch
+  ? [...base.placed, ...branched.placed.filter((placed) => placed.branch)]
+  : base.placed;
+const at = (id: string): Placed | undefined => all.find((placed) => placed.step.id === id);
+const pct = (n: number): string => `${(n * 100).toFixed(2)}%`;
+const position = (placed: Placed): string => {
+  const alt = branchAt.get(placed.step.id) ?? placed;
+  const [w, n, st] = placed.branch
+    ? [alt.wide, alt.narrow, alt.stack]
+    : [placed.wide, placed.narrow, placed.stack];
+  return [
+    `--x:${pct(w.x)}`,
+    `--y:${pct(w.y)}`,
+    `--nx:${pct(n.x)}`,
+    `--ny:${pct(n.y)}`,
+    `--bx:${pct(alt.wide.x)}`,
+    `--by:${pct(alt.wide.y)}`,
+    `--bnx:${pct(alt.narrow.x)}`,
+    `--bny:${pct(alt.narrow.y)}`,
+    `--sx:${pct(st.x)}`,
+    `--sy:${pct(st.y)}`,
+    `--bsx:${pct(alt.stack.x)}`,
+    `--bsy:${pct(alt.stack.y)}`,
+  ].join(";");
+};
+---
+
+<div
+  class:list={["frame", className]}
+  data-team-frame={team}
+  style={`--wide-height:${decorative ? "100%" : `${Math.max(height, withBranch ? branched.height.wide : fitted.wide)}px`};--narrow-height:${decorative ? "100%" : `${withBranch ? branched.height.narrow : fitted.narrow}px`};--stack-height:${decorative ? "100%" : `${withBranch ? branched.height.stack : fitted.stack}px`};--depths:${branched.depths};--breadth:${branched.breadth};--columns:${Math.max(base.depths - 1, 1)};--node-max:${fit ? 236 : 200}px`}
+  hidden={hidden}
+>
+  <decision-net
+    mode="chain"
+    data-layout={base.depths >= 5 ? "deep" : "normal"}
+    data-team={team}
+    data-decorative={decorative ? "" : undefined}
+    role={decorative ? undefined : "group"}
+    aria-label={decorative ? undefined : label}
+    aria-hidden={decorative ? "true" : undefined}
+  >
+    <svg class="edges" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      {(["wide", "narrow", "stack"] as const).map((direction) => (
+        <g class={direction}>
+          {base.edges.map((edge) => {
+            const from = at(edge.from);
+            const to = at(edge.to);
+            return from && to ? (
+              <path
+                d={edgePath(
+                  from[direction],
+                  to[direction],
+                  direction === "wide" ? "wide" : "narrow",
+                )}
+              />
+            ) : null;
+          })}
+        </g>
+      ))}
+    </svg>
+    {all.map((placed) => {
+      const { step } = placed;
+      const code = isCode(step);
+      const Tag = inspectable ? "button" : "div";
+      const rows = step.kind === "checks" ? step.rows : isQuestion(step) ? shownOptions(step) : [];
+      const pick = isQuestion(step) && step.kind !== "score" ? answerOf(step).label : undefined;
+      return (
+        <Tag
+          type={inspectable ? "button" : undefined}
+          class:list={["node", step.kind === "fact" ? "fact" : code ? "code" : "question"]}
+          data-id={step.id}
+          data-depth={placed.depth}
+          data-from={sourcesOf(step).length > 0 ? sourcesOf(step).join(" ") : undefined}
+          data-branch={placed.branch ? "" : undefined}
+          data-summary={summaryOf(step)}
+          data-inspectable={inspectable ? "" : undefined}
+          style={position(placed)}
+        >
+          {step.kind === "fact" && (
+            <>
+              <span class="k">Fact · {step.source}</span>
+              <span class="t">{step.text}</span>
+            </>
+          )}
+          {isCode(step) && (
+            <>
+              <span class="k">
+                {step.kind === "rule" ? "Rule" : "Computed"} · {step.name}
+              </span>
+              <span class="t">{step.value}</span>
+            </>
+          )}
+          {rows.length > 0 && (
+            <>
+              <span class="k">
+                {step.kind === "checks"
+                  ? `${rows.length} yes/no checks · P(yes)`
+                  : `Question · ${step.kind === "choice" ? "pick one" : step.kind}`}
+              </span>
+              <span class="q">{"prompt" in step ? step.prompt : ""}</span>
+              <span class="opts">
+                {rows.map(([option, p]) => (
+                  <span
+                    class:list={[
+                      "o",
+                      { pick: step.kind === "checks" ? p >= 0.5 : option === pick },
+                    ]}
+                  >
+                    <span class="ol">{option}</span>
+                    <span class="ob">
+                      <span style={`--p:${p}`} />
+                    </span>
+                    <span class="sr-only">{p.toFixed(2)}</span>
+                    <span class="on" data-p={p} aria-hidden="true">
+                      {p.toFixed(2)}
+                    </span>
+                  </span>
+                ))}
+              </span>
+              {isQuestion(step) && step.kind === "score" && (
+                <span class="sv">
+                  Weighted: <b>{answerOf(step).label}</b>
+                </span>
+              )}
+            </>
+          )}
+        </Tag>
+      );
+    })}
+  </decision-net>
+</div>
+
+<script>
+  import "../../client/decision-net";
+</script>
+
+<style>
+  .frame {
+    container-type: inline-size;
+  }
+  decision-net {
+    position: relative;
+    display: block;
+    height: var(--wide-height);
+    --vertical: 0;
+    --node-width: clamp(200px, calc((100cqw * 0.78) / var(--columns) - 26px), var(--node-max));
+  }
+  .edges {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: var(--amber-soft);
+    stroke-width: 1.25;
+  }
+  .edges path {
+    vector-effect: non-scaling-stroke;
+  }
+  .edges .narrow,
+  .edges .stack,
+  decision-net[data-live] .edges {
+    display: none;
+  }
+  .node {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    translate: -50% -50%;
+    width: var(--node-width);
+    display: grid;
+    gap: 2px;
+    padding: 11px 13px 12px;
+    text-align: left;
+    font: inherit;
+    color: var(--hive-ink);
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px var(--glass-shadow);
+    backdrop-filter: blur(8px);
+    transition: opacity 0.4s ease;
+  }
+  .fact,
+  .code {
+    background: var(--glass-fact);
+  }
+  .code {
+    border-style: dashed;
+    border-color: var(--hive-soft);
+  }
+  .node[data-branch] {
+    display: none;
+    border-style: dashed;
+  }
+  decision-net[mode="branch"] .node {
+    left: var(--bx);
+    top: var(--by);
+  }
+  decision-net[mode="branch"] .node[data-branch] {
+    display: grid;
+  }
+  .node:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 3px;
+  }
+  .k {
+    font: 500 10px/1.3 var(--mono);
+    font-stretch: 87%;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--hive-soft);
+  }
+  /* Fact and code cards are more translucent, so their labels use full ink. */
+  .fact .k,
+  .code .k {
+    color: var(--hive-ink);
+  }
+  .k::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 9px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    background: var(--amber);
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  }
+  .q {
+    font-weight: 500;
+    font-size: 15px;
+    line-height: 1.25;
+  }
+  .t {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .opts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 16px 30px;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 7px;
+    font: 400 11px/1.2 var(--mono);
+    font-stretch: 87%;
+    font-variant-numeric: tabular-nums;
+  }
+  .o {
+    display: contents;
+  }
+
+  /* Unpicked options are muted with a solid color, so they keep 4.5:1 over translucent cards. */
+  .o {
+    color: var(--hive-soft);
+  }
+  .o.pick {
+    font-weight: 600;
+    color: var(--amber-ink);
+  }
+  .ol {
+    overflow-wrap: anywhere;
+  }
+  .on {
+    text-align: right;
+  }
+  .ob {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--glass-track);
+    overflow: hidden;
+  }
+  .ob span {
+    display: block;
+    height: 100%;
+    background: var(--amber-ink);
+    transform: scaleX(var(--p));
+    transform-origin: left;
+  }
+  .sv {
+    margin-top: 4px;
+    font: 400 11.5px var(--mono);
+    font-stretch: 87%;
+  }
+  .sv b {
+    color: var(--amber-ink);
+  }
+  /* Live states, set by the script while the network runs. */
+
+  .node::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow:
+      0 0 0 1px var(--amber),
+      0 0 34px var(--amber-glow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .node.active::after {
+    opacity: 1;
+  }
+  .node[data-inspectable] {
+    cursor: pointer;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .node.trace {
+    border-color: var(--amber);
+  }
+  .node.dim {
+    opacity: 0.25;
+  }
+  decision-net[data-decorative] .node {
+    visibility: hidden;
+  }
+  @container (max-width: 900px) {
+    decision-net {
+      --vertical: 1;
+      height: var(--narrow-height, calc(var(--depths) * 168px));
+      --node-width: min(300px, calc(50cqw - 24px));
+    }
+    .node,
+    decision-net[mode="branch"] .node {
+      left: var(--nx);
+      top: var(--ny);
+      padding: 9px 11px;
+    }
+    decision-net[mode="branch"] .node {
+      left: var(--bnx);
+      top: var(--bny);
+    }
+    .q {
+      font-size: 13px;
+    }
+    .t {
+      font-size: 11.5px;
+    }
+    .edges .wide {
+      display: none;
+    }
+    .edges .narrow {
+      display: inline;
+    }
+  }
+  @container (max-width: 1100px) {
+    decision-net[data-layout="deep"] {
+      --vertical: 1;
+      height: var(--narrow-height);
+      --node-width: min(300px, calc(50cqw - 24px));
+    }
+    decision-net[data-layout="deep"] .node,
+    decision-net[data-layout="deep"][mode="branch"] .node {
+      left: var(--nx);
+      top: var(--ny);
+      padding: 9px 11px;
+    }
+    decision-net[data-layout="deep"] .edges .wide {
+      display: none;
+    }
+    decision-net[data-layout="deep"] .edges .narrow {
+      display: inline;
+    }
+  }
+  @container (max-width: 560px) {
+    decision-net,
+    decision-net[data-layout="deep"] {
+      --vertical: 1;
+      height: var(--stack-height);
+      --node-width: min(300px, calc(100cqw - 32px));
+    }
+    .node,
+    decision-net[data-layout="deep"] .node {
+      left: var(--sx);
+      top: var(--sy);
+    }
+    decision-net[mode="branch"] .node,
+    decision-net[data-layout="deep"][mode="branch"] .node {
+      left: var(--bsx);
+      top: var(--bsy);
+    }
+    .edges .wide,
+    .edges .narrow,
+    decision-net[data-layout="deep"] .edges .narrow {
+      display: none;
+    }
+    .edges .stack {
+      display: inline;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .node,
+    .node::after {
+      transition: none;
+    }
+  }
+</style>

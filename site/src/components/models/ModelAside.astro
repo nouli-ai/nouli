@@ -1,0 +1,82 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { releaseDetails } from "../../lib/models";
+import type { ModelSectionInfo } from "../../lib/models";
+
+interface Props {
+  model: CollectionEntry<"models">;
+  sections: readonly ModelSectionInfo[];
+}
+
+const { model, sections } = Astro.props;
+const release = releaseDetails(model.id, model.data);
+---
+
+<aside class="model-aside">
+  <p class="eyebrow">Open release</p>
+  <p class="aside-version">{model.data.license}</p>
+  <p>{release.offers}</p>
+  <a class="aside-hf" href={release.files}>
+    {release.filesLabel}
+  </a>
+  <nav aria-label="On this page">
+    {sections.map(({ id, title }) => (
+      <a href={`#${id}`}>{title}</a>
+    ))}
+  </nav>
+  <p class="aside-note">{release.note}</p>
+</aside>
+
+<style>
+  .model-aside {
+    position: sticky;
+    top: 96px;
+    padding: 20px;
+    border: 1px solid var(--hive-line);
+    border-radius: 20px;
+    background: var(--hive-card);
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--soft);
+  }
+  .aside-version {
+    margin: 14px 0;
+    color: var(--ink);
+    font: 400 26px/1.1 var(--cond);
+    letter-spacing: -0.02em;
+  }
+  .aside-hf {
+    display: block;
+    color: var(--teal);
+    margin-top: 18px;
+    font: 500 11px/1.7 var(--mono);
+    text-underline-offset: 4px;
+  }
+  nav {
+    display: grid;
+    gap: 14px;
+    margin-top: 30px;
+    padding: 24px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  nav a {
+    color: var(--ink);
+    font: 400 11px/1.5 var(--mono);
+    text-decoration: none;
+  }
+  nav a:hover {
+    color: var(--teal);
+    text-decoration: underline;
+  }
+  .aside-note {
+    margin-top: 20px;
+    font-size: 13px;
+  }
+  @media (max-width: 760px) {
+    .model-aside {
+      position: static;
+      width: 100%;
+    }
+  }
+</style>

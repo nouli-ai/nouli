@@ -1,0 +1,30 @@
+{
+  "order": 2,
+  "name": "Cyber Specialists",
+  "task": "Vulnerability triage and ATT&CK mapping",
+  "category": "text",
+  "area": "Security",
+  "cardArea": "Security",
+  "version": "1.0.0",
+  "released": "2026-11-02",
+  "description": "Turn vulnerability descriptions and threat-report sentences into structured answers for security workflows. The CVSS specialist returns a vector, score and triage route; the ATT&CK specialist suggests technique labels.",
+  "openGraph": {
+    "title": "fullName",
+    "image": "/models/nouli-cyber-specialists/how-it-works.svg",
+    "card": "summary"
+  },
+  "summary": "Classify vulnerability severity and suggest ATT&CK techniques from security text.",
+  "flow": {
+    "input": "Security text",
+    "output": "CVSS / ATT&CK"
+  },
+  "cardNote": "CPU specialists · optional CUDA selector",
+  "license": "Apache-2.0",
+  "release": "published",
+  "revision": "b7ef4f17e8040037001137e67928e8536955e81c",
+  "structuredData": {
+    "description": "Turn vulnerability descriptions and threat-report sentences into structured answers for security workflows. The CVSS specialist returns a vector, score and triage route; the ATT&CK specialist suggests technique labels.",
+    "runtimePlatform": "Python / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

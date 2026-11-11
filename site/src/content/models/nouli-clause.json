@@ -1,0 +1,28 @@
+{
+  "order": 4,
+  "name": "Clause",
+  "task": "NDA evidence and entailment",
+  "category": "text",
+  "area": "Text",
+  "cardArea": "Contracts",
+  "version": "1.0.0",
+  "released": "2026-10-31",
+  "description": "Retrieve NDA evidence and evaluate a fixed checklist of 17 hypotheses.",
+  "openGraph": {
+    "title": "title",
+    "image": "/models/nouli-clause/comparison.png",
+    "card": "summary_large_image"
+  },
+  "flow": {
+    "input": "NDA document",
+    "output": "17 fixed hypotheses"
+  },
+  "cardNote": "1.178B parameters",
+  "license": "Apache-2.0",
+  "release": "versioned",
+  "structuredData": {
+    "description": "Nouli Clause evaluates a fixed checklist of 17 NDA hypotheses. An Ettin-150M evidence retriever selects passages for an Ettin-1B decision encoder, which returns entailment, contradiction, or not-mentioned probabilities.",
+    "runtimePlatform": "Python 3.12 / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

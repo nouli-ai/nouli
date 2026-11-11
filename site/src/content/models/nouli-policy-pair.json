@@ -1,0 +1,30 @@
+{
+  "order": 3,
+  "name": "Policy Pair",
+  "task": "Policy extraction and evidence checks",
+  "category": "text",
+  "area": "Policy",
+  "cardArea": "Policy",
+  "version": "1.0.0",
+  "released": "2026-11-02",
+  "description": "Evaluate a written policy against the facts of a case. A policy extractor and evidence model work with Nouli to return TRUE, FALSE or UNKNOWN.",
+  "openGraph": {
+    "title": "fullName",
+    "image": "/models/nouli-policy-pair/how-it-works.svg",
+    "card": "summary"
+  },
+  "summary": "Evaluate a written policy against case evidence and return TRUE, FALSE or UNKNOWN.",
+  "flow": {
+    "input": "Policy + case evidence",
+    "output": "Structured decision"
+  },
+  "cardNote": "CUDA · research preview",
+  "license": "Apache-2.0",
+  "release": "published",
+  "revision": "7de8e7f56085068f9cc380be829455b197300ebe",
+  "structuredData": {
+    "description": "Evaluate a written policy against the facts of a case. A policy extractor and evidence model work with Nouli to return TRUE, FALSE or UNKNOWN.",
+    "runtimePlatform": "Python / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}
