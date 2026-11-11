@@ -1,0 +1,57 @@
+---
+import { siteOrigin } from "../../lib/site";
+import JsonLd from "./JsonLd.astro";
+
+export interface OpenGraph {
+  title: string;
+  /** An absolute image URL for link previews. */
+  image?: string | undefined;
+  card: "summary" | "summary_large_image";
+}
+
+export interface Props {
+  title: string;
+  description: string;
+  openGraph?: OpenGraph | undefined;
+  structuredData?: unknown;
+}
+
+const { title, description, openGraph, structuredData } = Astro.props;
+const canonical = new URL(Astro.url.pathname, siteOrigin).href;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link
+  rel="preload"
+  href="/fonts/archivo-latin-variable.woff2"
+  as="font"
+  type="font/woff2"
+  crossorigin
+/>
+<link
+  rel="preload"
+  href="/fonts/martian-mono-latin-variable.woff2"
+  as="font"
+  type="font/woff2"
+  crossorigin
+/>
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+{openGraph && (
+  <>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Nouli" />
+    <meta property="og:title" content={openGraph.title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    {openGraph.image !== undefined && <meta property="og:image" content={openGraph.image} />}
+    <meta name="twitter:card" content={openGraph.card} />
+  </>
+)}
+{structuredData !== undefined && <JsonLd data={structuredData} />}
+<link rel="icon" href="/favicon.ico" sizes="32x32" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta name="theme-color" content="#0b6e63" />

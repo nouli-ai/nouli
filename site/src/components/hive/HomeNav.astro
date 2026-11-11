@@ -1,0 +1,155 @@
+---
+import { hiveNavigation, repository } from "../../lib/site";
+import type { Section } from "../../lib/site";
+
+interface Props {
+  /** The section to mark as the current page. */
+  current?: Section | undefined;
+  /** Where Install leads: the install box on the home page, or the home page's elsewhere. */
+  install?: string;
+}
+const { current, install = "/#install" } = Astro.props;
+const links = hiveNavigation;
+---
+
+<float-nav data-behind="sky">
+  <header class="nav">
+    <a class="mark" href="/">
+      <img src="/brand/bee.svg" alt="" width="22" height="25" />
+      Nouli
+    </a>
+    <nav aria-label="Main navigation">
+      {links.map(({ href, label, section }) => (
+        <a href={href} aria-current={section === current ? "page" : undefined}>
+          {label}
+        </a>
+      ))}
+      <a href={repository}>GitHub</a>
+    </nav>
+    <a class="install" href={install}>
+      Install
+    </a>
+  </header>
+</float-nav>
+
+<script>
+  import "../../client/float-nav";
+</script>
+
+<style>
+  /* The nav is fixed; this keeps its place in the hero. */
+  float-nav {
+    display: block;
+    height: 82px;
+  }
+  .nav {
+    position: fixed;
+    z-index: 30;
+    top: 12px;
+    left: 50%;
+    translate: -50% 0;
+    width: min(1200px, calc(100% - 72px));
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 22px 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    --nav-ink: var(--on-sky);
+    --nav-soft: var(--on-sky-soft);
+    color: var(--nav-ink);
+    transition:
+      width 0.4s ease,
+      padding 0.4s ease,
+      color 0.3s ease,
+      border-color 0.3s ease,
+      background-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+  float-nav[data-floating] .nav {
+    width: min(980px, calc(100% - 24px));
+    padding: 8px 8px 8px 22px;
+    border-color: var(--sky-line);
+    background: var(--nav-tint-sky);
+    backdrop-filter: blur(16px) saturate(1.6);
+    box-shadow: 0 12px 34px var(--glass-shadow);
+  }
+  float-nav[data-floating][data-behind="page"] .nav {
+    --nav-ink: var(--hive-ink);
+    --nav-soft: var(--hive-soft);
+    border-color: var(--hive-line);
+    background: var(--nav-tint-page);
+  }
+  .mark {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 600;
+    font-size: 19px;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+  }
+  nav {
+    display: flex;
+    gap: 26px;
+    margin-left: auto;
+    font-size: 15px;
+  }
+  nav a {
+    text-decoration: none;
+    color: var(--nav-soft);
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+  }
+  nav a:hover,
+  nav a[aria-current] {
+    color: var(--nav-ink);
+  }
+  .install {
+    display: inline-flex;
+    align-items: center;
+    height: 38px;
+    padding: 0 20px;
+    border-radius: 999px;
+    background: var(--amber);
+    color: var(--on-amber);
+    font-weight: 500;
+    font-size: 15px;
+    text-decoration: none;
+  }
+  a:focus-visible {
+    outline: 2px solid var(--nav-ink);
+    outline-offset: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav {
+      transition: none;
+    }
+  }
+  @media (max-width: 720px) {
+    float-nav {
+      height: 114px;
+    }
+    .nav {
+      flex-wrap: wrap;
+      row-gap: 10px;
+      border-radius: 22px;
+    }
+    float-nav[data-floating] nav {
+      display: none;
+    }
+    float-nav[data-floating] .nav {
+      border-radius: 999px;
+    }
+    nav {
+      order: 3;
+      width: 100%;
+      margin-left: 0;
+      gap: 20px;
+    }
+    .install {
+      margin-left: auto;
+    }
+  }
+</style>

@@ -1,0 +1,186 @@
+---
+import CodeBlock from "../../components/ui/CodeBlock.astro";
+import ModelSection from "../../components/models/ModelSection.astro";
+import ModelLayout from "../../layouts/ModelLayout.astro";
+import { sectionLookup } from "../../lib/models";
+
+const sections = [
+  {
+    id: "comparison",
+    title: "Comparison with Jev",
+  },
+  {
+    id: "model-at-a-glance",
+    title: "Model at a glance",
+  },
+  {
+    id: "quickstart",
+    title: "Quickstart with Nouli CLI",
+  },
+  {
+    id: "provenance",
+    title: "Base models and training data",
+  },
+  {
+    id: "limitations",
+    title: "Limitations",
+  },
+  {
+    id: "license-and-citation",
+    title: "License and citation",
+  },
+];
+const section = sectionLookup(sections);
+---
+
+<ModelLayout slug="nouli-doom" sections={sections}>
+  <Fragment slot="intro">
+    <p>
+      Nouli Doom is a PPO-trained policy for ViZDoom Deadly Corridor at skill 5. The inference
+      export contains the actor network and maps structured game state to move, strafe, turn, and
+      fire decisions.
+    </p>
+  </Fragment>
+  <ModelSection {...section("comparison")}>
+    <p>Recorded comparison with Jev 1.14.0, dated 31 October 2026.</p>
+    <p>
+      <video
+        controls
+        muted
+        playsinline
+        preload="metadata"
+        poster="/models/nouli-doom/comparison.png"
+        aria-label="Nouli Doom and Jev recorded side-by-side simulator episode"
+      >
+        <source src="/models/nouli-doom/comparison.mp4" type="video/mp4" />
+        <a href="/models/nouli-doom/comparison.mp4">Open the recording</a>
+      </video>
+    </p>
+    <p>
+      <a href="/models/nouli-doom/comparison.mp4">Open the side-by-side recording</a>.
+    </p>
+    <p>
+      Collect the green armor and finish alive in Deadly Corridor. <strong>Nouli Doom</strong> and
+      the recorded <strong>Jev</strong> setup start from the same game state with the same
+      structured-state and goal interface.
+    </p>
+    <p>
+      In this recorded episode, Nouli collects the armor and survives; Jev's run ends before
+      collecting it.
+    </p>
+    <p>
+      Playback follows simulator time; a panel holds its last available frame when its recording
+      ends. This example was selected after scoring and illustrates this recorded setup, not a
+      general ranking of the models.
+    </p>
+    <p>
+      <a href="https://huggingface.co/nouli-ai/nouli-doom/resolve/v1.0.0/eval/results.json">
+        Recorded evaluation
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-doom/resolve/v1.0.0/eval/protocol.json">
+        Setup and limitations
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("model-at-a-glance")}>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Parameters</td>
+          <td>23,435</td>
+        </tr>
+        <tr>
+          <td>Input</td>
+          <td>42-float structured state; 54 legal joint actions</td>
+        </tr>
+        <tr>
+          <td>Tested runtime</td>
+          <td>macOS and Linux ARM64 / CPU</td>
+        </tr>
+        <tr>
+          <td>License</td>
+          <td>Apache-2.0; upstream notices apply</td>
+        </tr>
+      </tbody>
+    </table>
+  </ModelSection>
+  <ModelSection {...section("quickstart")}>
+    <p>
+      Requires Python 3.12, the{" "}
+      <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and{" "}
+      <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.4.2">Nouli CLI 0.4.2</a>. Hugging
+      Face hosts the files; inference runs on your machine. The Python server loads the weights, and
+      Nouli runs the supplied decision workflow. No hosted API key is required.
+    </p>
+    <p>In the first terminal:</p>
+    <CodeBlock
+      label="Terminal 1 · prepare and serve"
+      code={`hf download nouli-ai/nouli-doom --revision v1.0.0 --local-dir ./nouli-doom
+cd nouli-doom
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --input-json examples/input.json
+python serve.py --device cpu
+`}
+    />
+    <p>
+      Once the server reports ready, open a second terminal in <code>nouli-doom</code>:
+    </p>
+    <CodeBlock
+      label="Terminal 2 · run the workflow"
+      code={`nouli --config nouli/nouli.toml --store ./.nouli-store \\
+  workflow run nouli/example-workflow.json --json
+`}
+    />
+    <p>
+      This example returns one action for the supplied state. Running an episode also requires the
+      simulator loop to apply actions and provide each next state.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("provenance")}>
+    <ul>
+      <li>Student: a PPO multilayer perceptron.</li>
+      <li>
+        Teacher:{" "}
+        <a href="https://huggingface.co/fabiononato/doomfly-rl/tree/2e58329dcdeed64107679f0ff113b024d4d2b167">
+          <code>fabiononato/doomfly-rl</code>
+        </a>
+        , checkpoint <code>malecns49k_noconn</code>.
+      </li>
+    </ul>
+    <p>Training data: Teacher trajectories, DAgger and simulator reinforcement learning.</p>
+    <p>
+      Trained through imitation learning from the public Doomfly teacher and simulator reinforcement
+      learning. Doomfly supplied labels; its weights are not the student's direct initialization.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-doom/resolve/v1.0.0/provenance.json">
+        Source revisions and provenance
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("limitations")}>
+    <ul>
+      <li>Validated on Deadly Corridor at skill 5 with the supplied state/action wrapper.</li>
+      <li>
+        Inputs include structured state and goal assistance; these results do not establish
+        pixel-only or general Doom performance.
+      </li>
+    </ul>
+  </ModelSection>
+  <ModelSection {...section("license-and-citation")}>
+    <p>Apache-2.0, with upstream notices and dataset attribution retained.</p>
+    <p>
+      <a href="https://nouli.ai">Nouli AI</a>. Nouli Doom. Cite the published model version and
+      commit.
+    </p>
+  </ModelSection>
+</ModelLayout>

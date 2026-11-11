@@ -1,0 +1,28 @@
+{
+  "order": 8,
+  "name": "Doom",
+  "task": "ViZDoom corridor control",
+  "category": "control",
+  "area": "Control",
+  "cardArea": "Simulator control",
+  "version": "1.0.0",
+  "released": "2026-10-31",
+  "description": "A compact actor policy for ViZDoom Deadly Corridor at skill 5.",
+  "openGraph": {
+    "title": "title",
+    "image": "/models/nouli-doom/comparison.png",
+    "card": "summary_large_image"
+  },
+  "flow": {
+    "input": "Structured game state",
+    "output": "54 legal joint actions"
+  },
+  "cardNote": "23,435 parameters",
+  "license": "Apache-2.0",
+  "release": "versioned",
+  "structuredData": {
+    "description": "Nouli Doom is a PPO-trained policy for ViZDoom Deadly Corridor at skill 5. The inference export contains the actor network and maps structured game state to move, strafe, turn, and fire decisions.",
+    "runtimePlatform": "Python 3.12 / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

@@ -1,0 +1,91 @@
+/* The recorded TUI. Global because the replay script creates the rows and cursor at runtime. */
+cli-replay {
+  position: relative;
+  display: block;
+  min-width: 0;
+  container-type: inline-size;
+  font-family: var(--term);
+  font-stretch: 100%;
+}
+/* Before the script sizes it, fit the static screen to the panel width. */
+cli-replay:not([style]) {
+  font-size: calc(100cqw / 134.9);
+}
+.cli-replay-screen {
+  display: block;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font: 1em/1.35 var(--term);
+  font-stretch: 100%;
+  white-space: pre;
+}
+.cli-replay-screen > code {
+  font: inherit;
+  font-stretch: 100%;
+}
+.cli-replay-row {
+  display: block;
+  height: 1.35em;
+}
+/* Each run fills the whole cell height, so colored cells meet without gaps between rows. */
+.cli-replay-row > span {
+  display: inline-block;
+  height: 1.35em;
+  vertical-align: top;
+}
+.cli-replay-cursor {
+  position: absolute;
+  width: 1ch;
+  height: 1.35em;
+  background: var(--term-fg);
+  mix-blend-mode: difference;
+  pointer-events: none;
+}
+.cli-replay-screen:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 4px;
+}
+.cli-probe-shelf {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+.cli-probe {
+  position: absolute;
+  white-space: pre;
+  font: inherit;
+  font-family: var(--term);
+}
+/* Pause and restart, under the screen; shown once the replay script runs. */
+.cli-replay-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 10px;
+  font: 500 12px var(--mono);
+  font-stretch: 87%;
+}
+.cli-replay-controls[hidden] {
+  display: none;
+}
+.cli-replay-controls button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--sky-line);
+  border-radius: 8px;
+  background: none;
+  color: var(--on-sky-soft);
+  font: inherit;
+  cursor: pointer;
+}
+.cli-replay-controls button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}

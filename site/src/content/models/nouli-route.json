@@ -1,0 +1,28 @@
+{
+  "order": 6,
+  "name": "Route",
+  "task": "Banking intent classification",
+  "category": "text",
+  "area": "Text",
+  "cardArea": "Text classification",
+  "version": "1.0.0",
+  "released": "2026-10-31",
+  "description": "Classify English banking-support requests into the 77 BANKING77 intents.",
+  "openGraph": {
+    "title": "title",
+    "image": "/models/nouli-route/comparison.png",
+    "card": "summary_large_image"
+  },
+  "flow": {
+    "input": "Support request",
+    "output": "One of 77 intents"
+  },
+  "cardNote": "1.029B parameters",
+  "license": "Apache-2.0",
+  "release": "versioned",
+  "structuredData": {
+    "description": "Nouli Route classifies English banking-support requests into the 77 BANKING77 intents. It uses a fine-tuned Ettin-1B encoder and returns the selected intent with a calibrated probability distribution.",
+    "runtimePlatform": "Python 3.12 / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

@@ -1,10 +1,10 @@
 # Nouli
 
-> Nouli is a ledger-backed decision network that records AI decisions and connects them to the facts and earlier answers they use. Its terminal app, CLI, and Rust library run decision models that return probabilities for a fixed set of answers. Nouli records the facts, questions, and answers of a session in a ledger, so each turn sends only what is new.
+> Nouli is a free, MIT-licensed platform for decision networks: small AI decisions chained into bigger ones, each fed the facts and earlier answers it depends on, from every source. Its terminal app, CLI, and Rust library run decision models, which return a probability for each of a fixed set of answers instead of writing text. Every fact, question, and answer is saved locally, so each turn sends only what is new and every step can be traced.
 
 Website: https://nouli.ai/
 
-Install with `curl -fsSL https://nouli.ai/install.sh | sh` (Linux, or macOS without Homebrew) or `brew install nouli-ai/tap/nouli` (macOS). Define a provider in `~/.nouli/config.toml`, then run `nouli auth login PROVIDER`, which reads the key without echo; let the person type it.
+Install with `brew install nouli-ai/tap/nouli` (macOS on Apple silicon) or `curl -fsSL https://nouli.ai/install.sh | sh` (Linux with glibc 2.38+, or macOS without Homebrew). Run `nouli connect` to choose a provider (TypeSafe, OpenAI, OpenRouter, Cloudflare Workers AI, Ollama, llama.cpp, or a custom server), its credentials, and a model. To store a key for a provider already in `~/.nouli/config.toml`, run `nouli auth login PROVIDER`, which reads the key without echo; let the person type it.
 
 Rules for driving Nouli from an agent:
 
@@ -25,7 +25,7 @@ one item per row. Enter sends only from a nonempty Question; Ctrl-S sends from
 any section, including when reusing the previous question with new context.
 Empty options/levels reuse the prior list with a visible notice; Yes/No questions
 remain fresh. `@` searches files under the launch directory and saved answers
-across the local ledger. Selecting an input snapshots it without sending.
+across local sessions. Selecting an input snapshots it without sending.
 `/rename NAME` renames the session. `/model` or Ctrl-L opens the model picker;
 choose a model, add a connection, or enter a missing API key without losing the
 draft. `/statusline` chooses saved fields or a preset for the footer. `/help`
@@ -54,8 +54,20 @@ local runtime and Nouli workflow. Inference runs on the user's machine.
 
 [Models](https://nouli.ai/models/) · [Hugging Face](https://huggingface.co/nouli-ai).
 Follow each model's documented input schema, quickstart and limitations.
-The general trip and workshop examples require a suitable general-purpose
-decision service rather than the specialized model workflows.
+General questions, like those in the guide, need a general-purpose decision
+model from a connected provider rather than these specialized workflows.
+
+## Examples
+
+Decision networks run on real public data. Each page shows one recorded case
+with every answer distribution, plus cases run, model decisions per case,
+median time, cost, and where the cases were routed.
+
+- [Vulnerability triage](https://nouli.ai/examples/vulnerability-triage/): six CVSS judgments on NVD advisories, then the CVSS 3.1 score and a patch deadline computed in code.
+- [Injury claim intake](https://nouli.ai/examples/injury-claims/): OSHA Severe Injury Reports coded the way OSHA does, then routed to a claim queue.
+- [Device incident reports](https://nouli.ai/examples/device-reports/): FDA MAUDE reports sorted by patient outcome and failure, then sent to a review team.
+- [Safety report analysis](https://nouli.ai/examples/aviation-safety/): NASA ASRS pilot reports checked for problems and contributing factors, then routed to the team that owns the fix.
+- [Contract review](https://nouli.ai/examples/contract-review/): CUAD contracts checked clause by clause against a playbook that signs, redlines, or escalates.
 
 ## Docs
 
@@ -67,6 +79,6 @@ decision service rather than the specialized model workflows.
 
 ## Optional
 
-- [User guide](https://nouli.ai/guide/): a walkthrough of setup, sessions, branching, and blending
+- [User guide](https://nouli.ai/guide/): setup, sessions, branching, and blending
 - [Rust library](https://raw.githubusercontent.com/nouli-ai/nouli/main/docs/embedding.md): embedding Nouli in an application
-- [Examples](https://nouli.ai/examples/): recorded walkthroughs, including the food recall decision graph
+- [Examples](https://nouli.ai/examples/): decision networks run on real public data

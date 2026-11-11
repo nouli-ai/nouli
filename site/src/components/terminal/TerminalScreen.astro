@@ -1,0 +1,23 @@
+---
+import type { Screen } from "../../lib/schemas/terminal";
+import { runStyle } from "../../lib/terminal/colors";
+
+interface Props {
+  screen: Screen;
+  /** Which recorded variant this is; the enclosing capture shows one at a time. */
+  variant?: string | undefined;
+}
+
+const { screen, variant } = Astro.props;
+---
+
+<!-- Unstyled here so its many spans carry no scoping class; the enclosing capture styles the grid. -->
+<span class="tui-grid" data-variant={variant} style={`min-width:${screen.columns}ch`}>
+  {screen.rows.map((runs) => (
+    <span class="tui-row">
+      {runs.map((run) => (
+        <span style={runStyle(run)}>{run[0]}</span>
+      ))}
+    </span>
+  ))}
+</span>

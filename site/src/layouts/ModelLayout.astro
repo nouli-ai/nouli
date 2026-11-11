@@ -1,0 +1,181 @@
+---
+import { getEntry } from "astro:content";
+import ModelAside from "../components/models/ModelAside.astro";
+import ModelHero from "../components/models/ModelHero.astro";
+import RelatedModels from "../components/models/RelatedModels.astro";
+import type { ModelSectionInfo } from "../lib/models";
+import { modelSourceCode } from "../lib/seo/structured-data";
+import HivePage from "../components/hive/HivePage.astro";
+import { siteOrigin } from "../lib/site";
+
+interface Props {
+  /** The model's id in the models collection, which is also its URL slug. */
+  slug: string;
+  /** The page's sections in order; the table of contents lists them. */
+  sections: readonly ModelSectionInfo[];
+}
+
+const { slug, sections } = Astro.props;
+const model = await getEntry("models", slug);
+if (model === undefined) throw new Error(`No model "${slug}" in src/content/models`);
+const { data } = model;
+const image = data.openGraph.image;
+---
+
+<HivePage
+  title={`${data.title} · Nouli`}
+  description={data.description}
+  openGraph={{
+    title: data.openGraph.title,
+    image: image === undefined ? undefined : siteOrigin + image,
+    card: data.openGraph.card,
+  }}
+  structuredData={modelSourceCode(slug, data)}
+>
+  <ModelHero model={model}>
+    <slot name="intro" />
+  </ModelHero>
+  <div class="model-layout">
+    <article class="prose model-body">
+      <slot />
+    </article>
+    <ModelAside model={model} sections={sections} />
+  </div>
+  <RelatedModels current={slug} />
+</HivePage>
+
+<style>
+  .model-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 920px) 240px;
+    gap: clamp(36px, 6vw, 90px);
+    width: min(1200px, calc(100% - 48px));
+    padding: 56px 0 80px;
+    margin: auto;
+    align-items: start;
+  }
+  /* Model page copy is written in each page, so these rules reach into the slotted markup. */
+  /* Selectors keep the specificity they had on the old site: some reach in through .model-body, others are plain. */
+  .model-body {
+    min-width: 0;
+  }
+  .model-body :global(section) {
+    scroll-margin-top: 96px;
+  }
+  .model-body :global(section + section) {
+    margin-top: 56px;
+  }
+  .model-body :global(section > * + *) {
+    margin-top: 16px;
+  }
+  .model-body :global(section h2) {
+    margin-top: 0;
+  }
+  .model-body :global(img),
+  .model-body :global(video) {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background: var(--media-ground);
+  }
+  :global(.comparison-image) {
+    display: block;
+  }
+  .model-body :global(a) {
+    overflow-wrap: anywhere;
+  }
+  .model-body :global(table) {
+    font-size: 12px;
+  }
+  :global(.model-example-group) {
+    margin-top: 18px;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background: var(--hive-card);
+  }
+  :global(.model-example-group summary) {
+    padding: 16px;
+    cursor: pointer;
+    font: 500 18px/1.4 var(--cond);
+    color: var(--ink);
+  }
+  :global(.model-example-group summary > span) {
+    float: right;
+    margin-left: 16px;
+    font: 400 11px/2 var(--mono);
+    color: var(--teal);
+  }
+  :global(.model-example-group summary:focus-visible) {
+    outline: 2px solid var(--teal);
+    outline-offset: -3px;
+  }
+  :global(.model-example-group > div) {
+    padding: 0 16px 16px;
+  }
+  :global(.model-example-group > div > * + *) {
+    margin-top: 16px;
+  }
+  .model-body :global(.example-table) {
+    font: 400 15px/1.55 var(--cond);
+  }
+  .model-body :global(.example-table th:first-child) {
+    width: 70%;
+  }
+  .model-body :global(.underwrite-workflow-table) {
+    font: 400 15px/1.55 var(--cond);
+  }
+  .model-body :global(.underwrite-workflow-table th:first-child) {
+    width: 40%;
+  }
+  @media (max-width: 1000px) {
+    .model-layout {
+      grid-template-columns: minmax(0, 1fr) 200px;
+      gap: 30px;
+    }
+  }
+  @media (max-width: 760px) {
+    .model-layout {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+  @media (max-width: 560px) {
+    .model-layout {
+      padding: 32px 0 60px;
+    }
+    .model-body {
+      width: 100%;
+    }
+    .model-body :global(table) {
+      table-layout: fixed;
+      font-size: 10px;
+      overflow-wrap: anywhere;
+    }
+    .model-body :global(table th:first-child) {
+      width: 30%;
+    }
+    .model-body :global(.example-table) {
+      font-size: 14px;
+    }
+    .model-body :global(.example-table th:first-child) {
+      width: 65%;
+    }
+    .model-body :global(.underwrite-workflow-table) {
+      font-size: 14px;
+    }
+    .model-body :global(.underwrite-workflow-table th:first-child) {
+      width: 40%;
+    }
+    :global(.model-example-group summary) {
+      font-size: 17px;
+    }
+    :global(.model-example-group summary > span) {
+      float: none;
+      display: block;
+      margin-left: 0;
+    }
+  }
+</style>

@@ -1,0 +1,9 @@
+/* Global styles, in cascade order. Component styles are scoped in their components and stay
+   unlayered, so any component rule takes precedence over everything here, whatever its order or
+   specificity. A global rule that must override a component rule, such as a narrow-screen size
+   for one component, belongs in that component's styles after the rule it overrides. */
+@layer reset, tokens, base, prose;
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./prose.css";

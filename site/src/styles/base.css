@@ -1,0 +1,62 @@
+@layer reset {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+@layer base {
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--cond);
+    font-stretch: 100%;
+  }
+  a {
+    color: inherit;
+  }
+  a:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 5px;
+  }
+  code,
+  pre,
+  .mono {
+    font-family: var(--mono);
+    font-stretch: 87%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}
+
+@layer base {
+  /* Small uppercase label above headings and groups, used in components and page copy. */
+  .eyebrow {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px 24px;
+    font: 400 11px/1.6 var(--mono);
+    font-stretch: 87%;
+    color: var(--teal);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .eyebrow a {
+    text-decoration: none;
+  }
+  .eyebrow > span {
+    color: var(--soft);
+  }
+}

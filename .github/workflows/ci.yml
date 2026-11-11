@@ -110,11 +110,11 @@ jobs:
       - name: Build API documentation
         run: cargo doc --workspace --no-deps --locked
   site:
-    name: Build site
+    name: Check site
     needs: select
     if: needs.select.outputs.site == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: site
@@ -129,12 +129,11 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - name: Install site dependencies
         run: npm ci
-      - name: Lint the download installer
-        run: shellcheck public/install.sh
-      - name: Test the download installer
-        run: npm test
-      - name: Build site
-        run: npm run build
+      - name: Install the browser for end-to-end tests
+        run: npx playwright install --with-deps chromium
+      # Format, lint, ShellCheck, types, unit tests, build, built-output checks, and browser tests.
+      - name: Check site
+        run: npm run check
   required:
     name: Required checks
     needs: [select, lint-ci, lint-rust, test, docs, site]

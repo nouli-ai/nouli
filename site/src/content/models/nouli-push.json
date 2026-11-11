@@ -1,0 +1,28 @@
+{
+  "order": 7,
+  "name": "Push",
+  "task": "PushT keypoint control",
+  "category": "control",
+  "area": "Control",
+  "cardArea": "Simulator control",
+  "version": "1.0.0",
+  "released": "2026-10-31",
+  "description": "Forecast actions and move the T-shaped block using structured simulator state.",
+  "openGraph": {
+    "title": "title",
+    "image": "/models/nouli-push/comparison.png",
+    "card": "summary_large_image"
+  },
+  "flow": {
+    "input": "Keypoints + history",
+    "output": "Legal XY actions"
+  },
+  "cardNote": "2.12M parameters",
+  "license": "Apache-2.0",
+  "release": "versioned",
+  "structuredData": {
+    "description": "Nouli Push is a keypoint-based policy for the PushT simulator. A fine-tuned Decoder Only Transformer (DOT) predicts action forecasts, and a causal controller combines past forecasts into legal XY actions.",
+    "runtimePlatform": "Python 3.12 / PyTorch",
+    "licenses": ["https://www.apache.org/licenses/LICENSE-2.0"]
+  }
+}

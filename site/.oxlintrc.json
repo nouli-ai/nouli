@@ -1,0 +1,20 @@
+{
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "pedantic": "warn"
+  },
+  "rules": {
+    "eqeqeq": "error",
+    "no-unused-vars": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-explicit-any": "error",
+    // Stylesheets and client elements, which register themselves, are imported for their side effect.
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "**/client/*"] }],
+    // Library types such as Playwright's Page are mutable, so the rule cannot be satisfied at call sites.
+    "typescript/prefer-readonly-parameter-types": "off"
+  },
+  "ignorePatterns": ["dist/**", ".astro/**", "public/**", "tools/**"]
+}

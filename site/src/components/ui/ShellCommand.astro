@@ -1,0 +1,44 @@
+---
+import CopyButton from "./CopyButton.astro";
+interface Props {
+  code: string;
+  label: string;
+  os?: string;
+}
+const { code, label, os } = Astro.props;
+---
+
+<copy-text class="shell">
+  {os && <span class="os">{os}</span>}
+  <span class="dollar" aria-hidden="true">
+    $
+  </span>
+  <code data-copy-source>{code}</code>
+  <CopyButton label={label} />
+</copy-text>
+<style>
+  .shell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--teal);
+    font: 400 13px var(--mono);
+    font-stretch: 87%;
+  }
+  .os {
+    flex: none;
+    width: 6ch;
+    font-size: 11px;
+    color: var(--soft);
+  }
+  .dollar {
+    color: var(--teal);
+  }
+  code {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+</style>

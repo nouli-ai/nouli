@@ -1,0 +1,551 @@
+---
+import CodeBlock from "../../components/ui/CodeBlock.astro";
+import ModelSection from "../../components/models/ModelSection.astro";
+import ModelLayout from "../../layouts/ModelLayout.astro";
+import { sectionLookup } from "../../lib/models";
+
+const sections = [
+  {
+    id: "how-it-works",
+    title: "How it works",
+  },
+  {
+    id: "model-at-a-glance",
+    title: "Model at a glance",
+  },
+  {
+    id: "example-input-and-output",
+    title: "Example input and output",
+  },
+  {
+    id: "examples-for-claims-handlers-and-loss-adjusters",
+    title: "Examples for claims handlers and loss adjusters",
+  },
+  {
+    id: "quickstart",
+    title: "Quickstart",
+  },
+  {
+    id: "provenance",
+    title: "Base model and data",
+  },
+  {
+    id: "limitations",
+    title: "Limitations",
+  },
+  {
+    id: "license-and-citation",
+    title: "License and citation",
+  },
+];
+const section = sectionLookup(sections);
+---
+
+<ModelLayout slug="nouli-insurance-loss-event" sections={sections}>
+  <Fragment slot="intro">
+    <p>
+      Classify an initial property-claim notice across 22 loss-event categories, then suggest an
+      intake queue. Explore recorded FNOL examples for claims handlers, intake teams and loss
+      adjusters.
+    </p>
+    <p class="release-scope">
+      Research preview, evaluated on synthetic English household and building insurance notices.
+      Coverage and settlement decisions are outside its scope.
+    </p>
+  </Fragment>
+  <ModelSection {...section("how-it-works")}>
+    <p>
+      <img
+        src="/models/nouli-insurance-loss-event/how-it-works.svg"
+        alt="An initial claim narrative goes to the loss-event classifier, which returns a category and probabilities. A deterministic Nouli routing rule then selects an intake queue or review."
+      />
+    </p>
+    <p>
+      The model identifies the loss event from the narrative. A separate, hand-authored rule maps
+      its answer to a queue. The included Nouli workflow connects the two steps and records their
+      execution.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("model-at-a-glance")}>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Input</td>
+          <td>Initial property-claim narrative in English</td>
+        </tr>
+        <tr>
+          <td>Output</td>
+          <td>One of 22 loss events, probabilities and an illustrative queue</td>
+        </tr>
+        <tr>
+          <td>Categories</td>
+          <td>Water damage, fire, theft, weather events and other property-loss causes</td>
+        </tr>
+        <tr>
+          <td>Runtime</td>
+          <td>Local CPU or CUDA; CPU rechecked for this release</td>
+        </tr>
+        <tr>
+          <td>Base model</td>
+          <td>RoBERTa-large</td>
+        </tr>
+        <tr>
+          <td>License</td>
+          <td>Apache-2.0; upstream MIT notice applies</td>
+        </tr>
+      </tbody>
+    </table>
+  </ModelSection>
+  <ModelSection {...section("example-input-and-output")}>
+    <p>
+      <strong>Input:</strong> “Sewage backed up through the bathroom drain and damaged the floor.”
+    </p>
+    <p>
+      <strong>Recorded output</strong> (probabilities and trace fields omitted):
+    </p>
+    <CodeBlock
+      label="Recorded output"
+      code={`{
+  "answers": {
+    "loss_event": {"choice": "Backflow waste"}
+  },
+  "routing": {
+    "queue": "water_damage"
+  }
+}
+`}
+    />
+    <p>
+      The specialist identifies sewage backflow, then the routing rule assigns the water-damage
+      queue. This example was run with the supplied weights on CPU.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/examples/notice.txt">
+        Input
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/examples/output.json">
+        Complete output
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("examples-for-claims-handlers-and-loss-adjusters")}>
+    <p>
+      These constructed first-notice-of-loss (FNOL) examples cover all 22 model categories. Each
+      result was recorded on CPU.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/examples/category-examples.json">
+        Complete inputs, probabilities and queue outputs
+      </a>
+      .
+    </p>
+    <p>
+      For an intake handoff, retain the original notice alongside the suggested event and queue. The
+      reported cause matters: a broken window can follow hail, forced entry or an accidental impact.
+      Policy coverage and settlement require a separate assessment.
+    </p>
+    <details class="model-example-group" open>
+      <summary>
+        Water-related notices<span>5 examples</span>
+      </summary>
+      <div>
+        <p>
+          Example queue: <code>water_damage</code>.
+        </p>
+        <table class="example-table">
+          <thead>
+            <tr>
+              <th>Reported FNOL</th>
+              <th>Recorded loss event</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                During prolonged heavy rain, water entered through a poorly sealed roof joint and
+                stained the bedroom ceiling.
+              </td>
+              <td>
+                <strong>Atmospheric precipitation</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>Sewage backed up through the bathroom drain and damaged the floor.</td>
+              <td>
+                <strong>Backflow waste</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                The nearby river overflowed its banks and floodwater entered the ground floor of our
+                home, damaging flooring and furniture.
+              </td>
+              <td>
+                <strong>Flood</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Groundwater rose beneath the house after weeks of wet weather and seeped through the
+                basement walls and floor.
+              </td>
+              <td>
+                <strong>Groundwater</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A pipe beneath the kitchen sink burst, releasing water across the floor and damaging
+                the lower cabinets.
+              </td>
+              <td>
+                <strong>Waterleakage</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <details class="model-example-group">
+      <summary>
+        Theft, forced entry and malicious damage<span>4 examples</span>
+      </summary>
+      <div>
+        <p>
+          Example queue: <code>crime_damage</code>.
+        </p>
+        <table class="example-table">
+          <thead>
+            <tr>
+              <th>Reported FNOL</th>
+              <th>Recorded loss event</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                Our home was broken into while we were on holiday. The intruders smashed a rear
+                window to enter and took jewellery from an upstairs bedroom.
+              </td>
+              <td>
+                <strong>Burglary</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A person threatened me with a knife outside my front door and forced me to hand over
+                my handbag and phone.
+              </td>
+              <td>
+                <strong>Robbery</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                My bicycle was taken from the front garden while I was inside. No doors, locks or
+                windows were damaged.
+              </td>
+              <td>
+                <strong>Theft</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Someone deliberately sprayed paint across our outside wall and smashed the garden
+                lights. Nothing was taken.
+              </td>
+              <td>
+                <strong>Vandalism</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <details class="model-example-group">
+      <summary>
+        Weather and external damage<span>8 examples</span>
+      </summary>
+      <div>
+        <p>
+          Example queue: <code>weather_or_external_damage</code>.
+        </p>
+        <table class="example-table">
+          <thead>
+            <tr>
+              <th>Reported FNOL</th>
+              <th>Recorded loss event</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                Lightning struck our house chimney directly and damaged the chimney masonry and roof
+                tiles.
+              </td>
+              <td>
+                <strong>Direct lightning strike</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                An earthquake shook our home and left fresh cracks across the external walls and
+                foundation.
+              </td>
+              <td>
+                <strong>Earthquake</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A large tree fell onto the garage during the night, crushing the roof and damaging
+                the guttering.
+              </td>
+              <td>
+                <strong>Falling trees, poles and other objects</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Large hailstones struck the house during the afternoon and cracked several roof
+                tiles and the conservatory glazing.
+              </td>
+              <td>
+                <strong>Hail</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                The slope behind our house collapsed in a landslide, pushing soil and rocks into the
+                garden wall and outbuilding.
+              </td>
+              <td>
+                <strong>Landslide, rockfall</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Strong winds lifted roof tiles and tore the guttering from our house during a
+                windstorm.
+              </td>
+              <td>
+                <strong>Storm</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A heavy accumulation of snow and ice overloaded the conservatory roof, causing it to
+                sag and collapse.
+              </td>
+              <td>
+                <strong>Weight of snow or ice</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A wild boar broke through the garden fence and damaged the planted beds and exterior
+                wall of the shed.
+              </td>
+              <td>
+                <strong>Wild Animals</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <details class="model-example-group">
+      <summary>
+        Fire and explosion<span>2 examples</span>
+      </summary>
+      <div>
+        <p>
+          Example queue: <code>fire_or_explosion</code>.
+        </p>
+        <table class="example-table">
+          <thead>
+            <tr>
+              <th>Reported FNOL</th>
+              <th>Recorded loss event</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                A fire started in the kitchen and spread to the cabinets, leaving burned surfaces
+                and smoke damage throughout the room.
+              </td>
+              <td>
+                <strong>Fire</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A gas cylinder exploded in the detached garden shed. The blast damaged the shed
+                walls and nearby windows.
+              </td>
+              <td>
+                <strong>Explosion</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <details class="model-example-group">
+      <summary>
+        Glass, electrical and appliance failures<span>3 examples</span>
+      </summary>
+      <div>
+        <p>
+          Example queue: <code>glass_electrical_or_breakdown</code>.
+        </p>
+        <table class="example-table">
+          <thead>
+            <tr>
+              <th>Reported FNOL</th>
+              <th>Recorded loss event</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                While moving a cupboard, I accidentally struck the living-room window with its
+                corner and shattered the pane.
+              </td>
+              <td>
+                <strong>Glass Damage</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                An electrical surge from the supply network damaged the television and refrigerator.
+                An electrician confirmed the damage followed a voltage spike.
+              </td>
+              <td>
+                <strong>Overvoltage</strong>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Our washing machine stopped working because its internal motor failed during normal
+                use. The engineer found a mechanical breakdown inside the appliance.
+              </td>
+              <td>
+                <strong>Extended warranty</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          The same damaged item can belong to different event categories. These examples illustrate
+          the fixed taxonomy; performance on real insurer notices remains unmeasured.
+        </p>
+      </div>
+    </details>
+  </ModelSection>
+  <ModelSection {...section("quickstart")}>
+    <p>
+      Use Python 3.12 and the{" "}
+      <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>. Download the
+      complete repository:
+    </p>
+    <CodeBlock
+      label="Terminal"
+      code={`hf download nouli-ai/nouli-insurance-loss-event --revision v1.0.1 --local-dir ./nouli-insurance-loss-event
+cd nouli-insurance-loss-event
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python predict.py --checkpoint . --device cpu \\
+  --text-file examples/notice.txt
+`}
+    />
+    <p>
+      Replace the example file with your own initial notice. The helper applies the release
+      preprocessing and returns all 22 probabilities. No hosted API key or separate base-model
+      download is required.
+    </p>
+    <p>
+      To run the two-step workflow through{" "}
+      <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.5.1">Nouli CLI 0.5.1</a>:
+    </p>
+    <CodeBlock
+      label="Terminal"
+      code={`mkdir -p outputs
+.venv/bin/python nouli_demo.py --checkpoint . \\
+  --nouli "$(command -v nouli)" --device cpu \\
+  --text "$(cat examples/notice.txt)" --output outputs/workflow.json
+`}
+    />
+    <p>
+      See{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/GETTING_STARTED.md">
+        setup and integration
+      </a>{" "}
+      for CUDA, offline use, the routing rule and output fields.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("provenance")}>
+    <p>
+      Based on{" "}
+      <a href="https://huggingface.co/FacebookAI/roberta-large">FacebookAI/roberta-large</a>, with
+      data from{" "}
+      <a href="https://huggingface.co/datasets/gratex/GNOTHEIA-synthetic-insurance-dataset-v2">
+        Gratex’s GNOTHEIA Synthetic Insurance Dataset v2
+      </a>
+      . The dataset contains synthetic household and building claim scenarios.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/provenance.json">
+        Source revisions and provenance
+      </a>
+      .
+    </p>
+    <p>
+      The repository includes the complete selected classifier, tokenizer and local runtime. The
+      workflow and queue mapping are application rules supplied with the example.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("limitations")}>
+    <ul>
+      <li>
+        Validated on synthetic English data. Performance on real insurer notices remains unmeasured.
+      </li>
+      <li>
+        Supports a fixed 22-category taxonomy. It always chooses a category for a valid narrative;
+        unfamiliar or closely related events can be misclassified, including theft and burglary.
+      </li>
+      <li>
+        Inputs beyond 384 tokens are truncated. Keep the reported cause and circumstances near the
+        beginning.
+      </li>
+      <li>
+        The 0.8 review threshold is illustrative; model probabilities do not guarantee correctness.
+        Validate thresholds for your workflow.
+      </li>
+      <li>
+        Classifies the reported event; coverage, fraud, pricing and payout decisions are outside its
+        scope.
+      </li>
+    </ul>
+  </ModelSection>
+  <ModelSection {...section("license-and-citation")}>
+    <p>
+      Apache-2.0, with the upstream MIT license retained in{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/BASE_MODEL_LICENSE.txt">
+        BASE_MODEL_LICENSE.txt
+      </a>
+      . See{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-insurance-loss-event/resolve/57e6cf45e097d6280a224ba18cd11f6120eeb28e/NOTICE">
+        NOTICE
+      </a>{" "}
+      for attribution.
+    </p>
+    <p>
+      <a href="https://nouli.ai">Nouli AI</a>. Nouli Insurance Loss Event. Cite the published
+      version and commit.
+    </p>
+  </ModelSection>
+</ModelLayout>

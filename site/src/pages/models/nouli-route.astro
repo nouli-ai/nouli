@@ -1,0 +1,191 @@
+---
+import CodeBlock from "../../components/ui/CodeBlock.astro";
+import ModelSection from "../../components/models/ModelSection.astro";
+import ModelLayout from "../../layouts/ModelLayout.astro";
+import { sectionLookup } from "../../lib/models";
+
+const sections = [
+  {
+    id: "comparison",
+    title: "Comparison with Jev",
+  },
+  {
+    id: "model-at-a-glance",
+    title: "Model at a glance",
+  },
+  {
+    id: "quickstart",
+    title: "Quickstart with Nouli CLI",
+  },
+  {
+    id: "provenance",
+    title: "Base models and training data",
+  },
+  {
+    id: "limitations",
+    title: "Limitations",
+  },
+  {
+    id: "license-and-citation",
+    title: "License and citation",
+  },
+];
+const section = sectionLookup(sections);
+---
+
+<ModelLayout slug="nouli-route" sections={sections}>
+  <Fragment slot="intro">
+    <p>
+      Nouli Route classifies English banking-support requests into the 77 BANKING77 intents. It uses
+      a fine-tuned Ettin-1B encoder and returns the selected intent with a calibrated probability
+      distribution.
+    </p>
+  </Fragment>
+  <ModelSection {...section("comparison")}>
+    <p>Recorded comparison with Jev 1.14.0, dated 31 October 2026.</p>
+    <a
+      class="comparison-image"
+      href="/models/nouli-route/comparison.png"
+      aria-label="Open the full Nouli Route comparison image"
+    >
+      <img
+        src="/models/nouli-route/comparison.png"
+        alt="Nouli Route: the published example, reference label, and recorded Jev comparison"
+        width="1620"
+        height="978"
+        loading="lazy"
+        decoding="async"
+      />
+    </a>
+    <p>
+      Reference label: <strong>Pending cash withdrawal</strong>. <strong>Nouli Route</strong>{" "}
+      selects <strong>Pending cash withdrawal</strong>; <strong>Jev few-shot, calibrated</strong>{" "}
+      selects <strong>Declined cash withdrawal</strong>.
+    </p>
+    <p>
+      The example uses the declared primary few-shot Jev baseline; the full evaluation also includes
+      a graph baseline.
+    </p>
+    <p>
+      Illustrative example selected after scoring; not a representative sample.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-route/resolve/v1.0.0/eval/results.json">
+        Recorded evaluation
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-route/resolve/v1.0.0/eval/protocol.json">
+        Methodology
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-route/resolve/v1.0.0/eval/illustrative-comparison.json">
+        Example details
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("model-at-a-glance")}>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Parameters</td>
+          <td>1.029 billion</td>
+        </tr>
+        <tr>
+          <td>Input</td>
+          <td>128 tokens</td>
+        </tr>
+        <tr>
+          <td>Tested runtime</td>
+          <td>macOS ARM64 / CPU; Linux ARM64 / CUDA</td>
+        </tr>
+        <tr>
+          <td>License</td>
+          <td>Apache-2.0; upstream notices apply</td>
+        </tr>
+      </tbody>
+    </table>
+  </ModelSection>
+  <ModelSection {...section("quickstart")}>
+    <p>
+      Requires Python 3.12, the{" "}
+      <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and{" "}
+      <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.4.2">Nouli CLI 0.4.2</a>. Hugging
+      Face hosts the files; inference runs on your machine. The Python server loads the weights, and
+      Nouli runs the supplied decision workflow. No hosted API key is required.
+    </p>
+    <p>In the first terminal:</p>
+    <CodeBlock
+      label="Terminal 1 · prepare and serve"
+      code={`hf download nouli-ai/nouli-route --revision v1.0.0 --local-dir ./nouli-route
+cd nouli-route
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --text "My card still has not arrived after two weeks."
+python serve.py --device cpu
+`}
+    />
+    <p>
+      Once the server reports ready, open a second terminal in <code>nouli-route</code>:
+    </p>
+    <CodeBlock
+      label="Terminal 2 · run the workflow"
+      code={`nouli --config nouli/nouli.toml --store ./.nouli-store \\
+  workflow run nouli/example-workflow.json --json
+`}
+    />
+    <p>
+      The example uses CPU. On a configured CUDA host, start the server with{" "}
+      <code>--device cuda</code>. Rerun <code>prepare.py</code> with your text or file before
+      running another workflow.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("provenance")}>
+    <ul>
+      <li>
+        <a href="https://huggingface.co/jhu-clsp/ettin-encoder-1b/tree/befd76be43d08b89ff9957012f3ff29d0842780b">
+          jhu-clsp/ettin-encoder-1b
+        </a>
+      </li>
+    </ul>
+    <p>
+      Training data:{" "}
+      <a href="https://huggingface.co/datasets/PolyAI/banking77/tree/1846984189f2bc0ac51c6fc3a600fa9e1714e0c6">
+        PolyAI/banking77
+      </a>
+      ; 6,473 training queries.
+    </p>
+    <p>
+      Trained on BANKING77 intent labels. Auxiliary intent-family labels are derived from the same
+      ontology.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-route/resolve/v1.0.0/provenance.json">
+        Source revisions and provenance
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("limitations")}>
+    <ul>
+      <li>
+        Supports the 77 BANKING77 intents. Out-of-scope rejection and production-routing performance
+        are untested.
+      </li>
+      <li>
+        Development data was reserved and detected test-family overlaps removed; published
+        leaderboard setups may differ.
+      </li>
+    </ul>
+  </ModelSection>
+  <ModelSection {...section("license-and-citation")}>
+    <p>Apache-2.0, with upstream notices and dataset attribution retained.</p>
+    <p>
+      <a href="https://nouli.ai">Nouli AI</a>. Nouli Route. Cite the published model version and
+      commit.
+    </p>
+  </ModelSection>
+</ModelLayout>

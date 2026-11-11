@@ -1,0 +1,45 @@
+---
+import { getCollection } from "astro:content";
+import { modelPath } from "../../lib/models";
+
+interface Props {
+  /** The model whose page this is; every other model is listed in catalog order. */
+  current: string;
+}
+
+const others = (await getCollection("models"))
+  .filter(({ id }) => id !== Astro.props.current)
+  .toSorted((a, b) => a.data.order - b.data.order);
+---
+
+<section class="related-models">
+  <p class="eyebrow">More from Nouli</p>
+  <div>
+    {others.map(({ id, data }) => (
+      <a href={modelPath(id)}>{data.fullName} →</a>
+    ))}
+  </div>
+</section>
+
+<style>
+  .related-models {
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+    border-top: 1px solid var(--rule);
+    padding: 28px 0 70px;
+  }
+  .related-models > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px 36px;
+    margin-top: 20px;
+  }
+  a {
+    font: 400 22px/1.2 var(--cond);
+    letter-spacing: -0.02em;
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--teal);
+  }
+</style>

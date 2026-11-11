@@ -1,0 +1,29 @@
+---
+import BaseHead from "../components/site/BaseHead.astro";
+import type { Props as HeadProps } from "../components/site/BaseHead.astro";
+import SkipLink from "../components/site/SkipLink.astro";
+import "../styles/global.css";
+
+interface Props extends HeadProps {
+  /** The skip link's target: the page content after the page's own navigation. */
+  skipTarget?: string;
+  /** A class for `<body>`, for pages with their own page-wide design. */
+  bodyClass?: string | undefined;
+}
+
+const { skipTarget = "content", bodyClass, ...head } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <BaseHead {...head} />
+  </head>
+  <body class={bodyClass}>
+    <SkipLink target={skipTarget} />
+    <main id="content">
+      <slot />
+    </main>
+    <slot name="footer" />
+  </body>
+</html>

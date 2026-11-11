@@ -1,0 +1,200 @@
+---
+import CodeBlock from "../../components/ui/CodeBlock.astro";
+import ModelSection from "../../components/models/ModelSection.astro";
+import ModelLayout from "../../layouts/ModelLayout.astro";
+import { sectionLookup } from "../../lib/models";
+
+const sections = [
+  {
+    id: "comparison",
+    title: "Comparison with Jev",
+  },
+  {
+    id: "model-at-a-glance",
+    title: "Model at a glance",
+  },
+  {
+    id: "quickstart",
+    title: "Quickstart with Nouli CLI",
+  },
+  {
+    id: "provenance",
+    title: "Base models and training data",
+  },
+  {
+    id: "limitations",
+    title: "Limitations",
+  },
+  {
+    id: "license-and-citation",
+    title: "License and citation",
+  },
+];
+const section = sectionLookup(sections);
+---
+
+<ModelLayout slug="nouli-clause" sections={sections}>
+  <Fragment slot="intro">
+    <p>
+      Nouli Clause evaluates a fixed checklist of 17 NDA hypotheses. An Ettin-150M evidence
+      retriever selects passages for an Ettin-1B decision encoder, which returns entailment,
+      contradiction, or not-mentioned probabilities.
+    </p>
+  </Fragment>
+  <ModelSection {...section("comparison")}>
+    <p>Recorded comparison with Jev 1.14.0, dated 31 October 2026.</p>
+    <a
+      class="comparison-image"
+      href="/models/nouli-clause/comparison.png"
+      aria-label="Open the full Nouli Clause comparison image"
+    >
+      <img
+        src="/models/nouli-clause/comparison.png"
+        alt="Nouli Clause: the published example, reference label, and recorded Jev comparison"
+        width="1620"
+        height="1089"
+        loading="lazy"
+        decoding="async"
+      />
+    </a>
+    <p>
+      Reference label: <strong>Supported</strong>. <strong>Nouli Clause</strong> selects{" "}
+      <strong>Supported</strong>; <strong>Jev full-contract, calibrated</strong> selects{" "}
+      <strong>Contradicted</strong>.
+    </p>
+    <p>
+      The excerpt is shown for the reader. Jev received the full NDA; Nouli used passages selected
+      by its trained retriever.
+    </p>
+    <p>
+      Illustrative example selected after scoring; not a representative sample.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/eval/results.json">
+        Recorded evaluation
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/eval/protocol.json">
+        Methodology
+      </a>{" "}
+      ·{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/eval/illustrative-comparison.json">
+        Example details
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("model-at-a-glance")}>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Parameters</td>
+          <td>1.178 billion</td>
+        </tr>
+        <tr>
+          <td>Input</td>
+          <td>512-token evidence windows; 1,280-token decision input</td>
+        </tr>
+        <tr>
+          <td>Tested runtime</td>
+          <td>macOS ARM64 / CPU; Linux ARM64 / CUDA</td>
+        </tr>
+        <tr>
+          <td>License</td>
+          <td>Apache-2.0; upstream notices apply</td>
+        </tr>
+      </tbody>
+    </table>
+  </ModelSection>
+  <ModelSection {...section("quickstart")}>
+    <p>
+      Requires Python 3.12, the{" "}
+      <a href="https://huggingface.co/docs/huggingface_hub/guides/cli">HF CLI</a>, and{" "}
+      <a href="https://github.com/nouli-ai/nouli/releases/tag/v0.4.2">Nouli CLI 0.4.2</a>. Hugging
+      Face hosts the files; inference runs on your machine. The Python server loads the weights, and
+      Nouli runs the supplied decision workflow. No hosted API key is required.
+    </p>
+    <p>In the first terminal:</p>
+    <CodeBlock
+      label="Terminal 1 · prepare and serve"
+      code={`hf download nouli-ai/nouli-clause --revision v1.0.0 --local-dir ./nouli-clause
+cd nouli-clause
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python prepare.py --file examples/nda.txt
+python serve.py --device cpu
+`}
+    />
+    <p>
+      Once the server reports ready, open a second terminal in <code>nouli-clause</code>:
+    </p>
+    <CodeBlock
+      label="Terminal 2 · run the workflow"
+      code={`nouli --config nouli/nouli.toml --store ./.nouli-store \\
+  workflow run nouli/example-workflow.json --json
+`}
+    />
+    <p>
+      The example uses CPU. On a configured CUDA host, start the server with{" "}
+      <code>--device cuda</code>. Rerun <code>prepare.py</code> with your text or file before
+      running another workflow.
+    </p>
+  </ModelSection>
+  <ModelSection {...section("provenance")}>
+    <ul>
+      <li>
+        <a href="https://huggingface.co/jhu-clsp/ettin-encoder-1b/tree/befd76be43d08b89ff9957012f3ff29d0842780b">
+          jhu-clsp/ettin-encoder-1b
+        </a>
+      </li>
+      <li>
+        <a href="https://huggingface.co/jhu-clsp/ettin-encoder-150m/tree/45d08642849e5c5701b162671ac811b7654bfd9f">
+          jhu-clsp/ettin-encoder-150m
+        </a>
+      </li>
+    </ul>
+    <p>
+      Training data:{" "}
+      <a href="https://huggingface.co/datasets/reuben256/contract-nli/tree/a238b4be3fa9ae91d3fbe9970383e532ae8e69c6">
+        reuben256/contract-nli
+      </a>
+      ; 337 training contracts / 5,729 hypothesis decisions. The official source is{" "}
+      <a href="https://github.com/stanfordnlp/contract-nli/tree/eced6528dd3c1d14d73f9a87df8f7bdbc03126f9">
+        Stanford ContractNLI
+      </a>
+      , with{" "}
+      <a href="https://github.com/stanfordnlp/contract-nli/blob/eced6528dd3c1d14d73f9a87df8f7bdbc03126f9/LICENSE">
+        CC-BY-4.0 attribution
+      </a>
+      .
+    </p>
+    <p>
+      Trained on ContractNLI decision labels and human-annotated evidence spans.{" "}
+      <a href="https://huggingface.co/nouli-ai/nouli-clause/resolve/v1.0.0/provenance.json">
+        Source revisions and provenance
+      </a>
+      .
+    </p>
+  </ModelSection>
+  <ModelSection {...section("limitations")}>
+    <ul>
+      <li>Supports the fixed 17-hypothesis NDA checklist, not arbitrary contract questions.</li>
+      <li>
+        Retrieval errors can affect decisions. A retrieval miss does not establish that a statement
+        is absent from the contract.
+      </li>
+    </ul>
+  </ModelSection>
+  <ModelSection {...section("license-and-citation")}>
+    <p>Apache-2.0, with upstream notices and dataset attribution retained.</p>
+    <p>
+      <a href="https://nouli.ai">Nouli AI</a>. Nouli Clause. Cite the published model version and
+      commit.
+    </p>
+  </ModelSection>
+</ModelLayout>

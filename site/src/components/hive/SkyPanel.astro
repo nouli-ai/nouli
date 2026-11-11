@@ -1,0 +1,43 @@
+---
+interface Props {
+  /** Reveal the hidden honeycomb around the pointer. */
+  comb?: boolean;
+  /** Holds the page navigation, so stack above later panels to keep the fixed nav on top. */
+  top?: boolean;
+  class?: string;
+}
+const { comb = false, top = false, class: className } = Astro.props;
+---
+
+<div class:list={["sky", { top }, className]}>
+  <sky-field comb={comb ? "" : undefined} aria-hidden="true"></sky-field>
+  <slot />
+</div>
+<script>
+  import "../../client/sky-field";
+</script>
+
+<style>
+  .sky {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    color: var(--on-sky);
+    background: linear-gradient(var(--sky-high), var(--sky-violet) 60%, var(--sky-low));
+  }
+  .top {
+    z-index: 10;
+  }
+  sky-field {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  sky-field :global(canvas) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+</style>

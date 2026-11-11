@@ -1,0 +1,29 @@
+---
+import { repository } from "../../lib/site";
+---
+
+<footer class="foot">
+  <span>Nouli · MIT</span>
+  <a href="/examples/">Examples</a>
+  <a href="/guide/">Guide</a>
+  <a href="/models/">Models</a>
+  <a href={repository}>GitHub</a>
+</footer>
+
+<style>
+  .foot {
+    display: flex;
+    gap: 24px;
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 24px 0 60px;
+    font-size: 14px;
+    color: var(--hive-soft);
+  }
+  a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    color: inherit;
+  }
+</style>

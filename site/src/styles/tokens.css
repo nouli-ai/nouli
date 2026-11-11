@@ -1,0 +1,90 @@
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/archivo-latin-variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Martian Mono";
+  src: url("/fonts/martian-mono-latin-variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 700;
+  font-stretch: 75% 112.5%;
+  font-display: swap;
+}
+
+@layer tokens {
+  :root {
+    --paper: #f5f3f8;
+    --ink: #17152b;
+    --teal: #8f5e00;
+    --soft: #5f5c75;
+    --rule: #17152b1f;
+    --on-teal: #fff;
+    --on-teal-dim: #f4f1eb55;
+    --on-teal-faint: #f4f1eb22;
+    --on-teal-hatch: #f4f1eb88;
+    --teal-bright: #5cc8b6;
+    --code-tint: #17152b0d;
+    --pre-tint: #ffffff55;
+    --media-ground: #fff;
+    --shadow: #0003;
+    --mark-light: #ffffff26;
+    --cond: "Archivo", sans-serif;
+    --mono: "Martian Mono", monospace;
+    /* Terminal output needs block characters at the same width as letters. */
+    --term:
+      ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+
+    /* Terminal surfaces and the standard palette for named ANSI colors in recordings. */
+    --term-bg: #15191d;
+    --term-fg: #d1d5db;
+    --term-rule: #31373e;
+    --term-control: #68717c;
+    --term-dim: #9ca3af;
+    --term-focus: #67e8f9;
+    --term-red: #ef4444;
+    --term-green: #22c55e;
+    --term-brown: #eab308;
+    --term-blue: #3b82f6;
+    --term-magenta: #ec4899;
+    --term-cyan: #06b6d4;
+    --term-bright-black: #737373;
+    --term-bright-white: #fff;
+
+    /* Hive: the home page design. The sky shader and the network canvas read these at runtime,
+       so each color is stated here once. */
+    --sky-low: #f0a98f;
+    --sky-high: #1c1748;
+    --sky-violet: #6b4fd8;
+    --sky-rose: #e58bb7;
+    --hive-page: #f5f3f8;
+    --hive-ink: #17152b;
+    --hive-soft: #5f5c75;
+    --hive-line: #17152b14;
+    --hive-card: #fff;
+    --amber: #f2a900;
+    --amber-ink: #8f5e00;
+    --amber-soft: #ffd27a;
+    --amber-track: #f2a90026;
+    --amber-glow: #f2a90055;
+    --on-amber: #1a1300;
+    --on-sky: #fff;
+    --on-sky-soft: #ffffffd1;
+    --sky-line: #ffffff2e;
+    --sky-tint: #ffffff1a;
+    --glass: #ffffffde;
+    --nav-tint-sky: #ffffff1f;
+    --nav-tint-page: #f5f3f8bf;
+    --glass-fact: #ffffffa6;
+    --glass-edge: #fff;
+    --glass-shadow: #1c174840;
+    --glass-track: #17152b12;
+    --net-edge: #ffffff66;
+    /* Canvas colors as "r, g, b" so the network can vary their opacity. */
+    --net-glow: 255, 210, 122;
+    --net-comb: 255, 240, 215;
+  }
+}

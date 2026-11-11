@@ -1,0 +1,685 @@
+---
+import { getCollection } from "astro:content";
+import DecisionNet from "../components/hive/DecisionNet.astro";
+import HivePage from "../components/hive/HivePage.astro";
+import HomeInstall from "../components/hive/HomeInstall.astro";
+import HomeNav from "../components/hive/HomeNav.astro";
+import HomeReplay from "../components/hive/HomeReplay.astro";
+import SkyPanel from "../components/hive/SkyPanel.astro";
+import { homeNetworks, modelsAheadOfJev, operations } from "../lib/home/teams";
+import { homeApplication, homeDescription, homeTitle } from "../lib/seo/home";
+import { install } from "../lib/site";
+
+const { hero, build, trace, close, teams, first } = homeNetworks();
+const modelCount = (await getCollection("models")).length;
+---
+
+<HivePage
+  title={homeTitle}
+  description={homeDescription}
+  openGraph={{ title: homeTitle, card: "summary" }}
+  structuredData={homeApplication}
+>
+  <SkyPanel class="hero-panel" comb top>
+    <div class="wrap">
+      <HomeNav install="#install" />
+      <div class="hero" id="page-content">
+        <div class="copy">
+          <p class="kicker">
+            <span class="hex" aria-hidden="true"></span>Open source · MIT
+          </p>
+          <h1>The platform for decision networks.</h1>
+          <p class="sub">Chain small AI decisions into big ones, and trace every step.</p>
+          <HomeInstall />
+          <p class="see">
+            <a href="#trace">See a network run →</a>
+          </p>
+        </div>
+        <DecisionNet
+          network={hero}
+          label="Chargeback review network, illustrative"
+          height={560}
+          class="hero-net"
+        />
+      </div>
+    </div>
+    <p class="illus">
+      Illustrative values · <a href="/examples/">See real examples →</a>
+    </p>
+  </SkyPanel>
+
+  <section class="wrap center" data-reveal>
+    <h2>Real decisions have multiple histories</h2>
+    <p class="lede">
+      Nouli gives each decision the facts and earlier answers it depends on, from every source.
+    </p>
+  </section>
+
+  <section class="build">
+    <net-modes>
+      <div class="wrap">
+        <h2 data-reveal>Build big decisions from small ones</h2>
+        <SkyPanel class="panel">
+          <div class="bar">
+            <span>{build.session} · illustrative</span>
+            <span data-mode-label>chain</span>
+          </div>
+          <DecisionNet
+            network={build}
+            withBranch
+            label="Refund review network, illustrative"
+            height={480}
+            fit
+          />
+        </SkyPanel>
+      </div>
+      <div class="cards" role="group" aria-label="Network operations">
+        {operations.map(({ mode, name, text }, index) => (
+          <button type="button" data-mode={mode} aria-pressed={index === 0 ? "true" : "false"}>
+            <i>{String(index + 1).padStart(2, "0")}</i>
+            <b>{name}</b>
+            <span>{text}</span>
+          </button>
+        ))}
+      </div>
+    </net-modes>
+  </section>
+
+  <section class="wrap" id="trace">
+    <div class="split" data-reveal>
+      <h2>Find the step that went wrong</h2>
+      <p class="lede">
+        Every step is saved with what it saw, what it answered and how sure it was. Send the unsure
+        ones to a person.
+      </p>
+    </div>
+    <net-inspector>
+      <SkyPanel class="panel">
+        <div class="bar">
+          <span>Hover a step to trace it · click to inspect</span>
+          <span>{trace.session} · illustrative</span>
+        </div>
+        <DecisionNet
+          network={trace}
+          inspectable
+          label="Invoice dispute network, illustrative"
+          height={480}
+          fit
+        />
+        <section class="inspector" data-inspector hidden aria-label="Step details">
+          <button type="button" class="close" data-close aria-label="Close step details">
+            ×
+          </button>
+          <p class="ins-k" data-kind>
+            Step
+          </p>
+          <h3>Step details</h3>
+          <p class="ins-k" data-saw-label>
+            Saw
+          </p>
+          <ul data-saw></ul>
+          <p class="ins-k" data-dist-label>
+            Answer distribution
+          </p>
+          <ul class="dist" data-dist></ul>
+          <p class="ins-k">Picked</p>
+          <p class="ins-a" data-answer></p>
+        </section>
+      </SkyPanel>
+    </net-inspector>
+  </section>
+
+  <section class="wrap">
+    <div class="split" data-reveal>
+      <h2>Map the calls your team already makes</h2>
+      <p class="lede">
+        These are illustrative. See networks run on real public data in our{" "}
+        <a href="/examples/">examples →</a>
+      </p>
+    </div>
+    <net-tabs>
+      <SkyPanel class="panel">
+        <div class="bar">
+          <span data-team-caption>{first.session} · illustrative</span>
+          <span class="tabs" data-tabs hidden role="group" aria-label="Choose a team">
+            {teams.map((team) => (
+              <button
+                type="button"
+                value={team.label}
+                data-session={`${team.session} · illustrative`}
+                aria-pressed={team.label === first.label ? "true" : "false"}
+              >
+                {team.label}
+              </button>
+            ))}
+          </span>
+        </div>
+        {teams.map((team) => (
+          <DecisionNet
+            network={team}
+            label={`${team.label} network, illustrative`}
+            height={500}
+            fit
+            team={team.label}
+          />
+        ))}
+      </SkyPanel>
+    </net-tabs>
+  </section>
+
+  <section class="wrap">
+    <h2 data-reveal>Ten steps for under a tenth of a cent*</h2>
+    <div class="cost" data-reveal>
+      <strong>
+        &lt;<i>$</i>0.001
+      </strong>
+      <ul>
+        <li>
+          <b>Decision models.</b> Each step runs on an AI model that picks from your answers and
+          writes no text.
+        </li>
+        <li>
+          <b>Any provider.</b> TypeSafe, OpenAI, Cloudflare or your own machine. Switch anytime and
+          keep your history.
+        </li>
+        <li>
+          <b>
+            {modelsAheadOfJev} of {modelCount}
+          </b>{" "}
+          of our free models beat TypeSafe Jev on their tasks. <a href="/models/">See results →</a>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <h2 data-reveal>Your first network in three commands</h2>
+    <ol class="steps" data-reveal>
+      <li>
+        <i>01</i>
+        <code>{install.homebrew}</code>
+      </li>
+      <li>
+        <i>02</i>
+        <code>nouli connect</code>
+      </li>
+      <li>
+        <i>03</i>
+        <code>nouli</code>
+      </li>
+    </ol>
+    <HomeReplay />
+    <p class="lede then">Then automate it from any language with JSON, or with the Rust library.</p>
+  </section>
+
+  <SkyPanel class="close-panel" comb>
+    <DecisionNet
+      network={close}
+      label="Atmosphere"
+      height={520}
+      pad={0.05}
+      decorative
+      class="close-net"
+    />
+    <h2>Map one process as a network this week</h2>
+    <p class="ctas">
+      <a class="btn amber" href="#install">
+        Install
+      </a>
+      <a class="btn line" href="#trace">
+        See a network run
+      </a>
+    </p>
+  </SkyPanel>
+
+  <div class="wrap">
+    <p class="why">
+      <img src="/brand/bee.svg" alt="" width="28" height="32" loading="lazy" />
+      <span>
+        <b>Why a bee?</b> A honeybee swarm chooses its new home from many small scout reports that
+        build into one decision.
+      </span>
+    </p>
+    <p class="fine">
+      MIT-licensed. Your history stays on your machine; questions go only to the provider you
+      choose, and <code>nouli context</code> shows what was sent. Providers charge for their API;
+      local models run free on your hardware. Install: Homebrew on Apple silicon, or the install
+      script on Linux (glibc 2.38+).
+      <br />* On TypeSafe Jev at about $42 per million decisions, 1,000-token inputs, November 2026
+      prices. Model results: our held-out tests against Jev 1.14.0.
+    </p>
+  </div>
+</HivePage>
+
+<script>
+  import "../client/net-modes";
+  import "../client/net-tabs";
+  import "../client/net-inspector";
+  import "../client/reveal";
+</script>
+
+<style>
+  .wrap {
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+  }
+  :global(.hero-panel),
+  :global(.close-panel) {
+    margin: 12px;
+    border-radius: 28px;
+  }
+  .hero {
+    display: grid;
+    grid-template-columns: 5.4fr 6.6fr;
+    gap: 24px;
+    align-items: center;
+    min-height: calc(100vh - 110px);
+    padding-bottom: 48px;
+  }
+  .kicker {
+    font: 500 12px var(--mono);
+    font-stretch: 87%;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-sky-soft);
+  }
+  .hex {
+    display: inline-block;
+    width: 10px;
+    height: 11px;
+    margin-right: 8px;
+    vertical-align: -1px;
+    background: var(--amber);
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  }
+  h1 {
+    margin: 16px 0 18px;
+    font-weight: 400;
+    font-size: clamp(42px, 5vw, 74px);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+  .sub {
+    max-width: 22em;
+    margin-bottom: 28px;
+    font-size: 20px;
+    color: var(--on-sky-soft);
+  }
+  .see {
+    margin-top: 18px;
+    font-weight: 500;
+  }
+  .see a {
+    color: var(--on-sky);
+    text-decoration: none;
+  }
+  .see a:focus-visible,
+  .ctas a:focus-visible {
+    outline: 2px solid var(--on-sky);
+    outline-offset: 4px;
+  }
+  .illus {
+    position: absolute;
+    right: 28px;
+    bottom: 20px;
+    font: 11px var(--mono);
+    color: var(--on-sky-soft);
+  }
+  .illus a {
+    color: inherit;
+    display: inline-block;
+    min-height: 24px;
+  }
+  section {
+    padding: 130px 0 0;
+  }
+  h2 {
+    font-weight: 400;
+    font-size: clamp(34px, 4.2vw, 58px);
+    line-height: 1.04;
+    letter-spacing: -0.035em;
+  }
+  .center {
+    text-align: center;
+  }
+  .center h2 {
+    max-width: 12em;
+    margin: 0 auto;
+  }
+  .lede {
+    font-size: 20px;
+    color: var(--hive-soft);
+  }
+  .center .lede {
+    max-width: 28em;
+    margin: 20px auto 0;
+  }
+  :global(.sky.panel) {
+    margin-top: 48px;
+    border-radius: 24px;
+    border: 1px solid var(--sky-line);
+    box-shadow: 0 30px 70px var(--glass-shadow);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--sky-line);
+    font: 11px var(--mono);
+    font-stretch: 87%;
+    color: var(--on-sky-soft);
+  }
+  .bar > span:first-child {
+    margin-right: auto;
+  }
+  @media (max-width: 640px) {
+    .bar {
+      flex-wrap: wrap;
+    }
+    .tabs {
+      flex-wrap: wrap;
+    }
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+  }
+  .tabs button {
+    min-height: 28px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--on-sky-soft);
+    font: 500 12px var(--cond);
+    cursor: pointer;
+  }
+  .tabs button[aria-pressed="true"] {
+    color: var(--on-sky);
+    border-color: var(--amber-soft);
+  }
+  .tabs button:focus-visible,
+  .cards button:focus-visible,
+  .close:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 280px));
+    justify-content: center;
+    gap: 14px;
+    padding: 18px 24px 0;
+  }
+  .cards button {
+    padding: 22px;
+    border: 1px solid var(--hive-line);
+    border-radius: 20px;
+    background: var(--hive-card);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .cards button[aria-pressed="true"] {
+    border-color: var(--amber);
+  }
+  .cards i {
+    font: 500 12px var(--mono);
+    font-style: normal;
+    color: var(--amber-ink);
+  }
+  .cards b {
+    display: block;
+    margin: 8px 0 4px;
+    font-weight: 500;
+    font-size: 24px;
+    letter-spacing: -0.02em;
+  }
+  .cards span {
+    color: var(--hive-soft);
+  }
+  .split .lede a {
+    color: var(--amber-ink);
+  }
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: end;
+  }
+  net-inspector,
+  net-modes,
+  net-tabs {
+    display: block;
+  }
+  .inspector {
+    position: absolute;
+    right: 14px;
+    top: 56px;
+    z-index: 2;
+    width: min(320px, 90%);
+    display: grid;
+    gap: 6px;
+    padding: 18px 20px;
+    border: 1px solid var(--sky-line);
+    border-radius: 14px;
+    background: var(--sky-high);
+    color: var(--on-sky);
+    box-shadow: 0 20px 50px var(--glass-shadow);
+  }
+  .inspector[hidden] {
+    display: none;
+  }
+  .inspector h3 {
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 20px;
+    line-height: 1.2;
+  }
+  .inspector ul {
+    display: grid;
+    gap: 4px;
+    list-style: none;
+    font-size: 14px;
+  }
+  .dist {
+    font: 400 13px var(--mono);
+    font-stretch: 87%;
+    font-variant-numeric: tabular-nums;
+  }
+  .dist :global(li) {
+    display: flex;
+    justify-content: space-between;
+    color: var(--on-sky-soft);
+  }
+  .dist :global(li.pick) {
+    color: var(--amber-soft);
+    font-weight: 600;
+  }
+  .ins-k {
+    margin-top: 6px;
+    font: 500 10px var(--mono);
+    font-stretch: 87%;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-sky-soft);
+  }
+  .ins-a {
+    font: 500 15px var(--mono);
+    font-stretch: 87%;
+    color: var(--amber-soft);
+  }
+  .close {
+    position: absolute;
+    right: 8px;
+    top: 6px;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-size: 22px;
+    cursor: pointer;
+  }
+  .cost {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: end;
+    margin-top: 40px;
+  }
+  .cost strong {
+    display: block;
+    font-weight: 400;
+    font-size: clamp(80px, 11vw, 160px);
+    letter-spacing: -0.06em;
+    line-height: 0.9;
+  }
+  .cost strong i {
+    font-style: normal;
+    color: var(--amber-ink);
+  }
+  .cost ul {
+    list-style: none;
+    border-top: 1px solid var(--hive-ink);
+  }
+  .cost li {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--hive-line);
+    color: var(--hive-soft);
+  }
+  .cost b {
+    margin-right: 4px;
+    font-weight: 500;
+    color: var(--hive-ink);
+  }
+  .cost a {
+    color: var(--amber-ink);
+  }
+  .steps {
+    margin-top: 28px;
+    padding: 22px 26px;
+    list-style: none;
+    border: 1px solid var(--hive-line);
+    border-radius: 14px;
+    background: var(--hive-card);
+    font: 14px/2.1 var(--mono);
+    font-stretch: 87%;
+  }
+  .steps i {
+    margin-right: 14px;
+    font-style: normal;
+    color: var(--amber-ink);
+  }
+  .then {
+    margin-top: 24px;
+  }
+  :global(.close-panel) {
+    margin-top: 130px;
+    padding: 170px 24px;
+    text-align: center;
+  }
+  :global(.close-net) {
+    position: absolute;
+    inset: 0;
+  }
+  @media (max-width: 700px) {
+    :global(.close-net) {
+      display: none;
+    }
+  }
+  :global(.close-panel) h2 {
+    max-width: 12em;
+    margin: 0 auto;
+  }
+  .ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 30px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 22px;
+    border-radius: 999px;
+    font-weight: 500;
+    font-size: 15px;
+    text-decoration: none;
+  }
+  .amber {
+    background: var(--amber);
+    color: var(--on-amber);
+  }
+  .line {
+    border: 1px solid var(--on-sky);
+    color: var(--on-sky);
+  }
+  .why {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    align-items: start;
+    max-width: 46em;
+    margin: 48px auto 0;
+    padding: 20px 24px;
+    border: 1px solid var(--hive-line);
+    border-radius: 14px;
+    font-size: 15px;
+    color: var(--hive-soft);
+  }
+  .why b {
+    font-weight: 500;
+    color: var(--hive-ink);
+  }
+  .fine {
+    max-width: 62em;
+    margin: 24px auto 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--hive-soft);
+  }
+  [data-reveal] {
+    transition:
+      opacity 0.7s ease,
+      transform 0.7s ease;
+  }
+  [data-reveal][data-waiting] {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-reveal] {
+      transition: none;
+    }
+    [data-reveal][data-waiting] {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (max-width: 900px) {
+    .hero,
+    .split,
+    .cost {
+      grid-template-columns: 1fr;
+    }
+    .hero {
+      padding-top: 20px;
+    }
+    .cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    section {
+      padding-top: 80px;
+    }
+  }
+  @media (max-width: 560px) {
+    .cards {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

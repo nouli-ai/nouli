@@ -1,0 +1,78 @@
+---
+import wide from "../../data/replays/wide.json";
+import "./replay.css";
+const fallback = wide.final.rows.map((runs) => runs.map((run) => run[0]).join("")).join("\n");
+---
+
+<figure class="replay">
+  <div class="window">
+    <div class="bar" aria-hidden="true">
+      <i></i>
+      <i></i>
+      <i></i>
+      <span>nouli · workshop</span>
+    </div>
+    <cli-replay>
+      <pre class="cli-replay-screen"><code>{fallback}</code></pre>
+      <span class="cli-probe-shelf" aria-hidden="true">
+        <span class="cli-probe">{"0".repeat(100)}</span>
+      </span>
+      <span class="cli-replay-controls" data-replay-controls hidden>
+        <button type="button" data-replay-toggle>
+          Pause
+        </button>
+        <button type="button" data-replay-restart>
+          Restart
+        </button>
+      </span>
+    </cli-replay>
+  </div>
+  <figcaption>
+    The current Nouli TUI replaying saved workshop answers at 3× speed.{" "}
+    <a href="/media/tui-workshop.webm">Watch the recording</a> ·{" "}
+    <a href="/guide/#controls-video">See the controls</a>
+  </figcaption>
+</figure>
+<script>
+  import "../../client/cli-replay";
+</script>
+
+<style>
+  .replay {
+    margin-top: 28px;
+    --term-bg: var(--hive-ink);
+  }
+  .window {
+    padding: 0 18px 18px;
+    border-radius: 18px;
+    background: var(--hive-ink);
+    box-shadow: 0 30px 70px var(--glass-shadow);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 14px 0;
+    font: 400 11px var(--mono);
+    font-stretch: 87%;
+    color: var(--on-sky-soft);
+  }
+  .bar i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--sky-line);
+  }
+  .bar span {
+    margin-left: 10px;
+  }
+  figcaption {
+    margin-top: 14px;
+    font-size: 14px;
+    color: var(--hive-soft);
+  }
+  figcaption a {
+    color: inherit;
+    text-underline-offset: 3px;
+  }
+</style>

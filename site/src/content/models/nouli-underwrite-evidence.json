@@ -1,0 +1,33 @@
+{
+  "order": 1,
+  "name": "Underwrite Evidence",
+  "task": "Historical evidence for underwriting review",
+  "category": "text",
+  "area": "Underwriting",
+  "cardArea": "Underwriting",
+  "version": "1.0.0",
+  "released": "2026-11-02",
+  "description": "Organize historical construction-incident evidence into four review themes. Three local models combine their answers; separate rules route the supplied case for information, referral or human review.",
+  "openGraph": {
+    "title": "fullName",
+    "image": "/models/nouli-underwrite-evidence/how-it-works.svg",
+    "card": "summary"
+  },
+  "summary": "Review historical construction-incident evidence across four themes, then apply separate human-review rules.",
+  "flow": {
+    "input": "Historical evidence",
+    "output": "Theme + review route"
+  },
+  "cardNote": "CPU · research preview",
+  "license": "Apache-2.0 + MIT",
+  "release": "published",
+  "revision": "88e1585d1876a754adf36d32a253b693bc49439b",
+  "structuredData": {
+    "description": "Organize historical construction-incident evidence into four review themes. Three local models combine their answers; separate rules route the supplied case for information, referral or human review.",
+    "runtimePlatform": "Python / PyTorch",
+    "licenses": [
+      "https://www.apache.org/licenses/LICENSE-2.0",
+      "https://opensource.org/license/mit/"
+    ]
+  }
+}
