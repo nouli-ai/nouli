@@ -1,0 +1,53 @@
+# Tell downstream repositories about each stable release: the Homebrew tap updates its formula,
+# and the website (nouli-ai/nouli.ai) publishes the release's scripts/install.sh.
+name: Notify release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable vMAJOR.MINOR.PATCH tag
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: notify-release-${{ inputs.release_tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+    steps:
+      - name: Check the release tag
+        run: '[[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]'
+      - name: Authenticate the release notifications
+        id: app-token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.TAP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: nouli-ai
+          repositories: homebrew-tap,nouli.ai
+          permission-contents: write
+      - name: Notify the Homebrew tap
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api --method POST repos/nouli-ai/homebrew-tap/dispatches \
+            -f event_type=nouli-release-published \
+            -f "client_payload[release_tag]=$RELEASE_TAG"
+      - name: Notify the website
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api --method POST repos/nouli-ai/nouli.ai/dispatches \
+            -f event_type=nouli-release-published \
+            -f "client_payload[release_tag]=$RELEASE_TAG"
