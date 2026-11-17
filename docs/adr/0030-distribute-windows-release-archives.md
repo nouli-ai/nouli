@@ -5,6 +5,9 @@ date: 2026-11-17
 
 # Distribute Windows release archives and a PowerShell installer
 
+[ADR 0031](0031-promote-validated-release-artifacts.md) moves native validation
+and archive creation into shared main CI and makes tags promote those artifacts.
+
 ## Context
 
 [ADR 0028](0028-native-windows-support.md) established native Windows support but

@@ -1,0 +1,124 @@
+name: Validate shipping configuration
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        type: string
+        required: true
+      candidate:
+        type: boolean
+        default: false
+      mode:
+        type: string
+        default: full
+permissions:
+  contents: read
+jobs:
+  native:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install pinned Rust and native target
+        run: |
+          rustup show active-toolchain
+          rustup target add ${{ matrix.target }}
+      - name: Configure Windows tools before caching
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = Join-Path $env:ProgramFiles 'LLVM\bin'
+          if (!(Test-Path (Join-Path $llvm 'clang-cl.exe'))) { throw 'LLVM clang-cl is required' }
+          $llvm >> $env:GITHUB_PATH
+          if ($env:RUNNER_ARCH -eq 'X64') {
+            if (!(Get-Command nasm -ErrorAction SilentlyContinue)) { choco install nasm --no-progress -y; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+            (Join-Path $env:ProgramFiles 'NASM') >> $env:GITHUB_PATH
+          }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: shipping-${{ matrix.target }}
+          cache-on-failure: true
+      - name: Lint native Rust
+        if: inputs.mode == 'full'
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build subprocess fixture
+        run: cargo build -p nouli-cli --example nouli-test-child --locked
+      - name: Run workspace and example tests
+        if: inputs.mode == 'full'
+        run: cargo test --workspace --all-targets --locked -- --test-threads=4
+      - name: Run documentation tests
+        if: inputs.mode == 'full'
+        run: cargo test --workspace --doc --locked
+      - name: Validate the actual packaged library downstream
+        if: inputs.mode == 'full'
+        run: cargo test -p nouli-core --test package_consumer --locked -- --ignored
+      - name: Run targeted Unix installer tests
+        if: inputs.mode == 'unix-installer'
+        run: cargo test -p nouli-cli --test unix_installer --locked
+      - name: Run targeted Windows installer tests
+        if: inputs.mode == 'windows-installer'
+        run: cargo test -p nouli-cli --test windows_installer --locked
+      - name: Build API documentation
+        if: inputs.mode == 'full' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo doc --workspace --no-deps --locked
+      - name: Build shipping executables and examples
+        if: inputs.mode == 'full'
+        run: cargo build --workspace --bins --examples --release --locked --timings
+      - name: Verify optimized terminal behavior
+        if: inputs.mode == 'full'
+        run: cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker --test tui_startup -- --test-threads=4
+      - name: Verify Windows runtime imports
+        if: inputs.mode == 'full' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $visualStudio = & $vswhere -latest -products '*' -property installationPath
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $reader = Get-ChildItem "$visualStudio/VC/Tools/MSVC/*/bin/Host*/*/dumpbin.exe" | Select-Object -First 1
+          if (!$reader) { throw 'Visual Studio dumpbin is required' }
+          $imports = & $reader.FullName /nologo /dependents "target/$env:CARGO_BUILD_TARGET/release/nouli.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($imports -match '(?i)\b(vcruntime|msvcp|concrt)[a-z0-9_]*\.dll\b') { throw 'Unexpected separate C runtime dependency' }
+      - name: Archive validated Unix executable
+        if: inputs.mode == 'full' && runner.os != 'Windows'
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
+          archive="nouli-$version-$CARGO_BUILD_TARGET.tar.gz"
+          mkdir -p dist
+          tar -czf "dist/$archive" -C "target/$CARGO_BUILD_TARGET/release" nouli -C "$GITHUB_WORKSPACE" LICENSE README.md
+          (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
+      - name: Archive validated Windows executable
+        if: inputs.mode == 'full' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String '^version = "(.+)"$' Cargo.toml).Matches.Groups[1].Value
+          $archive = "nouli-$version-$env:CARGO_BUILD_TARGET.zip"
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Compress-Archive -LiteralPath "target/$env:CARGO_BUILD_TARGET/release/nouli.exe", LICENSE, README.md -DestinationPath "dist/$archive"
+          $hash = (Get-FileHash "dist/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path (Get-Location) "dist/$archive.sha256"), "$hash  $archive`n", [Text.Encoding]::ASCII)
+      - uses: actions/upload-artifact@v7
+        if: inputs.mode == 'full'
+        with:
+          name: ${{ inputs.candidate && 'candidate' || 'validation' }}-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v7
+        if: always() && inputs.mode == 'full'
+        with:
+          name: compile-timings-${{ matrix.target }}
+          path: target/cargo-timings/
+          if-no-files-found: ignore
+          retention-days: 7

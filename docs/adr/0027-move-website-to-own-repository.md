@@ -5,6 +5,9 @@ date: 2026-11-11
 
 # Move the website to its own repository
 
+[ADR 0031](0031-promote-validated-release-artifacts.md) moves Unix installer
+behavior tests into the owning product repository before publication.
+
 ## Context
 
 The website at https://nouli.ai/ lived in `site/` under [ADR 0026](0026-astro-site-stack.md). It has its own toolchain (Node, Astro, Playwright, Python recording tools), its own checks and reviewer, and its own Pages deployment. The rest of this repository is a Rust workspace whose rules discourage adding other languages and test runners. Site work kept needing exceptions to those rules, and site and product changes shared one CI and one review flow.
