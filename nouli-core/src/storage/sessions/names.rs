@@ -152,11 +152,18 @@ mod tests {
         };
         let root = std::env::temp_dir().join(format!("nouli-name-race-{}", Id::generate()));
         drop(Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap());
-        let threads: Vec<_> = (0..4)
-            .map(|_| {
-                let root = root.clone();
+        // Open every connection before writing: this tests concurrent name
+        // allocation, independently of migration/journal setup contending with writers.
+        let ledgers: Vec<_> = (0..4)
+            .map(|_| Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap())
+            .collect();
+        let ready = std::sync::Arc::new(std::sync::Barrier::new(4));
+        let threads: Vec<_> = ledgers
+            .into_iter()
+            .map(|mut ledger| {
+                let ready = ready.clone();
                 std::thread::spawn(move || {
-                    let mut ledger = Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap();
+                    ready.wait();
                     (0..12)
                         .map(|_| {
                             ledger
