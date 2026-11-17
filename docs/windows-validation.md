@@ -28,9 +28,9 @@ prerequisites are in [Windows development and validation](windows.md).
 
 The Windows host is an ARM64 UTM VM. These local x64 results establish execution
 through Windows emulation; they are not tests on physical x64 hardware. The CI
-matrix adds a native x64 Windows runner and a native ARM64 Windows runner,
-alongside Linux and macOS. The changed GitHub Actions workflow has been linted
-locally; its hosted jobs have not been run for this branch.
+matrix runs native x64 Windows and native ARM64 Windows runners, alongside Linux
+and macOS. Hosted results are recorded with the pull request checks; the table
+above records local validation.
 
 The ordinary workspace suite includes hard-link refusal, existing unsafe ACLs
 left unchanged, actual live journal/guard ACLs, concurrent ledger creation,
@@ -50,6 +50,5 @@ Synthetic native key records cover Unicode, surrogate pairs, AltGr, Alt+numpad,
 Ctrl-H, and modifier decoding, but do not replace that desktop check.
 
 Windows ZIP release jobs, a PowerShell installer, and website installation
-instructions are included. Hosted release builds, actual publication, and
-website deployment have not run locally. Package-manager integration remains
-deferred.
+instructions are included. Hosted release builds, publication, and website
+deployment remain pending. Package-manager integration remains deferred.
