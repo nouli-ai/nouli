@@ -33,6 +33,8 @@ nouli connect
 nouli
 ```
 
+For native Windows 11 ARM64 or x64 source builds, see [Windows setup and validation](docs/windows.md).
+
 `nouli connect` sets up TypeSafe, OpenAI, OpenRouter, Cloudflare Workers AI, Ollama, llama.cpp or any compatible endpoint. See [installation](docs/release.md) and [configuration](docs/configuration.md).
 
 ## Build your first network
@@ -137,7 +139,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-Tests use fixture providers and need no API keys. See the [repository conventions](AGENTS.md).
+Tests use fixture providers and need no API keys. Native Windows terminal tests use ConPTY; see [Windows build prerequisites and acceptance checks](docs/windows.md). See the [repository conventions](AGENTS.md).
 
 ---
 
