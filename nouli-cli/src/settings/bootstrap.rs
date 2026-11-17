@@ -28,7 +28,7 @@ mod tests {
     #[test]
     fn competing_initializers_publish_one_complete_private_config_and_preserve_edits() {
         let root = std::env::temp_dir().join(format!("nouli-bootstrap-{}", Id::generate()));
-        let path = root.join(".nouli/config.toml");
+        let path = root.join(".nouli").join("config.toml");
         std::thread::scope(|scope| {
             let handles = (0..8)
                 .map(|_| scope.spawn(|| initialize(&path).unwrap()))

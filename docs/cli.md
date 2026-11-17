@@ -184,7 +184,7 @@ A turn that was not saved starts with `(not saved)`. Color is used only in a ter
 
 ## Providers, identity, and recovery
 
-Persisted turns use the user ledger by default. A `whatif` opens an existing store read-only. The first valid turn scaffolds a missing default config; help and inspection create no files. `HOME` supplies default config and store paths; fully explicit paths also work without `HOME`.
+Persisted turns use the user ledger by default. A `whatif` opens an existing store read-only. The first valid turn scaffolds a missing default config; help and inspection create no files. A nonempty `HOME` supplies default config and store paths, with `USERPROFILE` as the Windows fallback; fully explicit paths also work without a home variable.
 
 Credentials come from the current directory's `.env` or an explicit `--env-file FILE`; exported shell values take precedence. Missing automatic files are fine; malformed files and missing explicit files fail before execution. See [configuration](configuration.md).
 

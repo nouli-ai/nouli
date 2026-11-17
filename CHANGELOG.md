@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Native Windows 11 ARM64 and x64 MSVC support for `nouli-core`, including private ledger ACLs and refusal of unsafe existing stores.
 - `nouli-core::storage::private_file` exposes protected directory/file creation, reads, sibling locks, and atomic publication for embedding applications.
+- The Windows CLI uses native home-directory defaults and protected atomic configuration, credential, and terminal-preference updates.
 
 ## [0.5.1] - 2026-11-01
 

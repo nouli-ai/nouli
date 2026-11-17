@@ -12,7 +12,6 @@ use nouli_core::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -31,8 +30,17 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) enum AuthFileError {
     #[error("Cannot read the credential store: {path}")]
     Read { path: PathBuf },
-    #[error(
-        "The credential store is not safe to read: {path}. Run `chmod 600 {path}`, and make sure you own it"
+    #[cfg_attr(
+        unix,
+        error(
+            "The credential store is not safe to read: {path}. Run `chmod 600 {path}`, and make sure you own it"
+        )
+    )]
+    #[cfg_attr(
+        windows,
+        error(
+            "The credential store is not safe to read: {path}. Use icacls to restrict access to its owner, SYSTEM, and Administrators before retrying"
+        )
     )]
     Insecure { path: PathBuf },
     #[error("Invalid credential store {path}: {source}")]
@@ -68,30 +76,17 @@ pub(crate) fn path_for(config: &Path) -> PathBuf {
 /// Reads the store, which may be absent. A file that others can read, or that
 /// someone else owns, is refused before a byte of it is parsed.
 pub(crate) fn read(path: &Path) -> Result<AuthStore, AuthFileError> {
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    let file = match fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW)
-        .open(path)
-    {
+    use nouli_core::storage::private_file::{self as protected, Error};
+    let file = match protected::open_read(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        Err(error) if error.is_not_found() => {
             return Ok(AuthStore::default());
         }
-        Err(error) if error.raw_os_error() == Some(nix::libc::ELOOP) => {
+        Err(Error::Insecure(_)) => {
             return Err(AuthFileError::Insecure { path: path.into() });
         }
         Err(_) => return Err(AuthFileError::Read { path: path.into() }),
     };
-    let metadata = file
-        .metadata()
-        .map_err(|_| AuthFileError::Read { path: path.into() })?;
-    if !metadata.is_file()
-        || metadata.mode() & 0o077 != 0
-        || metadata.uid() != nix::unistd::Uid::effective().as_raw()
-    {
-        return Err(AuthFileError::Insecure { path: path.into() });
-    }
     let mut text = String::new();
     file.take(MAX_STORE_BYTES + 1)
         .read_to_string(&mut text)
@@ -111,7 +106,19 @@ pub(crate) fn read(path: &Path) -> Result<AuthStore, AuthFileError> {
 pub(crate) fn write(path: &Path, store: &AuthStore) -> Result<(), AuthFileError> {
     let failed = || AuthFileError::Write { path: path.into() };
     let text = store.to_toml().map_err(|_| failed())?;
-    private_file::publish(path, text.as_bytes()).map_err(|_| failed())
+    private_file::publish(path, text.as_bytes()).map_err(|error| write_error(path, &error))
+}
+
+fn write_error(path: &Path, error: &std::io::Error) -> AuthFileError {
+    if let Some(nouli_core::storage::private_file::Error::Insecure(unsafe_path)) =
+        error.get_ref().and_then(|error| error.downcast_ref())
+    {
+        AuthFileError::Insecure {
+            path: unsafe_path.clone(),
+        }
+    } else {
+        AuthFileError::Write { path: path.into() }
+    }
 }
 
 /// Reads the store, applies `change`, and writes the result back when `change`
@@ -122,8 +129,7 @@ pub(crate) fn update<T>(
     path: &Path,
     change: impl FnOnce(&mut AuthStore) -> (T, bool),
 ) -> Result<T, AuthFileError> {
-    let _lock =
-        private_file::lock_beside(path).map_err(|_| AuthFileError::Write { path: path.into() })?;
+    let _lock = private_file::lock_beside(path).map_err(|error| write_error(path, &error))?;
     let mut store = read(path)?;
     let (result, modified) = change(&mut store);
     if modified {
@@ -287,7 +293,9 @@ impl Credentials {
 mod tests {
     use super::*;
     use nouli_core::{config::auth::AuthEntry, identity::Id};
-    use std::{os::unix::fs::PermissionsExt, thread};
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    use std::{fs, thread};
 
     struct Directory(PathBuf);
     impl Directory {
@@ -302,6 +310,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn mode(path: &Path) -> u32 {
         use std::os::unix::fs::MetadataExt;
         fs::metadata(path).unwrap().mode() & 0o777
@@ -319,8 +328,11 @@ mod tests {
             )),
         );
         write(&path, &store).unwrap();
-        assert_eq!(mode(&path), 0o600);
-        assert_eq!(mode(path.parent().unwrap()), 0o700);
+        #[cfg(unix)]
+        {
+            assert_eq!(mode(&path), 0o600);
+            assert_eq!(mode(path.parent().unwrap()), 0o700);
+        }
         assert_eq!(read(&path).unwrap(), store);
         // No temporary file is left behind.
         assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
@@ -357,13 +369,17 @@ mod tests {
         assert_eq!(read(&path).unwrap().providers().count(), 40);
         // The lock file is private, and nothing is left beside the store.
         let lock = path.with_file_name(format!("{FILE_NAME}.lock"));
+        #[cfg(unix)]
         assert_eq!(mode(&lock), 0o600);
+        #[cfg(windows)]
+        nouli_core::storage::private_file::open_read(&lock).unwrap();
         assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
         // An unmodified store is not rewritten, and a missing entry is reported.
         let removed = update(&path, |store| (store.remove("absent"), false)).unwrap();
         assert!(!removed);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_file_others_can_read_or_a_link_is_refused_without_parsing_it() {
         let directory = Directory::new();

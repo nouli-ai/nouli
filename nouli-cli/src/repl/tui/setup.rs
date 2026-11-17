@@ -80,7 +80,6 @@ mod tests {
 
     #[test]
     fn logout_removes_a_stored_credential_for_an_unconfigured_provider_like_auth_logout() {
-        use std::os::unix::fs::PermissionsExt;
         let root = std::env::temp_dir().join(format!("nouli-tui-logout-{}", Id::generate()));
         std::fs::create_dir_all(&root).unwrap();
         let config = root.join("config.toml");
@@ -90,12 +89,11 @@ mod tests {
         )
         .unwrap();
         let auth = crate::settings::auth::path_for(&config);
-        std::fs::write(
+        crate::settings::private_file::publish(
             &auth,
-            "[providers.ghost]\ntype = \"api_key\"\nkey = \"secret\"\n",
+            b"[providers.ghost]\ntype = \"api_key\"\nkey = \"secret\"\n",
         )
         .unwrap();
-        std::fs::set_permissions(&auth, std::fs::Permissions::from_mode(0o600)).unwrap();
         let mut settings = Settings::for_test(root.join("store"));
         settings.config_path.clone_from(&config);
         let mut app = app(&settings);

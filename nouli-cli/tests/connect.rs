@@ -257,6 +257,7 @@ fn setup_failures_report_specific_codes_and_exit_codes() {
 }
 
 #[test]
+#[cfg(unix)]
 fn an_unwritable_credential_store_is_a_storage_failure() {
     use std::os::unix::fs::PermissionsExt;
     let home = Home::create();
@@ -279,6 +280,7 @@ fn an_unwritable_credential_store_is_a_storage_failure() {
 }
 
 #[test]
+#[cfg(unix)]
 fn existing_configuration_and_store_problems_keep_their_codes_and_name_the_file() {
     use std::os::unix::fs::PermissionsExt;
     let home = Home::create();
