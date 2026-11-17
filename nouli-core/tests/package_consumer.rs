@@ -33,17 +33,32 @@ fn an_independent_application_uses_the_packaged_core() {
             "-p",
             "nouli-core",
             "--allow-dirty",
+            "--no-verify",
             "--locked",
             "--offline",
         ])
         .arg("--target-dir")
         .arg(target));
-    let packaged = target.join(format!("package/nouli-core-{}", env!("CARGO_PKG_VERSION")));
-    assert!(packaged.join("README.md").is_file());
     let directory = Temporary(std::env::temp_dir().join(format!(
         "nouli-consumer-{}",
         nouli_core::identity::Id::generate()
     )));
+    fs::create_dir_all(&directory.0).unwrap();
+    let package = target.join(format!(
+        "package/nouli-core-{}.crate",
+        env!("CARGO_PKG_VERSION")
+    ));
+    let unpacked = directory.0.join("package");
+    tar::Archive::new(flate2::read::GzDecoder::new(
+        fs::File::open(package).unwrap(),
+    ))
+    .unpack(&unpacked)
+    .unwrap();
+    let packaged = unpacked.join(format!("nouli-core-{}", env!("CARGO_PKG_VERSION")));
+    assert!(packaged.join("README.md").is_file());
+    // The downstream build verifies the actual archive, rather than compiling
+    // the library once in cargo package and again in this independent consumer.
+    let consumer = directory.0.join("consumer");
     run(Command::new(cargo)
         .args([
             "init",
@@ -53,18 +68,18 @@ fn an_independent_application_uses_the_packaged_core() {
             "--vcs",
             "none",
         ])
-        .arg(&directory.0));
+        .arg(&consumer));
     run(Command::new(cargo)
-        .current_dir(&directory.0)
+        .current_dir(&consumer)
         .args(["add", "nouli-core", "--offline", "--path"])
         .arg(packaged));
     fs::write(
-        directory.0.join("src/main.rs"),
+        consumer.join("src/main.rs"),
         include_str!("support/consumer.rs"),
     )
     .unwrap();
     run(Command::new(cargo)
-        .current_dir(&directory.0)
+        .current_dir(&consumer)
         .env("CARGO_TARGET_DIR", target.join("consumer-check"))
         .args(["run", "--offline", "--quiet", "--"])
         .arg(directory.0.join("store")));

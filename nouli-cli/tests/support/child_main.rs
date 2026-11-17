@@ -1,6 +1,10 @@
 //! Deterministic subprocess behavior for Cargo product tests. No shell is used.
 #[cfg(windows)]
 mod child_windows;
+#[cfg(unix)]
+mod github_tool;
+#[cfg(unix)]
+mod installer_tools;
 #[cfg(windows)]
 #[path = "../../src/process/job.rs"]
 #[allow(
@@ -23,6 +27,7 @@ use std::{
 
 fn run(args: &[String]) -> io::Result<()> {
     match args.first().map(String::as_str) {
+        Some("--version") => return version(),
         Some("interrupt") => interrupt(
             args.get(1)
                 .and_then(|value| value.parse().ok())
@@ -122,6 +127,12 @@ fn run(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
+fn version() -> io::Result<()> {
+    let version = std::env::var("FIXTURE_BINARY_VERSION")
+        .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into());
+    io::stdout().write_all(format!("nouli {version}\n").as_bytes())
+}
+
 fn interrupt(pid: u32) -> io::Result<()> {
     #[cfg(unix)]
     {
@@ -159,6 +170,14 @@ fn interrupt(pid: u32) -> io::Result<()> {
 
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    #[cfg(unix)]
+    if let Some(result) = github_tool::run(&args) {
+        return ExitCode::from(if result.is_ok() { 0 } else { 22 });
+    }
+    #[cfg(unix)]
+    if let Some(result) = installer_tools::run(&args) {
+        return ExitCode::from(if result.is_ok() { 0 } else { 22 });
+    }
     #[cfg(windows)]
     if args.first().is_some_and(|arg| arg == "console") {
         return ExitCode::from(child_windows::console(&args[1..]).unwrap_or(2));
