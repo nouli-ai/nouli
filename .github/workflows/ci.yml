@@ -6,14 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       run_all:
-        description: Run all checks
+        description: Validate every target and retain candidates for an approved main commit
         type: boolean
         default: true
 permissions:
   contents: read
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   select:
     name: Select checks
@@ -25,140 +25,124 @@ jobs:
     outputs:
       rust: ${{ inputs.run_all || steps.filter.outputs.rust == 'true' }}
       ci: ${{ inputs.run_all || steps.filter.outputs.ci == 'true' }}
-      installer: ${{ inputs.run_all || steps.filter.outputs.installer == 'true' }}
+      unix: ${{ inputs.run_all || steps.filter.outputs.unix == 'true' }}
+      windows: ${{ inputs.run_all || steps.filter.outputs.windows == 'true' }}
+      matrix: ${{ steps.targets.outputs.matrix }}
+      unix_matrix: ${{ steps.targets.outputs.unix }}
+      windows_matrix: ${{ steps.targets.outputs.windows }}
+      candidate: ${{ steps.targets.outputs.candidate }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Detect changed files
+      - uses: dorny/paths-filter@v4
         id: filter
-        uses: dorny/paths-filter@v4
         with:
           base: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'pull_request' && github.base_ref || 'HEAD~1' }}
           filters: |
-            ci: &pipeline
+            ci:
               - '.github/**'
+              - 'scripts/ci/**'
             rust:
-              - *pipeline
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/validate.yml'
+              - '.github/workflows/release.yml'
+              - 'scripts/ci/**'
               - '**/*.rs'
               - '**/Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
               - 'clippy.toml'
               - 'nouli-core/README.md'
-              - 'scripts/install.ps1'
               - '.cargo/**'
               - 'fixtures/**'
-            installer:
-              - *pipeline
+            unix:
               - 'scripts/install.sh'
-  lint-ci:
-    name: Lint workflows
-    needs: select
-    if: needs.select.outputs.ci == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Run Actionlint
-        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
-  lint-installer:
-    name: Lint installer
-    needs: select
-    if: needs.select.outputs.installer == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Run ShellCheck
-        run: shellcheck scripts/install.sh
-  lint-rust:
-    name: Lint Rust
-    needs: select
-    if: needs.select.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Install pinned Rust
-        run: rustup show active-toolchain
-      - uses: Swatinem/rust-cache@v2
-      - name: Check formatting
-        run: cargo fmt --all --check
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-  test:
-    name: Test Rust (${{ matrix.os }})
-    needs: select
-    if: needs.select.outputs.rust == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Install pinned Rust
-        run: rustup show active-toolchain
-      - uses: Swatinem/rust-cache@v2
-      - name: Configure Windows native build tools
-        if: runner.os == 'Windows'
-        shell: pwsh
+            windows:
+              - 'scripts/install.ps1'
+      - name: Select targets and candidate eligibility
+        id: targets
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
-          $llvm = Join-Path $env:ProgramFiles 'LLVM\bin'
-          if (!(Test-Path (Join-Path $llvm 'clang-cl.exe'))) { throw 'LLVM clang-cl is required' }
-          $llvm >> $env:GITHUB_PATH
-          if ($env:RUNNER_ARCH -eq 'X64') {
-            if (!(Get-Command nasm -ErrorAction SilentlyContinue)) { choco install nasm --no-progress -y; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
-            (Join-Path $env:ProgramFiles 'NASM') >> $env:GITHUB_PATH
-          }
-      - name: Lint platform-specific Rust
-        if: runner.os != 'Linux'
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Build native subprocess fixture
-        run: cargo build --package nouli-cli --example nouli-test-child --locked
-      - name: Run unit, integration, and example tests
-        run: cargo test --workspace --all-targets --locked -- --test-threads=4
-      - name: Run documentation tests
-        run: cargo test --workspace --doc --locked
-      - name: Verify the packaged core in an independent application
-        run: cargo test -p nouli-core --test package_consumer --locked -- --ignored
-      - name: Build release executables and test fixtures
-        run: cargo build --workspace --bins --examples --release --locked
-      - name: Verify release terminal behavior
-        run: cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker --test tui_startup -- --test-threads=4
-  docs:
-    name: Build API documentation
+          candidate=false
+          if [[ "$EVENT" == push && "$REF" == refs/heads/main ]] || [[ "$EVENT" == workflow_dispatch ]]; then
+            if git merge-base --is-ancestor HEAD origin/main; then candidate=true; fi
+          fi
+          {
+            echo "matrix=$(jq -c '{include:.}' scripts/ci/targets.json)"
+            echo "unix=$(jq -c '{include:map(select(.os == "ubuntu-24.04"))}' scripts/ci/targets.json)"
+            echo "windows=$(jq -c '{include:map(select(.extension == "zip"))}' scripts/ci/targets.json)"
+            echo "candidate=$candidate"
+          } >> "$GITHUB_OUTPUT"
+  quick:
+    name: Check formatting and workflows
     needs: select
-    if: needs.select.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Install pinned Rust
-        run: rustup show active-toolchain
-      - uses: Swatinem/rust-cache@v2
-      - name: Build API documentation
-        run: cargo doc --workspace --no-deps --locked
+      - name: Check Rust formatting and release metadata
+        if: needs.select.outputs.rust == 'true'
+        run: |
+          cargo fmt --all --check
+          bash scripts/ci/release.sh check
+      - name: Lint workflows
+        if: needs.select.outputs.ci == 'true'
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
+      - name: Lint pipeline and installer shell scripts
+        run: shellcheck scripts/ci/*.sh scripts/install.sh
+  test:
+    name: Validate shipping targets
+    needs: [select, quick]
+    if: needs.select.outputs.rust == 'true'
+    uses: ./.github/workflows/validate.yml
+    with:
+      matrix: ${{ needs.select.outputs.matrix }}
+      candidate: ${{ needs.select.outputs.candidate == 'true' }}
+  unix-installer:
+    name: Validate Unix installer
+    needs: [select, quick]
+    if: needs.select.outputs.rust != 'true' && needs.select.outputs.unix == 'true'
+    uses: ./.github/workflows/validate.yml
+    with:
+      matrix: ${{ needs.select.outputs.unix_matrix }}
+      mode: unix-installer
+  windows-installer:
+    name: Validate Windows installer
+    needs: [select, quick]
+    if: needs.select.outputs.rust != 'true' && needs.select.outputs.windows == 'true'
+    uses: ./.github/workflows/validate.yml
+    with:
+      matrix: ${{ needs.select.outputs.windows_matrix }}
+      mode: windows-installer
   required:
     name: Required checks
-    needs: [select, lint-ci, lint-installer, lint-rust, test, docs]
+    needs: [select, quick, test, unix-installer, windows-installer]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require every selected check to pass
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+      - name: Require every selected check to succeed
+        env:
+          SELECT: ${{ needs.select.result }}
+          QUICK: ${{ needs.quick.result }}
+          RUST: ${{ needs.select.outputs.rust }}
+          UNIX: ${{ needs.select.outputs.unix }}
+          WINDOWS: ${{ needs.select.outputs.windows }}
+          TEST_RESULT: ${{ needs.test.result }}
+          UNIX_RESULT: ${{ needs.unix-installer.result }}
+          WINDOWS_RESULT: ${{ needs.windows-installer.result }}
+        run: |
+          test "$SELECT" = success
+          test "$QUICK" = success
+          if [[ "$RUST" == true ]]; then
+            test "$TEST_RESULT" = success
+          else
+            if [[ "$UNIX" == true ]]; then test "$UNIX_RESULT" = success; fi
+            if [[ "$WINDOWS" == true ]]; then test "$WINDOWS_RESULT" = success; fi
+          fi

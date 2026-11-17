@@ -23,6 +23,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: [homebrew-tap, nouli.ai]
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
     steps:
@@ -35,19 +39,13 @@ jobs:
           client-id: ${{ vars.TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
           owner: nouli-ai
-          repositories: homebrew-tap,nouli.ai
+          repositories: ${{ matrix.repository }}
           permission-contents: write
-      - name: Notify the Homebrew tap
+      - name: Notify the downstream repository
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DOWNSTREAM: ${{ matrix.repository }}
         run: |
-          gh api --method POST repos/nouli-ai/homebrew-tap/dispatches \
-            -f event_type=nouli-release-published \
-            -f "client_payload[release_tag]=$RELEASE_TAG"
-      - name: Notify the website
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          gh api --method POST repos/nouli-ai/nouli.ai/dispatches \
+          gh api --method POST "repos/nouli-ai/$DOWNSTREAM/dispatches" \
             -f event_type=nouli-release-published \
             -f "client_payload[release_tag]=$RELEASE_TAG"

@@ -48,7 +48,7 @@ cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --t
 First launch opens the interactive view and shows `/connect` guidance when no
 model is configured. Setup begins only when requested.
 
-Release archives use the static C runtime. To reproduce that build, set
+PR, main, and release-candidate validation use the same static C runtime. To reproduce that build, set
 `$env:RUSTFLAGS = '-C target-feature=+crt-static'` and pass an explicit native
 `--target` to the build and test commands. The installer requires Windows
 PowerShell 5.1 or newer. Its Cargo tests construct local release ZIPs and mock
