@@ -5,6 +5,7 @@ pub mod context;
 pub mod decisions;
 pub mod guards;
 pub mod inspection;
+pub mod private_file;
 mod publication;
 pub mod replay;
 pub mod reservations;
@@ -17,10 +18,13 @@ pub mod workflows;
 
 use std::io::Read;
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     path::{Path, PathBuf},
     time::Duration,
 };
+
+#[cfg(not(windows))]
+use std::fs::OpenOptions;
 
 use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use serde::{Serialize, de::DeserializeOwned};
@@ -39,6 +43,10 @@ pub enum OpenMode {
 
 #[derive(Debug, Error)]
 pub enum StorageError {
+    #[error(
+        "unsafe ledger permissions at {path}; restrict access to its owner and administrative principals before retrying"
+    )]
+    Insecure { path: PathBuf },
     #[error("cannot {operation} at {path}: {source}")]
     Io {
         operation: &'static str,
@@ -114,10 +122,41 @@ fn validate_frozen_settings_version(value: &serde_json::Value) -> Result<(), Sto
 
 pub struct Ledger {
     connection: Connection,
+    #[cfg(windows)]
+    _directory: fs::File,
     path: PathBuf,
     mode: OpenMode,
 }
 
+#[cfg(windows)]
+fn private_error(operation: &'static str, path: &Path, error: private_file::Error) -> StorageError {
+    match error {
+        private_file::Error::Insecure(path) => StorageError::Insecure { path },
+        private_file::Error::Io(source) => StorageError::Io {
+            operation,
+            path: path.into(),
+            source,
+        },
+    }
+}
+
+#[cfg(windows)]
+fn prepare_store(root: &Path, path: &Path) -> Result<(), StorageError> {
+    private_file::create_directory(root)
+        .map_err(|error| private_error("create private store", root, error))?;
+    let _directory = validate_store(root, path, true)?;
+    match private_file::create_new(path) {
+        Ok(_) => Ok(()),
+        Err(private_file::Error::Io(error))
+            if error.kind() == std::io::ErrorKind::AlreadyExists =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(private_error("create private ledger", path, error)),
+    }
+}
+
+#[cfg(not(windows))]
 fn prepare_store(root: &Path, path: &Path) -> Result<(), StorageError> {
     let mut directory = fs::DirBuilder::new();
     directory.recursive(true);
@@ -147,6 +186,75 @@ fn prepare_store(root: &Path, path: &Path) -> Result<(), StorageError> {
             source,
         }),
     }
+}
+
+#[cfg(windows)]
+fn validate_store(root: &Path, path: &Path, allow_missing: bool) -> Result<fs::File, StorageError> {
+    let directory = private_file::open_directory(root)
+        .map_err(|error| private_error("validate private store", root, error))?;
+    let locks = root.join("locks");
+    match private_file::open_directory(&locks) {
+        Ok(_) => {}
+        Err(error) if error.is_not_found() => {}
+        Err(error) => return Err(private_error("validate guard directory", &locks, error)),
+    }
+    for artifact in [
+        path.to_owned(),
+        root.join("ledger.sqlite3-journal"),
+        root.join("ledger.sqlite3-wal"),
+        root.join("ledger.sqlite3-shm"),
+    ] {
+        match private_file::open_read(&artifact) {
+            Ok(_) => {}
+            Err(error) if error.is_not_found() && (allow_missing || artifact.as_path() != path) => {
+            }
+            Err(error) => {
+                return Err(private_error("validate private ledger", &artifact, error));
+            }
+        }
+    }
+    // Do not allow SQLite to open or recover unchecked WAL/SHM files
+    // before journal_mode is configured. Nouli stores use DELETE mode.
+    if root
+        .join("ledger.sqlite3-wal")
+        .try_exists()
+        .map_err(|source| StorageError::Io {
+            operation: "inspect sidecars",
+            path: root.into(),
+            source,
+        })?
+        || root
+            .join("ledger.sqlite3-shm")
+            .try_exists()
+            .map_err(|source| StorageError::Io {
+                operation: "inspect sidecars",
+                path: root.into(),
+                source,
+            })?
+    {
+        return Err(StorageError::WrongStore);
+    }
+    if allow_missing
+        && !path.try_exists().map_err(|source| StorageError::Io {
+            operation: "inspect ledger",
+            path: path.into(),
+            source,
+        })?
+    {
+        return Ok(directory);
+    }
+    if fs::metadata(path)
+        .map_err(|source| StorageError::Io {
+            operation: "inspect ledger",
+            path: path.to_owned(),
+            source,
+        })?
+        .len()
+        != 0
+    {
+        check_read_only_header(path)?;
+    }
+    Ok(directory)
 }
 
 fn check_read_only_header(path: &Path) -> Result<(), StorageError> {
@@ -187,7 +295,10 @@ impl Ledger {
         let path = root.join("ledger.sqlite3");
         if mode == OpenMode::ReadWriteCreate {
             prepare_store(root, &path)?;
-        } else {
+        }
+        #[cfg(windows)]
+        let directory = validate_store(root, &path, false)?;
+        if mode == OpenMode::ReadOnlyExisting {
             check_read_only_header(&path)?;
         }
         let flags = match mode {
@@ -226,6 +337,8 @@ impl Ledger {
         tracing::debug!(schema = schema::VERSION, "ledger opened");
         Ok(Self {
             connection,
+            #[cfg(windows)]
+            _directory: directory,
             path,
             mode,
         })

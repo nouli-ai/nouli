@@ -5,6 +5,9 @@ date: 2026-10-29
 
 # Keep provider credentials in a central, private credential store
 
+[ADR 0028](0028-native-windows-support.md) extends the file-safety and command
+process details below for native Windows.
+
 A provider's key can come only from an environment variable named by
 `api_key_env`, read from the shell or a `.env` file in the current directory.
 That is right for CI and agents, but people expect to log in once and have every

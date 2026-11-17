@@ -28,6 +28,7 @@ These values describe implementation defaults, distinct from provider capabiliti
 | SQLite busy wait | 2 seconds | Cross-process ownership rejects competing same-session writers |
 | SQLite schema/journal/sync | 5 / DELETE / FULL | Atomic migrations on writable opens; inspection/read-only sources never migrate |
 | Unix private directory/file modes | 0700 / 0600 | For newly owned ledger paths; locks retain stable inodes |
+| Windows private filesystem ACL | Effective user, SYSTEM, Administrators | Creation-time protection; unsafe existing objects are refused without ACL repair |
 | HTTP redirects/proxy/retry | Disabled in transport | Engine alone owns bounded retry policy; no hidden model/provider fallback |
 | TOON implementation/spec | Locked `toon-format` 0.7.0 / TOON 4.4 | Strict validation around the official codec; JSON and TOON share finite exact-integer semantics |
 

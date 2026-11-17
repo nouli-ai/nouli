@@ -1,7 +1,9 @@
 //! Cross-process ownership released by the OS when its file handle closes.
 
+#[cfg(not(windows))]
+use std::fs::OpenOptions;
 use std::{
-    fs::{self, File, OpenOptions, TryLockError},
+    fs::{self, File, TryLockError},
     path::PathBuf,
 };
 use thiserror::Error;
@@ -45,26 +47,38 @@ pub(super) fn lock(ledger: &Ledger, key: &str) -> Result<FileGuard, GuardError> 
         .parent()
         .ok_or(StorageError::Payload)?
         .join("locks");
+    #[cfg(windows)]
+    super::private_file::create_directory(&root)
+        .map_err(|error| super::private_error("create guard directory", &root, error))?;
+    #[cfg(not(windows))]
     let mut builder = fs::DirBuilder::new();
+    #[cfg(not(windows))]
     builder.recursive(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
         builder.mode(0o700);
     }
+    #[cfg(not(windows))]
     builder.create(&root).map_err(|source| StorageError::Io {
         operation: "create guard directory",
         path: root.clone(),
         source,
     })?;
     let path = root.join(format!("{key}.lock"));
+    #[cfg(windows)]
+    let file = super::private_file::open_lock_file(&path)
+        .map_err(|error| super::private_error("open writer guard", &path, error))?;
+    #[cfg(not(windows))]
     let mut options = OpenOptions::new();
+    #[cfg(not(windows))]
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
+    #[cfg(not(windows))]
     let file = options.open(&path).map_err(|source| StorageError::Io {
         operation: "open writer guard",
         path: path.clone(),
@@ -90,17 +104,30 @@ pub(super) fn is_locked(ledger: &Ledger, key: &str) -> Result<bool, GuardError> 
         .ok_or(StorageError::Payload)?
         .join("locks")
         .join(format!("{key}.lock"));
-    let file = match File::open(&path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(source) => {
-            return Err(StorageError::Io {
-                operation: "inspect writer guard",
-                path,
-                source,
+    #[cfg(windows)]
+    let _directory =
+        match super::private_file::open_directory(path.parent().ok_or(StorageError::Payload)?) {
+            Ok(directory) => directory,
+            Err(error) if error.is_not_found() => return Ok(false),
+            Err(error) => {
+                return Err(super::private_error("inspect guard directory", &path, error).into());
             }
-            .into());
+        };
+    #[cfg(windows)]
+    let opened = super::private_file::open_read(&path)
+        .map_err(|error| super::private_error("inspect writer guard", &path, error));
+    #[cfg(not(windows))]
+    let opened = File::open(&path).map_err(|source| StorageError::Io {
+        operation: "inspect writer guard",
+        path: path.clone(),
+        source,
+    });
+    let file = match opened {
+        Ok(file) => file,
+        Err(StorageError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(false);
         }
+        Err(error) => return Err(error.into()),
     };
     match file.try_lock() {
         Ok(()) => Ok(false),

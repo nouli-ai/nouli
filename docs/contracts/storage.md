@@ -6,6 +6,15 @@ mode 0600 on Unix. Existing permissions are preserved. Read-only/existing mode
 never creates a directory, database, schema, or migration. Missing stores and
 outdated/newer schemas have explicit errors.
 
+On Windows, new objects receive private ACLs for the effective user, SYSTEM,
+and Administrators. Opens validate the root, database, locks, and sidecars by
+handle before SQLite can read or recover them. Final reparse points, multiply
+linked files, broad grants, and directory ACLs that cannot protect inherited
+SQLite artifacts are refused with `StorageError::Insecure`. Existing permissions
+are never repaired automatically. The root stays pinned for the connection
+lifetime. See [native Windows support](../windows.md) for the supported storage
+environment, build prerequisites, and cross-account validation.
+
 Nouli-owned databases use a fixed SQLite application ID and `user_version`.
 Unrelated nonempty databases are rejected. Migrations execute together in one
 immediate transaction, including identity/version changes, so failed migration
