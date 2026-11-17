@@ -1589,7 +1589,7 @@ dependencies = [
 
 [[package]]
 name = "nouli-cli"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "base64",
  "calamine",
@@ -1625,7 +1625,7 @@ dependencies = [
 
 [[package]]
 name = "nouli-core"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "base64",
  "httpdate",
