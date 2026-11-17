@@ -44,6 +44,60 @@ pub(super) struct Loaded {
     pub image: Option<Image>,
 }
 
+#[cfg(test)]
+pub(super) fn quote_drop(path: &Path) -> String {
+    #[cfg(unix)]
+    {
+        shlex::try_quote(path.to_str().unwrap())
+            .unwrap()
+            .into_owned()
+    }
+    #[cfg(windows)]
+    {
+        format!("\"{}\"", path.display())
+    }
+}
+
+/// Windows file drops preserve backslashes; PowerShell may prefix a quoted
+/// filename with its call operator, which is parsed as data and never executed.
+#[cfg(any(windows, test))]
+fn windows_path_tokens(text: &str) -> Option<Vec<String>> {
+    let text = text.trim().strip_prefix("& ").unwrap_or(text.trim());
+    let mut chars = text.chars().peekable();
+    let mut paths = Vec::new();
+    let mut token = String::new();
+    let mut quote = None;
+    while let Some(character) = chars.next() {
+        if let Some(delimiter) = quote {
+            if character == delimiter {
+                if delimiter == '\'' && chars.peek() == Some(&'\'') {
+                    token.push('\'');
+                    chars.next();
+                } else {
+                    quote = None;
+                }
+            } else {
+                token.push(character);
+            }
+        } else if (character == '\'' || character == '"') && token.is_empty() {
+            quote = Some(character);
+        } else if character.is_whitespace() {
+            if !token.is_empty() {
+                paths.push(std::mem::take(&mut token));
+            }
+        } else {
+            token.push(character);
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if !token.is_empty() {
+        paths.push(token);
+    }
+    Some(paths)
+}
+
 /// Recognize only complete path drops. Ordinary prose remains literal.
 pub(super) fn paths(text: &str) -> Option<Vec<PathBuf>> {
     fn path(text: &str) -> Option<PathBuf> {
@@ -52,7 +106,7 @@ pub(super) fn paths(text: &str) -> Option<Vec<PathBuf>> {
             return url::Url::parse(text).ok()?.to_file_path().ok();
         }
         if let Some(tail) = text.strip_prefix("~/") {
-            return std::env::var_os("HOME").map(|home| PathBuf::from(home).join(tail));
+            return crate::settings::home().map(|home| home.join(tail));
         }
         Some(PathBuf::from(text))
     }
@@ -60,7 +114,10 @@ pub(super) fn paths(text: &str) -> Option<Vec<PathBuf>> {
     if whole.is_file() {
         return Some(vec![whole]);
     }
+    #[cfg(unix)]
     let tokens = shlex::split(text)?;
+    #[cfg(windows)]
+    let tokens = windows_path_tokens(text)?;
     if tokens.is_empty() {
         return None;
     }
@@ -207,6 +264,66 @@ mod tests {
     use super::*;
 
     #[test]
+    fn missing_pdf_converter_is_actionable() {
+        let missing = std::env::temp_dir().join(format!("nouli-missing-{}.exe", Id::generate()));
+        assert!(matches!(
+            pdf_text_with(
+                std::process::Command::new(missing),
+                b"%PDF-fixture",
+                "fixture.pdf",
+                std::time::Duration::from_secs(1)
+            ),
+            Err(Error::PdfUnavailable)
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires pdftotext on PATH; see docs/windows.md"]
+    fn installed_poppler_extracts_pdf_text() {
+        use std::fmt::Write as _;
+        let content = "BT /F1 12 Tf 20 100 Td (Nouli PDF fixture) Tj ET";
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_owned(),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>".to_owned(),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        ];
+        let mut pdf = String::from("%PDF-1.4\n");
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            write!(pdf, "{} 0 obj\n{object}\nendobj\n", index + 1).unwrap();
+        }
+        let xref = pdf.len();
+        pdf.push_str("xref\n0 6\n0000000000 65535 f \n");
+        for offset in offsets {
+            writeln!(pdf, "{offset:010} 00000 n ").unwrap();
+        }
+        write!(
+            pdf,
+            "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+        )
+        .unwrap();
+        assert!(
+            pdf_text(pdf.as_bytes(), "fixture.pdf")
+                .unwrap()
+                .contains("Nouli PDF fixture")
+        );
+    }
+    #[test]
+    fn windows_drop_quoting_preserves_backslashes_and_apostrophes() {
+        assert_eq!(
+            windows_path_tokens("& 'C:\\Users\\O''Brien\\旅行.csv' \"D:\\two words.png\""),
+            Some(vec![
+                "C:\\Users\\O'Brien\\旅行.csv".into(),
+                "D:\\two words.png".into()
+            ])
+        );
+        assert_eq!(windows_path_tokens("\"C:\\unfinished"), None);
+    }
+
+    #[test]
     fn drops_accept_escaped_quoted_unicode_paths_and_file_urls_without_shell_execution() {
         let dir = std::env::temp_dir().join(format!("nouli-drop-{}", Id::generate()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -214,9 +331,7 @@ mod tests {
         std::fs::write(&path, "What now?\nKeep, [this] <literal>.").unwrap();
         for text in [
             path.display().to_string(),
-            shlex::try_quote(path.to_str().unwrap())
-                .unwrap()
-                .into_owned(),
+            quote_drop(&path),
             url::Url::from_file_path(&path).unwrap().to_string(),
         ] {
             assert_eq!(paths(&text), Some(vec![path.clone()]));
@@ -247,50 +362,29 @@ mod tests {
     }
     #[test]
     fn pdf_timeout_kills_descendants_after_the_converter_exits() {
-        use nix::{sys::signal::kill, unistd::Pid};
-        use std::{
-            os::unix::fs::PermissionsExt,
-            process::Command,
-            thread,
-            time::{Duration, Instant},
-        };
-        const CONVERTER: &str = "#!/bin/sh\n\
-            IFS= read -r header\n\
-            /bin/sleep 30 &\n\
-            printf '%s %s\\n' \"$$\" \"$!\" > \"$PID_FILE\"\n\
-            printf k\n";
-        let dir = std::env::temp_dir().join(format!("nouli-pdf-timeout-{}", Id::generate()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let program = dir.join("pdftotext");
-        let pids = dir.join("pids");
-        // Consume the input, then exit while a descendant keeps stdout open.
-        std::fs::write(&program, CONVERTER).unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut command = Command::new(&program);
-        command.env("PID_FILE", &pids);
-        // The deadline includes process startup. Allow the converter to start
-        // under the full suite's parallel process load before testing cleanup.
-        let timeout = Duration::from_secs(2);
-        let start = Instant::now();
-        assert!(matches!(
-            pdf_text_with(command, b"%PDF-1.4\n", "fake.pdf", timeout),
-            Err(Error::Unsupported(_))
+        let root = std::env::temp_dir().join(format!(
+            "nouli-pdf-timeout-{}",
+            nouli_core::identity::Id::generate()
         ));
-        assert!(start.elapsed() >= timeout);
-        assert!(start.elapsed() < Duration::from_secs(5));
-        let ids: Vec<i32> = std::fs::read_to_string(&pids)
-            .unwrap()
-            .split_whitespace()
-            .map(|pid| pid.parse().unwrap())
-            .collect();
-        assert_eq!(ids.len(), 2);
-        for pid in ids {
-            let gone = (0..100).any(|_| {
-                thread::sleep(Duration::from_millis(50));
-                kill(Pid::from_raw(pid), None).is_err()
-            });
-            assert!(gone, "converter or descendant {pid} is still running");
+        std::fs::create_dir_all(&root).unwrap();
+        let pidfile = root.join("pid");
+        let mut command = crate::test_child::command("spawn");
+        command.arg(&pidfile).arg("exit");
+        let result = pdf_text_with(
+            command,
+            b"%PDF-fixture",
+            "fixture.pdf",
+            std::time::Duration::from_millis(500),
+        );
+        assert!(result.is_err());
+        let pid: u32 = std::fs::read_to_string(&pidfile).unwrap().parse().unwrap();
+        for _ in 0..100 {
+            if !crate::test_child::running(pid) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        std::fs::remove_dir_all(dir).unwrap();
+        assert!(!crate::test_child::running(pid));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

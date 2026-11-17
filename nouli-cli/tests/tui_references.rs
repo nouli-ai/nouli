@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 #[path = "support/harness.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod harness;

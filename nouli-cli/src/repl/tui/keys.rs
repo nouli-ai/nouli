@@ -223,10 +223,24 @@ impl<'a> App<'a> {
         if self.form.row == Row::Input && self.form.input.is_empty() {
             self.literal_input = false;
         }
-        if matches!(key.code, KeyCode::Char('/' | '~' | '\'' | '"' | 'f'))
+        let drive_prefix = cfg!(windows)
+            && key.code == KeyCode::Char(':')
+            && self
+                .form
+                .text()
+                .as_bytes()
+                .get(start.wrapping_sub(1))
+                .is_some_and(u8::is_ascii_alphabetic);
+        if (matches!(key.code, KeyCode::Char('/' | '~' | '\'' | '"' | 'f'))
+            || cfg!(windows) && matches!(key.code, KeyCode::Char('\\' | '&'))
+            || drive_prefix)
             && self.drop_start.is_none()
         {
-            self.drop_start = Some((self.form.row, start, Instant::now()));
+            self.drop_start = Some((
+                self.form.row,
+                if drive_prefix { start - 1 } else { start },
+                Instant::now(),
+            ));
         }
         if let Some((row, _, time)) = &mut self.drop_start
             && *row == self.form.row

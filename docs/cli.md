@@ -270,8 +270,12 @@ See [configuration](configuration.md) for manual TOML and all compatibility fiel
 
 ## Verify terminal selection before release
 
-On macOS or Linux, run from the workspace root:
+On macOS, Linux, or Windows, run from the workspace root:
 
     cargo test --package nouli-cli --test tui_selection --locked
 
-This Rust integration test also runs as part of `cargo test --workspace` and requires no Python interpreter. Release builds run it with `--release` on each supported platform. It uses a POSIX PTY without credentials or provider calls to verify default native dragging, graph mouse reporting, screen stability, input preservation, resizing, and cleanup. Native clipboard behavior is owned by the host terminal; also check ordinary drag-selection, graph resizing, Ctrl-P, Copy, and resume in the terminals supported for the release.
+On Windows, first build the native console fixture with
+`cargo build -p nouli-cli --example nouli-test-child --locked`. Use the same
+`--release` and `--target` options for the fixture and focused test.
+
+This Rust integration test also runs as part of `cargo test --workspace` and requires no Python interpreter. Release builds run it with `--release` on each supported platform. It uses a POSIX PTY on Unix or native ConPTY on Windows without credentials or provider calls to verify default native dragging, graph mouse reporting, screen stability, input preservation, resizing, and cleanup. Native clipboard behavior is owned by the host terminal; also check ordinary drag-selection, graph resizing, Ctrl-P, Copy, and resume in the terminals supported for the release.
