@@ -45,6 +45,8 @@ jobs:
               - '**/Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - 'clippy.toml'
+              - 'nouli-core/README.md'
               - '.cargo/**'
               - 'fixtures/**'
             installer:
@@ -92,11 +94,15 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
   test:
-    name: Test Rust
+    name: Test Rust (${{ matrix.os }})
     needs: select
     if: needs.select.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -104,8 +110,30 @@ jobs:
       - name: Install pinned Rust
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2
-      - name: Run unit, integration, and documentation tests
-        run: cargo test --workspace --locked
+      - name: Configure Windows native build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = Join-Path $env:ProgramFiles 'LLVM\bin'
+          if (!(Test-Path (Join-Path $llvm 'clang-cl.exe'))) { throw 'LLVM clang-cl is required' }
+          $llvm >> $env:GITHUB_PATH
+          if ($env:RUNNER_ARCH -eq 'X64') {
+            if (!(Get-Command nasm -ErrorAction SilentlyContinue)) { choco install nasm --no-progress -y; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+            (Join-Path $env:ProgramFiles 'NASM') >> $env:GITHUB_PATH
+          }
+      - name: Lint platform-specific Rust
+        if: runner.os != 'Linux'
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Run unit, integration, and example tests
+        run: cargo test --workspace --all-targets --locked -- --test-threads=4
+      - name: Run documentation tests
+        run: cargo test --workspace --doc --locked
+      - name: Verify the packaged core in an independent application
+        run: cargo test -p nouli-core --test package_consumer --locked -- --ignored
+      - name: Build release executables and test fixtures
+        run: cargo build --workspace --bins --examples --release --locked
+      - name: Verify release terminal behavior
+        run: cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker -- --test-threads=4
   docs:
     name: Build API documentation
     needs: select

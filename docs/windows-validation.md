@@ -1,0 +1,50 @@
+# Windows port validation
+
+Validation performed on 2026-11-17 for the Windows source-support change on
+add-windows-support, using the pinned Rust 1.99.1 toolchain. Commands and
+prerequisites are in [Windows development and validation](windows.md).
+
+## Completed checks
+
+| Environment | Check | Result |
+| --- | --- | --- |
+| macOS ARM64 | Workspace build, formatting, Clippy with warnings denied, full Cargo tests, and API documentation | Passed |
+| macOS ARM64 | Independent application built against the verified Cargo package of nouli-core | Passed |
+| Windows 11 ARM64, standard account | Full workspace unit, integration, and documentation tests | Passed |
+| Windows 11 ARM64, standard account | Workspace Clippy with warnings denied; final native input regression tests | Passed |
+| Windows 11 ARM64, administrator account | Full workspace unit, integration, and documentation tests | Passed |
+| Windows 11 running x64 executables, administrator account | Full workspace tests for x86_64-pc-windows-msvc | Passed through Windows ARM64 emulation |
+| Windows 11 ARM64, standard account | Independent application built against the actual verified nouli-core package | Passed |
+| Windows x64, administrator account | Independent application built against the actual verified nouli-core package with an explicit cross target | Passed through Windows ARM64 emulation |
+| Windows 11 ARM64, standard account | Optimized workspace/example build; release smoke, selection, references, and model-picker suites | Passed |
+| Windows 11 ARM64, administrator account | Real Poppler PDF extraction and LibreOffice legacy-document conversion | Passed |
+| Windows 11 ARM64, two independent accounts | Administrator creates private artifacts under a public parent; standard account receives OS PermissionDenied for protected reads/writes; administrator removes fixture | Passed |
+| Windows 11 ARM64, elevated administrator | File and directory symbolic links are refused without changing original content | Passed |
+| Repository | Actionlint and git diff --check | Passed |
+
+The Windows host is an ARM64 UTM VM. These local x64 results establish execution
+through Windows emulation; they are not tests on physical x64 hardware. The CI
+matrix adds a native x64 Windows runner and a native ARM64 Windows runner,
+alongside Linux and macOS. The changed GitHub Actions workflow has been linted
+locally; its hosted jobs have not been run for this branch.
+
+The ordinary workspace suite includes hard-link refusal, existing unsafe ACLs
+left unchanged, actual live journal/guard ACLs, concurrent ledger creation,
+failed replacement preserving the old file, bounded duplex pipes, blocked-input
+cancellation, descendant cleanup, direct-worker limits, credential environment
+scrubbing, blocked-output future cleanup, and idle/full native-input queue
+cleanup. The terminal suites use real ConPTY sessions and check exact console
+mode restoration through an isolated launcher. Optional-tool and cross-account
+checks are opt-in Cargo tests because they require external capabilities or a
+distinct Windows login.
+
+## Remaining release acceptance
+
+Windows Terminal clipboard interaction, ordinary dragging, and physical keyboard
+layouts still need the [interactive acceptance check](windows.md#interactive-terminal-acceptance).
+Synthetic native key records cover Unicode, surrogate pairs, AltGr, Alt+numpad,
+Ctrl-H, and modifier decoding, but do not replace that desktop check.
+
+Windows distribution work remains deferred: no Windows installer, published
+Windows release archive, package-manager integration, or website cutover is
+part of this source-support change.
