@@ -18,26 +18,41 @@ const READY: &[u8] = b"Tab to add a question";
 
 const SHIFT_TAB: &[u8] = b"\x1b[Z";
 const STEP: Duration = Duration::from_millis(250);
-const ANSWERED: Duration = Duration::from_millis(400);
 const PROVIDER_WAIT: Duration = Duration::from_secs(5);
 
-/// Text the terminal received, without its escape sequences.
-fn plain(output: &[u8]) -> String {
-    let text = String::from_utf8_lossy(output);
-    let mut shown = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' {
-            for next in chars.by_ref() {
-                if next.is_ascii_alphabetic() || next == '~' {
-                    break;
-                }
-            }
-        } else {
-            shown.push(c);
+/// Waits for the rendered state, including cursor movement and partial redraws.
+fn wait_for_screen(
+    terminal: &mut Terminal,
+    expected: &str,
+    ready: impl Fn(&vt100::Screen) -> bool,
+) -> String {
+    let mut parser = vt100::Parser::new(40.try_into().unwrap(), 160.try_into().unwrap(), 0);
+    let mut consumed = 0;
+    let deadline = Instant::now() + PROVIDER_WAIT;
+    loop {
+        parser.process(terminal.output_since(consumed));
+        consumed = terminal.mark();
+        let screen = parser.screen();
+        if ready(screen) {
+            return screen.contents();
         }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {expected}:\n{}",
+            screen.contents()
+        );
+        terminal.pump(Duration::from_millis(25)).unwrap();
     }
-    shown
+}
+
+fn question_focused(screen: &vt100::Screen) -> bool {
+    let row = usize::from(screen.cursor_position().0);
+    row > 0
+        && screen
+            .contents()
+            .lines()
+            .nth(row - 1)
+            .is_some_and(|line| line.contains("── Question"))
 }
 
 fn launch(home: &Home, session: &str) -> Terminal {
@@ -96,6 +111,7 @@ fn ask(terminal: &mut Terminal, server: &Server, question: &str, answers: &[&str
         terminal.pump(STEP).unwrap();
     }
     terminal.send(b"\t").unwrap();
+    wait_for_screen(terminal, "question focus", question_focused);
     typed(terminal, question);
     for (index, answer) in answers.iter().enumerate() {
         terminal
@@ -109,16 +125,16 @@ fn ask(terminal: &mut Terminal, server: &Server, question: &str, answers: &[&str
     terminal.pump(STEP).unwrap();
     let sent = server.count();
     terminal.send(b"\x13").unwrap(); // Ctrl-S submits from any section.
-    settle(terminal, server, sent);
+    settle(terminal, server, sent, question);
 }
 
 /// Waits for the provider to get one more call and the view to show the answer.
-fn settle(terminal: &mut Terminal, server: &Server, sent: usize) {
-    let deadline = Instant::now() + PROVIDER_WAIT;
-    while server.count() == sent && Instant::now() < deadline {
-        terminal.pump(STEP).unwrap();
-    }
-    terminal.pump(ANSWERED).unwrap();
+fn settle(terminal: &mut Terminal, server: &Server, sent: usize, question: &str) -> String {
+    wait_for_screen(terminal, "saved answer and cleared form", |screen| {
+        server.count() == sent + 1
+            && screen.contents().contains(&format!("↳ {question}"))
+            && !screen.contents().contains("Asking ·")
+    })
 }
 
 /// Queues the first result for `query` as a Context row, the usual place for
@@ -126,24 +142,34 @@ fn settle(terminal: &mut Terminal, server: &Server, sent: usize) {
 fn refer_in_context(terminal: &mut Terminal, query: &str) {
     typed(terminal, "See ");
     typed(terminal, query);
-    terminal.pump(STEP).unwrap();
+    wait_for_screen(terminal, "matching reference result", |screen| {
+        let shown = screen.contents();
+        shown.contains(&format!("See {query}"))
+            && shown.contains("Saved answers · all local sessions + files · 1 matches")
+    });
     terminal.send(b"\r").unwrap(); // Takes the result.
-    terminal.pump(STEP).unwrap();
+    wait_for_screen(terminal, "inserted reference", |screen| {
+        let shown = screen.contents();
+        !shown.contains("Saved answers · all local sessions + files")
+            && (shown.contains("Reference added") || shown.contains("Added notes.txt"))
+    });
     terminal.send(b"\r").unwrap(); // Queues the row.
-    terminal.pump(STEP).unwrap();
+    wait_for_screen(terminal, "queued reference", |screen| {
+        screen.contents().contains("Context · 1 added")
+    });
 }
 
 /// Sends a follow-up that changes the question and reports what the view drew.
 fn follow_up(terminal: &mut Terminal, server: &Server, question: &str) -> String {
     terminal.send(b"\t").unwrap();
-    terminal.pump(STEP).unwrap();
+    wait_for_screen(terminal, "follow-up question focus", question_focused);
     typed(terminal, question);
-    terminal.pump(STEP).unwrap();
-    let start = terminal.mark();
+    wait_for_screen(terminal, "follow-up question text", |screen| {
+        question_focused(screen) && screen.contents().contains(question)
+    });
     let sent = server.count();
     terminal.send(b"\r").unwrap();
-    settle(terminal, server, sent);
-    plain(terminal.output_since(start))
+    settle(terminal, server, sent, question)
 }
 
 fn calls(server: &Server) -> Vec<Value> {
