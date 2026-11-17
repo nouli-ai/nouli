@@ -551,7 +551,11 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
     let mut first = [0u8; 1];
     reader.read_exact(&mut first).unwrap();
     child.interrupt();
-    let output = child.output(Duration::from_secs(5));
+    // This includes durable interruption and the isolated console wrapper's
+    // shutdown. Native writer cancellation has its own strict two-second test;
+    // slow Windows storage must not turn this end-to-end check into a race.
+    let timeout = Duration::from_secs(if cfg!(windows) { 30 } else { 5 });
+    let output = child.output(timeout);
     assert_eq!(output.status.code(), Some(130));
     assert!(
         String::from_utf8(output.stderr)
