@@ -146,6 +146,9 @@ impl Fixture {
             ])
             .arg(self.home.0.join("mock-downloads.ps1"))
             .current_dir(&self.home.0)
+            // Let Windows PowerShell build its own module path instead of
+            // inheriting PowerShell 7's incompatible modules on hosted runners.
+            .env_remove("PSModulePath")
             .env("NOULI_INSTALL_DIR", &self.destination)
             .env(
                 "NOULI_VERSION",
