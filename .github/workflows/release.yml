@@ -56,28 +56,72 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: macos-15
             target: aarch64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Install pinned Rust
         run: rustup show active-toolchain
+      - name: Install release target
+        run: rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Test release commit on Linux
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cargo test --workspace --locked
-      - name: Build release binary
-        run: cargo build --package nouli-cli --release --locked
-      - name: Check release TUI native selection and terminal cleanup
-        run: cargo test --package nouli-cli --test tui_selection --release --locked
-      - name: Smoke test release binary
+      - name: Configure Windows native build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = Join-Path $env:ProgramFiles 'LLVM\bin'
+          if (!(Test-Path (Join-Path $llvm 'clang-cl.exe'))) { throw 'LLVM clang-cl is required' }
+          $llvm >> $env:GITHUB_PATH
+          'RUSTFLAGS=-C target-feature=+crt-static' >> $env:GITHUB_ENV
+          if ($env:RUNNER_ARCH -eq 'X64') {
+            if (!(Get-Command nasm -ErrorAction SilentlyContinue)) { choco install nasm --no-progress -y; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+            (Join-Path $env:ProgramFiles 'NASM') >> $env:GITHUB_PATH
+          }
+      - name: Test release commit
+        if: matrix.target == 'aarch64-unknown-linux-gnu' || runner.os == 'Windows'
+        run: cargo test --workspace --locked -- --test-threads=4
+      - name: Build release binary and terminal fixture
+        run: cargo build --package nouli-cli --bins --examples --release --locked
+      - name: Verify Windows runtime imports
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $visualStudio = & $vswhere -latest -products '*' -property installationPath
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $reader = Get-ChildItem "$visualStudio/VC/Tools/MSVC/*/bin/Host*/*/dumpbin.exe" | Select-Object -First 1
+          if (!$reader) { throw 'Visual Studio dumpbin is required to inspect release dependencies' }
+          $imports = & $reader.FullName /nologo /dependents "target/$env:CARGO_BUILD_TARGET/release/nouli.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($imports -match '(?i)\b(vcruntime|msvcp|concrt)[a-z0-9_]*\.dll\b') { throw 'Release requires a separate Visual C++ runtime' }
+      - name: Check release startup and terminal cleanup
+        run: cargo test --package nouli-cli --test smoke --test tui_selection --test tui_startup --release --locked -- --test-threads=4
+      - name: Smoke test Unix release binary
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          env -i HOME="$RUNNER_TEMP/nouli-smoke" target/release/nouli --help
-          env -i HOME="$RUNNER_TEMP/nouli-smoke" target/release/nouli --version
-      - name: Create archive and checksum
+          env -i HOME="$RUNNER_TEMP/nouli-smoke" "target/$CARGO_BUILD_TARGET/release/nouli" --help
+          env -i HOME="$RUNNER_TEMP/nouli-smoke" "target/$CARGO_BUILD_TARGET/release/nouli" --version
+      - name: Smoke test Windows release binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:HOME = Join-Path $env:RUNNER_TEMP 'nouli-smoke'
+          $binary = "target/$env:CARGO_BUILD_TARGET/release/nouli.exe"
+          & $binary --help
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $binary --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Create Unix archive and checksum
+        if: runner.os != 'Windows'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           TARGET: ${{ matrix.target }}
@@ -85,8 +129,20 @@ jobs:
         run: |
           archive="nouli-$VERSION-$TARGET.tar.gz"
           mkdir -p dist
-          tar -czf "dist/$archive" -C target/release nouli -C "$GITHUB_WORKSPACE" LICENSE README.md
+          tar -czf "dist/$archive" -C "target/$TARGET/release" nouli -C "$GITHUB_WORKSPACE" LICENSE README.md
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
+      - name: Create Windows archive and checksum
+        if: runner.os == 'Windows'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        shell: pwsh
+        run: |
+          $archive = "nouli-$env:VERSION-$env:TARGET.zip"
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Compress-Archive -LiteralPath "target/$env:TARGET/release/nouli.exe", LICENSE, README.md -DestinationPath "dist/$archive"
+          $hash = (Get-FileHash -LiteralPath "dist/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path (Get-Location) "dist/$archive.sha256"), "$hash  $archive`n", [Text.Encoding]::ASCII)
       - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.target }}

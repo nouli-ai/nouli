@@ -47,6 +47,7 @@ jobs:
               - 'rust-toolchain.toml'
               - 'clippy.toml'
               - 'nouli-core/README.md'
+              - 'scripts/install.ps1'
               - '.cargo/**'
               - 'fixtures/**'
             installer:
