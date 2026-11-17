@@ -35,7 +35,7 @@ nouli
 
 For native Windows 11 ARM64 or x64 source builds, see [Windows setup and validation](docs/windows.md).
 
-`nouli connect` sets up TypeSafe, OpenAI, OpenRouter, Cloudflare Workers AI, Ollama, llama.cpp or any compatible endpoint. See [installation](docs/release.md) and [configuration](docs/configuration.md).
+`nouli connect` sets up TypeSafe, OpenRouter, Cloudflare Workers AI, OpenAI, Ollama, llama.cpp or any compatible endpoint. See [installation](docs/release.md) and [configuration](docs/configuration.md).
 
 ## Build your first network
 
