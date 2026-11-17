@@ -69,6 +69,12 @@ first run cargo build -p nouli-cli --example nouli-test-child with the same
 profile and target. Avoid simultaneous Cargo invocations using the same target
 directory while tests are running.
 
+When using `cargo test --workspace --all-targets`, build the subprocess fixture
+first with `cargo build -p nouli-cli --example nouli-test-child --locked`.
+`--all-targets` builds an example's test harness instead of its normal executable;
+the process tests invoke the normal executable. CI builds it explicitly before
+running all targets. Plain `cargo test --workspace` builds the normal example.
+
 ## Paths and private persistence
 
 The CLI uses a nonempty HOME when set, otherwise USERPROFILE on Windows. Defaults

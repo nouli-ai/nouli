@@ -1,4 +1,6 @@
-use super::{Limits, RunError, limits::MEMORY};
+#[cfg(target_os = "macos")]
+use super::limits::MEMORY;
+use super::{Limits, RunError};
 use nix::{
     fcntl::{FcntlArg, OFlag, fcntl},
     sys::signal::{Signal, killpg},
