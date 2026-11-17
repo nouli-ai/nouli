@@ -125,6 +125,8 @@ jobs:
       - name: Lint platform-specific Rust
         if: runner.os != 'Linux'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build native subprocess fixture
+        run: cargo build --package nouli-cli --example nouli-test-child --locked
       - name: Run unit, integration, and example tests
         run: cargo test --workspace --all-targets --locked -- --test-threads=4
       - name: Run documentation tests

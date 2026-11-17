@@ -335,22 +335,27 @@ pub(crate) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
 }
 
 fn office_programs() -> Vec<std::ffi::OsString> {
-    let mut programs = vec!["soffice".into(), "libreoffice".into()];
-    #[cfg(target_os = "macos")]
-    programs.push("/Applications/LibreOffice.app/Contents/MacOS/soffice".into());
-    #[cfg(windows)]
-    for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
-        if let Some(directory) = std::env::var_os(variable) {
-            for executable in ["soffice.com", "soffice.exe"] {
-                programs.push(
-                    std::path::PathBuf::from(&directory)
-                        .join("LibreOffice/program")
-                        .join(executable)
-                        .into_os_string(),
-                );
+    let programs = vec!["soffice".into(), "libreoffice".into()];
+    #[cfg(any(target_os = "macos", windows))]
+    let programs = {
+        let mut programs = programs;
+        #[cfg(target_os = "macos")]
+        programs.push("/Applications/LibreOffice.app/Contents/MacOS/soffice".into());
+        #[cfg(windows)]
+        for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(directory) = std::env::var_os(variable) {
+                for executable in ["soffice.com", "soffice.exe"] {
+                    programs.push(
+                        std::path::PathBuf::from(&directory)
+                            .join("LibreOffice/program")
+                            .join(executable)
+                            .into_os_string(),
+                    );
+                }
             }
         }
-    }
+        programs
+    };
     programs
 }
 
