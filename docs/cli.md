@@ -244,8 +244,8 @@ Nouli does not install them automatically.
 ## Connect and select models
 
 `nouli connect [SERVICE]` prompts for a connection, credentials and model, then
-optionally saves startup defaults. Services are `openai`, `typesafe`, `openrouter`,
-`cloudflare`, `ollama`, `llama.cpp` and `custom`. These are setup shortcuts that
+optionally saves startup defaults. Services are `typesafe`, `openrouter`,
+`cloudflare`, `openai`, `ollama`, `llama.cpp` and `custom`. These are setup shortcuts that
 write ordinary settings; hand-written configuration is equally supported.
 Use `--non-interactive` with complete values for scripts, `--env NAME` or
 `--stdin` for credentials, and `--replace` to replace an existing connection.

@@ -1,7 +1,7 @@
 //! Setup shortcut data; runtime connections never consult these recipes.
 use nouli_core::config::{ConnectionSettings, HttpBinding, ImageEncoding, Protocol};
 pub(super) const SERVICES: &str =
-    "openai, typesafe, openrouter, cloudflare, ollama, llama.cpp, custom";
+    "typesafe, openrouter, cloudflare, openai, ollama, llama.cpp, custom";
 #[derive(Clone)]
 pub(super) struct Recipe {
     pub(super) name: &'static str,
@@ -31,17 +31,6 @@ pub(super) fn recipes() -> Vec<Recipe> {
     };
     vec![
         Recipe {
-            name: "openai",
-            url: "https://api.openai.com",
-            protocol: Protocol::OpenaiDecisions,
-            models: &["gpt-6-luna"],
-            connection: ConnectionSettings {
-                image_encoding: Some(ImageEncoding::OpenaiContent),
-                pixel_patch_size: Some(32),
-                ..plain.clone()
-            },
-        },
-        Recipe {
             name: "typesafe",
             url: "https://api.typesafe.ai",
             protocol: Protocol::SystemOne,
@@ -70,6 +59,17 @@ pub(super) fn recipes() -> Vec<Recipe> {
             connection: ConnectionSettings {
                 binding: Some(HttpBinding::CloudflareWorkersAi),
                 image_encoding: Some(ImageEncoding::ImagesDataUrls),
+                ..plain.clone()
+            },
+        },
+        Recipe {
+            name: "openai",
+            url: "https://api.openai.com",
+            protocol: Protocol::OpenaiDecisions,
+            models: &["gpt-6-luna"],
+            connection: ConnectionSettings {
+                image_encoding: Some(ImageEncoding::OpenaiContent),
+                pixel_patch_size: Some(32),
                 ..plain.clone()
             },
         },

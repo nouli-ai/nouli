@@ -5,8 +5,8 @@ On Windows, a nonempty `HOME` supplies `~`, otherwise `USERPROFILE` does. See
 [Windows paths and private persistence](windows.md#paths-and-private-persistence).
 Start with `nouli connect`. Choose a service, authenticate, choose a model, and
 optionally save it as your startup default. `nouli connect typesafe` skips the
-service question. Shortcuts exist for OpenAI, TypeSafe, OpenRouter, Cloudflare
-Workers AI, Ollama and llama.cpp; `custom` accepts any compatible endpoint.
+service question. Shortcuts exist for TypeSafe, OpenRouter, Cloudflare Workers AI,
+OpenAI, Ollama and llama.cpp; `custom` accepts any compatible endpoint.
 Setup validates locally without contacting the provider.
 
 Shortcuts only write ordinary configuration and credential sources. The runtime
