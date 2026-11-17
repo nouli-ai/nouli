@@ -1,5 +1,5 @@
 # Tell downstream repositories about each stable release: the Homebrew tap updates its formula,
-# and the website (nouli-ai/nouli.ai) publishes the release's scripts/install.sh.
+# and the website (nouli-ai/nouli.ai) publishes the release's Unix and Windows installers.
 name: Notify release
 
 on:

@@ -17,6 +17,9 @@ prerequisites are in [Windows development and validation](windows.md).
 | Windows 11 ARM64, standard account | Independent application built against the actual verified nouli-core package | Passed |
 | Windows x64, administrator account | Independent application built against the actual verified nouli-core package with an explicit cross target | Passed through Windows ARM64 emulation |
 | Windows 11 ARM64, standard account | Optimized workspace/example build; release smoke, selection, references, and model-picker suites | Passed |
+| Windows 11 ARM64, standard account | 0.6.0 release build with static C runtime; full release workspace suite; executable dependency inspection | Passed; no separate Visual C++ runtime DLL imports |
+| Windows x64, standard account | Static-runtime 0.6.0 release build, smoke/startup/selection suites, and executable dependency inspection | Passed through ARM64 emulation; no separate Visual C++ runtime DLL imports |
+| Windows ARM64 and x64, standard account | Actual PowerShell installer with local release fixtures: fresh/pinned installs, default/relative paths, native target, caller state, checksum/version/archive failures, bounded extraction, busy destinations, and cleanup | Passed on ARM64 and through x64 emulation |
 | macOS ARM64 and Windows 11 ARM64, standard account | First launch enters the TUI without setup prompts; missing-model guidance; explicit setup preserves the draft; credential helpers and providers remain idle at startup | Passed, including the Windows release build |
 | Windows 11 ARM64, administrator account | Real Poppler PDF extraction and LibreOffice legacy-document conversion | Passed |
 | Windows 11 ARM64, two independent accounts | Administrator creates private artifacts under a public parent; standard account receives OS PermissionDenied for protected reads/writes; administrator removes fixture | Passed |
@@ -46,6 +49,7 @@ layouts still need the [interactive acceptance check](windows.md#interactive-ter
 Synthetic native key records cover Unicode, surrogate pairs, AltGr, Alt+numpad,
 Ctrl-H, and modifier decoding, but do not replace that desktop check.
 
-Windows distribution work remains deferred: no Windows installer, published
-Windows release archive, package-manager integration, or website cutover is
-part of this source-support change.
+Windows ZIP release jobs, a PowerShell installer, and website installation
+instructions are included. Hosted release builds, actual publication, and
+website deployment have not run locally. Package-manager integration remains
+deferred.

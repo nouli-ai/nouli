@@ -5,6 +5,9 @@ date: 2026-11-17
 
 # Support native Windows applications and the terminal CLI
 
+The distribution deferral below is superseded by
+[ADR 0030](0030-distribute-windows-release-archives.md).
+
 ## Context
 
 The core crate can compile for Windows, but its Unix-only file modes do not

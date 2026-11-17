@@ -4,8 +4,9 @@ Nouli supports source builds for Windows 11 ARM64 and x64 using the MSVC Rust
 targets. Both nouli-core and the CLI run natively. The UTM ARM64 VM can also run
 x64 executables through Windows emulation; CI uses a native x64 runner for that
 target. See the [recorded validation results](windows-validation.md) for checks already
-completed and remaining desktop acceptance. Windows release downloads, a Windows installer, package-manager
-integration, and website instructions are deferred.
+completed and remaining desktop acceptance. Starting with 0.6.0, use the
+[Windows installer or ZIP archives](release.md#windows-11-install-a-release-binary)
+to run Nouli without a build toolchain. Package-manager integration remains deferred.
 
 ## Build prerequisites
 
@@ -46,6 +47,20 @@ cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --t
 
 First launch opens the interactive view and shows `/connect` guidance when no
 model is configured. Setup begins only when requested.
+
+Release archives use the static C runtime. To reproduce that build, set
+`$env:RUSTFLAGS = '-C target-feature=+crt-static'` and pass an explicit native
+`--target` to the build and test commands. The installer requires Windows
+PowerShell 5.1 or newer. Its Cargo tests construct local release ZIPs and mock
+download cmdlets, then execute the actual script to check installation, updates,
+checksums, executable versions, archive handling, cleanup, and busy destinations:
+
+~~~powershell
+cargo test -p nouli-cli --test windows_installer --locked
+~~~
+
+These tests also run under `cargo test --workspace`. They need PowerShell to
+execute the PowerShell product; Rust owns the fixtures, assertions, and timeout.
 
 The terminal suites use portable-pty's native ConPTY backend, including a
 cursor-query responder. Subprocess fixtures are Rust executables built by
