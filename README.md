@@ -32,7 +32,13 @@ The script installs `nouli` into `~/.local/bin`. Open the app:
 nouli
 ```
 
-For native Windows 11 ARM64 or x64 source builds, see [Windows setup and validation](docs/windows.md).
+On Windows 11 ARM64 or x64, run in PowerShell:
+
+```powershell
+irm https://nouli.ai/install.ps1 | iex
+```
+
+The installer puts `nouli.exe` in `%LOCALAPPDATA%\Programs\Nouli\bin` without administrator rights. Add that directory to your user PATH, or run the executable directly. See [Windows setup and validation](docs/windows.md) for source builds.
 
 The interactive view opens immediately. If no model is configured, use `/connect`
 to set up TypeSafe, OpenRouter, Cloudflare Workers AI, OpenAI, Ollama, llama.cpp,
