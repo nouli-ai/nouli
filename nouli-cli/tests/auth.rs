@@ -53,6 +53,21 @@ fn everything_visible(output: &Output) -> String {
 }
 
 #[test]
+fn permission_observer_accepts_vanished_files_but_rejects_readable_files() {
+    let home = Home::create();
+    let path = auth_file(&home);
+    assert!(security::is_private(&path));
+    fs::write(&path, "fixture").unwrap();
+    security::set_private(&path);
+    assert!(security::is_private(&path));
+    security::set_public(&path);
+    assert!(!security::is_private(&path));
+    security::set_private(&path);
+    fs::remove_file(&path).unwrap();
+    assert!(security::is_private(&path));
+}
+
+#[test]
 fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     let server = Server::with_handler(harness::typesafe);
     let home = Home::create();

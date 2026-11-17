@@ -5,8 +5,12 @@ pub fn is_private(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .is_ok_and(|metadata| metadata.permissions().mode().trailing_zeros() >= 6)
+        match std::fs::metadata(path) {
+            Ok(metadata) => metadata.permissions().mode().trailing_zeros() >= 6,
+            // Atomic publication can rename a listed temporary file before stat.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(_) => false,
+        }
     }
     #[cfg(windows)]
     {
