@@ -10,6 +10,7 @@ mod drops;
 mod form;
 mod graph;
 mod greeter;
+mod input;
 mod keys;
 mod model_picker;
 mod mouse;
@@ -27,11 +28,10 @@ use crate::{
     turns::Draft,
 };
 use crossterm::{
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, EventStream},
+    event::{DisableBracketedPaste, EnableBracketedPaste, Event},
     execute,
 };
 use form::{Form, Kind, Row};
-use futures_util::StreamExt;
 use graph::Graph;
 use nouli_core::{
     history::ModelSelection,
@@ -214,7 +214,7 @@ impl<'a> App<'a> {
     fn run(&mut self, terminal: &mut DefaultTerminal, runtime: &Runtime) -> io::Result<()> {
         // The timer needs the runtime; the turn runs only while the loop waits.
         let _context = runtime.enter();
-        let mut events = EventStream::new();
+        let mut events = input::Input::new()?;
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut running: Option<Running<'a>> = None;
@@ -222,13 +222,17 @@ impl<'a> App<'a> {
         loop {
             if let Some(command) = self.pending_setup.take() {
                 drop(events);
-                execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture)?;
+                execute!(io::stdout(), DisableBracketedPaste)?;
+                screen::capture_mouse(false)?;
+                screen::virtual_input(false)?;
                 ratatui::try_restore()?;
                 let result = self.setup_command(&command);
                 *terminal = ratatui::try_init()?;
-                execute!(io::stdout(), EnableBracketedPaste, DisableMouseCapture)?;
+                screen::virtual_input(true)?;
+                execute!(io::stdout(), EnableBracketedPaste)?;
+                screen::capture_mouse(false)?;
                 mouse_capture = false;
-                events = EventStream::new();
+                events = input::Input::new()?;
                 self.status = Some(match result {
                     Ok(note) => Status::info(note),
                     Err(e) => Status::error(e.to_string()),

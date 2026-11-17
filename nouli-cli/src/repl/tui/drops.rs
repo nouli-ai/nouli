@@ -300,13 +300,18 @@ mod tests {
         let mut app = app(&settings);
         let dir = std::env::temp_dir().join(format!("nouli-drop-send-{}", Id::generate()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("photo \"test\" 中文.png");
+        let filename = if cfg!(windows) {
+            "photo 'test' 中文.png"
+        } else {
+            "photo \"test\" 中文.png"
+        };
+        let path = dir.join(filename);
         image::RgbImage::new(2, 2).save(&path).unwrap();
         app.form.kind = Kind::Choice;
         app.form.question = "Which image: [this] or <that>?".into();
         app.form.options = vec![String::new(), "Other".into()];
         app.form.row = Row::Option(0);
-        let quoted = shlex::try_quote(path.to_str().unwrap()).unwrap();
+        let quoted = attachments::quote_drop(&path);
         typed(&mut app, &quoted);
         let mut running = None;
         app.key(
@@ -319,7 +324,7 @@ mod tests {
         let record = draft.request.updates.last().unwrap().new_record().unwrap();
         assert_eq!(draft.request.required_records, [record.id]);
         let image = record.as_image().unwrap().unwrap();
-        assert!(image.name.contains("\"test\""));
+        assert_eq!(image.name, filename);
         assert!(app.form.options[0].contains(MarkerKind::Image.prefix()));
         std::fs::remove_dir_all(dir).unwrap();
     }

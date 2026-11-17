@@ -334,11 +334,39 @@ pub(crate) fn svg(bytes: &[u8], name: &str) -> Result<Vec<u8>, Error> {
     pixels.encode_png().map_err(|_| unsupported(name))
 }
 
+fn office_programs() -> Vec<std::ffi::OsString> {
+    let mut programs = vec!["soffice".into(), "libreoffice".into()];
+    #[cfg(target_os = "macos")]
+    programs.push("/Applications/LibreOffice.app/Contents/MacOS/soffice".into());
+    #[cfg(windows)]
+    for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(directory) = std::env::var_os(variable) {
+            for executable in ["soffice.com", "soffice.exe"] {
+                programs.push(
+                    std::path::PathBuf::from(&directory)
+                        .join("LibreOffice/program")
+                        .join(executable)
+                        .into_os_string(),
+                );
+            }
+        }
+    }
+    programs
+}
+
 /// Optional converter runs in its own temporary directory and user profile.
 fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> {
+    legacy_with(bytes, extension, name, office_programs())
+}
+
+fn legacy_with(
+    bytes: Vec<u8>,
+    extension: &str,
+    name: &str,
+    programs: Vec<std::ffi::OsString>,
+) -> Result<String, Error> {
     use crate::process::{Limits, RunError, run_bounded};
     use std::{
-        os::unix::fs::DirBuilderExt,
         process::{Command, Stdio},
         time::Duration,
     };
@@ -352,45 +380,39 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
         "nouli-office-{}",
         nouli_core::identity::Id::generate()
     )));
-    std::fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&temp.0)
+    nouli_core::storage::private_file::create_directory(&temp.0)
         .map_err(|_| Error::Read(name.into()))?;
     let input = temp.0.join(format!("input.{extension}"));
     std::fs::write(&input, bytes).map_err(|_| Error::Read(name.into()))?;
     let output = if extension == "doc" { "docx" } else { "pptx" };
     let profile =
         url::Url::from_directory_path(temp.0.join("profile")).map_err(|()| unsupported(name))?;
-    [
-        "soffice",
-        "libreoffice",
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    ]
-    .into_iter()
-    .find_map(|program| {
-        let mut command = Command::new(program);
-        command
-            .arg(format!("-env:UserInstallation={profile}"))
-            .args(["--headless", "--convert-to", output, "--outdir"])
-            .arg(&temp.0)
-            .arg(&input)
-            .stdout(Stdio::null());
-        match run_bounded(
-            &mut command,
-            None,
-            Duration::from_secs(10),
-            MAX_BYTES,
-            None,
-            Some(Limits::Office {
-                max_file_bytes: MAX_BYTES,
-            }),
-        ) {
-            Err(RunError::Spawn(_)) => None,
-            result => Some(result),
-        }
-    })
-    .ok_or_else(|| Error::OfficeUnavailable(name.into()))?
-    .map_err(|_| unsupported(name))?;
+    programs
+        .into_iter()
+        .find_map(|program| {
+            let mut command = Command::new(program);
+            command
+                .arg(format!("-env:UserInstallation={profile}"))
+                .args(["--headless", "--convert-to", output, "--outdir"])
+                .arg(&temp.0)
+                .arg(&input)
+                .stdout(Stdio::null());
+            match run_bounded(
+                &mut command,
+                None,
+                Duration::from_secs(10),
+                MAX_BYTES,
+                None,
+                Some(Limits::Office {
+                    max_file_bytes: MAX_BYTES,
+                }),
+            ) {
+                Err(RunError::Spawn(_)) => None,
+                result => Some(result),
+            }
+        })
+        .ok_or_else(|| Error::OfficeUnavailable(name.into()))?
+        .map_err(|_| unsupported(name))?;
     Ok(super::load(&temp.0.join(format!("input.{output}")))?.text)
 }
 
@@ -398,6 +420,36 @@ fn legacy(bytes: Vec<u8>, extension: &str, name: &str) -> Result<String, Error> 
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn missing_legacy_converter_is_actionable() {
+        let missing = std::env::temp_dir().join(format!(
+            "nouli-missing-{}.exe",
+            nouli_core::identity::Id::generate()
+        ));
+        assert!(matches!(
+            legacy_with(
+                b"fixture".to_vec(),
+                "doc",
+                "fixture.doc",
+                vec![missing.into_os_string()]
+            ),
+            Err(Error::OfficeUnavailable(_))
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires an installed LibreOffice converter; see docs/windows.md"]
+    fn installed_libreoffice_converts_a_legacy_document() {
+        // LibreOffice recognizes RTF content in a .doc file, as Word does.
+        let text = text(
+            br"{\rtf1\ansi Nouli Office fixture}".to_vec(),
+            "doc",
+            "fixture.doc",
+        )
+        .unwrap();
+        assert!(text.contains("Nouli Office fixture"), "{text}");
+    }
 
     fn zipped(files: &[(&str, &str)]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

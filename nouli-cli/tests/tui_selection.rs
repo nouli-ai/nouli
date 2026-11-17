@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 #[path = "support/harness.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod harness;
@@ -15,8 +13,15 @@ use pty::Terminal;
 use std::time::Duration;
 
 const COLUMNS: u16 = 160;
+#[cfg(unix)]
 const MOUSE_ON: &[u8] = b"\x1b[?1006h";
+#[cfg(unix)]
 const MOUSE_OFF: &[u8] = b"\x1b[?1006l";
+// Conhost combines equivalent DEC mode parameters in a single CSI.
+#[cfg(windows)]
+const MOUSE_ON: &[u8] = b"\x1b[?1003;1006h";
+#[cfg(windows)]
+const MOUSE_OFF: &[u8] = b"\x1b[?1003;1006l";
 const CTRL_P: &[u8] = b"\x10";
 const FUNCTION_KEYS: [&[u8]; 2] = [b"\x1b[15~", b"\x1b[17~"];
 const READY: &[u8] = b"Tab to add a question";
@@ -60,9 +65,12 @@ fn launch(home: &Home) -> Terminal {
         .args(["open", "copy-check"]);
     let mut terminal = Terminal::spawn(command, COLUMNS, 32).expect("launch CLI in a PTY");
     terminal.wait_for(READY, 0, "TUI readiness").unwrap();
+    #[cfg(unix)]
     terminal
         .wait_for(MOUSE_OFF, 0, "native selection at startup")
         .unwrap();
+    #[cfg(windows)]
+    terminal.assert_mouse_disabled();
     assert!(
         !contains(terminal.output_since(0), MOUSE_ON),
         "ordinary dragging must belong to the terminal at startup"
@@ -158,9 +166,15 @@ fn assert_exit_restores_terminal(terminal: &mut Terminal) {
             .windows(bytes.len())
             .rposition(|window| window == bytes)
     };
+    #[cfg(unix)]
     assert!(
         last(MOUSE_OFF) > last(MOUSE_ON),
         "exit must release mouse reporting"
+    );
+    #[cfg(windows)]
+    assert!(
+        last(MOUSE_ON).is_none() || last(MOUSE_OFF) > last(MOUSE_ON),
+        "exit must release enabled mouse reporting"
     );
     assert!(
         contains(output, b"\x1b[?1049l"),
