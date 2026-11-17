@@ -212,7 +212,23 @@ fn file_errors_are_safe_in_all_output_formats_and_never_create_a_store() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(visible.contains("invalid_env_file") && visible.contains(path.to_str().unwrap()));
+        let message = match format {
+            "json" => harness::error_report(&output, 2, Some("invalid_env_file")).message,
+            "jsonl" => {
+                let events = harness::jsonl_events(&output);
+                let nouli_core::protocol::Report::Error(error) = &harness::terminal(&events).result
+                else {
+                    panic!("expected error event");
+                };
+                assert_eq!(error.code, "invalid_env_file");
+                error.message.clone()
+            }
+            _ => {
+                assert!(visible.contains("invalid_env_file"));
+                visible.clone()
+            }
+        };
+        assert!(message.contains(path.to_str().unwrap()));
         assert!(!visible.contains("BROKEN_PRIVATE_VALUE"));
     }
     fs::write(&path, [0xff, 0xfe]).unwrap();

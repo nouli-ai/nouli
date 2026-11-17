@@ -96,7 +96,9 @@ impl Server {
                 ) {
                     assert!(matches!(
                         error.kind(),
-                        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                        std::io::ErrorKind::BrokenPipe
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted
                     ));
                 }
             }

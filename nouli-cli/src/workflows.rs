@@ -30,7 +30,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
-    Run(RunArgs),
+    Run(Box<RunArgs>),
     Show {
         #[arg(value_parser=crate::selection::id)]
         run: Id,

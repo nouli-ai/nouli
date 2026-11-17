@@ -21,6 +21,11 @@ mod view;
 mod worker;
 mod workflows;
 
+#[cfg(test)]
+#[allow(dead_code, reason = "each platform uses a subset of fixture helpers")]
+#[path = "../tests/support/child.rs"]
+mod test_child;
+
 /// A decision harness for structured callers.
 #[derive(Parser)]
 #[command(name = "nouli", version, disable_help_subcommand = true, color=clap::ColorChoice::Never)]
