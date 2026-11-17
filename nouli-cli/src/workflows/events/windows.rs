@@ -183,7 +183,57 @@ mod tests {
         task::{Context, Poll, Waker},
         time::Instant,
     };
-    use windows_sys::Win32::System::Pipes::CreatePipe;
+    use windows_sys::Win32::System::Pipes::{CreatePipe, PeekNamedPipe};
+
+    #[tokio::test]
+    async fn cancellation_joins_a_backpressured_writer_without_draining_its_reader() {
+        let mut read = ptr::null_mut();
+        let mut write = ptr::null_mut();
+        // SAFETY: successful creation transfers two independent owned handles.
+        let (reader, writer) = unsafe {
+            assert_ne!(
+                CreatePipe(&raw mut read, &raw mut write, ptr::null(), 4096),
+                0
+            );
+            (File::from_raw_handle(read), File::from_raw_handle(write))
+        };
+        let destination = Destination(writer);
+        let cancel = CancellationToken::new();
+        let bytes = vec![b'x'; 256 * 1024];
+        let mut future = Box::pin(destination.bytes(&bytes, &cancel));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut available = 0;
+            // SAFETY: peek borrows the live reader without consuming any bytes.
+            assert_ne!(
+                unsafe {
+                    PeekNamedPipe(
+                        reader.as_raw_handle(),
+                        ptr::null_mut(),
+                        0,
+                        ptr::null_mut(),
+                        &raw mut available,
+                        ptr::null_mut(),
+                    )
+                },
+                0
+            );
+            if available > 0 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "writer did not reach the pipe");
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        cancel.cancel();
+        let error = tokio::time::timeout(Duration::from_secs(2), future)
+            .await
+            .expect("cancelled writer must join without the reader draining")
+            .unwrap_err();
+        assert_eq!(error.code, "workflow_event_output_interrupted");
+        drop(reader);
+    }
 
     #[tokio::test]
     async fn dropping_a_backpressured_future_cancels_and_joins_its_writer() {
