@@ -16,7 +16,7 @@ pub struct Home(pub PathBuf);
 impl Home {
     pub fn create() -> Self {
         let home = Self(std::env::temp_dir().join(format!("nouli-cli-eval-{}", Id::generate())));
-        std::fs::create_dir_all(&home.0).unwrap();
+        nouli_core::storage::private_file::create_directory(&home.0).unwrap();
         home
     }
     pub fn store(&self) -> PathBuf {
@@ -31,6 +31,10 @@ impl Home {
             .env_clear()
             .current_dir(&self.0)
             .env("HOME", &self.0);
+        #[cfg(windows)]
+        if let Some(root) = std::env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
         if store {
             command.arg("--store").arg(self.store());
         }

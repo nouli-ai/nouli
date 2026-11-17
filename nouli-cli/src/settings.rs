@@ -15,6 +15,14 @@ use std::{
 
 use nouli_core::config::{Config, ConfigError};
 
+/// Explicit HOME overrides the native Windows profile, matching CLI conventions.
+pub(crate) fn home() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").filter(|value| !value.is_empty());
+    #[cfg(windows)]
+    let home = home.or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()));
+    home.map(PathBuf::from)
+}
+
 #[derive(Clone)]
 pub(crate) struct Settings {
     pub config: Config,
@@ -56,12 +64,13 @@ fn discover_paths(
     store_override: Option<&Path>,
     loader: impl FnOnce(&Path, bool) -> Result<Config, ConfigError>,
 ) -> Result<Settings, ConfigError> {
-    let home = std::env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
+    let home = home();
     let path = config_path
         .map(Path::to_owned)
-        .or_else(|| home.as_ref().map(|home| home.join(".nouli/config.toml")))
+        .or_else(|| {
+            home.as_ref()
+                .map(|home| home.join(".nouli").join("config.toml"))
+        })
         .ok_or(ConfigError::Invalid("HOME or explicit --config"))?;
     let config = loader(&path, config_path.is_none())?;
     if home.is_none() && store_override.is_none() && config.store.is_none() {
@@ -129,11 +138,10 @@ impl Settings {
 
 pub(crate) fn error(args: &super::Args, error: ConfigError) -> nouli_core::protocol::ErrorReport {
     let mut report = nouli_core::engine::EngineError::Config(error).report();
-    let path = args.config.clone().or_else(|| {
-        std::env::var_os("HOME")
-            .filter(|value| !value.is_empty())
-            .map(|home| PathBuf::from(home).join(".nouli/config.toml"))
-    });
+    let path = args
+        .config
+        .clone()
+        .or_else(|| home().map(|home| home.join(".nouli").join("config.toml")));
     if let Some(path) = path {
         let _ = write!(report.message, ". Configuration: {}", path.display());
     }

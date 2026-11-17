@@ -20,6 +20,41 @@ fn command(home: &Home) -> Command {
 fn error(output: &Output, exit: i32, code: &str) -> nouli_core::protocol::ErrorReport {
     harness::error_report(output, exit, Some(code))
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_home_defaults_use_userprofile_and_respect_nonempty_home() {
+    for empty_home in [false, true] {
+        let profile = Home::create();
+        let mut call = command(&profile);
+        call.env_remove("HOME").env("USERPROFILE", &profile.0);
+        if empty_home {
+            call.env("HOME", "");
+        }
+        error(
+            &call
+                .args([&["new", "First"][..], &QUESTION].concat())
+                .output()
+                .unwrap(),
+            2,
+            "providers_required",
+        );
+        assert!(profile.0.join(".nouli").join("config.toml").is_file());
+    }
+    let profile = Home::create();
+    let home = Home::create();
+    error(
+        &command(&home)
+            .env("USERPROFILE", &profile.0)
+            .args([&["new", "First"][..], &QUESTION].concat())
+            .output()
+            .unwrap(),
+        2,
+        "providers_required",
+    );
+    assert!(home.0.join(".nouli").join("config.toml").is_file());
+    assert!(!profile.0.join(".nouli").exists());
+}
 #[test]
 fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledger() {
     for ephemeral in [false, true] {
@@ -32,7 +67,7 @@ fn first_evaluation_creates_private_starter_and_actionable_errors_without_a_ledg
         ])
         .args(QUESTION);
         let failure = error(&call.output().unwrap(), 2, "providers_required");
-        let path = home.0.join(".nouli/config.toml");
+        let path = home.0.join(".nouli").join("config.toml");
         assert!(failure.message.contains(path.to_str().unwrap()));
         assert!(
             failure.message.contains("default_provider") && failure.message.contains("--provider")
@@ -296,7 +331,7 @@ fn workflow_setup_validates_every_node_before_first_store_and_preserves_frozen_r
         2,
         "providers_required",
     );
-    let path = home.0.join(".nouli/config.toml");
+    let path = home.0.join(".nouli").join("config.toml");
     assert!(failure.message.contains(path.to_str().unwrap()));
     assert!(!path.parent().unwrap().join("ledger.sqlite3").exists());
     home.configure(&server, "typesafe", false);

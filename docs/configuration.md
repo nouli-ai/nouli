@@ -1,6 +1,8 @@
 # Configuration
 
 The CLI reads `~/.nouli/config.toml`; `--config FILE` selects a different file.
+On Windows, a nonempty `HOME` supplies `~`, otherwise `USERPROFILE` does. See
+[Windows paths and private persistence](windows.md#paths-and-private-persistence).
 Start with `nouli connect`. Choose a service, authenticate, choose a model, and
 optionally save it as your startup default. `nouli connect typesafe` skips the
 service question. Shortcuts exist for OpenAI, TypeSafe, OpenRouter, Cloudflare
@@ -30,7 +32,7 @@ sources are stored in private `auth.toml`, separately from the configuration.
 comments and settings are preserved. Setup collects and validates the draft before
 writing, serializes concurrent edits under a lock, writes credentials first, and
 publishes the configuration by atomic rename. New directories/files are private
-(0700/0600). `/cancel` or EOF cancels a prompt. A failed final config write may
+(0700/0600 on Unix; restricted creation-time ACLs on Windows). `/cancel` or EOF cancels a prompt. A failed final config write may
 leave a reusable credential entry, never a configuration with a newly missing key.
 
 In a terminal, bare `nouli` starts setup when no providers exist, and prompts for
@@ -283,10 +285,15 @@ applies the call fails with `credential_unavailable`. A provider with neither an
 currently supplies its key (`shell`, `env file`, `store`, or `none`), and never a
 value.
 
-Nouli creates the directory with mode 0700 and the file with mode 0600 from the
+On Unix, Nouli creates the directory with mode 0700 and the file with mode 0600 from the
 start, writing a temporary file and renaming it into place. It refuses to read a
 file that is readable by group or others, that you do not own, or that is a
 symbolic link, with `auth_store_insecure`; fix it with `chmod 600` on the file.
+On Windows, files and directories have ACLs restricted to the effective user,
+SYSTEM, and local Administrators. Unsafe existing permissions and final links are
+refused, including unsafe lock files or parent directories. Review the named
+path with `icacls` and follow the [Windows repair guidance](windows.md#paths-and-private-persistence).
+Existing ACLs are never changed automatically.
 Keys are never written to the ledger, to inspection exports, or to errors.
 
 A saved workflow run records where its key comes from (`env:NAME`, or
@@ -296,7 +303,7 @@ then, so changing the stored key before `nouli workflow resume` takes effect.
 | Code | Meaning |
 | --- | --- |
 | `credential_unavailable` | No source has a usable key; the message names the provider and suggests `nouli auth login PROVIDER`. A failing, empty, or timed-out `command` source gives the same code. |
-| `auth_store_insecure` | `auth.toml` is accessible by others, owned by someone else, or a link. Run `chmod 600` on it. |
+| `auth_store_insecure` | The credential file, or a Windows parent/lock, is unsafe. Use `chmod 600` for a Unix credential file; review the named Windows path with `icacls`. |
 | `invalid_auth_store` | `auth.toml` does not parse or breaks the rules above; the message names the provider and field, never the value. |
 | `auth_store_unreadable` | `auth.toml` exists but cannot be read. |
 | `terminal_required` | `auth login` needs a terminal to prompt; use `--stdin`, `--env`, or `--command`. |

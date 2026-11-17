@@ -23,7 +23,7 @@ pub(crate) struct Draft {
 pub(crate) fn path(args: &Args) -> Result<PathBuf, SetupError> {
     args.config
         .clone()
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".nouli/config.toml")))
+        .or_else(|| settings::home().map(|home| home.join(".nouli").join("config.toml")))
         .ok_or(SetupError::HomeUnavailable)
 }
 pub(crate) fn read(path: &Path) -> Result<DocumentMut, SetupError> {
