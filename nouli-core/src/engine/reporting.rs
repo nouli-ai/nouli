@@ -16,6 +16,12 @@ pub(crate) fn message(category: Category, code: &str) -> ErrorReport {
 }
 fn storage(error: &StorageError) -> ErrorReport {
     match error {
+        StorageError::Insecure { .. } => ErrorReport {
+            category: Category::Storage,
+            code: "store_insecure".into(),
+            message: error.to_string(),
+            retryable: false,
+        },
         StorageError::Busy | StorageError::Conflict => {
             message(Category::Conflict, "ledger_conflict")
         }
