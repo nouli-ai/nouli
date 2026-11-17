@@ -40,9 +40,12 @@ build the same architecture. Use a matching C/C++ toolchain and Windows SDK.
 
 ~~~powershell
 cargo build --workspace --bins --examples --release --locked
-cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker -- --test-threads=4
+cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker --test tui_startup -- --test-threads=4
 .\target\release\nouli.exe
 ~~~
+
+First launch opens the interactive view and shows `/connect` guidance when no
+model is configured. Setup begins only when requested.
 
 The terminal suites use portable-pty's native ConPTY backend, including a
 cursor-query responder. Subprocess fixtures are Rust executables built by

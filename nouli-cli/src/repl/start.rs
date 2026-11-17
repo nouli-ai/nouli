@@ -149,31 +149,6 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
     {
         return render_error(args, settings.config.output, error);
     }
-    if can_draw() && settings.config.providers.is_empty() {
-        match crate::connect::configure(&settings.config_path, &crate::connect::Connect::default())
-        {
-            Ok(_) => {
-                settings = match settings::load(args) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        return render_error(
-                            args,
-                            nouli_core::config::OutputFormat::Auto,
-                            settings::error(args, e),
-                        );
-                    }
-                };
-                if let Err(e) = settings.load_environment() {
-                    return render_error(args, settings.config.output, e);
-                }
-            }
-            Err(error) => {
-                let mut report = error.report();
-                settings.annotate(&mut report);
-                return render_error(args, settings.config.output, report);
-            }
-        }
-    }
     let paint = Paint(render::color_enabled(io::stdout().is_terminal()));
     let mut model = ModelSelection {
         provider: open.and_then(|open| open.provider.clone()),
@@ -195,13 +170,6 @@ pub(crate) fn run(args: &Args, target: Target, open: Option<&Open>) -> ExitCode 
                 Err(error) => return render_error(args, settings.config.output, error.report()),
             }
         }
-    }
-    if can_draw()
-        && let Err(error) = crate::connect::startup(&mut settings, &mut model)
-    {
-        let mut report = error.report();
-        settings.annotate(&mut report);
-        return render_error(args, settings.config.output, report);
     }
     let outcome = session_loop(
         &settings,

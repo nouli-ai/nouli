@@ -86,7 +86,7 @@ pub(super) fn activity(app: &App, running: Option<&Running>, theme: &Theme) -> O
             },
             theme.dim,
         ),
-        (None, None) => return None,
+        (None, None) => Activity::note(app.model_setup_hint()?, theme.dim),
     })
 }
 
@@ -123,6 +123,36 @@ pub(super) fn draw_activity(frame: &mut Frame, area: Rect, activity: &Activity, 
 #[cfg(test)]
 mod tests {
     use crate::repl::tui::{Status, draw::tests::shown, form::Row, tests::*};
+
+    #[test]
+    fn missing_model_guidance_stays_visible_until_a_model_is_selected() {
+        let settings = settings();
+        let mut app = app(&settings);
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(
+            screen.contains("No model configured.") && screen.contains("/connect"),
+            "{screen}"
+        );
+        app.repl.settings.to_mut().config = nouli_core::config::Config::parse(
+            "[providers.local]\nprotocol = \"system-one\"\nbase_url = \"http://127.0.0.1:9\"\n",
+        )
+        .unwrap();
+        app.refresh_model();
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(
+            screen.contains("No model selected.") && screen.contains("/model"),
+            "{screen}"
+        );
+        let config = &mut app.repl.settings.to_mut().config;
+        config.default_provider = Some("local".into());
+        config.default_model = Some("offline".into());
+        app.refresh_model();
+        let screen = shown(&mut app, 80, 24).join("\n");
+        assert!(
+            !screen.contains("No model configured.") && !screen.contains("No model selected."),
+            "{screen}"
+        );
+    }
 
     #[test]
     fn the_retry_action_names_the_key_that_sends_from_the_focused_row() {

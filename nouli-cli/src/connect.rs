@@ -1,7 +1,6 @@
 //! CLI-owned connection recipes and configuration authoring. Execution never reads recipes.
 mod prompt;
 mod recipes;
-mod startup;
 use crate::{
     Args,
     settings::{
@@ -21,7 +20,6 @@ use prompt::{
     choose, choose_credential, choose_endpoint, choose_model, choose_protocol, prompt_default,
 };
 use recipes::{Recipe, SERVICES, recipes};
-pub(crate) use startup::startup;
 use std::{
     io::{self, IsTerminal, Write},
     path::Path,
@@ -55,8 +53,6 @@ pub(crate) enum SetupError {
     InvalidCommand,
     #[error("A key cannot be empty or contain control characters")]
     InvalidKey,
-    #[error("A model ID cannot be empty")]
-    InvalidModel,
     #[error("Name a connection, or select a model first")]
     ConnectionRequired,
     #[error("Unknown setup command")]
@@ -100,7 +96,6 @@ impl SetupError {
             Self::InvalidEnvironmentVariable => (Category::Input, "invalid_environment_variable"),
             Self::InvalidCommand => (Category::Input, "invalid_command"),
             Self::InvalidKey => (Category::Input, "invalid_credential"),
-            Self::InvalidModel => (Category::Input, "invalid_model"),
             Self::ConnectionRequired => (Category::Input, "connection_required"),
             Self::UnknownCommand => (Category::Input, "unknown_command"),
             Self::InvalidConnection(_) => (Category::Input, "invalid_connection"),
@@ -488,7 +483,6 @@ pub(crate) mod tests {
                 Category::Input,
                 "invalid_credential",
             ),
-            (SetupError::InvalidModel, Category::Input, "invalid_model"),
             (
                 SetupError::ConnectionRequired,
                 Category::Input,

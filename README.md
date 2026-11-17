@@ -26,16 +26,18 @@ On Linux (ARM64 or x86_64, glibc 2.38+), or macOS without Homebrew:
 curl -fsSL https://nouli.ai/install.sh | sh
 ```
 
-The script installs `nouli` into `~/.local/bin`. Then connect a decision model and open the app:
+The script installs `nouli` into `~/.local/bin`. Open the app:
 
 ```sh
-nouli connect
 nouli
 ```
 
 For native Windows 11 ARM64 or x64 source builds, see [Windows setup and validation](docs/windows.md).
 
-`nouli connect` sets up TypeSafe, OpenRouter, Cloudflare Workers AI, OpenAI, Ollama, llama.cpp or any compatible endpoint. See [installation](docs/release.md) and [configuration](docs/configuration.md).
+The interactive view opens immediately. If no model is configured, use `/connect`
+to set up TypeSafe, OpenRouter, Cloudflare Workers AI, OpenAI, Ollama, llama.cpp,
+or any compatible endpoint. You can also run `nouli connect` directly. See
+[installation](docs/release.md) and [configuration](docs/configuration.md).
 
 ## Build your first network
 

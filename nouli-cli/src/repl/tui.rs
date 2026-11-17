@@ -310,6 +310,16 @@ impl<'a> App<'a> {
         self.model = None;
     }
 
+    fn model_setup_hint(&self) -> Option<&'static str> {
+        if self.repl.settings.config.providers.is_empty() {
+            Some("No model configured. Use /connect to add a decision service.")
+        } else if self.selected_model.provider.is_none() || self.selected_model.model.is_none() {
+            Some("No model selected. Use /model to choose a model.")
+        } else {
+            None
+        }
+    }
+
     /// Moves what the loop printed into the transcript, which then shows its end.
     fn drain(&mut self) {
         let printed: Vec<_> = String::from_utf8_lossy(&self.repl.out)

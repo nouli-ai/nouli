@@ -17,6 +17,7 @@ prerequisites are in [Windows development and validation](windows.md).
 | Windows 11 ARM64, standard account | Independent application built against the actual verified nouli-core package | Passed |
 | Windows x64, administrator account | Independent application built against the actual verified nouli-core package with an explicit cross target | Passed through Windows ARM64 emulation |
 | Windows 11 ARM64, standard account | Optimized workspace/example build; release smoke, selection, references, and model-picker suites | Passed |
+| macOS ARM64 and Windows 11 ARM64, standard account | First launch enters the TUI without setup prompts; missing-model guidance; explicit setup preserves the draft; credential helpers and providers remain idle at startup | Passed, including the Windows release build |
 | Windows 11 ARM64, administrator account | Real Poppler PDF extraction and LibreOffice legacy-document conversion | Passed |
 | Windows 11 ARM64, two independent accounts | Administrator creates private artifacts under a public parent; standard account receives OS PermissionDenied for protected reads/writes; administrator removes fixture | Passed |
 | Windows 11 ARM64, elevated administrator | File and directory symbolic links are refused without changing original content | Passed |
