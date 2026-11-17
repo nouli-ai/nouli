@@ -150,6 +150,7 @@ mod tests {
             identity::Id,
             storage::{Ledger, OpenMode},
         };
+        use std::time::{Duration, Instant};
         let root = std::env::temp_dir().join(format!("nouli-name-race-{}", Id::generate()));
         drop(Ledger::open(&root, OpenMode::ReadWriteCreate).unwrap());
         // Open every connection before writing: this tests concurrent name
@@ -164,13 +165,24 @@ mod tests {
                 let ready = ready.clone();
                 std::thread::spawn(move || {
                     ready.wait();
+                    let deadline = Instant::now() + Duration::from_secs(30);
                     (0..12)
                         .map(|_| {
-                            ledger
-                                .create_session(None, ModelSelection::default())
-                                .unwrap()
-                                .name
-                                .unwrap()
+                            // Busy is an expected, retryable storage result under
+                            // contention. Only a successful allocation supplies a name.
+                            loop {
+                                match ledger.create_session(None, ModelSelection::default()) {
+                                    Ok(session) => break session.name.unwrap(),
+                                    Err(SessionError::Storage(StorageError::Busy))
+                                        if Instant::now() < deadline =>
+                                    {
+                                        std::thread::sleep(Duration::from_millis(10));
+                                    }
+                                    Err(error) => {
+                                        panic!("concurrent session creation failed: {error}")
+                                    }
+                                }
+                            }
                         })
                         .collect::<Vec<_>>()
                 })
@@ -182,7 +194,13 @@ mod tests {
             .collect();
         assert_eq!(names.len(), 48);
         let ledger = Ledger::open(&root, OpenMode::ReadOnlyExisting).unwrap();
-        assert_eq!(ledger.list_sessions().unwrap().len(), 48);
+        let persisted: HashSet<_> = ledger
+            .list_sessions()
+            .unwrap()
+            .into_iter()
+            .map(|session| session.name.unwrap())
+            .collect();
+        assert_eq!(persisted, names);
         drop(ledger);
         std::fs::remove_dir_all(root).unwrap();
     }
