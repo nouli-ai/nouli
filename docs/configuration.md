@@ -3,7 +3,7 @@
 The CLI reads `~/.nouli/config.toml`; `--config FILE` selects a different file.
 On Windows, a nonempty `HOME` supplies `~`, otherwise `USERPROFILE` does. See
 [Windows paths and private persistence](windows.md#paths-and-private-persistence).
-Start with `nouli connect`. Choose a service, authenticate, choose a model, and
+Start `nouli` to open the interactive view, then use `/connect`. Choose a service, authenticate, choose a model, and
 optionally save it as your startup default. `nouli connect typesafe` skips the
 service question. Shortcuts exist for TypeSafe, OpenRouter, Cloudflare Workers AI,
 OpenAI, Ollama and llama.cpp; `custom` accepts any compatible endpoint.
@@ -35,13 +35,15 @@ publishes the configuration by atomic rename. New directories/files are private
 (0700/0600 on Unix; restricted creation-time ACLs on Windows). `/cancel` or EOF cancels a prompt. A failed final config write may
 leave a reusable credential entry, never a configuration with a newly missing key.
 
-In a terminal, bare `nouli` starts setup when no providers exist, and prompts for
-missing startup model or credentials before allocating a session. In the full-screen
-session, `/connect [SERVICE]`, `/login [CONNECTION]`, `/logout [CONNECTION]`, and
-`/model [CONNECTION]` run setup while idle, then reload settings and retain the
-unsent draft. `/model` offers configured IDs and protocol examples and accepts a manually typed ID;
-changing it affects the active session unless you choose to save a startup default.
-Piped evaluation never prompts.
+In a terminal, bare `nouli` opens the full-screen session immediately. With no
+connections, it shows “No model configured” and points to `/connect`. With a
+connection but no selected model, it points to `/model`. Missing credentials do
+not trigger a startup prompt. `/model [SEARCH]` opens the model picker in the
+view; choosing a model also saves the startup default. `/connect [SERVICE]`,
+`/login [CONNECTION]`, and `/logout [CONNECTION]` run setup while idle, then
+reload settings and retain the unsent draft. Setup only starts when requested.
+`nouli connect` also remains available outside the view. Piped evaluation never
+prompts.
 
 For manual setup, only the protocol and base URL define the connection:
 

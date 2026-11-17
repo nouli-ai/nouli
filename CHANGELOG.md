@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- First launch opens the interactive view immediately and shows `/connect` guidance when no model is configured, or `/model` guidance when a connection needs a model. Connection and credential setup starts only when requested.
 - Connection setup lists TypeSafe, OpenRouter, and Cloudflare before OpenAI.
 
 ## [0.5.1] - 2026-11-01

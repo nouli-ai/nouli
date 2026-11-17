@@ -5,6 +5,10 @@ date: 2026-10-30
 
 # Keep runtime connections independent from service setup shortcuts
 
+The automatic first-run interaction is superseded by
+[ADR 0029](0029-open-the-view-before-connection-setup.md). Connection storage and
+the explicit setup commands below remain in force.
+
 ## Context
 
 Users must be able to point Nouli at any compatible decision service using

@@ -133,7 +133,7 @@ jobs:
       - name: Build release executables and test fixtures
         run: cargo build --workspace --bins --examples --release --locked
       - name: Verify release terminal behavior
-        run: cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker -- --test-threads=4
+        run: cargo test -p nouli-cli --release --locked --test smoke --test tui_selection --test tui_references --test tui_model_picker --test tui_startup -- --test-threads=4
   docs:
     name: Build API documentation
     needs: select

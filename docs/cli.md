@@ -243,6 +243,11 @@ Nouli does not install them automatically.
 
 ## Connect and select models
 
+Bare `nouli` opens the interactive view, including on first launch. With no
+connections, the view shows “No model configured” and points to `/connect`.
+With a connection but no selected model, it points to `/model`. Startup does
+not prompt for a connection, model, or API key.
+
 `nouli connect [SERVICE]` prompts for a connection, credentials and model, then
 optionally saves startup defaults. Services are `typesafe`, `openrouter`,
 `cloudflare`, `openai`, `ollama`, `llama.cpp` and `custom`. These are setup shortcuts that
