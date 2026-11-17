@@ -18,7 +18,7 @@ use nouli_core::{
     storage::{Ledger, OpenMode},
 };
 use std::fmt::Write as _;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 #[test]
 fn a_node_input_that_is_a_whole_number_keeps_the_run_going() {
     use nouli_core::workflow::RunStatus;
@@ -460,11 +460,9 @@ fn workflow_toon_specs_and_complete_stdin_requests_share_the_same_boundary() {
     assert_eq!(server.count(), 8);
 }
 
-#[cfg(unix)]
 #[path = "support/process.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod process;
-#[cfg(unix)]
 #[test]
 fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards() {
     use nouli_core::workflow::{NodeStatus, RunStatus};
@@ -485,15 +483,10 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
         .args(["workflow", "run", file.to_str().unwrap(), "--jsonl"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    process::prepare_interrupt(&mut command);
     let child = process::OwnedChild::new(command.spawn().unwrap());
     waiting.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert!(
-        Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
+    child.interrupt();
     let output = child.output(Duration::from_secs(5));
     release.send(()).unwrap();
     assert_eq!(output.status.code(), Some(130));
@@ -525,7 +518,6 @@ fn workflow_ctrl_c_streams_recoverable_interruption_and_releases_process_guards(
     ));
 }
 
-#[cfg(unix)]
 #[test]
 fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
     use nouli_core::protocol::EngineEvent;
@@ -547,6 +539,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
         .args(["workflow", "run", file.to_str().unwrap(), "--jsonl"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    process::prepare_interrupt(&mut command);
     let mut child = process::OwnedChild::new(command.spawn().unwrap());
     let mut reader = BufReader::new(child.stdout());
     let mut started = String::new();
@@ -557,13 +550,7 @@ fn workflow_backpressure_ctrl_c_exits_without_the_reader_draining_or_closing() {
     // without draining the oversized NodeState while cancellation is requested.
     let mut first = [0u8; 1];
     reader.read_exact(&mut first).unwrap();
-    assert!(
-        Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
+    child.interrupt();
     let output = child.output(Duration::from_secs(5));
     assert_eq!(output.status.code(), Some(130));
     assert!(
@@ -680,11 +667,17 @@ fn workflow_continuing_a_session_runs_only_its_providers_credential_command() {
     let runs_file = |name: &str| home.0.join(format!("{name}-runs"));
     // Each credential command records a line per run, then prints its key.
     for name in ["alpha", "beta"] {
-        let script = format!(
-            "echo run >> '{}'; printf KEY_{name}",
-            runs_file(name).display()
-        );
-        let login = home.run(["auth", "login", name, "--command", "sh", "-c", &script]);
+        let executable = process::fixture::executable();
+        let login = home.run([
+            "auth",
+            "login",
+            name,
+            "--command",
+            executable.to_str().unwrap(),
+            "count",
+            runs_file(name).to_str().unwrap(),
+            &format!("KEY_{name}"),
+        ]);
         assert!(login.status.success());
     }
     let runs = |name: &str| {

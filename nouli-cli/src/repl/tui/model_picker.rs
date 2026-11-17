@@ -696,8 +696,6 @@ mod tests {
     #[tokio::test]
     async fn a_credential_helper_runs_once_in_background_even_when_a_pick_is_pending() {
         use nouli_core::config::auth::{AuthEntry, AuthStore};
-        const HELPER: &str = "printf x >> \"$1\"; \
-            while [ ! -f \"$2\" ]; do sleep 0.02; done; printf fixture-key";
         let mut settings = locked_settings();
         let root = settings.store.clone();
         let calls = root.join("calls");
@@ -707,10 +705,10 @@ mod tests {
             "locked".into(),
             AuthEntry::ApiKey(
                 KeySource::command(vec![
-                    "/bin/sh".into(),
-                    "-c".into(),
-                    HELPER.into(),
-                    "helper".into(),
+                    crate::test_child::executable()
+                        .to_string_lossy()
+                        .into_owned(),
+                    "gate".into(),
                     calls.to_string_lossy().into_owned(),
                     gate.to_string_lossy().into_owned(),
                 ])
@@ -750,10 +748,10 @@ mod tests {
                 "locked".into(),
                 AuthEntry::ApiKey(
                     KeySource::command(vec![
-                        "/bin/sh".into(),
-                        "-c".into(),
-                        "printf '%s' \"$$\" > \"$1\"; exec sleep 30".into(),
-                        "helper".into(),
+                        crate::test_child::executable()
+                            .to_string_lossy()
+                            .into_owned(),
+                        "pid-sleep".into(),
                         pidfile.to_string_lossy().into_owned(),
                     ])
                     .unwrap(),
@@ -768,17 +766,11 @@ mod tests {
                 std::fs::read_to_string(&pidfile).is_ok_and(|s| !s.is_empty())
             })
             .await;
-            let pid: i32 = std::fs::read_to_string(&pidfile).unwrap().parse().unwrap();
+            let pid: u32 = std::fs::read_to_string(&pidfile).unwrap().parse().unwrap();
             press(&mut app, key.code, key.modifiers);
             assert!(app.overlay.is_none());
             assert!(app.fetches.is_none());
-            poll_until(&mut app, |_| {
-                matches!(
-                    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
-                    Err(nix::errno::Errno::ESRCH)
-                )
-            })
-            .await;
+            poll_until(&mut app, |_| !crate::test_child::running(pid)).await;
             std::fs::remove_dir_all(root).unwrap();
         }
     }

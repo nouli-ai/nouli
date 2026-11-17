@@ -267,8 +267,11 @@ key = "…"
 
 `type` is required, and only `api_key` is accepted for now; unknown types and
 fields are errors that name the provider. A `command` runs without a shell, with
-only `PATH` and `HOME` in its environment and a 10-second limit, and its trimmed
-output (at most 64 KiB) is the key. It runs in its own process group, so a
+only `PATH` and `HOME` in its Unix environment and a 10-second limit, and its trimmed
+output (at most 64 KiB) is the key. On Windows it also retains `SystemRoot`,
+`USERPROFILE`, `LOCALAPPDATA`, `TEMP`, and `TMP` for native program startup.
+Batch files require an explicitly named interpreter. It runs in an owned process
+group on Unix or Job Object on Windows, so a
 timeout, Ctrl-C, or oversized output stops the command and anything it started,
 and a background job that keeps the output open counts as a timeout.
 

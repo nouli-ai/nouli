@@ -154,7 +154,7 @@ pub(crate) fn run_command_until(
     let (program, arguments) = argv.split_first()?;
     let mut command = Command::new(program);
     command.args(arguments).env_clear().stdout(Stdio::piped());
-    for name in ["PATH", "HOME"] {
+    for name in command_environment() {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
@@ -181,6 +181,25 @@ pub(crate) fn run_command_until(
     let text = String::from_utf8(bytes).ok()?;
     let key = text.trim();
     (!key.is_empty()).then(|| key.to_owned())
+}
+
+fn command_environment() -> &'static [&'static str] {
+    #[cfg(unix)]
+    {
+        &["PATH", "HOME"]
+    }
+    #[cfg(windows)]
+    {
+        &[
+            "PATH",
+            "HOME",
+            "SystemRoot",
+            "USERPROFILE",
+            "LOCALAPPDATA",
+            "TEMP",
+            "TMP",
+        ]
+    }
 }
 
 /// Every place a credential can come from, in the order they are tried.
@@ -419,12 +438,13 @@ mod tests {
         let directory = Directory::new();
         fs::create_dir_all(&directory.0).unwrap();
         let runs = directory.0.join("runs");
-        let script = format!("echo x >> {}; echo key", runs.display());
+        let argv = vec![
+            crate::test_child::executable().to_str().unwrap().to_owned(),
+            "count".into(),
+            runs.to_str().unwrap().into(),
+        ];
         let mut store = AuthStore::default();
-        store.insert(
-            "p".into(),
-            AuthEntry::ApiKey(KeySource::Command(vec!["sh".into(), "-c".into(), script])),
-        );
+        store.insert("p".into(), AuthEntry::ApiKey(KeySource::Command(argv)));
         let credentials = Credentials::new(Environment::default(), store);
         let source = CredentialSource::Auth("p".into());
         let count = || fs::read_to_string(&runs).map_or(0, |text| text.lines().count());

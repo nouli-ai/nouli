@@ -53,7 +53,11 @@ pub(crate) fn maybe_worker() -> Option<ExitCode> {
 
 pub(crate) fn extract(bytes: &[u8], extension: &str, name: &str) -> Result<Vec<u8>, Error> {
     let fail = || Error::Unsupported(name.into());
-    let mut command = Command::new(std::env::current_exe().map_err(|_| fail())?);
+    #[cfg(not(test))]
+    let executable = std::env::current_exe().map_err(|_| fail())?;
+    #[cfg(test)]
+    let executable = crate::test_child::cli_executable();
+    let mut command = Command::new(executable);
     command.args([FLAG, extension]).stdout(Stdio::piped());
     run_bounded(
         &mut command,

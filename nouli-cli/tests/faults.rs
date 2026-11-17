@@ -1,4 +1,3 @@
-#![cfg(unix)]
 #[path = "support/harness.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod harness;
@@ -22,7 +21,7 @@ use nouli_core::{
 use process::OwnedChild;
 use std::fmt::Write as _;
 use std::{
-    process::{Command, Stdio},
+    process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc,
@@ -197,14 +196,8 @@ fn competing_writers_duplicate_ids_owner_termination_and_restart_preserve_each_s
     assert_eq!(scalar(&home, "SELECT count(*) FROM turns"), 3);
 }
 /// Kills the owning process; it exits unsuccessfully and prints no result.
-fn kill_owner(child: OwnedChild) {
-    assert!(
-        Command::new("kill")
-            .args(["-KILL", &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
+fn kill_owner(mut child: OwnedChild) {
+    child.kill();
     let output = child.output(Duration::from_secs(5));
     assert!(!output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");

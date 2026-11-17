@@ -1,15 +1,23 @@
+#[path = "support/child.rs"]
+#[allow(dead_code, reason = "each test uses a subset of fixture helpers")]
+mod child;
 #[path = "support/harness.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod harness;
 #[path = "support/loopback.rs"]
 #[allow(dead_code, reason = "each test uses a subset of the helpers")]
 mod loopback;
+#[path = "support/security.rs"]
+#[allow(
+    dead_code,
+    reason = "each platform uses a subset of permission fixtures"
+)]
+mod security;
 use harness::{Home, QUESTION, report};
 use loopback::Server;
 use nouli_core::protocol::Report;
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     process::Output,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -32,10 +40,6 @@ fn auth_file(home: &Home) -> std::path::PathBuf {
     home.0.join("auth.toml")
 }
 
-fn mode(path: &std::path::Path) -> u32 {
-    fs::metadata(path).unwrap().permissions().mode() & 0o777
-}
-
 fn error_code(output: &Output, exit: i32) -> String {
     harness::error_report(output, exit, None).code
 }
@@ -55,44 +59,49 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     // The provider names no variable: the stored entry is its only source.
     home.configure(&server, "typesafe", false);
     let watching = std::sync::Arc::new(AtomicBool::new(true));
-    let widest = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let unsafe_file = std::sync::Arc::new(AtomicBool::new(false));
     let watcher = {
-        let (watching, widest, directory) = (watching.clone(), widest.clone(), home.0.clone());
+        let watching = watching.clone();
+        let unsafe_file = unsafe_file.clone();
+        let directory = home.0.clone();
         std::thread::spawn(move || {
             while watching.load(Ordering::SeqCst) {
                 for entry in fs::read_dir(&directory).unwrap().flatten() {
                     let name = entry.file_name().to_string_lossy().into_owned();
-                    if (name.starts_with(".auth-") || name == "auth.toml")
-                        && let Ok(metadata) = entry.metadata()
+                    if (name.starts_with(".auth") || name.starts_with("auth.toml"))
+                        && !security::is_private(&entry.path())
                     {
-                        widest.fetch_max(metadata.permissions().mode() & 0o077, Ordering::SeqCst);
+                        unsafe_file.store(true, Ordering::SeqCst);
                     }
                 }
             }
         })
     };
-    // A permissive umask must not widen anything.
-    let script = format!(
-        "umask 0; printf '%s\\n' '{KEY}' | exec '{}' --config '{}' --store '{}' auth login local --stdin",
-        env!("CARGO_BIN_EXE_nouli"),
-        home.0.join("config.toml").display(),
-        home.store().display()
-    );
-    let output = Command::new("sh")
-        .args(["-c", &script])
-        .env_clear()
-        .env("HOME", &home.0)
-        .current_dir(&home.0)
-        .output()
-        .unwrap();
+    #[cfg(unix)]
+    let output = {
+        let script = format!(
+            "umask 0; printf '%s\\n' '{KEY}' | exec '{}' --config '{}' --store '{}' auth login local --stdin",
+            env!("CARGO_BIN_EXE_nouli"),
+            home.0.join("config.toml").display(),
+            home.store().display()
+        );
+        Command::new("sh")
+            .args(["-c", &script])
+            .env_clear()
+            .env("HOME", &home.0)
+            .current_dir(&home.0)
+            .output()
+            .unwrap()
+    };
+    #[cfg(windows)]
+    let output = login(&home, KEY);
     watching.store(false, Ordering::SeqCst);
     watcher.join().unwrap();
     assert!(output.status.success(), "{}", everything_visible(&output));
-    assert_eq!(mode(&auth_file(&home)), 0o600);
-    assert_eq!(
-        widest.load(Ordering::SeqCst),
-        0,
-        "the store was never wider than 0600"
+    assert!(security::is_private(&auth_file(&home)));
+    assert!(
+        !unsafe_file.load(Ordering::SeqCst),
+        "credential files were visible with unsafe permissions"
     );
     assert!(!everything_visible(&output).contains(KEY));
     // The key reaches the provider, and appears nowhere it should not.
@@ -124,6 +133,7 @@ fn login_creates_a_private_file_that_is_never_wider_and_the_key_is_then_used() {
     );
 }
 
+#[cfg(unix)]
 use std::process::Command;
 
 #[test]
@@ -132,7 +142,7 @@ fn a_store_others_can_read_is_refused_by_every_command_with_the_fix() {
     let home = Home::create();
     home.configure(&server, "typesafe", false);
     assert!(login(&home, KEY).status.success());
-    fs::set_permissions(auth_file(&home), fs::Permissions::from_mode(0o640)).unwrap();
+    security::set_public(&auth_file(&home));
     for arguments in [
         vec!["auth", "list"],
         vec!["auth", "logout", "local"],
@@ -142,12 +152,12 @@ fn a_store_others_can_read_is_refused_by_every_command_with_the_fix() {
         assert_eq!(output.status.code(), Some(2), "{arguments:?}");
         assert_eq!(error_code(&output, 2), "auth_store_insecure");
         let visible = everything_visible(&output);
-        assert!(visible.contains("chmod 600") && visible.contains("auth.toml"));
+        assert!(visible.contains(security::repair_hint()) && visible.contains("auth.toml"));
         assert!(!visible.contains(KEY));
     }
     assert_eq!(login(&home, "other").status.code(), Some(2));
     assert_eq!(server.count(), 0);
-    fs::set_permissions(auth_file(&home), fs::Permissions::from_mode(0o600)).unwrap();
+    security::set_private(&auth_file(&home));
     assert!(home.run(["auth", "list"]).status.success());
 }
 
@@ -231,6 +241,8 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
         .args(create("B"))
         .env("CUSTOM_SOURCE_VARIABLE", "VARIABLE_KEY");
     report(&command.output().unwrap());
+    let executable = child::executable();
+    let executable = executable.to_str().unwrap();
     // A command source runs without a shell and its output is the key.
     assert!(
         home.run([
@@ -238,8 +250,8 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
             "login",
             "local",
             "--command",
-            "printf",
-            "%s",
+            executable,
+            "emit",
             "COMMAND_KEY"
         ])
         .status
@@ -248,15 +260,8 @@ fn env_and_command_sources_are_followed_and_failures_are_credential_unavailable(
     report(&home.run(create("C")));
     // A command that fails, or prints nothing, is unavailable. Its output is never shown.
     for (name, words) in [
-        (
-            "D1",
-            vec![
-                "sh",
-                "-c",
-                "echo LEAKED_OUTPUT; echo LEAKED_ERROR >&2; exit 3",
-            ],
-        ),
-        ("D2", vec!["true"]),
+        ("D1", vec![executable, "fail"]),
+        ("D2", vec![executable, "empty"]),
     ] {
         let mut arguments = vec!["auth", "login", "local", "--command"];
         arguments.extend(words);
@@ -336,7 +341,7 @@ fn logout_login_errors_and_unknown_types_name_the_problem_without_the_key() {
         ("key = \"SENTINEL_FILE_KEY\"", "needs `type"),
     ] {
         fs::write(auth_file(&home), format!("[providers.local]\n{body}\n")).unwrap();
-        fs::set_permissions(auth_file(&home), fs::Permissions::from_mode(0o600)).unwrap();
+        security::set_private(&auth_file(&home));
         let output = home.run(["auth", "list"]);
         assert_eq!(output.status.code(), Some(2), "{body}");
         assert_eq!(error_code(&output, 2), "invalid_auth_store");
