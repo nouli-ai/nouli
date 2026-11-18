@@ -279,7 +279,8 @@ fn recovery_uses_the_same_validation_at_the_exact_tag_and_never_dispatches_on_ap
         ));
         fs::create_dir_all(temporary.join("bin")).unwrap();
         for tool in ["gh", "sleep"] {
-            fs::copy(child::executable(), temporary.join("bin").join(tool)).unwrap();
+            std::os::unix::fs::symlink(child::executable(), temporary.join("bin").join(tool))
+                .unwrap();
         }
         github_responses(&temporary, scenario, &sha);
         let mut command = Command::new("bash");

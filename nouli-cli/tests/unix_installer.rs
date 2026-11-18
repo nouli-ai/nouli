@@ -12,7 +12,7 @@ impl Fixture {
             std::env::temp_dir().join(format!("nouli-sh-{}", nouli_core::identity::Id::generate()));
         fs::create_dir_all(root.join("bin")).unwrap();
         for tool in ["curl", "uname", "getconf"] {
-            fs::copy(child::executable(), root.join("bin").join(tool)).unwrap();
+            std::os::unix::fs::symlink(child::executable(), root.join("bin").join(tool)).unwrap();
         }
         let archive = fs::File::create(root.join("release.tar.gz")).unwrap();
         let mut archive = tar::Builder::new(flate2::write::GzEncoder::new(
